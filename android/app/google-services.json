@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "877183716911",
+    "project_id": "drift-9f114",
+    "storage_bucket": "drift-9f114.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:877183716911:android:c43fd275aff355209340da",
+        "android_client_info": {
+          "package_name": "net.castanet.drift"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBblR48R3joau0FkOck2cftNzmx-fnnplo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "drift-agora-token-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "agora-access-token": "^2.0.4",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "firebase-admin": "^12.5.0",
+    "@mux/mux-node": "^8.4.1"
+  }
+}
