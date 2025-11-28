@@ -16,31 +16,7 @@ const muxClient = new mux.Video({
 
 app.use(express.json());
 
-// POST /merge: upload audio and video, merge using ffmpeg, return merged video
-app.post('/merge', upload.fields([{ name: 'video' }, { name: 'audio' }]), async (req, res) => {
-  try {
-    const videoFile = req.files['video'][0].path;
-    const audioFile = req.files['audio'][0].path;
-    const outputFile = `uploads/merged_${Date.now()}.mp4`;
 
-    // Merge using ffmpeg
-    await new Promise((resolve, reject) => {
-      exec(`ffmpeg -i ${videoFile} -i ${audioFile} -c:v copy -c:a aac -strict experimental -shortest ${outputFile}`, (err, stdout, stderr) => {
-        if (err) return reject(stderr);
-        resolve();
-      });
-    });
-
-    res.download(outputFile, () => {
-      // Cleanup
-      fs.unlinkSync(videoFile);
-      fs.unlinkSync(audioFile);
-      fs.unlinkSync(outputFile);
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.toString() });
-  }
-});
 
 // POST /mux/upload: upload video to Mux
 app.post('/mux/upload', upload.single('video'), async (req, res) => {

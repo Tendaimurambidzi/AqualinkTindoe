@@ -1,16 +1,13 @@
 # drift-9f114 Merger Backend
 
-This backend provides endpoints to upload audio and video, merge them using FFmpeg, and return the merged video. Mux integration is included for video management.
+This backend provides endpoints to upload video to Mux for video management.
 
 ## Features
 - Upload audio and video files
-- Merge audio and video using FFmpeg
-- Download merged video
 - Mux integration (requires credentials)
 
 ## Requirements
 - Node.js 18+
-- FFmpeg installed and available in PATH
 - Mux credentials (ID and token)
 
 ## Setup
@@ -29,7 +26,6 @@ This backend provides endpoints to upload audio and video, merge them using FFmp
    ```
 
 ## API
-- `POST /merge` — Upload audio and video, returns merged video
 - `POST /mux/upload` — Upload video to Mux
 
 ---

@@ -99,7 +99,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary, CameraOptions, Asset, ImagePickerResponse } from 'react-native-image-picker';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-import { normalizeVideoToMp4, normalizeAudioToM4a } from './MediaTranscode';
+
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
 import {
@@ -5644,24 +5644,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Close the action sheet and open the editor
         setShowMakeWaves(false);
         const picked = response.assets[0];
-        if (isVideoAsset(picked)) {
-          setTranscoding(true);
-          normalizeVideoToMp4(String(picked.uri))
-            .then(outUri => {
-              const fileName =
-                (picked.fileName || 'video').replace(/\.[^.]+$/, '') + '.mp4';
-              setCapturedMedia({
-                ...picked,
-                uri: outUri,
-                type: 'video/mp4',
-                fileName,
-              } as any);
-            })
-            .catch(() => setCapturedMedia(picked))
-            .finally(() => setTranscoding(false));
-        } else {
-          setCapturedMedia(picked);
-        }
+        setCapturedMedia(picked);
+        setTranscoding(false);
       }
     });
   };
@@ -5678,24 +5662,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Close the action sheet and open the editor
       setShowMakeWaves(false);
       const picked = response.assets[0];
-      if (isVideoAsset(picked)) {
-        setTranscoding(true);
-        normalizeVideoToMp4(String(picked.uri))
-          .then(outUri => {
-            const fileName =
-              (picked.fileName || 'video').replace(/\.[^.]+$/, '') + '.mp4';
-            setCapturedMedia({
-              ...picked,
-              uri: outUri,
-              type: 'video/mp4',
-              fileName,
-            } as any);
-          })
-          .catch(() => setCapturedMedia(picked))
-          .finally(() => setTranscoding(false));
-      } else {
-        setCapturedMedia(picked);
-      }
+      setCapturedMedia(picked);
+      setTranscoding(false);
     }
   };
 
@@ -5823,28 +5791,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               }
             }
             // Best-effort: convert local files to m4a if ffmpeg-kit is available
-            if (/^file:/.test(rawUri)) {
-              normalizeAudioToM4a(rawUri)
-                .then(outUri =>
-                  setAttachedAudio({
-                    uri: outUri,
-                    name:
-                      (asset.fileName || 'audio').replace(/\.[^.]+$/, '') +
-                      '.m4a',
-                  }),
-                )
-                .catch(() =>
-                  setAttachedAudio({ uri: rawUri, name: asset.fileName }),
-                )
-                .finally(() => {
-                  setShowAudioModal(false);
-                  setAudioUrlInput('');
-                });
-            } else {
-              setAttachedAudio({ uri: rawUri, name: asset.fileName });
-              setShowAudioModal(false);
-              setAudioUrlInput('');
-            }
+            setAttachedAudio({ uri: rawUri, name: asset.fileName });
+            setShowAudioModal(false);
+            setAudioUrlInput('');
             // No alert here: audio is now set and will show under video preview
           } else {
             Alert.alert('No audio selected', 'Please choose an audio file.');

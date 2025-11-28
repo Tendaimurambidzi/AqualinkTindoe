@@ -2,10 +2,10 @@
 
 ## Required Dependencies
 
+
 To enable SPL watermark on downloaded videos, install these packages:
 
 ```bash
-npm install ffmpeg-kit-react-native
 npm install react-native-fs
 npm install @react-native-camera-roll/camera-roll
 ```
@@ -16,13 +16,7 @@ cd ios && pod install && cd ..
 ```
 
 ### For Android:
-Add to `android/app/build.gradle`:
-```gradle
-dependencies {
-    // ... existing dependencies
-    implementation "com.arthenica:ffmpeg-kit-react-native:5.1.0"
-}
-```
+
 
 ## Adding Your SPL Logo
 
@@ -51,10 +45,7 @@ The watermark appears:
 
 ## Fallback Behavior
 
-If FFmpeg is not available:
-- Text watermark "SPL" is added instead
-- Or the original video is downloaded without watermark
-- Users are notified which option was used
+
 
 ## Testing
 
@@ -65,9 +56,9 @@ If FFmpeg is not available:
 
 ## Troubleshooting
 
+
 **No watermark appearing:**
 - Check that `spl_logo.png` is in the correct folder
-- Verify FFmpeg package is installed
 - Check app permissions for storage access
 
 **Download fails:**
