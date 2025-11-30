@@ -43,7 +43,6 @@ async function sendEcho(waveId: string, text: string) {
     throw err;
   });
 }
-// @ts-nocheck
 import React, {
   useEffect,
   useMemo,
@@ -51,6 +50,7 @@ import React, {
   useRef,
   useCallback,
 } from 'react';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
@@ -105,11 +105,10 @@ import { shareDriftLink } from './src/services/driftService';
 import {
   getCrewCount,
   isInCrew,
-  isInUserCrew,
   joinCrew,
   leaveCrew,
 } from './src/services/crewService';
-import FilePickerManager from 'react-native-file-picker';
+
 
 // Navigation stack shared across auth/app flows
 const Stack = createNativeStackNavigator();
@@ -2502,11 +2501,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setDriftWatchers([]);
         return;
       }
+      const crewService = await import('./src/services/crewService');
       const [boardingList, crewMembers] = await Promise.all([
-        getBoarding(200),
-        getCrew(user.uid, 200),
+        crewService.getBoarding(200),
+        crewService.getCrew(user.uid, 200),
       ]);
-      const crewIds = crewMembers.map(member => member.uid);
+      const crewIds = crewMembers.map((member: any) => member.uid);
       const unique = Array.from(new Set([...boardingList, ...crewIds]));
       setDriftWatchers(unique);
     } catch (error) {
@@ -14819,7 +14819,14 @@ const App: React.FC = () => {
   );
 };
 
-export default App;
+// Top-level error boundary wrapper for the app
+const AppWithErrorBoundary: React.FC = () => (
+  <ErrorBoundary>
+    <App />
+  </ErrorBoundary>
+);
+
+export default AppWithErrorBoundary;
 
 /* --------------------------- Styles --------------------------- */
 const authStyles = StyleSheet.create({
