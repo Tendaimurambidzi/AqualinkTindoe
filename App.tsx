@@ -54,11 +54,12 @@ import ErrorBoundary from './src/components/ErrorBoundary';
 import { NavigationContainer, useIsFocused } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
-import BioluminescentTapEffect from './src/components/BioluminescentTapEffect';
-import NotificationToast from './src/components/NotificationToast';
-import WaveRippleEffect from './src/components/WaveRippleEffect';
-import SwimmingFishLoader from './src/components/SwimmingFishLoader';
-import UserSearch from './src/components/UserSearch';
+import { Suspense, lazy } from 'react';
+const BioluminescentTapEffect = lazy(() => import('./src/components/BioluminescentTapEffect'));
+const NotificationToast = lazy(() => import('./src/components/NotificationToast'));
+const WaveRippleEffect = lazy(() => import('./src/components/WaveRippleEffect'));
+const SwimmingFishLoader = lazy(() => import('./src/components/SwimmingFishLoader'));
+const UserSearch = lazy(() => import('./src/components/UserSearch'));
 import {
   Alert,
   Animated,
@@ -14783,34 +14784,36 @@ const App: React.FC = () => {
         <SafeAreaProvider>
           <SafeApp>
             <DataSaverProvider>
-              <NavigationContainer>
-                {initializing ? (
-                  <View
-                    style={{
-                      flex: 1,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: '#0A1929',
-                    }}
-                  >
-                    <ActivityIndicator size="large" color="#00C2FF" />
-                    <Text
+              <Suspense fallback={<ActivityIndicator size="large" color="#00C2FF" style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }} />}>
+                <NavigationContainer>
+                  {initializing ? (
+                    <View
                       style={{
-                        marginTop: 16,
-                        color: '#00C2FF',
-                        fontSize: 16,
-                        fontStyle: 'italic',
+                        flex: 1,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        backgroundColor: '#0A1929',
                       }}
                     >
-                      Navigating the seas…
-                    </Text>
-                  </View>
-                ) : user ? (
-                  <AppStack />
-                ) : (
-                  <AuthStack />
-                )}
-              </NavigationContainer>
+                      <ActivityIndicator size="large" color="#00C2FF" />
+                      <Text
+                        style={{
+                          marginTop: 16,
+                          color: '#00C2FF',
+                          fontSize: 16,
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        Navigating the seas…
+                      </Text>
+                    </View>
+                  ) : user ? (
+                    <AppStack />
+                  ) : (
+                    <AuthStack />
+                  )}
+                </NavigationContainer>
+              </Suspense>
             </DataSaverProvider>
           </SafeApp>
         </SafeAreaProvider>
