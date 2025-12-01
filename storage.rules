@@ -38,9 +38,9 @@ service firebase.storage {
       allow delete: if isOwner(userId);
     }
     
-    // Default: deny all other paths
+    // TEMPORARY: Allow public read/write for all paths (debug only!)
     match /{allPaths=**} {
-      allow read, write: if false;
+      allow read, write: if true;
     }
   }
 }

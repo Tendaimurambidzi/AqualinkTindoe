@@ -83,7 +83,7 @@ android {
         applicationId "net.castanet.drift"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
+        versionCode 11
         versionName "1.0.2"
         // Allow HTTP (cleartext) in debug for local token server convenience
         manifestPlaceholders = [

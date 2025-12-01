@@ -3,6 +3,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AppState, Platform, StyleSheet, View } from 'react-native';
 import Video from 'react-native-video';
 
+import NetInfo from '@react-native-community/netinfo';
+import { getCachedVideoPath, cacheVideo } from './src/services/videoCache';
+
 type Props = {
   videoUrl: string;          // original video url (used when not muxed)
   audioUrl?: string;         // optional attached audio (ignored when playbackUrl provided)
@@ -22,6 +25,30 @@ export default function WaveCard({ videoUrl, audioUrl, playbackUrl, isFocused = 
 
   const useSingle = !!playbackUrl;
   const hasAudio = !!audioUrl && !useSingle;
+  const [cachedUrl, setCachedUrl] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
+  // Check network status
+  useEffect(() => {
+    const check = async () => {
+      const state = await NetInfo.fetch();
+      setIsOffline(!state.isConnected);
+    };
+    check();
+    const unsub = NetInfo.addEventListener((state) => setIsOffline(!state.isConnected));
+    return () => { unsub && unsub(); };
+  }, []);
+
+  // Check for cached video when URL changes
+  useEffect(() => {
+    const url = useSingle ? playbackUrl : videoUrl;
+    if (!url) return;
+    let alive = true;
+    (async () => {
+      const cached = await getCachedVideoPath(url);
+      if (alive) setCachedUrl(cached);
+    })();
+    return () => { alive = false; };
+  }, [playbackUrl, videoUrl, useSingle]);
 
   useEffect(() => {
     try {
@@ -85,7 +112,7 @@ export default function WaveCard({ videoUrl, audioUrl, playbackUrl, isFocused = 
       {useSingle ? (
         <Video
           ref={videoRef}
-          source={{ uri: playbackUrl! }}
+          source={{ uri: (isOffline && cachedUrl) ? 'file://' + cachedUrl : cachedUrl || playbackUrl! }}
           autoplay
           style={StyleSheet.absoluteFill}
           paused={!playing}
@@ -97,7 +124,13 @@ export default function WaveCard({ videoUrl, audioUrl, playbackUrl, isFocused = 
           onLoadStart={() => console.log('WaveCard: Video(load single) started.')}
           {...(Platform.OS === 'android' ? { androidImplementation: 'exoplayer' } : {})}
           onLoad={handleVideoLoad}
-          onProgress={handleVideoProgress}
+          onProgress={async (p) => {
+            handleVideoProgress(p);
+            // Cache video after first play
+            if (!cachedUrl && playbackUrl && p.currentTime > 0.5) {
+              try { await cacheVideo(playbackUrl); } catch {}
+            }
+          }}
           onError={handleSyncError}
           onBuffer={handleBuffer}
         />
@@ -105,7 +138,7 @@ export default function WaveCard({ videoUrl, audioUrl, playbackUrl, isFocused = 
         <>
       <Video
         ref={videoRef}
-        source={{ uri: videoUrl }}
+        source={{ uri: (isOffline && cachedUrl) ? 'file://' + cachedUrl : cachedUrl || videoUrl }}
         autoplay
         style={StyleSheet.absoluteFill}
         paused={!playing}
@@ -118,7 +151,13 @@ export default function WaveCard({ videoUrl, audioUrl, playbackUrl, isFocused = 
         {...videoAudioTrackProp}
         {...(Platform.OS === 'android' ? { androidImplementation: 'exoplayer' } : {})}
         onLoad={handleVideoLoad}
-        onProgress={handleVideoProgress}
+        onProgress={async (p) => {
+          handleVideoProgress(p);
+          // Cache video after first play
+          if (!cachedUrl && videoUrl && p.currentTime > 0.5) {
+            try { await cacheVideo(videoUrl); } catch {}
+          }
+        }}
         onError={handleSyncError}
         onBuffer={handleBuffer}
       />
