@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, Image, ActivityIndicator } from 'react-native';
+import { View, Text, Pressable, ActivityIndicator, StyleSheet } from 'react-native';
 import Video from 'react-native-video';
 import FastImage from '@d11/react-native-fast-image';
 import { useDataSaver } from '../dataSaver/DataSaverProvider';
 import { addBytesDownloaded, overCap } from '../dataSaver/DataUsage';
 import NetInfo from '@react-native-community/netinfo';
-import { getCachedVideoPath, cacheVideo } from '../services/videoCache';
+import {
+  getCachedVideoPath,
+  cacheVideo,
+  getVideoManifest,
+  saveVideoManifest,
+  VideoManifest,
+} from '../services/videoCache';
 
-type Renditions = {
-  low: string | null;
-  med: string | null;
-  high: string | null;
-  thumb: string | null;
-};
+type Renditions = VideoManifest;
 
 export default function VideoTile({
   videoId,
@@ -32,8 +33,21 @@ export default function VideoTile({
   const [showPoster, setShowPoster] = useState(true);
   const [hadError, setHadError] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
+  const [playbackReady, setPlaybackReady] = useState(false);
   const lastTime = useRef(0);
   const cacheKickoff = useRef(false);
+  const loadTimeout = useRef<NodeJS.Timeout | null>(null);
+  const onPlaybackReady = () => {
+    if (playbackReady) return;
+    if (loadTimeout.current) {
+      clearTimeout(loadTimeout.current);
+      loadTimeout.current = null;
+    }
+    setPlaybackReady(true);
+    setHasStarted(true);
+    setIsBuffering(false);
+    setShowPoster(false);
+  };
 
   // Reset per video
   useEffect(() => {
@@ -60,22 +74,31 @@ export default function VideoTile({
   useEffect(() => {
     let alive = true;
     (async () => {
+      const cachedManifest = await getVideoManifest(videoId);
+      if (isOffline) {
+        if (alive) setR(cachedManifest);
+        return;
+      }
+
       try {
+        const pref = s.preferModernCodec ? 'modern' : 'any';
         const resp = await fetch(
           `https://<REGION>-<PROJECT>.cloudfunctions.net/getPlaybackManifest?videoId=${encodeURIComponent(
-            videoId
-          )}&prefer=${s.preferModernCodec ? 'modern' : 'any'}`
+            videoId,
+          )}&prefer=${pref}`,
         );
         const json = await resp.json();
-        if (alive) setR(json);
+        if (!alive) return;
+        setR(json);
+        saveVideoManifest(videoId, json);
       } catch (e) {
-        if (alive) setR({ low: null, med: null, high: null, thumb: null });
+        if (alive) setR(cachedManifest);
       }
     })();
     return () => {
       alive = false;
     };
-  }, [videoId, s.preferModernCodec]);
+  }, [videoId, s.preferModernCodec, isOffline]);
 
   const candidates = useMemo(() => {
     if (!r) return [];
@@ -143,11 +166,25 @@ export default function VideoTile({
     setShowPoster(true);
     setIsBuffering(true);
     setHasStarted(false);
+    setPlaybackReady(false);
     setPlay(true);
   };
 
   const thumb = r?.thumb || undefined;
   const canDownload = !(s.enabled && s.wifiOnlyDownloads && s.cellular);
+  useEffect(() => {
+    if (!currentUrl || cachedUrl || !canDownload || isOffline) return;
+    let alive = true;
+    (async () => {
+      try {
+        await cacheVideo(currentUrl);
+        if (!alive) return;
+        const cached = await getCachedVideoPath(currentUrl);
+        if (alive) setCachedUrl(cached);
+      } catch {}
+    })();
+    return () => { alive = false; };
+  }, [currentUrl, cachedUrl, canDownload, isOffline]);
   const tryFallback = () => {
     if (urlIndex + 1 < candidates.length) {
       setUrlIndex((i) => i + 1);
@@ -157,6 +194,11 @@ export default function VideoTile({
       setHasStarted(false);
       lastTime.current = 0;
       cacheKickoff.current = false;
+      setPlaybackReady(false);
+      if (loadTimeout.current) {
+        clearTimeout(loadTimeout.current);
+        loadTimeout.current = null;
+      }
       return true;
     }
     return false;
@@ -171,12 +213,30 @@ export default function VideoTile({
     return () => clearTimeout(t);
   }, [play, currentUrl, hasStarted, urlIndex, candidates.length]);
 
+  useEffect(() => {
+    return () => {
+      if (loadTimeout.current) {
+        clearTimeout(loadTimeout.current);
+        loadTimeout.current = null;
+      }
+    };
+  }, []);
+
   return (
-    <View style={{ aspectRatio: 9 / 16, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', minHeight: 300, minWidth: 169 }}>
+    <View style={{ aspectRatio: 9 / 16, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', minHeight: 300, minWidth: 169, position: 'relative' }}>
+      {thumb && (
+        <FastImage
+          source={{ uri: thumb }}
+          style={posterStyles.background}
+          resizeMode={FastImage.resizeMode.cover}
+          pointerEvents="none"
+        />
+      )}
+
       {play && currentUrl ? (
         <Video
           source={{ uri: (isOffline && cachedUrl) ? 'file://' + cachedUrl : cachedUrl || currentUrl }}
-          style={{ flex: 1 }}
+          style={[StyleSheet.absoluteFill, { zIndex: 1 }]}
           paused={!play}
           resizeMode="cover"
           controls={true}
@@ -189,20 +249,19 @@ export default function VideoTile({
             bufferForPlaybackAfterRebufferMs: 800,
           }}
           progressUpdateInterval={500}
-          onLoadStart={() => {
-            setIsBuffering(true);
-            setShowPoster(true);
-            cacheKickoff.current = false;
-            setHasStarted(false);
-          }}
-          onReadyForDisplay={() => {
-            // keep spinner until we confirm playback progressed
-            setShowPoster(true);
-          }}
-          onLoad={() => {
-            // keep spinner until we confirm playback progressed
-            setShowPoster(true);
-          }}
+        onLoadStart={() => {
+          setIsBuffering(true);
+          setShowPoster(true);
+          setPlaybackReady(false);
+          cacheKickoff.current = false;
+          setHasStarted(false);
+          if (loadTimeout.current) clearTimeout(loadTimeout.current);
+          loadTimeout.current = setTimeout(() => {
+            if (!playbackReady) {
+              tryFallback();
+            }
+          }, 3000);
+        }}
           onError={(e) => {
             console.log('video error', e);
             const switched = tryFallback();
@@ -210,6 +269,7 @@ export default function VideoTile({
               setIsBuffering(false);
               setShowPoster(true);
               setHadError(true);
+              setPlaybackReady(false);
               setPlay(false);
             }
           }}
@@ -218,9 +278,7 @@ export default function VideoTile({
             lastTime.current = p.currentTime;
             addBytesDownloaded(Math.round(200 * 1024 * dt));
             if (!hasStarted && p.currentTime > 0.05) {
-              setHasStarted(true);
-              setIsBuffering(false);
-              setShowPoster(false);
+              onPlaybackReady();
             }
             if (s.enabled && overCap(s.mobileDataCapMB)) setPlay(false);
             // Cache video during first play if allowed
@@ -233,40 +291,53 @@ export default function VideoTile({
           }}
             onBuffer={({ isBuffering }) => {
               // Spinner must keep running until playback starts
-              setIsBuffering(isBuffering || !hasStarted);
-              setShowPoster(isBuffering || !hasStarted);
+              setIsBuffering(isBuffering || !playbackReady);
+              setShowPoster(isBuffering || !playbackReady);
             }}
           />
         ) : null}
 
-      {(showPoster || !play || !selectedUrl) && (
-        <Pressable style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} onPress={onTapPlay}>
-          {thumb ? (
-            <FastImage source={{ uri: thumb }} style={{ flex: 1 }} resizeMode={FastImage.resizeMode.cover} />
-          ) : (
-            <Image source={thumb ? { uri: thumb } : undefined} style={{ flex: 1, backgroundColor: '#000' }} resizeMode="cover" />
-          )}
-          <View
-            style={{
-              position: 'absolute',
-              bottom: 12,
-              right: 12,
-              backgroundColor: '#0009',
-              paddingHorizontal: 10,
-              paddingVertical: 6,
-              borderRadius: 16,
-            }}
-          >
-            <Text style={{ color: '#fff', fontWeight: '700' }}>{hadError ? 'Tap to retry' : 'Tap to play (Data Saver)'}</Text>
+      {(showPoster || !play || !currentUrl) && (
+        <Pressable style={posterStyles.overlay} onPress={onTapPlay}>
+          <View style={posterStyles.badge}>
+            <Text style={posterStyles.badgeText}>
+              {hadError ? 'Tap to retry' : 'Tap to play (Data Saver)'}
+            </Text>
           </View>
         </Pressable>
       )}
 
-      {(isBuffering || (play && !hasStarted)) && (
-        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center' }}>
+      {(isBuffering || (play && !playbackReady)) && (
+        <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 3 }}>
           <ActivityIndicator color="#fff" />
         </View>
       )}
     </View>
   );
 }
+
+const posterStyles = StyleSheet.create({
+  background: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: '#0009',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  badgeText: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+});
