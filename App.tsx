@@ -14265,7 +14265,7 @@ function SignInScreen({ navigation }: any) {
           onPress={() => navigation.replace('SignUp')}
           style={{ marginTop: 14 }}
         >
-          <Text style={authStyles.link}>New Here? Sign up</Text>
+          <Text style={authStyles.link}>Don't have an account? Sign up</Text>
         </TouchableOpacity>
       </KeyboardAvoidingView>
     </View>

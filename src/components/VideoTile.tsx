@@ -37,6 +37,10 @@ export default function VideoTile({
   const lastTime = useRef(0);
   const cacheKickoff = useRef(false);
   const loadTimeout = useRef<NodeJS.Timeout | null>(null);
+  const logVideoTrouble = (reason: string) => {
+    console.warn(`[VideoTile] ${reason} videoId=${videoId}`);
+  };
+
   const onPlaybackReady = () => {
     if (playbackReady) return;
     if (loadTimeout.current) {
@@ -73,28 +77,57 @@ export default function VideoTile({
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-      const cachedManifest = await getVideoManifest(videoId);
+    let retries = 0;
+    const maxRetries = 5;
+    const baseDelayMs = 2000;
+    let cachedManifest: VideoManifest | null = null;
+
+    const backoff = () => new Promise((resolve) => setTimeout(resolve, Math.min(16000, baseDelayMs * retries)));
+
+    const attemptFetch = async () => {
+      cachedManifest = await getVideoManifest(videoId);
       if (isOffline) {
-        if (alive) setR(cachedManifest);
+        if (alive) {
+          setR(cachedManifest);
+          if (!cachedManifest) {
+            logVideoTrouble('offline with no cached manifest');
+          }
+        }
         return;
       }
 
-      try {
-        const pref = s.preferModernCodec ? 'modern' : 'any';
-        const resp = await fetch(
-          `https://<REGION>-<PROJECT>.cloudfunctions.net/getPlaybackManifest?videoId=${encodeURIComponent(
-            videoId,
-          )}&prefer=${pref}`,
-        );
-        const json = await resp.json();
-        if (!alive) return;
-        setR(json);
-        saveVideoManifest(videoId, json);
-      } catch (e) {
-        if (alive) setR(cachedManifest);
+      while (alive) {
+        try {
+          const pref = s.preferModernCodec ? 'modern' : 'any';
+          const resp = await fetch(
+            `https://<REGION>-<PROJECT>.cloudfunctions.net/getPlaybackManifest?videoId=${encodeURIComponent(
+              videoId,
+            )}&prefer=${pref}`,
+          );
+          const json = await resp.json();
+          if (!alive) return;
+          setR(json);
+          saveVideoManifest(videoId, json);
+          return;
+        } catch (e: any) {
+          retries += 1;
+          const message = e?.message ?? String(e);
+          logVideoTrouble(`manifest fetch failed (${message}) attempt=${retries}`);
+          if (retries > maxRetries) {
+            if (alive) {
+              setR(cachedManifest);
+              if (!cachedManifest) {
+                logVideoTrouble('no cached manifest to fall back to');
+              }
+            }
+            return;
+          }
+          await backoff();
+        }
       }
-    })();
+    };
+
+    attemptFetch();
     return () => {
       alive = false;
     };
@@ -181,11 +214,14 @@ export default function VideoTile({
         if (!alive) return;
         const cached = await getCachedVideoPath(currentUrl);
         if (alive) setCachedUrl(cached);
-      } catch {}
+      } catch (cacheErr) {
+        logVideoTrouble(`cache download failed (${String(cacheErr)})`);
+      }
     })();
     return () => { alive = false; };
   }, [currentUrl, cachedUrl, canDownload, isOffline]);
-  const tryFallback = () => {
+  const tryFallback = (reason: string) => {
+    logVideoTrouble(`fallback triggered (${reason})`);
     if (urlIndex + 1 < candidates.length) {
       setUrlIndex((i) => i + 1);
       setHadError(false);
@@ -208,7 +244,7 @@ export default function VideoTile({
   useEffect(() => {
     if (!play || !currentUrl || hasStarted) return;
     const t = setTimeout(() => {
-      if (!hasStarted) tryFallback();
+      if (!hasStarted) tryFallback('watchdog timer');
     }, 3500);
     return () => clearTimeout(t);
   }, [play, currentUrl, hasStarted, urlIndex, candidates.length]);
@@ -258,13 +294,13 @@ export default function VideoTile({
           if (loadTimeout.current) clearTimeout(loadTimeout.current);
           loadTimeout.current = setTimeout(() => {
             if (!playbackReady) {
-              tryFallback();
+              tryFallback('load timeout');
             }
           }, 3000);
         }}
           onError={(e) => {
             console.log('video error', e);
-            const switched = tryFallback();
+            const switched = tryFallback('playback error');
             if (!switched) {
               setIsBuffering(false);
               setShowPoster(true);
@@ -307,7 +343,7 @@ export default function VideoTile({
         </Pressable>
       )}
 
-      {(isBuffering || (play && !playbackReady)) && (
+      {showPoster && (
         <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', zIndex: 3 }}>
           <ActivityIndicator color="#fff" />
         </View>

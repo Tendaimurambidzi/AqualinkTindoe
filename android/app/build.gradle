@@ -80,7 +80,7 @@ android {
 
     namespace "com.drift"
     defaultConfig {
-        applicationId "net.castanet.drift"
+        applicationId "com.aqualink.tindo"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 11
