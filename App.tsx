@@ -7384,17 +7384,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.dolphinIcon}>🐋</Text>
                   <Text style={styles.topLabel}>MAKE WAVES</Text>
                 </Pressable>
-                <Pressable
-                  style={styles.topItem}
-                  onPress={withUi(() =>
-                    navigation.navigate('CreatePost', {
-                      onPostPublished: handlePostPublished,
-                    }),
-                  )}
-                >
-                  <Text style={styles.dolphinIcon}>dY+></Text>
-                  <Text style={styles.topLabel}>CREATE POST</Text>
-                </Pressable>
                 {/* PINGS */}
                 <Pressable
                   style={styles.topItem}
