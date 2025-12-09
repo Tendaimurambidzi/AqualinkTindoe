@@ -3915,42 +3915,47 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .orderBy('createdAt', 'desc')
           .limit(50)
           .onSnapshot(async (snap: any) => {
-            const docs = (snap?.docs || []).slice();
-            const out: Wave[] = [];
-            for (const d of docs) {
-              const data = d.data() || {};
-              const id = d.id;
-              const caption = data?.text || '';
-              const cap = data?.caption || { x: 0, y: 0 };
-              const authorName = data?.authorName || null;
-              let playbackUrl: string | null =
-                data?.playbackUrl || data?.mediaUrl || null;
-              let mediaUri: string | null = null;
-              if (!playbackUrl && storageMod && data?.mediaPath) {
-                try {
-                  mediaUri = await storageMod()
-                    .ref(String(data.mediaPath))
-                    .getDownloadURL();
-                } catch {}
-              }
-              // Show all waves in public feed (my waves and other users' waves)
-              const finalUri = playbackUrl || mediaUri;
-              if (!finalUri) continue;
-              out.push({
-                id: id,
-                media: { uri: finalUri } as any,
-                audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-                captionText: caption,
-                captionPosition: {
-                  x: Number(cap?.x) || 0,
-                  y: Number(cap?.y) || 0,
-                },
-                playbackUrl: playbackUrl,
-                muxStatus: (data?.muxStatus || null) as any,
-                authorName,
-                ownerUid: (data?.ownerUid || data?.authorId || null) as any,
-              });
+          const docs = (snap?.docs || []).slice();
+          const out: Wave[] = [];
+          for (const d of docs) {
+            const data = d.data() || {};
+            const id = d.id;
+            const cap = data?.caption || { x: 0, y: 0 };
+            const authorName = data?.authorName || null;
+            let playbackUrl: string | null =
+              data?.playbackUrl || data?.mediaUrl || null;
+            let mediaUri: string | null = null;
+            if (!playbackUrl && storageMod && data?.mediaPath) {
+              try {
+                mediaUri = await storageMod()
+                  .ref(String(data.mediaPath))
+                  .getDownloadURL();
+              } catch {}
             }
+            const finalUri = playbackUrl || mediaUri;
+            const captionTextRaw =
+              String(data?.text || data?.captionText || data?.caption?.text || '')
+                .trim();
+            const captionText = captionTextRaw;
+            const hasMedia = Boolean(finalUri);
+            const hasText = captionText.length > 0;
+            const audioUrl = data?.audioUrl ? String(data.audioUrl) : null;
+            if (!hasMedia && !hasText && !audioUrl) continue;
+            out.push({
+              id: id,
+              media: hasMedia ? ({ uri: finalUri } as Asset) : null,
+              audio: audioUrl ? { uri: audioUrl } : null,
+              captionText,
+              captionPosition: {
+                x: Number(cap?.x) || 0,
+                y: Number(cap?.y) || 0,
+              },
+              playbackUrl: playbackUrl,
+              muxStatus: (data?.muxStatus || null) as any,
+              authorName,
+              ownerUid: (data?.ownerUid || data?.authorId || null) as any,
+            });
+          }
             if (!cancelled) {
               const myUid = auth?.()?.currentUser?.uid;
               const myWavesInPublic = out.filter(w => w.ownerUid === myUid);
@@ -6983,7 +6988,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           source={{
                             uri: String(
                               isOffline && item.media?.uri
-                                ? item.media.uri
+                                ? item.media?.uri
                                 : item.playbackUrl,
                             ),
                           }}
@@ -7058,7 +7063,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <>
                           <RNVideo
                             key={`vid-${waveKey}-${item.id}`}
-                          source={{ uri: String(item.media.uri) }}
+                          source={{ uri: String(item.media?.uri) }}
                           style={videoStyleFor(item.id) as any}
                           resizeMode={'contain'}
                             repeat={true}
@@ -7075,7 +7080,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             useTextureView={useTextureForVideo}
                             progressUpdateInterval={750}
-                            poster={String(item.media.uri || item.playbackUrl)}
+                            poster={String(item.media?.uri || item.playbackUrl)}
                             posterResizeMode={'cover'}
                             muted={!!item.audio?.uri}
                             disableFocus={true}
@@ -7169,11 +7174,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     ) : (
                       <>
                         <Image
-                          source={{ uri: item.media.uri }}
-                          style={[
-                            ...(videoStyleFor(item.id) as any),
-                            { resizeMode: 'cover' },
-                          ]}
+                          source={{ uri: item.media?.uri }}
+                            style={[
+                              ...(videoStyleFor(item.id) as any),
+                              { resizeMode: 'cover' },
+                            ]}
                         />
                         {RNVideo && item.audio?.uri && (
                           <RNVideo
