@@ -110,6 +110,7 @@ import {
   joinCrew,
   leaveCrew,
 } from './src/services/crewService';
+import { uploadPost } from './src/services/uploadPost';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 
 
@@ -141,17 +142,20 @@ const FORCE_SIGN_OUT_ON_START = false;
 const STATS_OVERLAY_HEIGHT = 220;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const TEXT_STORY_PLACEHOLDER =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAF/wJ+XmYjAAAAAElFTkSuQmCC';
 
 type Wave = {
   id: string;
-  media: Asset;
-  audio: { uri: string; name?: string } | null;
+  media?: Asset | null;
+  audio?: { uri: string; name?: string } | null;
   captionText: string;
   captionPosition: { x: number; y: number };
   playbackUrl?: string | null; // server-muxed single stream
   muxStatus?: 'pending' | 'ready' | 'failed';
   authorName?: string | null; // display handle (e.g., "/Tindoe")
   ownerUid?: string | null; // creator uid (for self-display as /You)
+  image?: string | null;
 };
 
 type SearchResult = {
@@ -632,6 +636,43 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  textComposerContainer: {
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    marginBottom: 12,
+  },
+  textComposerInput: {
+    minHeight: 90,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: 'white',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  textComposerButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  textComposerButton: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  textComposerButtonText: {
+    color: 'white',
+    fontWeight: '700',
   },
   bridgeSettingButton: {
     padding: 12,
@@ -1591,11 +1632,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, [myUid, normalizeUserHandle]);
   const [wavesFeed, setWavesFeed] = useState<Wave[]>([]);
+  const [postFeed, setPostFeed] = useState<Wave[]>([]);
   // Public feed toggle and data
 
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
+  const handlePostPublished = useCallback(
+    (wave: Wave) => {
+      setPostFeed(prev => {
+        if (prev.some(w => w.id === wave.id)) return prev;
+        return [wave, ...prev];
+      });
+      setWavesFeed(prev => {
+        if (prev.some(w => w.id === wave.id)) return prev;
+        return [wave, ...prev];
+      });
+      setCurrentIndex(0);
+      setWaveKey(Date.now());
+      try {
+        feedRef.current?.scrollTo({ y: 0, animated: true });
+      } catch {}
+    },
+    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setWavesFeed],
+  );
 
   const [showPublicFeed, setShowPublicFeed] = useState<boolean>(true);
   const [publicFeed, setPublicFeed] = useState<Wave[]>([]);
@@ -1604,6 +1664,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showProfile, setShowProfile] = useState<boolean>(false);
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
+  const [showTextComposer, setShowTextComposer] = useState<boolean>(false);
+  const [textComposerText, setTextComposerText] = useState<string>('');
+  const [isTextStorySending, setIsTextStorySending] =
+    useState<boolean>(false);
   const [showPings, setShowPings] = useState<boolean>(false);
   const [showExplore, setShowExplore] = useState<boolean>(false);
   const [showNotice, setShowNotice] = useState<boolean>(false);
@@ -1728,6 +1792,58 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     (msg: string) => showToast('negative', msg),
     [showToast],
   );
+
+  const handleSendTextStory = useCallback(async () => {
+    const trimmed = textComposerText.trim();
+    if (!trimmed) {
+      Alert.alert('Share a story', 'Write something before sending.');
+      return;
+    }
+    setIsTextStorySending(true);
+    try {
+      const result = await uploadPost({ caption: trimmed });
+      try {
+        const ownerUid = auth?.()?.currentUser?.uid || null;
+        const author =
+          profileName ||
+          accountCreationHandle ||
+          auth?.()?.currentUser?.displayName ||
+          null;
+        const placeholderMedia: Asset = {
+          uri: TEXT_STORY_PLACEHOLDER,
+          type: 'image/png',
+        };
+        handlePostPublished({
+          id: result.id,
+          media: placeholderMedia,
+          audio: null,
+          captionText: trimmed,
+          captionPosition: { x: 0, y: 0 },
+          playbackUrl: result.mediaUrl || null,
+          muxStatus: null,
+          authorName: author,
+          ownerUid,
+        });
+      } catch (callbackErr) {
+        console.warn('Text story callback failed', callbackErr);
+      }
+      notifySuccess('Story sent!');
+      setShowTextComposer(false);
+      setTextComposerText('');
+    } catch (e) {
+      console.warn('Text story upload failed', e);
+      notifyError('Could not send your story right now.');
+    } finally {
+      setIsTextStorySending(false);
+    }
+  }, [
+    accountCreationHandle,
+    handlePostPublished,
+    notifyError,
+    notifySuccess,
+    profileName,
+    textComposerText,
+  ]);
 
   // Ocean Dialog helper
   const showOceanDialog = useCallback(
@@ -3044,15 +3160,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Use selected feed for rendering, filtering out blocked and removed users
   const displayFeed = useMemo(() => {
     const baseFeed = showPublicFeed ? publicFeed : wavesFeed;
-    return baseFeed.filter(wave => {
+    const combined = [...postFeed, ...baseFeed];
+    const seen = new Set<string>();
+    return combined.filter(wave => {
+      if (!wave || !wave.id) return false;
+      if (seen.has(wave.id)) return false;
+      seen.add(wave.id);
       const ownerUid = wave.ownerUid || (wave as any).authorId;
-      if (!ownerUid) return true; // Keep waves without owner info
-      // Filter out blocked and removed users
+      if (!ownerUid) return true;
       if (blockedUsers.has(ownerUid)) return false;
       if (removedUsers.has(ownerUid)) return false;
       return true;
     });
-  }, [showPublicFeed, publicFeed, wavesFeed, blockedUsers, removedUsers]);
+  }, [
+    showPublicFeed,
+    publicFeed,
+    wavesFeed,
+    blockedUsers,
+    removedUsers,
+    postFeed,
+  ]);
   // Deduplicate my waves to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -3590,6 +3717,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Resume playback when Make Waves modal closes
   useEffect(() => {
     if (!showMakeWaves) setIsPaused(false);
+  }, [showMakeWaves]);
+
+  useEffect(() => {
+    if (!showMakeWaves) {
+      setShowTextComposer(false);
+      setTextComposerText('');
+    }
   }, [showMakeWaves]);
 
   // Reset overlay ready flags when switching waves or refreshing the feed
@@ -7252,7 +7386,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 </Pressable>
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => navigation.navigate('CreatePost'))}
+                  onPress={withUi(() =>
+                    navigation.navigate('CreatePost', {
+                      onPostPublished: handlePostPublished,
+                    }),
+                  )}
                 >
                   <Text style={styles.dolphinIcon}>dY+></Text>
                   <Text style={styles.topLabel}>CREATE POST</Text>
@@ -8203,6 +8341,48 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Make Waves</Text>
               <ScrollView>
+                <Pressable style={styles.logbookAction} onPress={() => setShowTextComposer(true)}>
+                  <Text style={styles.logbookActionText}>Say Something</Text>
+                </Pressable>
+                {showTextComposer && (
+                  <View style={styles.textComposerContainer}>
+                    <TextInput
+                      placeholder="Share a quick story..."
+                      placeholderTextColor="rgba(255,255,255,0.6)"
+                      value={textComposerText}
+                      onChangeText={setTextComposerText}
+                      style={styles.textComposerInput}
+                      multiline
+                      numberOfLines={4}
+                      textAlignVertical="top"
+                    />
+                    <View style={styles.textComposerButtonRow}>
+                      <Pressable
+                        style={styles.textComposerButton}
+                        onPress={() => {
+                          setShowTextComposer(false);
+                          setTextComposerText('');
+                        }}
+                      >
+                        <Text style={styles.textComposerButtonText}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.textComposerButton,
+                          { backgroundColor: '#00C2FF' },
+                        ]}
+                        onPress={handleSendTextStory}
+                        disabled={isTextStorySending}
+                      >
+                        {isTextStorySending ? (
+                          <ActivityIndicator color="white" />
+                        ) : (
+                          <Text style={styles.textComposerButtonText}>Send</Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  </View>
+                )}
                 <Pressable style={styles.logbookAction} onPress={openCamera}>
                   <Text style={styles.logbookActionText}>📷 Open Camera</Text>
                 </Pressable>

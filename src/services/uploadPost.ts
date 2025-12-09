@@ -3,7 +3,6 @@ import storage from '@react-native-firebase/storage';
 import firestore from '@react-native-firebase/firestore';
 import auth from '@react-native-firebase/auth';
 import { Platform } from 'react-native';
-import RNFS from 'react-native-fs';
 
 export interface SimpleMedia {
   uri: string;
@@ -15,6 +14,19 @@ interface UploadPostParams {
   media?: SimpleMedia | null;
   caption: string;
 }
+
+let RNFS: typeof import('react-native-fs') | null = null;
+const resolveRNFS = () => {
+  if (RNFS) return RNFS;
+  try {
+    // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+    RNFS = require('react-native-fs');
+  } catch (err) {
+    console.warn('react-native-fs is unavailable in uploadPost:', err?.message || err);
+    RNFS = null;
+  }
+  return RNFS;
+};
 
 /**
  * uploadPost
@@ -70,11 +82,17 @@ export async function uploadPost({ media, caption }: UploadPostParams) {
     }
 
     if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+      const rnfs = resolveRNFS();
+      if (!rnfs) {
+        throw new Error(
+          'react-native-fs is required to upload content:// media on Android.',
+        );
+      }
       const safeExt = (
         ext || (type.startsWith('video/') ? 'mp4' : 'dat')
       ).replace(/[^A-Za-z0-9]/g, '');
-      const copyDest = `${RNFS.CachesDirectoryPath}/post_${Date.now()}.${safeExt}`;
-      await RNFS.copyFile(String(mediaUri), copyDest);
+      const copyDest = `${rnfs.CachesDirectoryPath}/post_${Date.now()}.${safeExt}`;
+      await rnfs.copyFile(String(mediaUri), copyDest);
       localPath = copyDest;
     }
 
@@ -96,16 +114,17 @@ export async function uploadPost({ media, caption }: UploadPostParams) {
     mediaType = type || mediaType;
   }
 
-  const docRef = await firestore().collection('posts').add({
+  const docRef = await firestore().collection('waves').add({
     ownerUid: uid,
     authorId: uid,
     authorName: a.currentUser?.displayName || null,
-    caption,
+    text: caption, // waves use 'text' for caption
     mediaUrl,
     mediaPath,
     mediaType,
     createdAt: firestore.FieldValue.serverTimestamp(),
-    // You can add more fields: likesCount, commentsCount, etc.
+    // Add default caption position
+    caption: { x: 0, y: 0 },
   });
 
   return { id: docRef.id, mediaUrl };

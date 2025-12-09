@@ -11,9 +11,10 @@ import {
   StyleSheet,
   Pressable,
 } from 'react-native';
-import { launchImageLibrary } from 'react-native-image-picker';
+import { launchImageLibrary, Asset } from 'react-native-image-picker';
 import { uploadPost } from '../services/uploadPost';
 import type { SimpleMedia } from '../services/uploadPost';
+import auth from '@react-native-firebase/auth';
 
 const mediaEditorItems = [
   { id: 'music', icon: 'dYZæ', label: 'Music' },
@@ -23,10 +24,12 @@ const mediaEditorItems = [
   { id: 'comment', icon: 'dY\'ª', label: 'Comment' },
 ];
 
-const CreatePostScreen = ({ navigation }: any) => {
+const CreatePostScreen = ({ navigation, route }: any) => {
   const [caption, setCaption] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<SimpleMedia | null>(null);
   const [uploading, setUploading] = useState(false);
+  const onPostPublished: ((wave: any) => void) | undefined =
+    route?.params?.onPostPublished;
 
   const handlePickMedia = () => {
     launchImageLibrary(
@@ -53,7 +56,8 @@ const CreatePostScreen = ({ navigation }: any) => {
   };
 
   const handleUpload = async () => {
-    if (!selectedMedia && !caption.trim()) {
+    const trimmedCaption = caption.trim();
+    if (!selectedMedia && !trimmedCaption) {
       Alert.alert(
         'Missing content',
         'Pick a photo/video or write something before posting.',
@@ -61,12 +65,39 @@ const CreatePostScreen = ({ navigation }: any) => {
       return;
     }
 
+    const selected = selectedMedia;
+
     try {
       setUploading(true);
-      await uploadPost({
-        media: selectedMedia ?? undefined,
-        caption: caption.trim(),
+      const result = await uploadPost({
+        media: selected ?? undefined,
+        caption: trimmedCaption,
       });
+
+      const waveUri = result.mediaUrl || selected?.uri;
+      if (waveUri && onPostPublished) {
+        const asset: Asset = {
+          uri: waveUri,
+          type: selected?.type || 'video/mp4',
+          fileName: selected?.fileName || undefined,
+        };
+        try {
+          onPostPublished({
+            id: result.id,
+            media: asset,
+            audio: null,
+            captionText: trimmedCaption,
+            captionPosition: { x: 0, y: 0 },
+            playbackUrl: result.mediaUrl,
+            muxStatus: null,
+            authorName: auth().currentUser?.displayName || null,
+            ownerUid: auth().currentUser?.uid || null,
+          });
+        } catch (callbackError) {
+          console.warn('Post feed callback failed', callbackError);
+        }
+      }
+
       setUploading(false);
       setCaption('');
       setSelectedMedia(null);
