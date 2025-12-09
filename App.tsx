@@ -408,6 +408,34 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: -1, height: 1 },
     textShadowRadius: 10,
   },
+  textOnlyPostContainer: {
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 40,
+  },
+  textOnlyPostCard: {
+    width: '100%',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  textOnlyPostMessage: {
+    color: 'white',
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 32,
+  },
   mediaTitleBar: {
     position: 'absolute',
     top: 8,
@@ -1593,6 +1621,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const [showPublicFeed, setShowPublicFeed] = useState<boolean>(true);
   const [publicFeed, setPublicFeed] = useState<Wave[]>([]);
+  const [postFeed, setPostFeed] = useState<Wave[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
 
   const [showProfile, setShowProfile] = useState<boolean>(false);
@@ -3037,16 +3066,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
   // Use selected feed for rendering, filtering out blocked and removed users
   const displayFeed = useMemo(() => {
-    const baseFeed = showPublicFeed ? publicFeed : wavesFeed;
+    const uid = user?.uid || auth?.()?.currentUser?.uid || null;
+    const postsForMine = uid ? postFeed.filter(p => p.ownerUid === uid) : [];
+    const postsForPublic = uid ? postFeed.filter(p => p.ownerUid !== uid) : postFeed;
+    const baseFeed = showPublicFeed
+      ? [...postsForPublic, ...publicFeed]
+      : [...postsForMine, ...wavesFeed];
     return baseFeed.filter(wave => {
       const ownerUid = wave.ownerUid || (wave as any).authorId;
       if (!ownerUid) return true; // Keep waves without owner info
-      // Filter out blocked and removed users
       if (blockedUsers.has(ownerUid)) return false;
       if (removedUsers.has(ownerUid)) return false;
       return true;
     });
-  }, [showPublicFeed, publicFeed, wavesFeed, blockedUsers, removedUsers]);
+  }, [
+    showPublicFeed,
+    publicFeed,
+    wavesFeed,
+    blockedUsers,
+    removedUsers,
+    postFeed,
+    user?.uid,
+  ]);
   // Deduplicate my waves to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -3835,6 +3876,65 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, [showPublicFeed]);
+
+  useEffect(() => {
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) return;
+
+    const guessTypeFromUrl = (url: string) => {
+      const lower = String(url || '').toLowerCase();
+      if (lower.includes('.mp4')) return 'video/mp4';
+      if (lower.includes('.mov')) return 'video/quicktime';
+      if (lower.includes('.webm')) return 'video/webm';
+      if (lower.includes('.png')) return 'image/png';
+      if (lower.includes('.gif')) return 'image/gif';
+      if (lower.includes('.jpg') || lower.includes('.jpeg')) return 'image/jpeg';
+      return 'video/mp4';
+    };
+
+    let cancelled = false;
+    const unsub = firestoreMod()
+      .collection('posts')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .onSnapshot(
+        snapshot => {
+          if (cancelled) return;
+          const posts = (snapshot?.docs || []).map((doc: any) => {
+            const data = doc?.data() || {};
+            const mediaUrl = String(data?.mediaUrl || '');
+            const hasMedia = Boolean(mediaUrl);
+            const assetUri = hasMedia ? mediaUrl : '';
+            return {
+              id: doc.id,
+              media: {
+                uri: assetUri,
+                type: data?.mediaType || guessTypeFromUrl(assetUri),
+              } as Asset,
+              audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
+              captionText: String(data?.caption || ''),
+              captionPosition: { x: 0, y: 0 },
+              playbackUrl: hasMedia ? mediaUrl : null,
+              muxStatus: (data?.muxStatus || null) as any,
+              authorName: data?.authorName || null,
+              ownerUid: data?.ownerUid || data?.authorId || null,
+            } as Wave;
+          });
+          setPostFeed(posts);
+        },
+        () => {},
+      );
+
+    return () => {
+      cancelled = true;
+      try {
+        unsub && unsub();
+      } catch {}
+    };
+  }, []);
 
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
@@ -6786,6 +6886,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   (overlayVideoReady && overlayState.audio === true);
                 const playSynced = shouldPlay && overlayPairReady;
                 const near = Math.abs(index - currentIndex) <= 1;
+                const mediaUri = String(item.media?.uri || '');
+                const hasMediaUri = mediaUri.length > 0;
+                const textOnlyStory =
+                  !item.playbackUrl &&
+                  !isVideoAsset(item.media) &&
+                  !hasMediaUri;
+                const hasVideoStream =
+                  !!RNVideo &&
+                  near &&
+                  (item.playbackUrl || isVideoAsset(item.media)) &&
+                  !(videoErrorMap || {})[item.id];
                 return (
                   <View
                     key={item.id}
@@ -6829,18 +6940,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     >
                       <Text style={styles.waveOptionsButtonText}>⋮</Text>
                     </Pressable>
-                    {!!RNVideo &&
-                    near &&
-                    (item.playbackUrl || isVideoAsset(item.media)) &&
-                    !(videoErrorMap || {})[item.id] ? (
+                    {hasVideoStream ? (
                       item.playbackUrl ? (
-                        // Single stream: server-muxed URL
                         <RNVideo
                           key={`mux-${waveKey}-${item.id}`}
                           source={{
                             uri: String(
-                              isOffline && item.media?.uri
-                                ? item.media.uri
+                              isOffline && hasMediaUri
+                                ? mediaUri
                                 : item.playbackUrl,
                             ),
                           }}
@@ -6860,7 +6967,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           }}
                           useTextureView={useTextureForVideo}
                           progressUpdateInterval={750}
-                          poster={String(item.media?.uri || item.playbackUrl)}
+                          poster={String(
+                            hasMediaUri ? mediaUri : item.playbackUrl,
+                          )}
                           posterResizeMode={'cover'}
                           disableFocus={true}
                           playInBackground={false}
@@ -6911,13 +7020,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           }}
                         />
                       ) : (
-                        // Fallback: separate video + hidden audio when an overlay audio is present
                         <>
                           <RNVideo
                             key={`vid-${waveKey}-${item.id}`}
-                          source={{ uri: String(item.media.uri) }}
-                          style={videoStyleFor(item.id) as any}
-                          resizeMode={'contain'}
+                            source={{ uri: String(mediaUri) }}
+                            style={videoStyleFor(item.id) as any}
+                            resizeMode={'contain'}
                             repeat={true}
                             paused={
                               (!isWifi && bridge.autoplayCellular === 'off') ||
@@ -6932,7 +7040,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             useTextureView={useTextureForVideo}
                             progressUpdateInterval={750}
-                            poster={String(item.media.uri || item.playbackUrl)}
+                            poster={String(mediaUri || item.playbackUrl)}
                             posterResizeMode={'cover'}
                             muted={!!item.audio?.uri}
                             disableFocus={true}
@@ -7023,10 +7131,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           )}
                         </>
                       )
+                    ) : textOnlyStory ? (
+                      <View style={styles.textOnlyPostContainer}>
+                        <View style={styles.textOnlyPostCard}>
+                          <Text style={styles.textOnlyPostMessage}>
+                            {item.captionText?.trim() ||
+                              'A new story has arrived.'}
+                          </Text>
+                        </View>
+                      </View>
                     ) : (
                       <>
                         <Image
-                          source={{ uri: item.media.uri }}
+                          source={{ uri: mediaUri }}
                           style={[
                             ...(videoStyleFor(item.id) as any),
                             { resizeMode: 'cover' },
