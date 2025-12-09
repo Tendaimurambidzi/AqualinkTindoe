@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-	<string>Drift</string>
+	<string>Aqualink</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -35,9 +35,9 @@
 		<true/>
 	</dict>
 	<key>NSCameraUsageDescription</key>
-	<string>Drift needs camera access to go live and record waves.</string>
+	<string>Aqualink needs camera access to go live and record waves.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Drift needs microphone access to stream audio while live.</string>
+	<string>Aqualink needs microphone access to stream audio while live.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string></string>
 	<key>UILaunchStoryboardName</key>

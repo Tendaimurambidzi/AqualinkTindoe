@@ -51,7 +51,7 @@ import React, {
   useCallback,
 } from 'react';
 import ErrorBoundary from './src/components/ErrorBoundary';
-import { NavigationContainer, useIsFocused } from '@react-navigation/native';
+import { NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import { Suspense, lazy } from 'react';
@@ -109,6 +109,7 @@ import {
   joinCrew,
   leaveCrew,
 } from './src/services/crewService';
+import CreatePostScreen from './src/screens/CreatePostScreen';
 
 
 // Navigation stack shared across auth/app flows
@@ -1446,6 +1447,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return sub;
   }, []);
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   // Development safeguard (disabled): if you need to skip uploads in debug Android,
   // temporarily set this to: (__DEV__ && Platform.OS === 'android')
   const DEV_SKIP_STORAGE_UPLOAD = false;
@@ -7239,6 +7241,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 >
                   <Text style={styles.dolphinIcon}>🐋</Text>
                   <Text style={styles.topLabel}>MAKE WAVES</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.topItem}
+                  onPress={withUi(() => navigation.navigate('CreatePost'))}
+                >
+                  <Text style={styles.dolphinIcon}>dY+></Text>
+                  <Text style={styles.topLabel}>CREATE POST</Text>
                 </Pressable>
                 {/* PINGS */}
                 <Pressable
@@ -14502,6 +14511,7 @@ function AppStack() {
         component={WelcomeAnimationScreen}
       />
       <Stack.Screen name="AppHome" component={InnerApp} />
+      <Stack.Screen name="CreatePost" component={CreatePostScreen} />
     </Stack.Navigator>
   );
 }

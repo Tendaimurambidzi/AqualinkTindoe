@@ -1,4 +1,4 @@
-package com.drift
+package com.aqualink.tindo
 
 import android.app.Application
 import com.facebook.react.PackageList

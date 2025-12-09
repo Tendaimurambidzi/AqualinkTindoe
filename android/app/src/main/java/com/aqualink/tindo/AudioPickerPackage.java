@@ -1,4 +1,4 @@
-package com.drift;
+package com.aqualink.tindo;
 
 import com.facebook.react.ReactPackage;
 import com.facebook.react.bridge.NativeModule;

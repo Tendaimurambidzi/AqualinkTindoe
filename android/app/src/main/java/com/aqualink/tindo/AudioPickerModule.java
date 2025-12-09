@@ -1,4 +1,4 @@
-package com.drift;
+package com.aqualink.tindo;
 
 import android.app.Activity;
 import android.content.Intent;

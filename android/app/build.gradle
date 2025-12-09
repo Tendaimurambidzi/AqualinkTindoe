@@ -78,7 +78,7 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.drift"
+    namespace "com.aqualink.tindo"
     defaultConfig {
         applicationId "com.aqualink.tindo"
         minSdkVersion rootProject.ext.minSdkVersion
