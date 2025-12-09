@@ -319,7 +319,7 @@ const waveOptionMenu = [
 
 // ======================== STYLES ========================
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: 'black' },
+  root: { flex: 1, backgroundColor: '#87CEEB' },
   topStrip: {
     position: 'absolute',
     top: 0,
@@ -415,22 +415,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 20,
     paddingVertical: 40,
+    backgroundColor: '#87CEEB',
   },
   textOnlyPostCard: {
     width: '100%',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    borderColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(135,206,235,0.5)',
     padding: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
+    shadowOpacity: 0.35,
     shadowRadius: 8,
     elevation: 6,
   },
   textOnlyPostMessage: {
-    color: 'white',
+    color: '#002f5f',
     fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',

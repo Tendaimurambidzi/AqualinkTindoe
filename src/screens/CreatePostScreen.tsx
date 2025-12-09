@@ -160,12 +160,16 @@ const styles = StyleSheet.create({
   },
   mediaEditorItem: {
     alignItems: 'center',
-    paddingHorizontal: 10,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.4)',
     backgroundColor: 'rgba(0,0,0,0.35)',
+    flexShrink: 0,
+    minWidth: 0,
+    width: 'auto',
   },
   mediaEditorIcon: {
     fontSize: 20,
