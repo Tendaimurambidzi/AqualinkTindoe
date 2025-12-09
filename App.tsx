@@ -84,6 +84,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import EditableProfileAvatar from './EditableProfileAvatar';
 import ImageCropPicker from 'react-native-image-crop-picker';
 const { AudioPicker } = NativeModules;
@@ -318,15 +319,16 @@ const waveOptionMenu = [
 ];
 
 // ======================== STYLES ========================
+const NAVY_BLUE = '#001f3f';
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#87CEEB' },
+  root: { flex: 1, backgroundColor: 'black' },
   topStrip: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     paddingHorizontal: 0,
-    backgroundColor: 'rgba(0, 10, 25, 0.95)',
+    backgroundColor: NAVY_BLUE,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -385,11 +387,15 @@ const styles = StyleSheet.create({
 
   videoSpace: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'transparent',
+    backgroundColor: NAVY_BLUE,
     zIndex: 0,
     overflow: 'hidden',
   },
-  videoSpaceInner: { flex: 1, justifyContent: 'center', backgroundColor: 'transparent' },
+  videoSpaceInner: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: NAVY_BLUE,
+  },
   videoHint: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
   mediaPreview: { flex: 1, width: '100%', resizeMode: 'contain' },
   postedWaveContainer: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
@@ -407,35 +413,6 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: -1, height: 1 },
     textShadowRadius: 10,
-  },
-  textOnlyPostContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 40,
-    backgroundColor: '#87CEEB',
-  },
-  textOnlyPostCard: {
-    width: '100%',
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.9)',
-    backgroundColor: 'rgba(135,206,235,0.5)',
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  textOnlyPostMessage: {
-    color: '#002f5f',
-    fontSize: 22,
-    fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 32,
   },
   mediaTitleBar: {
     position: 'absolute',
@@ -1622,7 +1599,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const [showPublicFeed, setShowPublicFeed] = useState<boolean>(true);
   const [publicFeed, setPublicFeed] = useState<Wave[]>([]);
-  const [postFeed, setPostFeed] = useState<Wave[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
 
   const [showProfile, setShowProfile] = useState<boolean>(false);
@@ -1790,7 +1766,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowPublicFeed(prev => !prev);
         setCurrentIndex(0);
         try {
-          feedRef.current?.scrollTo({ y: 0, animated: false });
+          feedRef.current?.scrollTo({ x: 0, animated: false });
         } catch {}
         return true; // We've handled the back press
       }
@@ -3067,28 +3043,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
   // Use selected feed for rendering, filtering out blocked and removed users
   const displayFeed = useMemo(() => {
-    const uid = user?.uid || auth?.()?.currentUser?.uid || null;
-    const postsForMine = uid ? postFeed.filter(p => p.ownerUid === uid) : [];
-    const postsForPublic = uid ? postFeed.filter(p => p.ownerUid !== uid) : postFeed;
-    const baseFeed = showPublicFeed
-      ? [...postsForPublic, ...publicFeed]
-      : [...postsForMine, ...wavesFeed];
+    const baseFeed = showPublicFeed ? publicFeed : wavesFeed;
     return baseFeed.filter(wave => {
       const ownerUid = wave.ownerUid || (wave as any).authorId;
       if (!ownerUid) return true; // Keep waves without owner info
+      // Filter out blocked and removed users
       if (blockedUsers.has(ownerUid)) return false;
       if (removedUsers.has(ownerUid)) return false;
       return true;
     });
-  }, [
-    showPublicFeed,
-    publicFeed,
-    wavesFeed,
-    blockedUsers,
-    removedUsers,
-    postFeed,
-    user?.uid,
-  ]);
+  }, [showPublicFeed, publicFeed, wavesFeed, blockedUsers, removedUsers]);
   // Deduplicate my waves to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -3877,65 +3841,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, [showPublicFeed]);
-
-  useEffect(() => {
-    let firestoreMod: any = null;
-    try {
-      firestoreMod = require('@react-native-firebase/firestore').default;
-    } catch {}
-    if (!firestoreMod) return;
-
-    const guessTypeFromUrl = (url: string) => {
-      const lower = String(url || '').toLowerCase();
-      if (lower.includes('.mp4')) return 'video/mp4';
-      if (lower.includes('.mov')) return 'video/quicktime';
-      if (lower.includes('.webm')) return 'video/webm';
-      if (lower.includes('.png')) return 'image/png';
-      if (lower.includes('.gif')) return 'image/gif';
-      if (lower.includes('.jpg') || lower.includes('.jpeg')) return 'image/jpeg';
-      return 'video/mp4';
-    };
-
-    let cancelled = false;
-    const unsub = firestoreMod()
-      .collection('posts')
-      .orderBy('createdAt', 'desc')
-      .limit(50)
-      .onSnapshot(
-        snapshot => {
-          if (cancelled) return;
-          const posts = (snapshot?.docs || []).map((doc: any) => {
-            const data = doc?.data() || {};
-            const mediaUrl = String(data?.mediaUrl || '');
-            const hasMedia = Boolean(mediaUrl);
-            const assetUri = hasMedia ? mediaUrl : '';
-            return {
-              id: doc.id,
-              media: {
-                uri: assetUri,
-                type: data?.mediaType || guessTypeFromUrl(assetUri),
-              } as Asset,
-              audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-              captionText: String(data?.caption || ''),
-              captionPosition: { x: 0, y: 0 },
-              playbackUrl: hasMedia ? mediaUrl : null,
-              muxStatus: (data?.muxStatus || null) as any,
-              authorName: data?.authorName || null,
-              ownerUid: data?.ownerUid || data?.authorId || null,
-            } as Wave;
-          });
-          setPostFeed(posts);
-        },
-        () => {},
-      );
-
-    return () => {
-      cancelled = true;
-      try {
-        unsub && unsub();
-      } catch {}
-    };
-  }, []);
 
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
@@ -6620,7 +6525,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
       requestAnimationFrame(() => {
         try {
-          feedRef.current?.scrollTo({ y: 0, animated: false });
+          feedRef.current?.scrollTo({ x: 0, animated: false });
         } catch {}
       });
       // If we created a server doc, watch for mux completion updates
@@ -6887,19 +6792,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   (overlayVideoReady && overlayState.audio === true);
                 const playSynced = shouldPlay && overlayPairReady;
                 const near = Math.abs(index - currentIndex) <= 1;
-                const mediaUri = String(item.media?.uri || '');
-                const hasMediaUri = mediaUri.length > 0;
-                const textOnlyStory =
-                  !item.playbackUrl &&
-                  !isVideoAsset(item.media) &&
-                  !hasMediaUri;
-                const hasVideoStream =
-                  !!RNVideo &&
-                  near &&
-                  (item.playbackUrl || isVideoAsset(item.media)) &&
-                  !(videoErrorMap || {})[item.id];
+                const textOnlyStory = !item.media && !item.image;
+                const colors = textOnlyStory ? ['#B3E5FC', '#FFFFFF'] : ['#000000', '#000000'];
                 return (
-                  <View
+                  <LinearGradient
+                    colors={colors}
                     key={item.id}
                     style={[
                       styles.postedWaveContainer,
@@ -6941,14 +6838,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     >
                       <Text style={styles.waveOptionsButtonText}>⋮</Text>
                     </Pressable>
-                    {hasVideoStream ? (
+                    {!!RNVideo &&
+                    near &&
+                    (item.playbackUrl || isVideoAsset(item.media)) &&
+                    !(videoErrorMap || {})[item.id] ? (
                       item.playbackUrl ? (
+                        // Single stream: server-muxed URL
                         <RNVideo
                           key={`mux-${waveKey}-${item.id}`}
                           source={{
                             uri: String(
-                              isOffline && hasMediaUri
-                                ? mediaUri
+                              isOffline && item.media?.uri
+                                ? item.media.uri
                                 : item.playbackUrl,
                             ),
                           }}
@@ -6968,9 +6869,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           }}
                           useTextureView={useTextureForVideo}
                           progressUpdateInterval={750}
-                          poster={String(
-                            hasMediaUri ? mediaUri : item.playbackUrl,
-                          )}
+                          poster={String(item.media?.uri || item.playbackUrl)}
                           posterResizeMode={'cover'}
                           disableFocus={true}
                           playInBackground={false}
@@ -7021,12 +6920,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           }}
                         />
                       ) : (
+                        // Fallback: separate video + hidden audio when an overlay audio is present
                         <>
                           <RNVideo
                             key={`vid-${waveKey}-${item.id}`}
-                            source={{ uri: String(mediaUri) }}
-                            style={videoStyleFor(item.id) as any}
-                            resizeMode={'contain'}
+                          source={{ uri: String(item.media.uri) }}
+                          style={videoStyleFor(item.id) as any}
+                          resizeMode={'contain'}
                             repeat={true}
                             paused={
                               (!isWifi && bridge.autoplayCellular === 'off') ||
@@ -7041,7 +6941,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             useTextureView={useTextureForVideo}
                             progressUpdateInterval={750}
-                            poster={String(mediaUri || item.playbackUrl)}
+                            poster={String(item.media.uri || item.playbackUrl)}
                             posterResizeMode={'cover'}
                             muted={!!item.audio?.uri}
                             disableFocus={true}
@@ -7132,19 +7032,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           )}
                         </>
                       )
-                    ) : textOnlyStory ? (
-                      <View style={styles.textOnlyPostContainer}>
-                        <View style={styles.textOnlyPostCard}>
-                          <Text style={styles.textOnlyPostMessage}>
-                            {item.captionText?.trim() ||
-                              'A new story has arrived.'}
-                          </Text>
-                        </View>
-                      </View>
                     ) : (
                       <>
                         <Image
-                          source={{ uri: mediaUri }}
+                          source={{ uri: item.media.uri }}
                           style={[
                             ...(videoStyleFor(item.id) as any),
                             { resizeMode: 'cover' },
@@ -7257,7 +7148,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </View>
                       )}
                     </Pressable>
-                  </View>
+                  </LinearGradient>
                 );
               })}
             </Animated.ScrollView>
@@ -7309,7 +7200,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             {
               paddingTop: (insets.top || 0) + 8,
               paddingBottom: 4,
-              backgroundColor: isTopBarExpanded ? 'black' : 'transparent',
+              backgroundColor: NAVY_BLUE,
             },
           ]}
         >
@@ -7336,7 +7227,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowPublicFeed(p => !p);
                     setCurrentIndex(0);
                     try {
-                      feedRef.current?.scrollTo({ y: 0, animated: false });
+                      feedRef.current?.scrollTo({ x: 0, animated: false });
                     } catch {}
                   })}
                 >
@@ -7530,12 +7421,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         <View
           style={[
             styles.bottomBarContainer,
-            {
-              paddingBottom: insets.bottom || 8,
-              backgroundColor: isBottomBarExpanded
-                ? 'rgba(0,0,0,0.5)'
-                : 'transparent',
-            },
+          {
+            paddingBottom: insets.bottom || 8,
+            backgroundColor: NAVY_BLUE,
+          },
           ]}
           onLayout={e => setBottomBarHeight(e.nativeEvent.layout.height)}
         >
@@ -8132,9 +8021,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             setCurrentIndex(idx);
                             setWaveKey(Date.now());
                             requestAnimationFrame(() => {
-                              const height = SCREEN_HEIGHT;
+                              const width = SCREEN_WIDTH;
                               feedRef.current?.scrollTo?.({
-                                y: idx * height,
+                                x: idx * width,
                                 animated: false,
                               });
                             });
@@ -8161,9 +8050,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               setCurrentIndex(idx);
                               setWaveKey(Date.now());
                               requestAnimationFrame(() => {
-                                const height = SCREEN_HEIGHT;
+                                const width = SCREEN_WIDTH;
                                 feedRef.current?.scrollTo?.({
-                                  y: idx * height,
+                                  x: idx * width,
                                   animated: false,
                                 });
                               });
