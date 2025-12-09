@@ -1760,7 +1760,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowPublicFeed(prev => !prev);
         setCurrentIndex(0);
         try {
-          feedRef.current?.scrollTo({ x: 0, animated: false });
+          feedRef.current?.scrollTo({ y: 0, animated: false });
         } catch {}
         return true; // We've handled the back press
       }
@@ -3391,7 +3391,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isTopBarExpanded, setIsTopBarExpanded] = useState(false);
   const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
-  const dragStartXRef = useRef(0);
+  const dragStartYRef = useRef(0);
   const dragStartTimeRef = useRef(0);
   const touchStartRef = useRef(0);
 
@@ -6519,7 +6519,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
       requestAnimationFrame(() => {
         try {
-          feedRef.current?.scrollTo({ x: 0, animated: false });
+          feedRef.current?.scrollTo({ y: 0, animated: false });
         } catch {}
       });
       // If we created a server doc, watch for mux completion updates
@@ -6682,19 +6682,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Animated.ScrollView
               ref={feedRef}
               style={{ flex: 1 }}
-              horizontal
               pagingEnabled
-              snapToInterval={SCREEN_WIDTH}
+              snapToInterval={SCREEN_HEIGHT}
               snapToAlignment="center"
               disableIntervalMomentum={true}
               decelerationRate="fast"
               onTouchStart={() => showUiTemporarily()}
-              showsHorizontalScrollIndicator={false}
+              showsVerticalScrollIndicator={false}
               onScrollBeginDrag={e => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
                 try {
-                  dragStartXRef.current = e.nativeEvent.contentOffset.x;
+                  dragStartYRef.current = e.nativeEvent.contentOffset.y;
                   dragStartTimeRef.current = Date.now();
                 } catch {}
               }}
@@ -6706,33 +6705,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               onScrollEndDrag={e => {
                 // Make paging more sensitive: small, quick drags still change page
                 try {
-                  const endX = e.nativeEvent.contentOffset.x;
-                  const dx = endX - dragStartXRef.current;
-                  const width =
-                    e.nativeEvent.layoutMeasurement?.width || SCREEN_WIDTH;
-                  const threshold = width * 0.02; // 2% of width
-                  const velocityX = e.nativeEvent.velocity?.x ?? 0;
-                  const quickFlick = Math.abs(velocityX) > 0.1;
+                  const endY = e.nativeEvent.contentOffset.y;
+                  const dy = endY - dragStartYRef.current;
+                  const height =
+                    e.nativeEvent.layoutMeasurement?.height || SCREEN_HEIGHT;
+                  const threshold = height * 0.02; // 2% of height
+                  const velocityY = e.nativeEvent.velocity?.y ?? 0;
+                  const quickFlick = Math.abs(velocityY) > 0.1;
                   let target = currentIndex;
                   if (
-                    dx > threshold ||
-                    (dx > 1 &&
+                    dy > threshold ||
+                    (dy > 1 &&
                       quickFlick &&
-                      Math.abs(dx) / (Date.now() - dragStartTimeRef.current) >
+                      Math.abs(dy) / (Date.now() - dragStartTimeRef.current) >
                         0.1)
                   )
                     target = Math.min(currentIndex + 1, displayFeed.length - 1);
                   else if (
-                    dx < -threshold ||
-                    (dx < -1 &&
+                    dy < -threshold ||
+                    (dy < -1 &&
                       quickFlick &&
-                      Math.abs(dx) / (Date.now() - dragStartTimeRef.current) >
+                      Math.abs(dy) / (Date.now() - dragStartTimeRef.current) >
                         0.1)
                   )
                     target = Math.max(currentIndex - 1, 0);
                   if (target !== currentIndex) {
                     feedRef.current?.scrollTo({
-                      x: target * width,
+                      y: target * height,
                       animated: true,
                     });
                     setCurrentIndex(target);
@@ -6742,8 +6741,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               }}
               onMomentumScrollEnd={e => {
                 const page = Math.round(
-                  e.nativeEvent.contentOffset.x /
-                    e.nativeEvent.layoutMeasurement.width,
+                  e.nativeEvent.contentOffset.y /
+                    e.nativeEvent.layoutMeasurement.height,
                 );
                 setIsSwiping(false);
                 showUiTemporarily(); // Keep UI visible for a bit after swipe
@@ -6792,7 +6791,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     key={item.id}
                     style={[
                       styles.postedWaveContainer,
-                      { width: SCREEN_WIDTH },
+                      { height: SCREEN_HEIGHT, width: SCREEN_WIDTH },
                     ]}
                   >
                     {/* SPL Logo - left side opposite to 3-dot menu */}
@@ -7219,7 +7218,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowPublicFeed(p => !p);
                     setCurrentIndex(0);
                     try {
-                      feedRef.current?.scrollTo({ x: 0, animated: false });
+                      feedRef.current?.scrollTo({ y: 0, animated: false });
                     } catch {}
                   })}
                 >
@@ -8015,9 +8014,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             setCurrentIndex(idx);
                             setWaveKey(Date.now());
                             requestAnimationFrame(() => {
-                              const width = SCREEN_WIDTH;
+                              const height = SCREEN_HEIGHT;
                               feedRef.current?.scrollTo?.({
-                                x: idx * width,
+                                y: idx * height,
                                 animated: false,
                               });
                             });
@@ -8044,9 +8043,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               setCurrentIndex(idx);
                               setWaveKey(Date.now());
                               requestAnimationFrame(() => {
-                                const width = SCREEN_WIDTH;
+                                const height = SCREEN_HEIGHT;
                                 feedRef.current?.scrollTo?.({
-                                  x: idx * width,
+                                  y: idx * height,
                                   animated: false,
                                 });
                               });
