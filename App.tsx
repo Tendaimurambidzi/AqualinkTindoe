@@ -403,7 +403,7 @@ const styles = StyleSheet.create({
 
   videoSpace: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: NAVY_BLUE,
+    backgroundColor: '#f0f2f5',
     zIndex: 0,
     overflow: 'hidden',
   },
@@ -3019,11 +3019,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const videoStyleFor = useCallback(
     (id: string) => {
       const ar = videoAspectMap[id] || 9 / 16;
-      const height = Math.min(SCREEN_HEIGHT, SCREEN_WIDTH / ar);
+      const width = SCREEN_WIDTH - 40;
+      const height = width / ar;
       return [
         styles.postedWaveMedia,
         {
-          width: SCREEN_WIDTH,
+          width,
           height,
           alignSelf: 'center',
         },
@@ -6807,6 +6808,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </Animated.View>
       )}
+      {/* Facebook-like Header */}
+      <View style={{ height: 50, backgroundColor: '#4267B2', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
+        <Text style={{ color: 'white', fontSize: 20, fontWeight: 'bold' }}>facebook</Text>
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity style={{ marginLeft: 10 }}>
+          <Text style={{ color: 'white', fontSize: 18 }}>🔍</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={{ marginLeft: 10 }}>
+          <Text style={{ color: 'white', fontSize: 18 }}>💬</Text>
+        </TouchableOpacity>
+      </View>
       {/* This Pressable now controls both UI visibility and play/pause */}
       <Pressable
         style={styles.videoSpace}
@@ -6819,11 +6831,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }}
         delayPressIn={0}
       >
-        <View style={styles.videoSpaceInner}>
+        <View style={{ flex: 1 }}>
           {displayFeed.length > 0 ? (
             <Animated.ScrollView
               ref={feedRef}
-              style={{ flex: 1 }}
+              style={{ flex: 1, backgroundColor: '#f0f2f5' }}
               pagingEnabled={false}
               decelerationRate={0.85}
               scrollEventThrottle={16}
@@ -6831,18 +6843,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
-              }}
-              onMomentumScrollEnd={e => {
-                try {
-                  const offsetY = e.nativeEvent.contentOffset.y;
-                  const height = e.nativeEvent.layoutMeasurement.height || SCREEN_HEIGHT;
-                  const newIndex = Math.round(offsetY / height);
-                  if (newIndex !== currentIndex) {
-                    setCurrentIndex(newIndex);
-                    setWaveKey(Date.now());
-                  }
-                } catch {}
-                setIsSwiping(false);
               }}
             >
               {displayFeed.map((item, index) => {
@@ -6879,51 +6879,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
                 return (
-                  <Pressable onPress={() => navigation.navigate('PostDetail', { post: item })}>
-                    <LinearGradient
-                      colors={colors}
-                      key={item.id}
+                  <Pressable key={item.id} onPress={() => navigation.navigate('PostDetail', { post: item })}>
+                    <View
                       style={[
-                        styles.postedWaveContainer,
-                        textOnlyStory ? { minHeight: SCREEN_HEIGHT } : { flex: 1 },
-                        { width: SCREEN_WIDTH, borderBottomWidth: 2, borderBottomColor: 'navy' },
+                        { backgroundColor: 'white', margin: 10, borderRadius: 10, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
                       ]}
                     >
-                    {/* SPL Logo - left side opposite to 3-dot menu */}
-                    {myLogo && (
-                      <View
-                        style={{
-                          position: 'absolute',
-                          left: 14,
-                          top: 75,
-                          padding: 4,
-                          borderRadius: 999,
-                          backgroundColor: 'rgba(0,0,0,0.35)',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          overflow: 'hidden',
-                          zIndex: 45,
-                        }}
-                      >
-                        <Image
-                          source={myLogo}
-                          style={{
-                            width: 28,
-                            height: 28,
-                            borderRadius: 14,
-                            opacity: 0.9,
-                          }}
-                          resizeMode="contain"
-                        />
+                    {/* Post Header */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                      <Image source={{ uri: item.user?.avatar || 'https://via.placeholder.com/40' }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                      <View style={{ marginLeft: 10, flex: 1 }}>
+                        <Text style={{ fontWeight: 'bold' }}>{item.user?.name || 'User'}</Text>
+                        <Text style={{ color: 'gray', fontSize: 12 }}>{item.createdAt?.toDate?.().toLocaleString() || 'Just now'}</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => openWaveOptions(item)}>
+                        <Text style={{ fontSize: 18 }}>⋯</Text>
+                      </TouchableOpacity>
+                    </View>
+                    {/* Post Text */}
+                    {item.captionText && (
+                      <View style={{ marginBottom: 10 }}>
+                        <Text style={{ fontSize: 16, lineHeight: 20 }}>
+                          {expandedPosts[item.id]
+                            ? item.captionText
+                            : item.captionText.length > 150
+                            ? item.captionText.substring(0, 150) + '...'
+                            : item.captionText}
+                        </Text>
+                        {item.captionText.length > 150 && (
+                          <Pressable onPress={() => setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] })) } style={{ marginTop: 5 }}>
+                            <Text style={{ color: 'blue', fontSize: 14 }}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
+                          </Pressable>
+                        )}
+                        {item.link && <Text style={{ color: 'blue', marginTop: 5 }}>{item.link}</Text>}
                       </View>
                     )}
-                    <Pressable
-                      style={styles.waveOptionsButton}
-                      onPress={() => openWaveOptions(item)}
-                      hitSlop={10}
-                    >
-                      <Text style={styles.waveOptionsButtonText}>⋮</Text>
-                    </Pressable>
                     {!!RNVideo &&
                     (item.playbackUrl || isVideoAsset(item.media)) &&
                     !(videoErrorMap || {})[item.id] ? (
@@ -7180,110 +7170,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <ActivityIndicator size="large" color="#00C2FF" />
                       </View>
                     )}
-                    {textOnlyStory ? (
-                      <View style={{ flex: 1, padding: 20, justifyContent: 'center', alignItems: 'center' }}>
-                        {!!item.captionText && (
-                          <>
-                            <Text style={{ fontSize: 18, fontWeight: 'bold', color: 'black', textAlign: 'center' }}>
-                              {expandedPosts[item.id]
-                                ? item.captionText
-                                : item.captionText.length > 150
-                                ? item.captionText.substring(0, 150) + '...'
-                                : item.captionText}
-                            </Text>
-                            {item.captionText.length > 150 && (
-                              <Pressable
-                                onPress={() =>
-                                  setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] }))
-                                }
-                                style={{ marginTop: 10 }}
-                              >
-                                <Text style={{ fontSize: 16, color: 'blue', textAlign: 'center' }}>
-                                  {expandedPosts[item.id] ? 'Read Less' : 'Read More'}
-                                </Text>
-                              </Pressable>
-                            )}
-                          </>
-                        )}
-                        {!!item.link && (
-                          <Text style={{ fontSize: 16, color: 'blue', marginTop: 10, textAlign: 'center' }}>
-                            {item.link}
-                          </Text>
-                        )}
-                      </View>
-                    ) : (
-                      <>
-                        {!!item.captionText && (
-                          <Text
-                            style={[
-                              styles.postedWaveCaption,
-                              {
-                                transform: [
-                                  { translateX: item.captionPosition.x },
-                                  { translateY: item.captionPosition.y },
-                                ],
-                              },
-                            ]}
-                          >
-                            {item.captionText}
-                          </Text>
-                        )}
-                        {!!item.link && (
-                          <Text
-                            style={[
-                              styles.postedWaveCaption,
-                              {
-                                transform: [
-                                  { translateX: item.captionPosition.x },
-                                  { translateY: item.captionPosition.y + 20 }, // offset below caption
-                                ],
-                              },
-                            ]}
-                          >
-                            {item.link}
-                          </Text>
-                        )}
-                      </>
-                    )}
-                    {/* Play/Pause Button Overlay – center-only region to avoid conflict with outer tap-to-toggle */}
-                    <Pressable
-                      style={{
-                        position: 'absolute',
-                        left: SCREEN_WIDTH * 0.3,
-                        top: SCREEN_HEIGHT * 0.3,
-                        width: SCREEN_WIDTH * 0.4,
-                        height: SCREEN_HEIGHT * 0.4,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                      onPress={() => {
-                        setIsPaused(p => !p);
-                        showUiTemporarily();
-                      }}
-                    >
-                      {index === currentIndex && isPaused && (
-                        <View
-                          style={{
-                            flex: 1,
-                            backgroundColor: 'rgba(0,0,0,0.2)',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <Text
-                            style={{
-                              fontSize: 60,
-                              color: 'rgba(255,255,255,0.8)',
-                              textShadowColor: 'rgba(0,0,0,0.5)',
-                              textShadowRadius: 8,
-                            }}
-                          >
-                            ►
-                          </Text>
-                        </View>
-                      )}
-                    </Pressable>
-                  </LinearGradient>
+                    {/* Post Footer - Like, Comment, Share */}
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 }}>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ marginRight: 5 }}>👍</Text>
+                        <Text>Like</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ marginRight: 5 }}>💬</Text>
+                        <Text>Comment</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ marginRight: 5 }}>📤</Text>
+                        <Text>Share</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                   </Pressable>
                 );
               })}
