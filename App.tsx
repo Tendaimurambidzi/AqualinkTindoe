@@ -4574,7 +4574,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           if (currentWave.ownerUid && currentWave.ownerUid !== user.uid) {
             const userName = profileName || user.displayName || 'Someone';
             const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💧';
-            const splashText = splashType === 'octopus_hug' ? 'sent an octopus hug' : 'splashed';
+            const splashText = splashType === 'octopus_hug' ? 'sent an octopus hug' : 'glowed';
             // Always use the poster's name from the feed for notifications
             let posterName = '';
             const isOwnWave = currentWave.ownerUid === user.uid;
@@ -4606,7 +4606,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const message =
           splashType === 'octopus_hug'
             ? '🐙 Octopus hug sent! The wave is embraced with 8 arms'
-            : 'You have splashed the wave!';
+            : 'You have glowed the vibe!';
         notifySuccess(message);
         // Show octopus hug animation on screen
         // Octopus hug animation removed per user request; only show success message
@@ -4687,7 +4687,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .collection('pings')
           .add({
             type: 'echo',
-            message: `💬 ${userName} echoed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+            message: `💬 ${userName} reverbed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
             fromUid: auth?.()?.currentUser?.uid,
             fromName: userName,
             fromPhoto: profilePhoto || null,
@@ -4953,7 +4953,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             },
           );
 
-        // Check if current user has echoed this wave (with error fallback for index)
+        // Check if current user has reverbed this vibe (with error fallback for index)
         const handleMyEchoSnapshot = (querySnapshot: any) => {
           try {
             if (!querySnapshot || typeof querySnapshot.empty === 'undefined') {
@@ -6053,7 +6053,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         case 'echo': {
           const posterName = ping.wavePosterName || ping.wavePosterDisplayName || ping.posterName || ping.ownerName || ping.ownerDisplayName || '';
-          return `${actor} echoed ${posterName}'s wave`;
+          return `${actor} reverbed ${posterName}'s vibe`;
         }
         case 'follow':
           return `${actor} followed you`;
