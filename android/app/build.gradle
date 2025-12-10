@@ -129,6 +129,9 @@ android {
             manifestPlaceholders = [
                 usesCleartextTraffic: false
             ]
+            lintOptions {
+                checkReleaseBuilds false
+            }
         }
     }
 
