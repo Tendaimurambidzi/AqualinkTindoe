@@ -3136,7 +3136,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [displayFeed, dropWaveFromCache, isOffline, markBuffering],
   );
-  const [bottomBarHeight, setBottomBarHeight] = useState(60);
+  const [bottomBarHeight, setBottomBarHeight] = useState(0);
   // UI Visibility states
   const [isUiVisible, setIsUiVisible] = useState(false);
   const hideUiTimerRef = useRef<any>(null);
@@ -7170,19 +7170,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <ActivityIndicator size="large" color="#00C2FF" />
                       </View>
                     )}
-                    {/* Post Footer - Like, Comment, Share */}
+                    {/* Post Footer - Splashes, Echoes, Gems, Anchor vibe, Cast vibe, Placeholder */}
                     <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 }}>
                       <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={{ marginRight: 5 }}>👍</Text>
-                        <Text>Like</Text>
+                        <Text style={{ marginRight: 5 }}>💧</Text>
+                        <Text>Splashes</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={{ marginRight: 5 }}>💬</Text>
-                        <Text>Comment</Text>
+                        <Text style={{ marginRight: 5 }}>📣</Text>
+                        <Text>Echoes</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={{ marginRight: 5 }}>📤</Text>
-                        <Text>Share</Text>
+                        <Text style={{ marginRight: 5 }}>💎</Text>
+                        <Text>Gems</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ marginRight: 5 }}>⚓</Text>
+                        <Text>Anchor vibe</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ marginRight: 5 }}>📡</Text>
+                        <Text>Cast vibe</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <Text style={{ marginRight: 5 }}>🔮</Text>
+                        <Text>Placeholder</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -7231,17 +7243,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       </Pressable>
 
       {/* Top function bar with toggle */}
-      {isUiVisible && (
-        <View
-          style={[
-            styles.topStrip,
-            {
-              paddingTop: (insets.top || 0) + 8,
-              paddingBottom: 4,
-              backgroundColor: NAVY_BLUE,
-            },
-          ]}
-        >
+      <View
+        style={[
+          styles.topStrip,
+          {
+            paddingTop: (insets.top || 0) + 8,
+            paddingBottom: 4,
+            backgroundColor: NAVY_BLUE,
+          },
+        ]}
+      >
           <View style={styles.topBarWrapper}>
             <Pressable
               style={styles.toggleButton}
@@ -7252,7 +7263,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {isTopBarExpanded ? '<' : '>'}
               </Text>
             </Pressable>
-            {isTopBarExpanded && !isSwiping && (
+            {isTopBarExpanded && (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
@@ -7373,7 +7384,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             )}
           </View>
         </View>
-      )}
 
       {/* Media title + timer overlay (at bottom above interactions) */}
       {currentWave && !isUiVisible && (
@@ -7446,125 +7456,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         )}
 
       </View>
-
-      {/* Bottom Interaction Bar */}
-      {isUiVisible && (
-        <View
-          style={[
-            styles.bottomBarContainer,
-          {
-            paddingBottom: insets.bottom || 8,
-            backgroundColor: NAVY_BLUE,
-          },
-          ]}
-          onLayout={e => setBottomBarHeight(e.nativeEvent.layout.height)}
-        >
-          <View
-            style={[styles.bottomBarWrapper, { justifyContent: 'flex-start' }]}
-          >
-            <Pressable
-              style={styles.toggleButton}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              onPress={withUi(() => setIsBottomBarExpanded(p => !p))}
-            >
-              <Text style={styles.toggleButtonText}>
-                {isBottomBarExpanded ? '<' : '>'}
-              </Text>
-            </Pressable>
-            {isBottomBarExpanded && !isSwiping && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={{ flex: 1 }}
-                contentContainerStyle={{ alignItems: 'center' }}
-              >
-                <Pressable
-                  style={styles.bottomBarItem}
-                  onPress={withUi(() => {
-                    onSplash();
-                    runSplashAnimation();
-                  })}
-                >
-                  {/* Always show one drop. Label is 'Glows' if not splashed, 'Glows Sent' if splashed. Count updates. */}
-                  <>
-                    <Animated.Text
-                      style={[
-                        styles.bottomBarIcon,
-                        { transform: [{ scale: splashAnimation }] },
-                      ]}
-                    >
-                      💧
-                    </Animated.Text>
-                    <Text
-                      style={[
-                        styles.bottomBarLabel,
-                        hasSplashed ? { color: '#00C2FF' } : null,
-                      ]}
-                    >
-                      Glows
-                    </Text>
-                    <Text style={styles.bottomBarCount}>
-                      {formatCount(splashDisplayCount)}
-                    </Text>
-                  </>
-                </Pressable>
-                <Pressable
-                  style={styles.bottomBarItem}
-                  onPress={withUi(() => setShowEchoes(true))}
-                >
-                  <Text style={styles.bottomBarIcon}>📣</Text>
-                  <Text style={styles.bottomBarLabel}>Echoes</Text>
-                  <Text style={styles.bottomBarCount}>
-                    {formatCount(echoes)}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.bottomBarItem}
-                  onPress={withUi(() => setShowPearls(true))}
-                >
-                  <Text style={styles.bottomBarIcon}>🦪</Text>
-                  <Text style={styles.bottomBarLabel}>Gems</Text>
-                  <Text style={styles.bottomBarCount}> </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.bottomBarItem}
-                  onPress={withUi(() => {
-                    if (currentWave) anchorWave(currentWave);
-                  })}
-                >
-                  <Text style={styles.bottomBarIcon}>⚓</Text>
-                  <Text style={styles.bottomBarLabel}>Pin Vibe</Text>
-                  <Text style={styles.bottomBarCount}> </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.bottomBarItem}
-                  onPress={withUi(onShare)}
-                >
-                  <Text style={styles.bottomBarIcon}>📡</Text>
-                  <Text style={styles.bottomBarLabel}>Cast Vibe</Text>
-                  <Text style={styles.bottomBarCount}> </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.bottomBarItem}
-                  onPress={withUi(() => {})}
-                >
-                  <Text style={styles.bottomBarIcon}>🔱</Text>
-                  <Text style={styles.bottomBarLabel}>Placeholder 1</Text>
-                  <Text style={styles.bottomBarCount}> </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.bottomBarItem}
-                  onPress={withUi(() => {})}
-                >
-                  <Text style={styles.bottomBarIcon}>🐚</Text>
-                  <Text style={styles.bottomBarLabel}>Placeholder 2</Text>
-                  <Text style={styles.bottomBarCount}> </Text>
-                </Pressable>
-              </ScrollView>
-            )}
-          </View>
-        </View>
-      )}
 
       {/* Notification Toast */}
       <NotificationToast
