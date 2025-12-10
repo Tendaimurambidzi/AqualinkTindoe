@@ -15,7 +15,7 @@ async function sendEcho(waveId: string, text: string) {
     // Ensure parent wave exists and has counts object
     const waveDoc = await tx.get(waveRef);
     if (!waveDoc.exists) {
-      throw new Error('Wave does not exist');
+      throw new Error('Vibe does not exist');
     }
     let counts = waveDoc.data().counts || {};
     if (typeof counts !== 'object' || Array.isArray(counts)) {
@@ -145,7 +145,7 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TEXT_STORY_PLACEHOLDER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAF/wJ+XmYjAAAAAElFTkSuQmCC';
 
-type Wave = {
+type Vibe = {
   id: string;
   media?: Asset | null;
   audio?: { uri: string; name?: string } | null;
@@ -159,7 +159,7 @@ type Wave = {
 };
 
 type SearchResult = {
-  kind: 'user' | 'wave';
+  kind: 'user' | 'vibe';
   id: string;
   label: string;
   extra?: Record<string, any>;
@@ -309,16 +309,16 @@ function useAppVersionInfo() {
 const waveOptionMenu = [
   {
     label: 'Join Crew',
-    description: 'Follow this user to see their waves in your feed.',
+    description: 'Follow this user to see their vibes in your feed.',
   },
   {
     label: 'Save to device',
-    description: 'Download a copy of this wave for offline viewing.',
+    description: 'Download a copy of this vibe for offline viewing.',
   },
-  { label: 'Share', description: 'Share the wave link with friends.' },
+  { label: 'Share', description: 'Share the vibe link with friends.' },
   {
     label: 'Report',
-    description: 'Let us know if this wave violates guidelines.',
+    description: 'Let us know if this vibe violates guidelines.',
   },
 ];
 
@@ -1631,20 +1631,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       cancelled = true;
     };
   }, [myUid, normalizeUserHandle]);
-  const [wavesFeed, setWavesFeed] = useState<Wave[]>([]);
-  const [postFeed, setPostFeed] = useState<Wave[]>([]);
+  const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
+  const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   // Public feed toggle and data
 
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const handlePostPublished = useCallback(
-    (wave: Wave) => {
+    (wave: Vibe) => {
       setPostFeed(prev => {
         if (prev.some(w => w.id === wave.id)) return prev;
         return [wave, ...prev];
       });
-      setWavesFeed(prev => {
+      setVibesFeed(prev => {
         if (prev.some(w => w.id === wave.id)) return prev;
         return [wave, ...prev];
       });
@@ -1654,11 +1654,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         feedRef.current?.scrollTo({ y: 0, animated: true });
       } catch {}
     },
-    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setWavesFeed],
+    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed],
   );
 
   const [showPublicFeed, setShowPublicFeed] = useState<boolean>(true);
-  const [publicFeed, setPublicFeed] = useState<Wave[]>([]);
+  const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
 
   const [showProfile, setShowProfile] = useState<boolean>(false);
@@ -1696,7 +1696,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     hugsMade: number;
   }>({ splashesMade: 0, hugsMade: 0 });
   const [myWaveCount, setMyWaveCount] = useState<number | null>(null);
-  const [waveOptionsTarget, setWaveOptionsTarget] = useState<Wave | null>(null);
+  const [waveOptionsTarget, setWaveOptionsTarget] = useState<Vibe | null>(null);
   const [isSavingWave, setIsSavingWave] = useState(false);
   // Notification toast state
   const [toastVisible, setToastVisible] = useState(false);
@@ -1877,7 +1877,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return false; // Exit app
         }
 
-        // First back press: toggle between My Waves and Public Waves
+        // First back press: toggle between My Vibes and Public Vibes
         lastBackPressTime.current = now;
         setShowPublicFeed(prev => !prev);
         setCurrentIndex(0);
@@ -2193,9 +2193,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         if (!textValues.includes(lowerTerm)) return;
         seenWaves.add(id);
         results.push({
-          kind: 'wave',
+          kind: 'vibe',
           id,
-          label: String(data.captionText || data.caption || data.authorName || 'Wave'),
+          label: String(data.captionText || data.caption || data.authorName || 'Vibe'),
           extra: {
             caption: data.captionText || data.caption || '',
             authorName: data.authorName || data.ownerName || '',
@@ -2264,9 +2264,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             if (!id || seen.has(`wave:${id}`)) return;
             seen.add(`wave:${id}`);
             results.push({
-              kind: 'wave',
+              kind: 'vibe',
               id,
-              label: String(wave.caption || wave.title || wave.authorName || 'Wave'),
+              label: String(wave.caption || wave.title || wave.authorName || 'Vibe'),
               extra: { ...wave },
             });
           });
@@ -2293,8 +2293,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [backendSearchBase, searchViaFirestore],
   );
-  const buildWaveFromSearchResult = useCallback((result: SearchResult): Wave | null => {
-    if (result.kind !== 'wave') return null;
+  const buildWaveFromSearchResult = useCallback((result: SearchResult): Vibe | null => {
+    if (result.kind !== 'vibe') return null;
     const extra = result.extra || {};
     const uri = extra.mediaUri || extra.playbackUrl || '';
     if (!uri) return null;
@@ -2317,8 +2317,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
   const handleDeepWaveSelect = useCallback(
     (result: SearchResult) => {
-      if (result.kind !== 'wave') return;
-      const existingIdx = wavesFeed.findIndex(w => w.id === result.id);
+      if (result.kind !== 'vibe') return;
+      const existingIdx = vibesFeed.findIndex(w => w.id === result.id);
       if (existingIdx >= 0) {
         setCurrentIndex(existingIdx);
         setWaveKey(Date.now());
@@ -2330,12 +2330,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Wave unavailable', 'This wave cannot be previewed right now.');
         return;
       }
-      setWavesFeed(prev => [newWave, ...prev]);
+      setVibesFeed(prev => [newWave, ...prev]);
       setCurrentIndex(0);
       setWaveKey(Date.now());
       setShowDeepSearch(false);
     },
-    [buildWaveFromSearchResult, setCurrentIndex, setShowDeepSearch, setWaveKey, setWavesFeed, wavesFeed],
+    [buildWaveFromSearchResult, setCurrentIndex, setShowDeepSearch, setWaveKey, setVibesFeed, vibesFeed],
   );
   const runDeepSearch = useCallback(async () => {
     const term = deepQuery.trim();
@@ -3055,7 +3055,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Remove a broken wave from local state + persisted cache so it can't poison startup
   const dropWaveFromCache = useCallback(async (waveId: string) => {
     if (!waveId) return;
-    setWavesFeed(prev => prev.filter(w => w.id !== waveId));
+    setVibesFeed(prev => prev.filter(w => w.id !== waveId));
     setPublicFeed(prev => prev.filter(w => w.id !== waveId));
     try {
       const AS = AsyncStorage;
@@ -3146,7 +3146,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [showUiTemporarily],
   );
-  const openWaveOptions = useCallback((wave: Wave) => {
+  const openWaveOptions = useCallback((wave: Vibe) => {
     setWaveOptionsTarget(wave);
   }, []);
   const functionsClient = useMemo(() => {
@@ -3159,7 +3159,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
   // Use selected feed for rendering, filtering out blocked and removed users
   const displayFeed = useMemo(() => {
-    const baseFeed = showPublicFeed ? publicFeed : wavesFeed;
+    const baseFeed = showPublicFeed ? publicFeed : vibesFeed;
     const combined = [...postFeed, ...baseFeed];
     const seen = new Set<string>();
     return combined.filter(wave => {
@@ -3175,7 +3175,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [
     showPublicFeed,
     publicFeed,
-    wavesFeed,
+    vibesFeed,
     blockedUsers,
     removedUsers,
     postFeed,
@@ -3183,13 +3183,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Deduplicate my waves to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
-    return wavesFeed.filter(w => {
+    return vibesFeed.filter(w => {
       if (!w?.id) return false;
       if (seen.has(w.id)) return false;
       seen.add(w.id);
       return true;
     });
-  }, [wavesFeed]);
+  }, [vibesFeed]);
 
   const currentWave =
     displayFeed.length > 0 && currentIndex >= 0
@@ -3308,14 +3308,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     () => [
       {
         key: 'waves',
-        label: 'Waves',
+        label: 'Vibes',
         value: wavesCountDisplay,
         onPress: openMyWavesFromStats,
       },
       { key: 'crew', label: 'Crew', value: myCrewCount },
-      { key: 'splashes', label: 'Splashes', value: totalSplashesOnMyWaves },
+      { key: 'splashes', label: 'Glows', value: totalSplashesOnMyWaves },
       { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves, onPress: handleHugsPress },
-      { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves, onPress: handleEchoesPress },
+      { key: 'echoes', label: 'Reverbs', value: totalEchoesOnMyWaves, onPress: handleEchoesPress },
     ],
     [
       wavesCountDisplay,
@@ -3580,7 +3580,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Get wave doc
         const waveDoc = await firestoreMod().collection('waves').doc(waveId).get();
         if (!waveDoc.exists) {
-          setWavesFeed(prev => prev.filter(w => w.id !== waveId));
+          setVibesFeed(prev => prev.filter(w => w.id !== waveId));
           setPublicFeed(prev => prev.filter(w => w.id !== waveId));
           Alert.alert('Wave deleted', 'Wave already removed.');
           return;
@@ -3592,7 +3592,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           waveData.authorId ||
           waveData.userUid ||
           waveData.uid ||
-          wavesFeed.find(w => w.id === waveId)?.ownerUid ||
+          vibesFeed.find(w => w.id === waveId)?.ownerUid ||
           null;
         if (waveOwner && waveOwner !== user.uid) {
           Alert.alert('Delete failed', 'You can only delete your own wave.');
@@ -3610,7 +3610,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         await deleteCollectionInChunks(`waves/${waveId}/splashes`);
         // Delete the wave doc
         await firestoreMod().collection('waves').doc(waveId).delete();
-        setWavesFeed(prev => prev.filter(w => w.id !== waveId));
+        setVibesFeed(prev => prev.filter(w => w.id !== waveId));
         setPublicFeed(prev => prev.filter(w => w.id !== waveId));
         Alert.alert('Wave deleted', 'Your wave has been removed from My Shore.');
       } catch (e) {
@@ -3779,7 +3779,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   myUid && n && n === myNameNorm ? myUid : w.ownerUid || null,
               };
             });
-            setWavesFeed(reversedData);
+            setVibesFeed(reversedData);
             setCurrentIndex(reversedData.length ? 0 : -1);
           }
         }
@@ -3803,7 +3803,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         FS = require('react-native-fs');
       } catch {}
       try {
-        const chronologicalFeed = [...wavesFeed].reverse();
+        const chronologicalFeed = [...vibesFeed].reverse();
         const myUidForPersist = (() => {
           try {
             const a = require('@react-native-firebase/auth').default;
@@ -3838,18 +3838,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
     savePersisted();
-  }, [wavesFeed, isFeedLoaded]);
+  }, [vibesFeed, isFeedLoaded]);
 
   // One-time migration: backfill authorName on existing saved waves and update remote docs best-effort
   const didAuthorNameMigration = useRef(false);
   useEffect(() => {
     if (didAuthorNameMigration.current) return;
     if (!profileName) return;
-    if (!wavesFeed || wavesFeed.length === 0) return;
-    const missing = wavesFeed.filter(w => !w.authorName);
+    if (!vibesFeed || vibesFeed.length === 0) return;
+    const missing = vibesFeed.filter(w => !w.authorName);
     if (missing.length === 0) return;
     // Backfill locally so UI shows the correct handle immediately
-    setWavesFeed(prev =>
+    setVibesFeed(prev =>
       prev.map(w =>
         w.authorName
           ? w
@@ -3885,9 +3885,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     } catch {}
     didAuthorNameMigration.current = true;
-  }, [profileName, wavesFeed]);
+  }, [profileName, vibesFeed]);
 
-  // Load Public Waves when toggled on (best-effort if Firebase exists)
+  // Load Public Vibes when toggled on (best-effort if Firebase exists)
   useEffect(() => {
     if (!showPublicFeed) return;
     let firestoreMod: any = null;
@@ -3915,51 +3915,46 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .orderBy('createdAt', 'desc')
           .limit(50)
           .onSnapshot(async (snap: any) => {
-          const docs = (snap?.docs || []).slice();
-          const out: Wave[] = [];
-          for (const d of docs) {
-            const data = d.data() || {};
-            const id = d.id;
-            const cap = data?.caption || { x: 0, y: 0 };
-            const authorName = data?.authorName || null;
-            let playbackUrl: string | null =
-              data?.playbackUrl || data?.mediaUrl || null;
-            let mediaUri: string | null = null;
-            if (!playbackUrl && storageMod && data?.mediaPath) {
-              try {
-                mediaUri = await storageMod()
-                  .ref(String(data.mediaPath))
-                  .getDownloadURL();
-              } catch {}
+            const docs = (snap?.docs || []).slice();
+            const out: Vibe[] = [];
+            for (const d of docs) {
+              const data = d.data() || {};
+              const id = d.id;
+              const caption = data?.text || '';
+              const cap = data?.caption || { x: 0, y: 0 };
+              const authorName = data?.authorName || null;
+              let playbackUrl: string | null =
+                data?.playbackUrl || data?.mediaUrl || null;
+              let mediaUri: string | null = null;
+              if (!playbackUrl && storageMod && data?.mediaPath) {
+                try {
+                  mediaUri = await storageMod()
+                    .ref(String(data.mediaPath))
+                    .getDownloadURL();
+                } catch {}
+              }
+              // Show all waves in public feed (my waves and other users' waves)
+              const finalUri = playbackUrl || mediaUri;
+              if (!finalUri) continue;
+              out.push({
+                id: id,
+                media: { uri: finalUri } as any,
+                audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
+                captionText: caption,
+                captionPosition: {
+                  x: Number(cap?.x) || 0,
+                  y: Number(cap?.y) || 0,
+                },
+                playbackUrl: playbackUrl,
+                muxStatus: (data?.muxStatus || null) as any,
+                authorName,
+                ownerUid: (data?.ownerUid || data?.authorId || null) as any,
+              });
             }
-            const finalUri = playbackUrl || mediaUri;
-            const captionTextRaw =
-              String(data?.text || data?.captionText || data?.caption?.text || '')
-                .trim();
-            const captionText = captionTextRaw;
-            const hasMedia = Boolean(finalUri);
-            const hasText = captionText.length > 0;
-            const audioUrl = data?.audioUrl ? String(data.audioUrl) : null;
-            if (!hasMedia && !hasText && !audioUrl) continue;
-            out.push({
-              id: id,
-              media: hasMedia ? ({ uri: finalUri } as Asset) : null,
-              audio: audioUrl ? { uri: audioUrl } : null,
-              captionText,
-              captionPosition: {
-                x: Number(cap?.x) || 0,
-                y: Number(cap?.y) || 0,
-              },
-              playbackUrl: playbackUrl,
-              muxStatus: (data?.muxStatus || null) as any,
-              authorName,
-              ownerUid: (data?.ownerUid || data?.authorId || null) as any,
-            });
-          }
             if (!cancelled) {
               const myUid = auth?.()?.currentUser?.uid;
               const myWavesInPublic = out.filter(w => w.ownerUid === myUid);
-              setWavesFeed(prev => {
+              setVibesFeed(prev => {
                 const existingMyWaveIds = new Set(prev.map(w => w.id));
                 const newMyWaves = myWavesInPublic.filter(
                   w => !existingMyWaveIds.has(w.id),
@@ -4317,7 +4312,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const handlePingAction = (ping: Ping) => {
     if (ping.waveId) {
-      const waveIndex = wavesFeed.findIndex(w => w.id === ping.waveId);
+      const waveIndex = vibesFeed.findIndex(w => w.id === ping.waveId);
       if (waveIndex !== -1) {
         setShowPings(false);
         setCurrentIndex(waveIndex);
@@ -4405,14 +4400,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
-  const getWaveTitle = (w: Wave | null): string => {
+  const getWaveTitle = (w: Vibe | null): string => {
     if (!w) return ' ';
     // Prioritize audio title if an overlay audio is present
     if (w.audio?.name || w.audio?.uri) {
-      return w.audio.name || extractBaseName(w.audio.uri) || 'Audio Wave';
+      return w.audio.name || extractBaseName(w.audio.uri) || 'Audio Vibe';
     }
     // Otherwise, use the video or image file name
-    return w.media.fileName || extractBaseName(w.media.uri) || 'Wave';
+    return w.media.fileName || extractBaseName(w.media.uri) || 'Vibe';
   };
 
   const explore = useMemo(
@@ -5072,8 +5067,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const wave = currentWave;
       if (!wave) {
         await Share.share({
-          title: 'Casta Wave',
-          message: 'Casta Wave - check out this wave!',
+          title: 'Cast Vibe',
+          message: 'Cast Vibe - check out this vibe!',
         });
         return;
       }
@@ -5085,21 +5080,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const waveId = wave.id;
       const deep = `drift://wave/${encodeURIComponent(waveId)}`;
       const web = `https://drift.link/w/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `“${wave.captionText}”` : 'my wave';
-      const msg = `Casta Wave — Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
-      await Share.share({ title: 'Casta Wave', message: msg });
+      const caption = wave.captionText ? `“${wave.captionText}”` : 'my vibe';
+      const msg = `Cast Vibe — Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
+      await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to cast the net right now.');
     }
   };
-  const onShareWave = async (wave: Wave) => {
+  const onShareWave = async (wave: Vibe) => {
     try {
       const waveId = wave.id;
       const deep = `drift://wave/${encodeURIComponent(waveId)}`;
       const web = `https://drift.link/w/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `“${wave.captionText}”` : 'my wave';
-      const msg = `Casta Wave — Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
-      await Share.share({ title: 'Casta Wave', message: msg });
+      const caption = wave.captionText ? `“${wave.captionText}”` : 'my vibe';
+      const msg = `Cast Vibe — Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
+      await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       showOceanDialog(
         'Share Failed',
@@ -5107,7 +5102,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     }
   };
-  const anchorWave = async (wave: Wave) => {
+  const anchorWave = async (wave: Vibe) => {
     try {
       let firestoreMod: any = null;
       let authMod: any = null;
@@ -5119,7 +5114,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
       const uid = authMod?.().currentUser?.uid;
       if (!firestoreMod || !uid) {
-        showOceanDialog('Anchor Wave', 'Navigation tools are not installed.');
+        showOceanDialog('Pin Vibe', 'Navigation tools are not installed.');
         return;
       }
       await firestoreMod()
@@ -5212,7 +5207,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         });
 
       // Remove blocked user's waves from feed immediately
-      setWavesFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
+      setVibesFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
       setPublicFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
 
       // Also update backend for real-time drift matching enforcement
@@ -5259,7 +5254,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         });
 
       // Remove this user's waves from both feeds immediately
-      setWavesFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
+      setVibesFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
       setPublicFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
 
       // Reload removed users list
@@ -5489,16 +5484,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const name = profileName || accountCreationHandle || '@your_handle';
       const deep = uid ? `drift://user/${uid}` : 'drift://home';
       const web = uid ? `https://drift.link/u/${uid}` : 'https://drift.link/';
-      const msg = `Casta Wave — Check out my Shore ${name}!\n\n${web}\n(Open in app: ${deep})`;
-      await Share.share({ title: 'Casta Wave', message: msg });
+      const msg = `Cast Vibe — Check out my Aura ${name}!\n\n${web}\n(Open in app: ${deep})`;
+      await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
     }
   };
 
-  // Load wave stats for current wavesFeed (best-effort if Firebase exists)
+  // Load wave stats for current vibesFeed (best-effort if Firebase exists)
   useEffect(() => {
-    if (wavesFeed.length === 0) return;
+    if (vibesFeed.length === 0) return;
     let firestoreMod: any = null;
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
@@ -5506,7 +5501,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!firestoreMod) return;
     let mounted = true;
     (async () => {
-      for (const w of wavesFeed) {
+      for (const w of vibesFeed) {
         try {
           const docSnap = await firestoreMod()
             .collection('waves')
@@ -5538,7 +5533,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => {
       mounted = false;
     };
-  }, [wavesFeed]);
+  }, [vibesFeed]);
 
   const shareProfileLink = async () => {
     try {
@@ -6098,7 +6093,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleNotificationNavigation = useCallback(
     (data: any) => {
       if (data?.waveId) {
-        const waveIndex = wavesFeed.findIndex(w => w.id === data.waveId);
+        const waveIndex = vibesFeed.findIndex(w => w.id === data.waveId);
         if (waveIndex !== -1) {
           setCurrentIndex(waveIndex);
           setWaveKey(Date.now());
@@ -6107,7 +6102,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowPings(true);
       }
     },
-    [wavesFeed],
+    [vibesFeed],
   );
 
   const handleForegroundRemoteMessage = useCallback(
@@ -6626,7 +6621,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Release failed', `Could not release your wave. ${msg}`);
     } finally {
       // Update local feed immediately (uses local media path)
-      const newWave: Wave = {
+      const newWave: Vibe = {
         id: serverDocId || new Date().toISOString(),
         media: capturedMedia,
         audio: audioDownloadUrl
@@ -6649,7 +6644,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       };
       setHasSplashed(false); // Reset splash state for new wave
       setSplashes(0); // Reset splash count for new wave
-      setWavesFeed(prev => {
+      setVibesFeed(prev => {
         // Add new wave to the beginning of the array
         const next = [newWave, ...prev];
         setCurrentIndex(0); // Set view to the new wave
@@ -6678,7 +6673,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               const playbackUrl = data?.playbackUrl || null;
               const muxStatus = data?.muxStatus || null;
               if (playbackUrl || muxStatus) {
-                setWavesFeed(prev =>
+                setVibesFeed(prev =>
                   prev.map(w =>
                     w.id === serverDocId
                       ? {
@@ -6988,7 +6983,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           source={{
                             uri: String(
                               isOffline && item.media?.uri
-                                ? item.media?.uri
+                                ? item.media.uri
                                 : item.playbackUrl,
                             ),
                           }}
@@ -7063,7 +7058,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <>
                           <RNVideo
                             key={`vid-${waveKey}-${item.id}`}
-                          source={{ uri: String(item.media?.uri) }}
+                          source={{ uri: String(item.media.uri) }}
                           style={videoStyleFor(item.id) as any}
                           resizeMode={'contain'}
                             repeat={true}
@@ -7080,7 +7075,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             useTextureView={useTextureForVideo}
                             progressUpdateInterval={750}
-                            poster={String(item.media?.uri || item.playbackUrl)}
+                            poster={String(item.media.uri || item.playbackUrl)}
                             posterResizeMode={'cover'}
                             muted={!!item.audio?.uri}
                             disableFocus={true}
@@ -7174,11 +7169,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     ) : (
                       <>
                         <Image
-                          source={{ uri: item.media?.uri }}
-                            style={[
-                              ...(videoStyleFor(item.id) as any),
-                              { resizeMode: 'cover' },
-                            ]}
+                          source={{ uri: item.media.uri }}
+                          style={[
+                            ...(videoStyleFor(item.id) as any),
+                            { resizeMode: 'cover' },
+                          ]}
                         />
                         {RNVideo && item.audio?.uri && (
                           <RNVideo
@@ -7375,10 +7370,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       showPublicFeed ? styles.globeIcon : styles.compassIcon
                     }
                   >
-                    {showPublicFeed ? '🌐' : '🌊'}
+                    {showPublicFeed ? '🌐' : '🎉'}
                   </Text>
                   <Text style={styles.topLabel}>
-                    {showPublicFeed ? 'PUBLIC WAVES' : 'MY WAVES'}
+                    {showPublicFeed ? 'PUBLIC VIBES' : 'MY VIBES'}
                   </Text>
                 </Pressable>
                 {/* MAKE WAVES */}
@@ -7386,8 +7381,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   style={styles.topItem}
                   onPress={withUi(() => setShowMakeWaves(true))}
                 >
-                  <Text style={styles.dolphinIcon}>🐋</Text>
-                  <Text style={styles.topLabel}>MAKE WAVES</Text>
+                  <Text style={styles.dolphinIcon}>🎉</Text>
+                  <Text style={styles.topLabel}>DROP A VIBE</Text>
                 </Pressable>
                 {/* PINGS */}
                 <Pressable
@@ -7407,7 +7402,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.topLabel}>PINGS</Text>
+                  <Text style={styles.topLabel}>VIBE ALERTS</Text>
                 </Pressable>
                 {/* DEEP DIVE */}
                 <Pressable
@@ -7415,7 +7410,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowDeepSearch(true))}
                 >
                   <Text style={styles.dolphinIcon}>🔎</Text>
-                  <Text style={styles.topLabel}>DEEP DIVE</Text>
+                  <Text style={styles.topLabel}>VIBE HUNT</Text>
                 </Pressable>
 
                 {/* MY SHORE */}
@@ -7426,7 +7421,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   })}
                 >
                   <Text style={styles.umbrellaIcon}>⛱️</Text>
-                  <Text style={styles.topLabel}>MY SHORE</Text>
+                  <Text style={styles.topLabel}>MY AURA</Text>
                 </Pressable>
                 {/* SET SAIL */}
                 <Pressable
@@ -7434,7 +7429,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowExplore(true))}
                 >
                   <Text style={styles.boatIcon}>⛵</Text>
-                  <Text style={styles.topLabel}>SET SAIL</Text>
+                  <Text style={styles.topLabel}>VIBE OUT</Text>
                 </Pressable>
                 {/* SCHOOL MODE */}
                 <Pressable
@@ -7442,7 +7437,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowSchoolMode(true))}
                 >
                   <Text style={styles.schoolIcon}>🏫</Text>
-                  <Text style={styles.topLabel}>SCHOOL MODE</Text>
+                  <Text style={styles.topLabel}>VIBE MODE</Text>
                 </Pressable>
                 {/* NOTICE BOARD */}
                 <Pressable
@@ -7450,7 +7445,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowNotice(true))}
                 >
                   <Text style={styles.noticeIcon}>📋</Text>
-                  <Text style={styles.topLabel}>NOTICE BOARD</Text>
+                  <Text style={styles.topLabel}>VIBE BOARD</Text>
                 </Pressable>
                 {/* THE BRIDGE */}
                 <Pressable
@@ -7458,7 +7453,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowBridge(true))}
                 >
                   <Text style={styles.gearIcon}>⚙️</Text>
-                  <Text style={styles.topLabel}>THE BRIDGE</Text>
+                  <Text style={styles.topLabel}>VIBE BRIDGE</Text>
                 </Pressable>
                 {/* PLACE HOLDER */}
                 <Pressable
@@ -7624,7 +7619,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowPearls(true))}
                 >
                   <Text style={styles.bottomBarIcon}>🦪</Text>
-                  <Text style={styles.bottomBarLabel}>Pearls</Text>
+                  <Text style={styles.bottomBarLabel}>Gems</Text>
                   <Text style={styles.bottomBarCount}> </Text>
                 </Pressable>
                 <Pressable
@@ -7634,7 +7629,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   })}
                 >
                   <Text style={styles.bottomBarIcon}>⚓</Text>
-                  <Text style={styles.bottomBarLabel}>Anchor Wave</Text>
+                  <Text style={styles.bottomBarLabel}>Pin Vibe</Text>
                   <Text style={styles.bottomBarCount}> </Text>
                 </Pressable>
                 <Pressable
@@ -7642,7 +7637,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(onShare)}
                 >
                   <Text style={styles.bottomBarIcon}>📡</Text>
-                  <Text style={styles.bottomBarLabel}>Casta Wave</Text>
+                  <Text style={styles.bottomBarLabel}>Cast Vibe</Text>
                   <Text style={styles.bottomBarCount}> </Text>
                 </Pressable>
                 <Pressable
@@ -8130,12 +8125,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>My Waves</Text>
               <ScrollView>
-                {wavesFeed.length === 0 ? (
+                {vibesFeed.length === 0 ? (
                   <Text style={styles.hint}>
-                    No waves yet. Post from Make Waves.
+                    No vibes yet. Post from Make Vibes.
                   </Text>
                 ) : (
-                  wavesFeed.map((w, idx) => (
+                  vibesFeed.map((w, idx) => (
                     <View
                       key={w.id}
                       style={{
@@ -9610,14 +9605,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               )}
               {deepResults.map(result => (
                 <View key={result.kind + result.id}>
-                  {result.kind === 'wave' ? (
+                  {result.kind === 'vibe' ? (
                     <Pressable
                       style={styles.pingItem}
                       onPress={() => handleDeepWaveSelect(result)}
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={styles.pingText}>
-                          🌊 {result.label}
+                          🎉 {result.label}
                         </Text>
                       </View>
                       <Text style={styles.primaryBtnText}>View wave</Text>
@@ -9867,7 +9862,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>PEARLS</Text>
+              <Text style={styles.logbookTitle}>GEMS</Text>
               <ScrollView>
                 {!selectedCountry ? (
                   <View>
@@ -9996,7 +9991,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           style={styles.primaryBtn}
                           onPress={() =>
                             Alert.alert(
-                              'Pearls',
+                              'Gems',
                               'Tip flow submitted (connect to payments backend).',
                             )
                           }
