@@ -3962,7 +3962,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 return [...newMyWaves, ...prev];
               });
               // Filter out my own waves from public feed on my device
-              setPublicFeed(out.filter(w => w.ownerUid !== myUid));
+              setPublicFeed([]);
             }
           });
       } catch {}
