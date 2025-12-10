@@ -208,7 +208,7 @@ const formatCount = (n: number) => {
   return `${Math.floor(n / 1000)}k`;
 };
 
-type DriftAlert = {
+type VibeAlert = {
   hostUid: string;
   liveId: string;
   hostName: string;
@@ -1167,7 +1167,7 @@ const editorStyles = StyleSheet.create({
     paddingTop: 10,
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
-  // Live media editor strip (sits above End Drift)
+  // Live media editor strip (sits above End Vibe)
   liveMediaBar: {
     position: 'absolute',
     left: 0,
@@ -1585,9 +1585,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const raw = String(name ?? '').trim();
       const core = raw.replace(/^[@/]+/, '');
-      return '/' + (core || 'drifter');
+      return '/' + (core || 'viber');
     } catch {
-      return '/drifter';
+      return '/viber';
     }
   }, []);
 
@@ -1724,7 +1724,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [autoNightMode, setAutoNightMode] = useState(true);
   const [interactivePhysicsEnabled, setInteractivePhysicsEnabled] = useState(true);
   const [stormEffectsEnabled, setStormEffectsEnabled] = useState(true);
-  const [tiltDriftEnabled, setTiltDriftEnabled] = useState(true);
+  const [tiltVibeEnabled, setTiltVibeEnabled] = useState(true);
   const [safetySettings, setSafetySettings] = useState<any>({
     shallowWatersMode: false,
     lifeguardAlertsEnabled: true,
@@ -2056,7 +2056,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   useEffect(() => {
     (async () => {
       try {
-        const stored = await AsyncStorage.getItem('drift_pings');
+        const stored = await AsyncStorage.getItem('vibe_pings');
         if (stored) {
           const parsed = JSON.parse(stored);
           // Convert timestamp strings back to Date objects
@@ -2077,7 +2077,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (pings.length === 0) return;
     (async () => {
       try {
-        await AsyncStorage.setItem('drift_pings', JSON.stringify(pings));
+        await AsyncStorage.setItem('vibe_pings', JSON.stringify(pings));
       } catch (e) {
         console.warn('Failed to save pings:', e);
       }
@@ -2132,7 +2132,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       results.push({
         kind: 'user',
         id: uid,
-        label: String(data.displayName || data.userName || data.username || '@drifter'),
+        label: String(data.displayName || data.userName || data.username || '@viber'),
         extra: {
           bio: typeof data.bio === 'string' ? data.bio : '',
           photoURL: data.userPhoto || data.photoURL || null,
@@ -2255,7 +2255,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             results.push({
               kind: 'user',
               id: uid,
-              label: String(user.displayName || user.userName || user.username || '@drifter'),
+              label: String(user.displayName || user.userName || user.username || '@viber'),
               extra: { ...user },
             });
           });
@@ -2489,7 +2489,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 type: 'message',
                 text: data?.text || '',
                 fromUid: data?.fromUid || '',
-                actorName: data?.fromName || 'Drifter',
+                actorName: data?.fromName || 'Viber',
                 timestamp: data?.createdAt || new Date(),
                 read: false,
               });
@@ -2614,7 +2614,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     Array<{ id: string; name: string; avatar: string | null }>
   >([]);
   const [driftWatchers, setDriftWatchers] = useState<string[]>([]);
-  const [driftAlert, setDriftAlert] = useState<DriftAlert | null>(null);
+  const [vibeAlert, setVibeAlert] = useState<VibeAlert | null>(null);
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
   const flickerAnim = useRef(new Animated.Value(0)).current;
@@ -2682,14 +2682,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => sub && sub();
   }, [loadDriftWatchers, loadBlockedAndRemovedUsers]);
 
-  const showDriftAlert = useCallback((alert: DriftAlert) => {
+  const showVibeAlert = useCallback((alert: VibeAlert) => {
     if (driftAlertTimerRef.current) {
       clearTimeout(driftAlertTimerRef.current);
     }
     lastDriftHostRef.current = alert.hostUid;
-    setDriftAlert(alert);
+    setVibeAlert(alert);
     driftAlertTimerRef.current = setTimeout(() => {
-      setDriftAlert(null);
+      setVibeAlert(null);
       lastDriftHostRef.current = null;
     }, 10000);
   }, []);
@@ -2701,7 +2701,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
 
   useEffect(() => {
-    if (!driftAlert) {
+    if (!vibeAlert) {
       flickerAnim.setValue(0);
       return;
     }
@@ -2721,7 +2721,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
     anim.start();
     return () => anim.stop();
-  }, [driftAlert, flickerAnim]);
+  }, [vibeAlert, flickerAnim]);
 
   const watchersKey = useMemo(
     () => driftWatchers.slice().sort().join(','),
@@ -2730,7 +2730,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   useEffect(() => {
     if (!watchersKey) {
-      setDriftAlert(null);
+      setVibeAlert(null);
       lastDriftHostRef.current = null;
       return;
     }
@@ -2748,16 +2748,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           session.hostUid &&
           lastDriftHostRef.current !== session.hostUid
         ) {
-          showDriftAlert({
+          showVibeAlert({
             hostUid: session.hostUid,
             liveId: session.id,
-            hostName: String(session.hostName || session.hostUid || 'Drifter'),
+            hostName: String(session.hostName || session.hostUid || 'Viber'),
             hostPhoto: session.hostPhoto || null,
           });
         }
       });
     return () => unsubscribe && unsubscribe();
-  }, [watchersKey, driftWatchers, showDriftAlert]);
+  }, [watchersKey, driftWatchers, showVibeAlert]);
   // Request to drift with a live host (viewer-side action)
   const requestToDriftForLiveId = useCallback(
     async (liveId: string, hostName?: string) => {
@@ -2784,7 +2784,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const fromName = (profileName ||
           accountCreationHandle ||
           me.displayName ||
-          (me.email ? String(me.email).split('@')[0] : 'drifter')) as string;
+          (me.email ? String(me.email).split('@')[0] : 'viber')) as string;
         const resp = await fetch(`${backendBase}/drift/request`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2833,7 +2833,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const items = Array.isArray(json?.items) ? json.items : [];
         const mapped = items.slice(0, 4).map((it: any) => ({
           id: String(it.id),
-          name: String(it.hostName || 'drifter'),
+          name: String(it.hostName || 'viber'),
           avatar: it.hostPhoto ? String(it.hostPhoto) : null,
         }));
         if (mounted) setCrew(mapped);
@@ -2870,7 +2870,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const data = doc.data();
             return {
               id: doc.id,
-              name: data.userName || 'drifter',
+              name: data.userName || 'viber',
               avatar: data.photoURL || null,
             };
           });
@@ -2910,7 +2910,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               const d = doc.data() || {};
               const uid = String(d.authorId || d.ownerUid || '') || '';
               if (!uid || seen.has(uid)) return;
-              const name = String(d.authorName || 'drifter');
+              const name = String(d.authorName || 'viber');
               const avatar = d.authorPhoto || d.ownerPhoto || null;
               posters.push({
                 id: uid,
@@ -3661,7 +3661,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const d = doc.data() || {};
             return {
               id: d.userUid || doc.id,
-              name: d.userName || 'drifter',
+              name: d.userName || 'viber',
               avatar: d.userPhoto || null,
             };
           });
@@ -6113,7 +6113,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           rm?.notification?.title?.toLowerCase() ||
           'activity';
         const waveId = rm?.data?.waveId || undefined;
-        const actor = rm?.data?.actorName || rm?.data?.fromName || 'Drifter';
+        const actor = rm?.data?.actorName || rm?.data?.fromName || 'Viber';
         const text =
           rm?.notification?.body || rm?.data?.text || 'New activity';
         const id =
@@ -6751,7 +6751,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
         />
       )}
-      {driftAlert && (
+      {vibeAlert && (
         <Animated.View
           pointerEvents="box-none"
           style={[
@@ -6767,8 +6767,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           <Pressable
             style={styles.driftAlertButton}
             onPress={() => {
-              requestToDriftForLiveId(driftAlert.liveId, driftAlert.hostName);
-              setDriftAlert(null);
+              requestToDriftForLiveId(vibeAlert.liveId, vibeAlert.hostName);
+              setVibeAlert(null);
               lastDriftHostRef.current = null;
               if (driftAlertTimerRef.current) {
                 clearTimeout(driftAlertTimerRef.current);
@@ -6788,19 +6788,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ]}
             />
             <View style={styles.driftAlertAvatar}>
-              {driftAlert.hostPhoto ? (
+              {vibeAlert.hostPhoto ? (
                 <Image
-                  source={{ uri: driftAlert.hostPhoto }}
+                  source={{ uri: vibeAlert.hostPhoto }}
                   style={styles.driftAlertAvatarImage}
                 />
               ) : (
                 <Text style={styles.driftAlertInitials}>
-                  {driftAlert.hostName.charAt(0).toUpperCase()}
+                  {vibeAlert.hostName.charAt(0).toUpperCase()}
                 </Text>
               )}
             </View>
             <Text style={styles.driftAlertText}>
-              Open Sea Drift • {driftAlert.hostName}
+              Open Sea Vibe • {vibeAlert.hostName}
             </Text>
           </Pressable>
         </Animated.View>
@@ -7979,11 +7979,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         /
                       </Text>
                       <TextInput
-                        value={(profileName || '/Drifter').replace(/^\/+/, '')}
+                        value={(profileName || '/Viber').replace(/^\/+/, '')}
                         onChangeText={t =>
                           setProfileName('/' + String(t || '').replace(/^\/+/, ''))
                         }
-                        placeholder="Drifter"
+                        placeholder="Viber"
                         placeholderTextColor="rgba(255,255,255,0.5)"
                         style={[
                           styles.profileName as any,
@@ -9562,7 +9562,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               { width: '100%', maxHeight: SCREEN_HEIGHT * 0.75 },
             ]}
           >
-            <Text style={styles.modalTitle}>DEEP DIVE - Find Drifters</Text>
+            <Text style={styles.modalTitle}>DEEP DIVE - Find Vibers</Text>
             
             <Text style={[styles.hint, { marginBottom: 8 }]}>
               Search by username:
@@ -11163,7 +11163,7 @@ const LiveStreamModal = ({
       setHostPhoto(u?.photoURL || null);
       if (visible && u) {
         // Set host name from displayName or email
-        setHostName(u.displayName || u.email?.split('@')[0] || 'Drifter');
+        setHostName(u.displayName || u.email?.split('@')[0] || 'Viber');
       }
     } catch {}
     if (!visible) return;
@@ -12720,9 +12720,9 @@ const LiveStreamModal = ({
     const panelMode = mode;
     const panelHints: Record<typeof panelMode, string | null> = {
       none: null,
-      join: 'Search for a drifter and tap to add them to your crew.',
-      block: 'Search for a drifter and tap to add them to the backend block list.',
-      remove: 'Search for a drifter and tap to remove them from your crew.',
+      join: 'Search for a viber and tap to add them to your crew.',
+      block: 'Search for a viber and tap to add them to the backend block list.',
+      remove: 'Search for a viber and tap to remove them from your crew.',
     };
 
     const runUserPanelSearch = useCallback(async () => {
@@ -13738,7 +13738,7 @@ const LiveStreamModal = ({
           </View>
         )}
 
-        {/* Media editor strip (above End Drift) */}
+        {/* Media editor strip (above End Vibe) */}
         {isLiveStarted && (
           <View
             style={[
@@ -13952,7 +13952,7 @@ const LiveStreamModal = ({
                 ]}
                 onPress={handleEndDrift}
               >
-                <Text style={styles.closeText}>End Drift</Text>
+                <Text style={styles.closeText}>End Vibe</Text>
               </Pressable>
             </View>
           ) : null}

@@ -148,7 +148,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search Drifters..."
+          placeholder="Search Vibers..."
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={searchQuery}
           onChangeText={handleSearch}
