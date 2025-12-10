@@ -6822,9 +6822,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Animated.ScrollView
               ref={feedRef}
               style={{ flex: 1 }}
-              pagingEnabled
-              snapToInterval={SCREEN_HEIGHT}
-              snapToAlignment="center"
+              pagingEnabled={false}
               disableIntervalMomentum={true}
               decelerationRate="fast"
               onTouchStart={() => showUiTemporarily()}
@@ -6879,20 +6877,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }
                 } catch {}
               }}
-              onMomentumScrollEnd={e => {
-                const page = Math.round(
-                  e.nativeEvent.contentOffset.y /
-                    e.nativeEvent.layoutMeasurement.height,
-                );
-                setIsSwiping(false);
-                showUiTemporarily(); // Keep UI visible for a bit after swipe
-                setIsTopBarExpanded(false);
-                setIsBottomBarExpanded(false);
-                if (page !== currentIndex && page < displayFeed.length) {
-                  setCurrentIndex(page);
-                  setWaveKey(Date.now());
-                }
-              }}
             >
               {displayFeed.map((item, index) => {
                 // Only pause for modals that interfere with video/audio
@@ -6934,7 +6918,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     key={item.id}
                     style={[
                       styles.postedWaveContainer,
-                      { height: SCREEN_HEIGHT, width: SCREEN_WIDTH },
+                      { width: SCREEN_WIDTH },
                     ]}
                   >
                     {/* SPL Logo - left side opposite to 3-dot menu */}
