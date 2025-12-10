@@ -145,6 +145,18 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TEXT_STORY_PLACEHOLDER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAF/wJ+XmYjAAAAAElFTkSuQmCC';
 
+const isVideoAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = (asset.type || '').toLowerCase();
+  if (t.includes('video')) return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  if (/(\.(mp4|mov|m4v|webm|3gp|3gpp|mkv|avi))($|\?)/i.test(uri)) return true;
+  const isLocal = uri.startsWith('file://') || uri.startsWith('content://');
+  const isImageExt = /(\.(jpg|jpeg|png|gif|heic|webp))($|\?)/i.test(uri);
+  if (isLocal && !isImageExt) return true;
+  return false;
+};
+
 type Vibe = {
   id: string;
   media?: Asset | null;
@@ -1633,6 +1645,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [myUid, normalizeUserHandle]);
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
+  const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   // Public feed toggle and data
 
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
@@ -3623,18 +3636,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
     doDelete();
-  };
-
-  const isVideoAsset = (asset: Asset | null | undefined): boolean => {
-    if (!asset) return false;
-    const t = (asset.type || '').toLowerCase();
-    if (t.includes('video')) return true;
-    const uri = String(asset.uri || '').toLowerCase();
-    if (/(\.(mp4|mov|m4v|webm|3gp|3gpp|mkv|avi))($|\?)/i.test(uri)) return true;
-    const isLocal = uri.startsWith('file://') || uri.startsWith('content://');
-    const isImageExt = /(\.(jpg|jpeg|png|gif|heic|webp))($|\?)/i.test(uri);
-    if (isLocal && !isImageExt) return true;
-    return false;
   };
 
   // Recent splashers for the current wave (third avatar stack)
@@ -6823,8 +6824,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Animated.ScrollView
               ref={feedRef}
               style={{ flex: 1 }}
-              pagingEnabled={true}
-              decelerationRate="normal"
+              pagingEnabled={false}
+              decelerationRate={0.85}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {
@@ -6853,7 +6854,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   showLive;
                 const shouldPlay =
                   !isPaused &&
-                  index === currentIndex &&
                   allowPlayback &&
                   !isAnyModalOpen;
                 const maxBr = isWifi
@@ -6885,6 +6885,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       key={item.id}
                       style={[
                         styles.postedWaveContainer,
+                        textOnlyStory ? { minHeight: SCREEN_HEIGHT } : { flex: 1 },
                         { width: SCREEN_WIDTH, borderBottomWidth: 2, borderBottomColor: 'navy' },
                       ]}
                     >
@@ -6924,7 +6925,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <Text style={styles.waveOptionsButtonText}>⋮</Text>
                     </Pressable>
                     {!!RNVideo &&
-                    near &&
                     (item.playbackUrl || isVideoAsset(item.media)) &&
                     !(videoErrorMap || {})[item.id] ? (
                       item.playbackUrl ? (
@@ -7180,35 +7180,70 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <ActivityIndicator size="large" color="#00C2FF" />
                       </View>
                     )}
-                    {!!item.captionText && (
-                      <Text
-                        style={[
-                          styles.postedWaveCaption,
-                          {
-                            transform: [
-                              { translateX: item.captionPosition.x },
-                              { translateY: item.captionPosition.y },
-                            ],
-                          },
-                        ]}
-                      >
-                        {item.captionText}
-                      </Text>
-                    )}
-                    {!!item.link && (
-                      <Text
-                        style={[
-                          styles.postedWaveCaption,
-                          {
-                            transform: [
-                              { translateX: item.captionPosition.x },
-                              { translateY: item.captionPosition.y + 20 }, // offset below caption
-                            ],
-                          },
-                        ]}
-                      >
-                        {item.link}
-                      </Text>
+                    {textOnlyStory ? (
+                      <View style={{ flex: 1, padding: 20, justifyContent: 'center', alignItems: 'center' }}>
+                        {!!item.captionText && (
+                          <>
+                            <Text style={{ fontSize: 18, fontWeight: 'bold', color: 'black', textAlign: 'center' }}>
+                              {expandedPosts[item.id]
+                                ? item.captionText
+                                : item.captionText.length > 150
+                                ? item.captionText.substring(0, 150) + '...'
+                                : item.captionText}
+                            </Text>
+                            {item.captionText.length > 150 && (
+                              <Pressable
+                                onPress={() =>
+                                  setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] }))
+                                }
+                                style={{ marginTop: 10 }}
+                              >
+                                <Text style={{ fontSize: 16, color: 'blue', textAlign: 'center' }}>
+                                  {expandedPosts[item.id] ? 'Read Less' : 'Read More'}
+                                </Text>
+                              </Pressable>
+                            )}
+                          </>
+                        )}
+                        {!!item.link && (
+                          <Text style={{ fontSize: 16, color: 'blue', marginTop: 10, textAlign: 'center' }}>
+                            {item.link}
+                          </Text>
+                        )}
+                      </View>
+                    ) : (
+                      <>
+                        {!!item.captionText && (
+                          <Text
+                            style={[
+                              styles.postedWaveCaption,
+                              {
+                                transform: [
+                                  { translateX: item.captionPosition.x },
+                                  { translateY: item.captionPosition.y },
+                                ],
+                              },
+                            ]}
+                          >
+                            {item.captionText}
+                          </Text>
+                        )}
+                        {!!item.link && (
+                          <Text
+                            style={[
+                              styles.postedWaveCaption,
+                              {
+                                transform: [
+                                  { translateX: item.captionPosition.x },
+                                  { translateY: item.captionPosition.y + 20 }, // offset below caption
+                                ],
+                              },
+                            ]}
+                          >
+                            {item.link}
+                          </Text>
+                        )}
+                      </>
                     )}
                     {/* Play/Pause Button Overlay – center-only region to avoid conflict with outer tap-to-toggle */}
                     <Pressable
@@ -14504,13 +14539,101 @@ function WelcomeAnimationScreen({ navigation }: any) {
 
 function PostDetailScreen({ route, navigation }: any) {
   const { post } = route.params;
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+
+  // Simplified rendering for post detail
+  const renderPostContent = () => {
+    try {
+      const hasVideo = post.playbackUrl || (post.media && isVideoAsset(post.media));
+      const hasImage = post.media && !isVideoAsset(post.media);
+      const hasText = post.captionText || post.link;
+
+      return (
+        <View style={{ flex: 1 }}>
+          {/* Video or Image */}
+          {hasVideo && RNVideo ? (
+            <RNVideo
+              source={{ uri: String(post.playbackUrl || post.media.uri) }}
+              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.6 }}
+              resizeMode="contain"
+              repeat={true}
+              paused={false}
+              maxBitRate={1500000}
+              bufferConfig={{
+                minBufferMs: 20000,
+                maxBufferMs: 60000,
+                bufferForPlaybackMs: 5000,
+                bufferForPlaybackAfterRebufferMs: 10000,
+              }}
+              useTextureView={false}
+              progressUpdateInterval={750}
+              poster={String(post.media?.uri || post.playbackUrl)}
+              posterResizeMode="cover"
+              disableFocus={true}
+              playInBackground={false}
+              playWhenInactive={false}
+              ignoreSilentSwitch="ignore"
+              onLoad={(e: any) => {
+                setPlaybackDuration(e?.duration || 0);
+              }}
+              onProgress={(e: any) => {
+                setPlaybackTime(e?.currentTime || 0);
+              }}
+            />
+          ) : hasImage ? (
+            <Image
+              source={{ uri: post.media.uri }}
+              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.6, resizeMode: 'cover' }}
+            />
+          ) : null}
+
+          {/* Text */}
+          {hasText && (
+            <View style={{ padding: 20 }}>
+              {post.captionText && (
+                <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>
+                  {post.captionText}
+                </Text>
+              )}
+              {post.link && (
+                <Text style={{ color: '#00C2FF', fontSize: 16 }}>
+                  {post.link}
+                </Text>
+              )}
+            </View>
+          )}
+        </View>
+      );
+    } catch (error) {
+      return (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: 'white' }}>Error loading post content: {String(error)}</Text>
+        </View>
+      );
+    }
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: '#0A1929' }}>
-      <Text style={{ color: 'white', padding: 20 }}>Post Detail: {post.id}</Text>
-      {/* Add more details here */}
-      <Pressable onPress={() => navigation.goBack()} style={{ padding: 20 }}>
-        <Text style={{ color: 'white' }}>Back</Text>
+      {/* Back Button */}
+      <Pressable
+        onPress={() => navigation.goBack()}
+        style={{
+          position: 'absolute',
+          top: 50,
+          left: 20,
+          zIndex: 10,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          padding: 10,
+          borderRadius: 20,
+        }}
+      >
+        <Text style={{ color: 'white', fontSize: 16 }}>← Back</Text>
       </Pressable>
+
+      {/* Post Content */}
+      {renderPostContent()}
     </View>
   );
 }
