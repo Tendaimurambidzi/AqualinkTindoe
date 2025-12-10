@@ -129,14 +129,14 @@ try {
 const paperTexture = null;
 const myLogo = (() => {
   try {
-    return require('./assets/my_logo.jpg');
+    return require('./assets/my_logo.png');
   } catch {
     return null;
   }
 })();
 
 // Debug safety switch: keep false unless intentionally force-signing users out on cold start
-const FORCE_SIGN_OUT_ON_START = false;
+const FORCE_SIGN_OUT_ON_START = true;
 
 // Default dimensions for overlay UI; used in live stats panels
 const STATS_OVERLAY_HEIGHT = 220;
@@ -14457,72 +14457,35 @@ function SignInScreen({ navigation }: any) {
 }
 
 function WelcomeAnimationScreen({ navigation }: any) {
-  const [dots, setDots] = React.useState(0);
   const isMounted = React.useRef(true);
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
-  const scaleAnim = React.useRef(new Animated.Value(0.8)).current;
-  const waveAnim = React.useRef(new Animated.Value(0)).current;
-  const dropAnim = React.useRef(new Animated.Value(-50)).current;
+  const bounceAnim = React.useRef(new Animated.Value(0)).current;
 
   React.useEffect(() => {
-    // Entrance animations
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 8,
-        tension: 40,
-        useNativeDriver: true,
-      }),
-      Animated.timing(dropAnim, {
-        toValue: 0,
-        duration: 600,
-        delay: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // Gentle bounce animation
+    Animated.spring(bounceAnim, {
+      toValue: 1,
+      friction: 3,
+      tension: 40,
+      useNativeDriver: true,
+    }).start();
 
-    // Continuous wave animation
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(waveAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(waveAnim, {
-          toValue: 0,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ]),
-    ).start();
+    // Auto navigate after 4 seconds
+    const timer = setTimeout(() => {
+      if (isMounted.current) {
+        navigation.replace('AppHome');
+      }
+    }, 4000);
 
     return () => {
       isMounted.current = false;
+      clearTimeout(timer);
     };
-  }, []);
+  }, [navigation, bounceAnim]);
 
-  React.useEffect(() => {
-    let i = 0;
-    const interval = setInterval(() => {
-      i += 1;
-      if (isMounted.current) {
-        setDots(i);
-      }
-      if (i >= 6) {
-        clearInterval(interval);
-        if (isMounted.current) {
-          navigation.replace('AppHome');
-        }
-      }
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [navigation]);
+  const bounceTranslateY = bounceAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [50, -10, 0],
+  });
 
   const handleSkip = () => {
     if (isMounted.current) {
@@ -14530,134 +14493,44 @@ function WelcomeAnimationScreen({ navigation }: any) {
     }
   };
 
-  const waveTranslate = waveAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 10],
-  });
-
   return (
     <Pressable
       style={{
         flex: 1,
         backgroundColor: '#0A1929',
+        justifyContent: 'center',
+        alignItems: 'center',
       }}
       onPress={handleSkip}
     >
-      {/* Swimming fish background */}
-      {/* Removed SwimmingFishLoader animation */}
-      
-      {/* Main content with flex layout */}
-      <View style={{ flex: 1, justifyContent: 'space-between', paddingTop: 60, paddingBottom: 30, zIndex: 10 }}>
-        
-        {/* Header Section - Logo & Tagline */}
-        <Animated.View
-          style={{
-            alignItems: 'center',
-            opacity: fadeAnim,
-            paddingTop: 80,
-          }}
-        >
-          <Animated.Text
+      <Animated.View
+        style={{
+          transform: [{ translateY: bounceTranslateY }],
+        }}
+      >
+        {myLogo && (
+          <Animated.Image
+            source={myLogo}
             style={{
-              fontSize: 72,
-              marginBottom: 16,
-              transform: [{ translateY: dropAnim }],
-              color: '#7C0000',
+              width: 150,
+              height: 150,
+              borderRadius: 75,
+              opacity: 1,
             }}
-          >
-            🩸
-          </Animated.Text>
-          
-          <Text
-            style={{
-              fontStyle: 'italic',
-              fontSize: 48,
-              color: '#C0C0C0',
-              fontWeight: 'bold',
-              textShadowColor: 'rgba(192,192,192,0.8)',
-              textShadowOffset: { width: 0, height: 0 },
-              textShadowRadius: 25,
-            }}
-          >
-            SplashLine
-          </Text>
-
-          <Animated.Text
-            style={{
-              fontStyle: 'italic',
-              fontSize: 18,
-              color: 'white',
-              marginTop: 16,
-              transform: [{ translateY: waveTranslate }],
-            }}
-          >
-            Make a splash. Get seen!
-          </Animated.Text>
-        </Animated.View>
-        
-        {/* Feature Section - Bottom */}
-        <Animated.View
-          style={{
-            alignItems: 'center',
-            opacity: fadeAnim,
-            paddingBottom: 24,
-            paddingHorizontal: 24,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginTop: 12,
-              width: '100%',
-              paddingHorizontal: 12,
-            }}
-          >
-            <Text
-              style={{
-                color: 'rgba(255,255,255,0.95)',
-                fontSize: 15,
-                fontWeight: '700',
-                textAlign: 'center',
-                marginHorizontal: 2,
-                flexShrink: 0,
-                flexGrow: 0,
-              }}
-            >
-              Dive into waves
-            </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: '700', marginHorizontal: 8 }}>|</Text>
-            <Text
-              style={{
-                color: 'rgba(255,255,255,0.95)',
-                fontSize: 15,
-                fontWeight: '700',
-                textAlign: 'center',
-                marginHorizontal: 2,
-                flexShrink: 0,
-                flexGrow: 0,
-              }}
-            >
-              Make splashes
-            </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 16, fontWeight: '700', marginHorizontal: 8 }}>|</Text>
-            <Text
-              style={{
-                color: 'rgba(255,255,255,0.95)',
-                fontSize: 15,
-                fontWeight: '700',
-                textAlign: 'center',
-                marginHorizontal: 2,
-                flexShrink: 0,
-                flexGrow: 0,
-              }}
-            >
-              Send echoes
-            </Text>
-          </View>
-        </Animated.View>
-      </View>
+            resizeMode="contain"
+          />
+        )}
+      </Animated.View>
+      <Text
+        style={{
+          color: 'rgba(255,255,255,0.7)',
+          fontSize: 16,
+          marginTop: 20,
+          textAlign: 'center',
+        }}
+      >
+        Tap to continue
+      </Text>
     </Pressable>
   );
 }
