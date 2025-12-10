@@ -325,7 +325,7 @@ const waveOptionMenu = [
 // ======================== STYLES ========================
 const NAVY_BLUE = '#00BFFF';
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: 'black' },
+  root: { flex: 1, backgroundColor: 'white' },
   topStrip: {
     position: 'absolute',
     top: 0,
@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   videoSpaceInner: {
     flex: 1,
     justifyContent: 'center',
-    backgroundColor: NAVY_BLUE,
+    backgroundColor: 'white',
   },
   videoHint: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
   mediaPreview: { flex: 1, width: '100%', resizeMode: 'contain' },
@@ -411,10 +411,10 @@ const styles = StyleSheet.create({
   },
   postedWaveCaption: {
     position: 'absolute',
-    color: 'white',
+    color: 'black',
     fontWeight: 'bold',
     fontSize: 18,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
+    textShadowColor: 'rgba(255, 255, 255, 0.75)',
     textShadowOffset: { width: -1, height: 1 },
     textShadowRadius: 10,
   },
@@ -3941,6 +3941,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 media: { uri: finalUri } as any,
                 audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
                 captionText: caption,
+                link: data.link || null,
                 captionPosition: {
                   x: Number(cap?.x) || 0,
                   y: Number(cap?.y) || 0,
@@ -6822,60 +6823,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Animated.ScrollView
               ref={feedRef}
               style={{ flex: 1 }}
-              pagingEnabled={false}
+              pagingEnabled={true}
               disableIntervalMomentum={true}
               decelerationRate="fast"
               onTouchStart={() => showUiTemporarily()}
               showsVerticalScrollIndicator={false}
-              onScrollBeginDrag={e => {
+              onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
-                try {
-                  dragStartYRef.current = e.nativeEvent.contentOffset.y;
-                  dragStartTimeRef.current = Date.now();
-                } catch {}
               }}
-              onLayout={() => {
-                if (currentIndex < 0 && displayFeed.length > 0) {
-                  setCurrentIndex(0);
-                }
-              }}
-              onScrollEndDrag={e => {
-                // Make paging more sensitive: small, quick drags still change page
+              onMomentumScrollEnd={e => {
                 try {
-                  const endY = e.nativeEvent.contentOffset.y;
-                  const dy = endY - dragStartYRef.current;
-                  const height =
-                    e.nativeEvent.layoutMeasurement?.height || SCREEN_HEIGHT;
-                  const threshold = height * 0.02; // 2% of height
-                  const velocityY = e.nativeEvent.velocity?.y ?? 0;
-                  const quickFlick = Math.abs(velocityY) > 0.1;
-                  let target = currentIndex;
-                  if (
-                    dy > threshold ||
-                    (dy > 1 &&
-                      quickFlick &&
-                      Math.abs(dy) / (Date.now() - dragStartTimeRef.current) >
-                        0.1)
-                  )
-                    target = Math.min(currentIndex + 1, displayFeed.length - 1);
-                  else if (
-                    dy < -threshold ||
-                    (dy < -1 &&
-                      quickFlick &&
-                      Math.abs(dy) / (Date.now() - dragStartTimeRef.current) >
-                        0.1)
-                  )
-                    target = Math.max(currentIndex - 1, 0);
-                  if (target !== currentIndex) {
-                    feedRef.current?.scrollTo({
-                      y: target * height,
-                      animated: true,
-                    });
-                    setCurrentIndex(target);
+                  const offsetY = e.nativeEvent.contentOffset.y;
+                  const height = e.nativeEvent.layoutMeasurement.height || SCREEN_HEIGHT;
+                  const newIndex = Math.round(offsetY / height);
+                  if (newIndex !== currentIndex) {
+                    setCurrentIndex(newIndex);
                     setWaveKey(Date.now());
                   }
                 } catch {}
+                setIsSwiping(false);
               }}
             >
               {displayFeed.map((item, index) => {
@@ -6911,7 +6878,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const playSynced = shouldPlay && overlayPairReady;
                 const near = Math.abs(index - currentIndex) <= 1;
                 const textOnlyStory = !item.media && !item.image;
-                const colors = textOnlyStory ? ['#B3E5FC', '#FFFFFF'] : ['#000000', '#000000'];
+                const colors = ['#FFFFFF', '#FFFFFF'];
                 return (
                   <LinearGradient
                     colors={colors}
@@ -7226,6 +7193,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         ]}
                       >
                         {item.captionText}
+                      </Text>
+                    )}
+                    {!!item.link && (
+                      <Text
+                        style={[
+                          styles.postedWaveCaption,
+                          {
+                            transform: [
+                              { translateX: item.captionPosition.x },
+                              { translateY: item.captionPosition.y + 20 }, // offset below caption
+                            ],
+                          },
+                        ]}
+                      >
+                        {item.link}
                       </Text>
                     )}
                     {/* Play/Pause Button Overlay – center-only region to avoid conflict with outer tap-to-toggle */}

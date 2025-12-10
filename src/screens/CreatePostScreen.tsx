@@ -26,8 +26,10 @@ const mediaEditorItems = [
 
 const CreatePostScreen = ({ navigation, route }: any) => {
   const [caption, setCaption] = useState('');
+  const [link, setLink] = useState('');
   const [selectedMedia, setSelectedMedia] = useState<SimpleMedia | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [showLinkInput, setShowLinkInput] = useState(false);
   const onPostPublished: ((wave: any) => void) | undefined =
     route?.params?.onPostPublished;
 
@@ -72,6 +74,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
       const result = await uploadPost({
         media: selected ?? undefined,
         caption: trimmedCaption,
+        link: link.trim() || undefined,
       });
 
       const waveUri = result.mediaUrl || selected?.uri;
@@ -117,22 +120,67 @@ const CreatePostScreen = ({ navigation, route }: any) => {
   };
 
   return (
-    <View style={{ flex: 1, padding: 16 }}>
-      <Text style={{ fontSize: 18, marginBottom: 8 }}>Create Post</Text>
+    <View style={{ flex: 1, padding: 16, backgroundColor: '#f0f2f5' }}>
+      <Text style={{ fontSize: 18, marginBottom: 8, fontWeight: 'bold' }}>Create Post</Text>
 
       <TextInput
-        placeholder="Say something..."
+        placeholder="What's on your mind?"
         value={caption}
         onChangeText={setCaption}
         style={{
           borderWidth: 1,
-          borderColor: '#ccc',
+          borderColor: '#ddd',
           borderRadius: 8,
-          padding: 8,
+          padding: 12,
           marginBottom: 12,
+          backgroundColor: 'white',
+          minHeight: 80,
+          textAlignVertical: 'top',
         }}
         multiline
       />
+
+      {showLinkInput && (
+        <TextInput
+          placeholder="Paste link here..."
+          value={link}
+          onChangeText={setLink}
+          style={{
+            borderWidth: 1,
+            borderColor: '#ddd',
+            borderRadius: 8,
+            padding: 8,
+            marginBottom: 12,
+            backgroundColor: 'white',
+          }}
+        />
+      )}
+
+      <View style={{ flexDirection: 'row', marginBottom: 12 }}>
+        <Pressable
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 8,
+            marginRight: 16,
+          }}
+          onPress={handlePickMedia}
+        >
+          <Text style={{ fontSize: 20, marginRight: 8 }}>📷</Text>
+          <Text>Photo/Video</Text>
+        </Pressable>
+        <Pressable
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: 8,
+          }}
+          onPress={() => setShowLinkInput(!showLinkInput)}
+        >
+          <Text style={{ fontSize: 20, marginRight: 8 }}>🔗</Text>
+          <Text>Link</Text>
+        </Pressable>
+      </View>
 
       {selectedMedia ? (
         <>
@@ -166,18 +214,26 @@ const CreatePostScreen = ({ navigation, route }: any) => {
           </ScrollView>
         </>
       ) : (
-        <Text style={{ marginBottom: 12 }}>No media selected</Text>
+        <Text style={{ marginBottom: 12, color: '#666' }}>No media selected</Text>
       )}
 
-      <Button title="Pick Photo / Video" onPress={handlePickMedia} />
-
-      <View style={{ height: 12 }} />
-
-      {uploading ? (
-        <ActivityIndicator />
-      ) : (
-        <Button title="Post" onPress={handleUpload} />
-      )}
+      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
+        {uploading ? (
+          <ActivityIndicator />
+        ) : (
+          <Pressable
+            style={{
+              backgroundColor: '#1877f2',
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 6,
+            }}
+            onPress={handleUpload}
+          >
+            <Text style={{ color: 'white', fontWeight: 'bold' }}>Post</Text>
+          </Pressable>
+        )}
+      </View>
     </View>
   );
 };

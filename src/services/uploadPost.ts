@@ -13,6 +13,7 @@ export interface SimpleMedia {
 interface UploadPostParams {
   media?: SimpleMedia | null;
   caption: string;
+  link?: string;
 }
 
 let RNFS: typeof import('react-native-fs') | null = null;
@@ -35,7 +36,7 @@ const resolveRNFS = () => {
  * - Creates a Firestore document in "posts"
  * - Returns { id, mediaUrl }
  */
-export async function uploadPost({ media, caption }: UploadPostParams) {
+export async function uploadPost({ media, caption, link }: UploadPostParams) {
   const a = auth();
   const uid = a.currentUser?.uid;
 
@@ -119,6 +120,7 @@ export async function uploadPost({ media, caption }: UploadPostParams) {
     authorId: uid,
     authorName: a.currentUser?.displayName || null,
     text: caption, // waves use 'text' for caption
+    link: link || null,
     mediaUrl,
     mediaPath,
     mediaType,
