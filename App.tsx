@@ -7581,7 +7581,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     runSplashAnimation();
                   })}
                 >
-                  {/* Always show one drop. Label is 'Splashes' if not splashed, 'Splashed' if splashed. Count updates. */}
+                  {/* Always show one drop. Label is 'Glows' if not splashed, 'Glows Sent' if splashed. Count updates. */}
                   <>
                     <Animated.Text
                       style={[
@@ -7597,7 +7597,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         hasSplashed ? { color: '#00C2FF' } : null,
                       ]}
                     >
-                      Splashes
+                      Glows
                     </Text>
                     <Text style={styles.bottomBarCount}>
                       {formatCount(splashDisplayCount)}
