@@ -1657,7 +1657,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed],
   );
 
-  const [showPublicFeed, setShowPublicFeed] = useState<boolean>(true);
+  const [showPublicFeed, setShowPublicFeed] = useState<boolean>(false);
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
 
@@ -7318,8 +7318,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 ]}
               >
                 {showPublicFeed
-                  ? 'No waves drifting in the public sea yet.\nBe the first to make a splash!'
-                  : 'Your waves will drift here.\nTap + to cast your first wave into the sea.'}
+                  ? 'No vibes drifting in the public yet.\nBe the first to share a vibe!'
+                  : 'No vibes yet.\nTap + to share your first vibe.'}
               </Text>
             </View>
           )}
