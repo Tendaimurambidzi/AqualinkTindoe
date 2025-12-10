@@ -123,7 +123,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
                 onJoinCrew(item);
               }}
             >
-              <Text style={styles.userActionText}>Join Crew</Text>
+              <Text style={styles.userActionText}>Connect Vibe</Text>
             </Pressable>
           )}
           {onInviteToDrift && (

@@ -308,8 +308,8 @@ function useAppVersionInfo() {
 
 const waveOptionMenu = [
   {
-    label: 'Join Crew',
-    description: 'Follow this user to see their vibes in your feed.',
+    label: 'Connect Vibe',
+    description: 'Connect with this user to see their vibes in your feed.',
   },
   {
     label: 'Save to device',
@@ -323,7 +323,7 @@ const waveOptionMenu = [
 ];
 
 // ======================== STYLES ========================
-const NAVY_BLUE = '#001f3f';
+const NAVY_BLUE = '#00BFFF';
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: 'black' },
   topStrip: {
@@ -3180,7 +3180,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     removedUsers,
     postFeed,
   ]);
-  // Deduplicate my waves to avoid double-counting stats and keep counts aligned with the visible feed
+  // Deduplicate my vibes to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
     return vibesFeed.filter(w => {
@@ -3204,7 +3204,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [myWaveCount, uniqueMyWaves.length],
   );
-  // Splashes: sum of regularSplashes (not including hugs) on my waves
+  // Splashes: sum of regularSplashes (not including hugs) on my vibes
   const totalSplashesOnMyWaves = useMemo(
     () =>
       Math.max(
@@ -3216,7 +3216,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       ),
     [uniqueMyWaves, waveStats],
   );
-  // Hugs: sum of hugs (octopus_hug) on my waves
+  // Hugs: sum of hugs (octopus_hug) on my vibes
   const totalHugsOnMyWaves = useMemo(
     () =>
       Math.max(
@@ -3228,7 +3228,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       ),
     [uniqueMyWaves, waveStats],
   );
-  // Echoes: sum of echoes on my waves
+  // Echoes: sum of echoes on my vibes
   const totalEchoesOnMyWaves = useMemo(
     () =>
       uniqueMyWaves.reduce(
@@ -3335,10 +3335,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const entry = waveOptionMenu.find(item => item.label === label);
       setWaveOptionsTarget(null);
 
-      // Handle Join/Leave Crew
-      if (label === 'Join Crew') {
+      // Handle Connect/Disconnect Vibe
+      if (label === 'Connect Vibe') {
         if (!waveOptionsTarget.ownerUid || waveOptionsTarget.ownerUid === myUid) {
-          Alert.alert('Info', "You can't join your own crew");
+          Alert.alert('Info', "You can't connect to your own vibe");
           return;
         }
         const targetUid = waveOptionsTarget.ownerUid;
@@ -3933,7 +3933,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     .getDownloadURL();
                 } catch {}
               }
-              // Show all waves in public feed (my waves and other users' waves)
+              // Show all vibes in public feed (my vibes and other users' vibes)
               const finalUri = playbackUrl || mediaUri;
               if (!finalUri) continue;
               out.push({
@@ -5149,18 +5149,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const user = auth().currentUser;
       if (!user) {
-        Alert.alert('Sign in required', 'Please sign in to join a crew.');
+        Alert.alert('Sign in required', 'Please sign in to connect vibe.');
         return;
       }
 
       await joinCrew(targetUid);
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
-      notifySuccess(`Joined ${targetName || 'user'}'s crew`);
+      notifySuccess(`Connected to ${targetName || 'user'}'s vibe`);
       loadCrewCounts();
       await loadDriftWatchers();
     } catch (e) {
-      console.error('Join crew error:', e);
-      let msg = 'Could not join crew right now';
+      console.error('Connect vibe error:', e);
+      let msg = 'Could not connect vibe right now';
       if (e && (e.message || (typeof e === 'string'))) {
         msg = e.message || e.toString();
       }
@@ -5176,12 +5176,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       await leaveCrew(targetUid);
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
-      notifySuccess(`Left ${targetName || 'user'}'s crew`);
+      notifySuccess(`Disconnected from ${targetName || 'user'}'s vibe`);
       loadCrewCounts();
       await loadDriftWatchers();
     } catch (e) {
-      console.error('Leave crew error:', e);
-      notifyError('Could not leave crew right now');
+      console.error('Disconnect vibe error:', e);
+      notifyError('Could not disconnect vibe right now');
     } finally {
       setCrewLoading(false);
     }
@@ -8024,7 +8024,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     alignSelf: 'stretch',
                   }}
                 />
-                {/* Right: My Waves and My Treasure */}
+                {/* Right: My Vibes and My Collection */}
                 <View style={[styles.logbookPage, { paddingTop: 0, flex: 1 }]}> 
                   <Pressable
                     style={[styles.logbookAction, { marginTop: 0 }]}
@@ -8041,7 +8041,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           width: 10,
                           height: 10,
                           borderRadius: 5,
-                          backgroundColor: '#00C2FF',
+                          backgroundColor: '#1E90FF',
                         }}
                       />
                       <Text style={styles.logbookActionText}>My Vibes</Text>
@@ -8079,7 +8079,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     { key: 'crew', label: 'Crew', value: statsEntries.find(e => e.key === 'crew')?.value ?? 0 },
                     { key: 'splashes', label: 'Reactions', value: statsEntries.find(e => e.key === 'splashes')?.value ?? 0 },
                     { key: 'hugs', label: 'Hugs', value: statsEntries.find(e => e.key === 'hugs')?.value ?? 0 },
-                    { key: 'echoes', label: 'Echoes', value: statsEntries.find(e => e.key === 'echoes')?.value ?? 0 },
+                    { key: 'echoes', label: 'Replies', value: statsEntries.find(e => e.key === 'echoes')?.value ?? 0 },
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
                       <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
@@ -8099,7 +8099,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </View>
       </Modal>
 
-      {/* MY WAVES LIST */}
+      {/* MY VIBES LIST */}
       <Modal
         visible={showMyWaves}
         transparent
@@ -9723,7 +9723,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             fontSize: 14,
                             fontWeight: '600',
                           }}>
-                            {isInUserCrew[result.id] ? '🚪 Leave Crew' : '⚓ Join Crew'}
+                            {isInUserCrew[result.id] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
                           </Text>
                         </Pressable>
                         
@@ -10747,22 +10747,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     const targetUid = waveOptionsTarget.ownerUid!;
                     const targetName = waveOptionsTarget.authorName;
                     setWaveOptionsTarget(null);
-                    handleWaveOptionSelect('Join Crew');
+                    handleWaveOptionSelect('Connect Vibe');
                   }}
                   disabled={crewLoading}
                 >
                   <Text style={styles.waveOptionsItemTitle}>
-                    {'Join Crew'}
+                    {'Connect Vibe'}
                   </Text>
                   <Text style={styles.waveOptionsItemDescription}>
-                    {'Add this captain to your boarding list'}
+                    {'Add this vibe master to your vibe network'}
                   </Text>
                 </Pressable>
               )}
 
-            {/* Other existing options - filter out Join Crew from the static list */}
+            {/* Other existing options - filter out Connect Vibe from the static list */}
             {waveOptionMenu
-              .filter(option => option.label !== 'Join Crew')
+              .filter(option => option.label !== 'Connect Vibe')
               .map(option => (
                 <Pressable
                   key={option.label}
@@ -10820,9 +10820,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       setShowSendMessage(true);
                     }}
                   >
-                    <Text style={styles.waveOptionsItemTitle}>Ping</Text>
+                    <Text style={styles.waveOptionsItemTitle}>Echo Vibe</Text>
                     <Text style={styles.waveOptionsItemDescription}>
-                      Send a direct message to this captain
+                      Send an echo vibe to this vibe master
                     </Text>
                   </Pressable>
                 </>
@@ -12769,7 +12769,7 @@ const LiveStreamModal = ({
       ];
       const crewActions = [
         {
-          label: (isInUserCrew && isInUserCrew[user.id]) ? 'Remove from Crew' : 'Join Crew',
+          label: (isInUserCrew && isInUserCrew[user.id]) ? 'Disconnect Vibe' : 'Connect Vibe',
           action: (isInUserCrew && isInUserCrew[user.id]) ? 'removeFromCrew' : 'join',
           icon: 'dY?',
         },
