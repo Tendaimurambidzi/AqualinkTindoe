@@ -1472,6 +1472,7 @@ function AuthBackground() {
 // ======================== INNER APP ========================
 type InnerAppProps = { allowPlayback?: boolean };
 const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
+  const navigation = useNavigation();
   // Get current user for ocean features
   const [user, setUser] = useState<any>(null);
   
@@ -1494,7 +1495,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return sub;
   }, []);
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
   // Development safeguard (disabled): if you need to skip uploads in debug Android,
   // temporarily set this to: (__DEV__ && Platform.OS === 'android')
   const DEV_SKIP_STORAGE_UPLOAD = false;
@@ -6824,9 +6824,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ref={feedRef}
               style={{ flex: 1 }}
               pagingEnabled={true}
-              disableIntervalMomentum={true}
-              decelerationRate="fast"
-              onTouchStart={() => showUiTemporarily()}
+              decelerationRate="normal"
+              scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
@@ -6880,14 +6879,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
                 return (
-                  <LinearGradient
-                    colors={colors}
-                    key={item.id}
-                    style={[
-                      styles.postedWaveContainer,
-                      { width: SCREEN_WIDTH },
-                    ]}
-                  >
+                  <Pressable onPress={() => navigation.navigate('PostDetail', { post: item })}>
+                    <LinearGradient
+                      colors={colors}
+                      key={item.id}
+                      style={[
+                        styles.postedWaveContainer,
+                        { width: SCREEN_WIDTH, borderBottomWidth: 2, borderBottomColor: 'navy' },
+                      ]}
+                    >
                     {/* SPL Logo - left side opposite to 3-dot menu */}
                     {myLogo && (
                       <View
@@ -7249,6 +7249,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       )}
                     </Pressable>
                   </LinearGradient>
+                  </Pressable>
                 );
               })}
             </Animated.ScrollView>
@@ -14500,6 +14501,20 @@ function WelcomeAnimationScreen({ navigation }: any) {
     </Pressable>
   );
 }
+
+function PostDetailScreen({ route, navigation }: any) {
+  const { post } = route.params;
+  return (
+    <View style={{ flex: 1, backgroundColor: '#0A1929' }}>
+      <Text style={{ color: 'white', padding: 20 }}>Post Detail: {post.id}</Text>
+      {/* Add more details here */}
+      <Pressable onPress={() => navigation.goBack()} style={{ padding: 20 }}>
+        <Text style={{ color: 'white' }}>Back</Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /* ----------------------- Root Navigator ----------------------- */
 function AuthStack() {
   // Show the sign-in screen first so returning users arrive on it immediately
@@ -14526,6 +14541,7 @@ function AppStack() {
       />
       <Stack.Screen name="AppHome" component={InnerApp} />
       <Stack.Screen name="CreatePost" component={CreatePostScreen} />
+      <Stack.Screen name="PostDetail" component={PostDetailScreen} />
     </Stack.Navigator>
   );
 }
