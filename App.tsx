@@ -6879,7 +6879,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
                 return (
-                  <Pressable key={item.id} onPress={() => navigation.navigate('PostDetail', { post: item })}>
+                  <Pressable key={item.id}>
                     <View
                       style={[
                         { backgroundColor: 'white', margin: 10, borderRadius: 10, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
@@ -6993,6 +6993,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 setIsPaused(true);
                             } catch {}
                           }}
+                          controls={true}
                         />
                       ) : (
                         // Fallback: separate video + hidden audio when an overlay audio is present
@@ -7066,6 +7067,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   setIsPaused(true);
                               } catch {}
                             }}
+                            controls={true}
                           />
                           {RNVideo && item.audio?.uri && (
                             <RNVideo
@@ -7171,32 +7173,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </View>
                     )}
                     {/* Post Footer - Splashes, Echoes, Gems, Anchor vibe, Cast vibe, Placeholder */}
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 10 }}>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 10 }}
+                      style={{ marginTop: 10 }}
+                    >
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
                         <Text style={{ marginRight: 5 }}>💧</Text>
                         <Text>Splashes</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
                         <Text style={{ marginRight: 5 }}>📣</Text>
                         <Text>Echoes</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
                         <Text style={{ marginRight: 5 }}>💎</Text>
                         <Text>Gems</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
                         <Text style={{ marginRight: 5 }}>⚓</Text>
                         <Text>Anchor vibe</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
                         <Text style={{ marginRight: 5 }}>📡</Text>
                         <Text>Cast vibe</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
                         <Text style={{ marginRight: 5 }}>🔮</Text>
                         <Text>Placeholder</Text>
                       </TouchableOpacity>
-                    </View>
+                    </ScrollView>
                   </View>
                   </Pressable>
                 );
