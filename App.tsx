@@ -1,4 +1,4 @@
-// Correct “Send Echo” (comment) transaction
+// Correct "Send Echo" (comment) transaction
 import firestore from '@react-native-firebase/firestore';
 
 async function sendEcho(waveId: string, text: string) {
@@ -3503,7 +3503,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (label === 'Share' && currentWave) {
         try {
           await Share.share({
-            message: `Check out this SplashLine wave: ${currentWave.id}`,
+            message: `Check out this Vibe vibe: ${currentWave.id}`,
           });
         } catch {}
         return;
@@ -4414,11 +4414,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     () => [
       {
         title: 'Tidal Trends',
-        desc: 'User-voted "rising waves" of ocean hacks, viral beach fails, or marine memes.',
+        desc: 'User-voted "rising vibes" of social hacks, viral trends, or fun memes.',
       },
       {
-        title: 'Wave Radar',
-        desc: 'Real-time global ocean alerts and user-submitted surf spots with an AR overlay.',
+        title: 'Vibe Radar',
+        desc: 'Real-time global alerts and user-submitted spots with an AR overlay.',
       },
       {
         title: 'Crew Quests',
@@ -8044,7 +8044,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           backgroundColor: '#00C2FF',
                         }}
                       />
-                      <Text style={styles.logbookActionText}>My Waves</Text>
+                      <Text style={styles.logbookActionText}>My Vibes</Text>
                     </View>
                   </Pressable>
                   <Pressable
@@ -8065,7 +8065,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           backgroundColor: '#FFD700',
                         }}
                       />
-                      <Text style={styles.logbookActionText}>My Treasure</Text>
+                      <Text style={styles.logbookActionText}>My Collection</Text>
                     </View>
                   </Pressable>
                 </View>
@@ -8075,9 +8075,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
                   {/* Vertical stats list: label left, count right, no icons/dots */}
                   {[
-                    { key: 'waves', label: 'Waves', value: statsEntries.find(e => e.key === 'waves')?.value ?? 0 },
+                    { key: 'waves', label: 'Vibes', value: statsEntries.find(e => e.key === 'waves')?.value ?? 0 },
                     { key: 'crew', label: 'Crew', value: statsEntries.find(e => e.key === 'crew')?.value ?? 0 },
-                    { key: 'splashes', label: 'Splashes', value: statsEntries.find(e => e.key === 'splashes')?.value ?? 0 },
+                    { key: 'splashes', label: 'Reactions', value: statsEntries.find(e => e.key === 'splashes')?.value ?? 0 },
                     { key: 'hugs', label: 'Hugs', value: statsEntries.find(e => e.key === 'hugs')?.value ?? 0 },
                     { key: 'echoes', label: 'Echoes', value: statsEntries.find(e => e.key === 'echoes')?.value ?? 0 },
                   ].map((entry) => (
@@ -8123,7 +8123,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>My Waves</Text>
+              <Text style={styles.logbookTitle}>My Vibes</Text>
               <ScrollView>
                 {vibesFeed.length === 0 ? (
                   <Text style={styles.hint}>
@@ -10053,7 +10053,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>My Treasure</Text>
+              <Text style={styles.logbookTitle}>My Collection</Text>
               <ScrollView>
                 <Pressable
                   style={styles.logbookAction}
