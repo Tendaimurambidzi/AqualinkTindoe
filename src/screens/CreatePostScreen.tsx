@@ -91,7 +91,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
             audio: null,
             captionText: trimmedCaption,
             captionPosition: { x: 0, y: 0 },
-            playbackUrl: result.mediaUrl,
+            playbackUrl: selected?.type?.startsWith('image/') ? result.mediaUrl : null, // Use remote URL for images, local for videos until streaming is implemented
             muxStatus: null,
             authorName: auth().currentUser?.displayName || null,
             ownerUid: auth().currentUser?.uid || null,

@@ -6844,6 +6844,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               decelerationRate={0.85}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
+              onScroll={(event) => {
+                const scrollY = event.nativeEvent.contentOffset.y;
+                const averageItemHeight = 400; // approximate height per post
+                const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
+                if (newIndex !== currentIndex) {
+                  setCurrentIndex(newIndex);
+                }
+              }}
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
