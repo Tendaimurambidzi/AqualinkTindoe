@@ -12,7 +12,7 @@ async function sendEcho(waveId: string, text: string) {
   if (!trimmed) return;
 
   await firestore().runTransaction(async (tx) => {
-    // Ensure parent wave exists and has counts object
+    // Ensure parent vibe exists and has counts object
     const waveDoc = await tx.get(waveRef);
     if (!waveDoc.exists) {
       throw new Error('Vibe does not exist');
@@ -3722,7 +3722,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, [waveKey, currentWave?.id, showPearls]);
 
-  // Resume playback when Make Waves modal closes
+  // Resume playback when Make Vibes modal closes
   useEffect(() => {
     if (!showMakeWaves) setIsPaused(false);
   }, [showMakeWaves]);
@@ -5500,7 +5500,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
-  // Load wave stats for current vibesFeed (best-effort if Firebase exists)
+  // Load vibe stats for current vibesFeed (best-effort if Firebase exists)
   useEffect(() => {
     if (vibesFeed.length === 0) return;
     let firestoreMod: any = null;
@@ -7945,7 +7945,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>Make Waves</Text>
+              <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
                 <Pressable style={styles.logbookAction} onPress={() => setShowTextComposer(true)}>
                   <Text style={styles.logbookActionText}>Say Something</Text>

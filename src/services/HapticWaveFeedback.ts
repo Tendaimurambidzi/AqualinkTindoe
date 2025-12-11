@@ -69,7 +69,7 @@ class HapticWaveFeedback {
   }
 
   static scroll() {
-    // Subtle feedback for scrolling through waves
+    // Subtle feedback for scrolling through vibes
     Vibration.vibrate(10);
   }
 

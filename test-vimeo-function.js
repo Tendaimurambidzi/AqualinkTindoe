@@ -55,7 +55,7 @@ const testVimeoFunction = async () => {
     }
     
     console.log('\n✅ getVimeoVideos function will return HTTP 200 with video payloads');
-    console.log('✅ Client should NOT see "UNAUTHENTICATED" error in PUBLIC WAVES');
+    console.log('✅ Client should NOT see "UNAUTHENTICATED" error in PUBLIC VIBES');
     
   } catch (error) {
     console.error('\n❌ ERROR:', error.message);

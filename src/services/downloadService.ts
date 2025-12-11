@@ -9,7 +9,7 @@ export async function downloadWave(waveId: string, mediaUrl: string, fileName?: 
     if (Platform.OS === 'android') {
       const granted = await requestStoragePermission();
       if (!granted) {
-        Alert.alert('Permission Denied', 'Storage permission is required to download waves.');
+        Alert.alert('Permission Denied', 'Storage permission is required to download vibes.');
         return false;
       }
     }
@@ -105,7 +105,7 @@ async function requestStoragePermission(): Promise<boolean> {
         PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         {
           title: 'Storage Permission',
-          message: 'Drift needs access to your storage to download waves.',
+          message: 'Drift needs access to your storage to download vibes.',
           buttonNeutral: 'Ask Me Later',
           buttonNegative: 'Cancel',
           buttonPositive: 'OK',

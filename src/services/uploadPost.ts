@@ -119,7 +119,7 @@ export async function uploadPost({ media, caption, link }: UploadPostParams) {
     ownerUid: uid,
     authorId: uid,
     authorName: a.currentUser?.displayName || null,
-    text: caption, // waves use 'text' for caption
+    text: caption, // vibes use 'text' for caption
     link: link || null,
     mediaUrl,
     mediaPath,
