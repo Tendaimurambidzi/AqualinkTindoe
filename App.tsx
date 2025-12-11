@@ -7624,16 +7624,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 </View>
               </View>
               {/* My Vibes and My Collection - moved down below stats */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 20 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingHorizontal: 20, alignItems: 'center', gap: 16 }}>
                 <Pressable
-                  style={[styles.logbookAction, { flex: 1, marginHorizontal: 8, alignItems: 'center' }]}
+                  style={[styles.logbookAction, { flex: 0, minWidth: 140 }]}
                   onPress={() => {
                     setShowProfile(false);
                     setShowMyWaves(true);
                   }}
                 >
                   <View
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
                   >
                     <View
                       style={{
@@ -7647,14 +7647,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                 </Pressable>
                 <Pressable
-                  style={[styles.logbookAction, { flex: 1, marginHorizontal: 8, alignItems: 'center' }]}
+                  style={[styles.logbookAction, { flex: 0, minWidth: 140 }]}
                   onPress={() => {
                     setShowProfile(false);
                     setShowTreasure(true);
                   }}
                 >
                   <View
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
                   >
                     <View
                       style={{
