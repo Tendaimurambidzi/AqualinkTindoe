@@ -1693,7 +1693,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showBridge, setShowBridge] = useState<boolean>(false);
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
-  const [showProfilePictureZoom, setShowProfilePictureZoom] = useState<boolean>(false);
 
   // Crew (follow/unfollow) state
   const [myCrewCount, setMyCrewCount] = useState<number>(0);
@@ -6859,42 +6858,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 showUiTemporarily(); // Show toggles on swipe
               }}
             >
-              {/* Profile Picture Banner - Centered at top of feed */}
-              {profilePhoto && (
-                <View style={{ alignItems: 'center', paddingVertical: 20, backgroundColor: '#f0f2f5' }}>
-                  <TouchableOpacity 
-                    onPress={() => setShowProfilePictureZoom(true)}
-                    style={{ 
-                      width: 120, 
-                      height: 120, 
-                      borderRadius: 60, 
-                      borderWidth: 3, 
-                      borderColor: '#00C2FF',
-                      overflow: 'hidden',
-                      shadowColor: '#000',
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.3,
-                      shadowRadius: 4,
-                      elevation: 5,
-                    }}
-                  >
-                    <Image 
-                      source={{ uri: profilePhoto }} 
-                      style={{ width: '100%', height: '100%' }}
-                      resizeMode="cover"
-                    />
-                  </TouchableOpacity>
-                  <Text style={{ 
-                    marginTop: 10, 
-                    fontSize: 16, 
-                    fontWeight: '600', 
-                    color: '#333',
-                    textAlign: 'center'
-                  }}>
-                    {profileName || 'My Profile'}
-                  </Text>
-                </View>
-              )}
               {displayFeed.map((item, index) => {
                 // Only pause for modals that interfere with video/audio
                 const isAnyModalOpen =
@@ -6936,13 +6899,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       ]}
                     >
                     {/* Post Header */}
-                    <View style={{ alignItems: 'center', marginBottom: 10 }}>
-                      <Image source={{ uri: item.user?.avatar || 'https://via.placeholder.com/40' }} style={{ width: 40, height: 40, borderRadius: 20, marginBottom: 8 }} />
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontWeight: 'bold' }}>{item.user?.name || 'User'}</Text>
-                          <Text style={{ color: 'gray', fontSize: 12 }}>{item.createdAt?.toDate?.().toLocaleString() || 'Just now'}</Text>
-                        </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 10 }}>
+                      {/* Left side - empty for balance */}
+                      <View style={{ flex: 1 }} />
+                      
+                      {/* Center - Profile Picture */}
+                      <View style={{ alignItems: 'center', flex: 2 }}>
+                        <Image 
+                          source={{ uri: item.user?.avatar || profilePhoto || 'https://via.placeholder.com/40' }} 
+                          style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
+                        />
+                        <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
+                          {item.user?.name || profileName || 'User'}
+                        </Text>
+                        <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
+                          {item.createdAt?.toDate?.().toLocaleString() || 'Just now'}
+                        </Text>
+                      </View>
+                      
+                      {/* Right side - Menu button */}
+                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
                         <TouchableOpacity onPress={() => openWaveOptions(item)}>
                           <Text style={{ fontSize: 18 }}>⋮</Text>
                         </TouchableOpacity>
@@ -7702,43 +7678,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             onPress={() => setShowProfile(false)}
           >
             <Text style={styles.dismissText}>Close</Text>
-          </Pressable>
-        </View>
-      </Modal>
-
-      {/* PROFILE PICTURE ZOOM MODAL */}
-      <Modal
-        visible={showProfilePictureZoom}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowProfilePictureZoom(false)}
-      >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.9)' }]}
-        >
-          <Pressable
-            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
-            onPress={() => setShowProfilePictureZoom(false)}
-          >
-            {profilePhoto && (
-              <Image
-                source={{ uri: profilePhoto }}
-                style={{
-                  width: SCREEN_WIDTH * 0.9,
-                  height: SCREEN_WIDTH * 0.9,
-                  borderRadius: SCREEN_WIDTH * 0.45,
-                  borderWidth: 4,
-                  borderColor: '#00C2FF',
-                }}
-                resizeMode="cover"
-              />
-            )}
-          </Pressable>
-          <Pressable
-            style={[styles.dismissBtn, { position: 'absolute', top: 50, right: 20 }]}
-            onPress={() => setShowProfilePictureZoom(false)}
-          >
-            <Text style={styles.dismissText}>✕</Text>
           </Pressable>
         </View>
       </Modal>
