@@ -71,12 +71,13 @@ const VideoWithTapControls: React.FC<Props> = ({
   resizeMode = 'contain',
 }) => {
   const videoRef = useRef<Video | null>(null);
-  const [internalPaused, setInternalPaused] = useState<boolean>(paused);
+  const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
   const [controlsVisible, setControlsVisible] = useState<boolean>(false); // Start with controls hidden
   const controlsOpacity = useRef(new Animated.Value(0)).current; // Start with opacity 0
   const hideTimer = useRef<NodeJS.Timeout | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
+  const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
 
   useEffect(() => {
     setInternalPaused(paused);
@@ -153,9 +154,16 @@ const VideoWithTapControls: React.FC<Props> = ({
   }, [currentTime, seekStep, safeSeek, showControls]);
 
   const onPlayPause = useCallback(() => {
-    setInternalPaused(prev => !prev);
+    if (videoCompleted) {
+      // Replay video from beginning
+      safeSeek(0);
+      setVideoCompleted(false);
+      setInternalPaused(false);
+    } else {
+      setInternalPaused(prev => !prev);
+    }
     showControls();
-  }, [showControls]);
+  }, [videoCompleted, safeSeek, showControls]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);
@@ -166,6 +174,11 @@ const VideoWithTapControls: React.FC<Props> = ({
     setCurrentTime(data.currentTime);
     onProgress?.(data);
   }, [onProgress]);
+
+  const handleEnd = useCallback(() => {
+    setVideoCompleted(true);
+    setInternalPaused(true);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -178,12 +191,16 @@ const VideoWithTapControls: React.FC<Props> = ({
 
   useEffect(() => {
     if (controlsVisible) {
-      const announce = internalPaused ? "Player paused. Controls visible." : "Controls visible.";
+      const announce = videoCompleted 
+        ? "Video completed. Replay available." 
+        : internalPaused 
+          ? "Player paused. Controls visible." 
+          : "Controls visible.";
       AccessibilityInfo.isScreenReaderEnabled().then(enabled => {
         if (enabled) AccessibilityInfo.announceForAccessibility(announce);
       });
     }
-  }, [controlsVisible, internalPaused]);
+  }, [controlsVisible, internalPaused, videoCompleted]);
 
   return (
     <View style={[styles.container, style]}>
@@ -209,10 +226,23 @@ const VideoWithTapControls: React.FC<Props> = ({
         onProgress={handleProgress}
         onBuffer={onBuffer}
         onError={onError}
+        onEnd={handleEnd}
       />
       <TouchableWithoutFeedback onPressIn={onVideoTap}>
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
+      {videoCompleted && (
+        <View style={styles.replayContainer}>
+          <TouchableOpacity
+            accessibilityLabel="Replay video"
+            onPress={onPlayPause}
+            style={styles.replayButton}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+          >
+            <Text style={styles.replaySymbol}>↺</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       <Animated.View
         pointerEvents={controlsVisible ? "auto" : "none"}
         style={[styles.controlsContainer, { opacity: controlsOpacity, zIndex: 10 }]}
@@ -231,13 +261,15 @@ const VideoWithTapControls: React.FC<Props> = ({
 
           <TouchableOpacity
             accessibilityRole="button"
-            accessibilityLabel={internalPaused ? "Play" : "Pause"}
+            accessibilityLabel={videoCompleted ? "Replay video" : internalPaused ? "Play" : "Pause"}
             onPress={onPlayPause}
             style={styles.playButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <View style={styles.playCircle}>
-              <Text style={styles.playSymbol}>{internalPaused ? "▶" : "⏸"}</Text>
+              <Text style={styles.playSymbol}>
+                {internalPaused ? "▶" : "⏸"}
+              </Text>
             </View>
           </TouchableOpacity>
 
@@ -330,6 +362,27 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
     fontWeight: '500',
+  },
+  replayContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  replayButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  replaySymbol: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: '600',
   },
 });
 
