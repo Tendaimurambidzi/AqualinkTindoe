@@ -5,42 +5,36 @@ async function sendEcho(waveId: string, text: string) {
   const uid = firestore().app.auth().currentUser?.uid; // or however you get uid
   if (!uid) throw new Error('Not signed in');
 
-  const waveRef = firestore().collection('waves').doc(waveId);
-  const echoRef = waveRef.collection('echoes').doc(); // auto id
-
   const trimmed = text.trim();
   if (!trimmed) return;
 
-  await firestore().runTransaction(async (tx) => {
-    // Ensure parent vibe exists and has counts object
-    const waveDoc = await tx.get(waveRef);
-    if (!waveDoc.exists) {
-      throw new Error('Vibe does not exist');
+  // Get user profile data for the echo
+  let fromName = null;
+  let fromPhoto = null;
+  try {
+    const userDoc = await firestore().collection('users').doc(uid).get();
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      fromName = userData?.displayName || userData?.name || null;
+      fromPhoto = userData?.photoURL || null;
     }
-    let counts = waveDoc.data().counts || {};
-    if (typeof counts !== 'object' || Array.isArray(counts)) {
-      counts = {};
-    }
+  } catch (e) {
+    // Continue without profile data
+  }
 
-    // 1) create echo doc
-    tx.set(echoRef, {
-      userUid: uid,          // MUST be userUid (rules check this)
-      text: trimmed,         // MUST be "text"
-      createdAt: firestore.FieldValue.serverTimestamp(),
-    });
+  // Use Firebase callable function instead of direct Firestore
+  let functionsMod: any = null;
+  try {
+    functionsMod = require('@react-native-firebase/functions').default;
+  } catch {}
+  if (!functionsMod) throw new Error('Firebase Functions not available');
 
-    // 2) only increment counts + (optional) updatedAt
-    tx.update(waveRef, {
-      'counts.echoes': firestore.FieldValue.increment(1),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-    });
-  }).catch((err) => {
-    // Only show error if it's not a permission error for a successful echo
-    if (err && err.message && err.message.includes('permission-denied')) {
-      // Optionally: log silently, or show a less intrusive message
-      return;
-    }
-    throw err;
+  const createEchoFn = functionsMod().httpsCallable('createEcho');
+  await createEchoFn({
+    waveId,
+    text: trimmed,
+    fromName,
+    fromPhoto
   });
 }
 import React, {
@@ -2966,6 +2960,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, []);
 
+  // Load echoes when echo modal opens
+  useEffect(() => {
+    if (!showEchoes || !currentWave) {
+      setEchoList([]);
+      return;
+    }
+
+    const loadEchoes = async () => {
+      try {
+        const echoesSnap = await firestore()
+          .collection('waves')
+          .doc(currentWave.id)
+          .collection('echoes')
+          .orderBy('createdAt', 'desc')
+          .get();
+
+        const echoes = echoesSnap.docs.map(doc => ({
+          id: doc.id,
+          uid: doc.data().userUid,
+          text: doc.data().text,
+          userName: doc.data().userName || null,
+          updatedAt: doc.data().createdAt,
+          userPhoto: doc.data().userPhoto || null,
+        }));
+
+        setEchoList(echoes);
+      } catch (error) {
+        console.error('Error loading echoes:', error);
+        setEchoList([]);
+      }
+    };
+
+    loadEchoes();
+  }, [showEchoes, currentWave]);
+
   // Adjust right-side bubble vertical anchor to fit up to 3 stacks
   const rightBubblesTop = useMemo(() => {
     // Base at 45% of screen height; nudge upward as more stacks are shown
@@ -4776,21 +4805,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
 
     try {
-      let firestoreMod: any;
+      let functionsMod: any = null;
       try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
+        functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
-      if (firestoreMod) {
-        await firestoreMod()
-          .collection('waves')
-          .doc(currentWave.id)
-          .collection('echoes')
-          .doc(echoId)
-          .update({
-            text: newText,
-            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
-          });
-      }
+      if (!functionsMod) throw new Error('Firebase Functions not available');
+
+      const updateEchoFn = functionsMod().httpsCallable('updateEcho');
+      await updateEchoFn({
+        waveId: currentWave.id,
+        echoId,
+        text: newText
+      });
     } catch (e) {
       console.warn('Update echo failed', e);
       Alert.alert('Update failed', 'Could not update echo right now.');
@@ -4799,6 +4825,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const onDeleteMyEcho = async () => {
     if (!currentWave || !myEcho) return;
     try {
+      let functionsMod: any = null;
+      try {
+        functionsMod = require('@react-native-firebase/functions').default;
+      } catch {}
+      if (!functionsMod) throw new Error('Firebase Functions not available');
+
+      // Find the most recent echo by the user to delete it
       let firestoreMod: any;
       let authMod: any;
       try {
@@ -4813,6 +4846,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setMyEcho(null);
         return;
       }
+
       // Find the most recent echo by the user to delete it.
       const query = await firestoreMod()
         .collection('waves')
@@ -4825,8 +4859,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       const docToDelete = query?.docs?.[0];
       if (docToDelete) {
-        await docToDelete.ref.delete();
-        // Server Cloud Function will decrement counts.echoes
+        const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
+        await deleteEchoFn({
+          waveId: currentWave.id,
+          echoId: docToDelete.id
+        });
       }
 
       setEchoList(prev => prev.filter(e => e.uid !== user.uid));
@@ -4852,24 +4889,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
 
     try {
-      let firestoreMod: any;
-      let authMod: any;
+      let functionsMod: any = null;
       try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
+        functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const user = authMod?.().currentUser;
-      if (!firestoreMod || !user) return;
+      if (!functionsMod) throw new Error('Firebase Functions not available');
 
-      await firestoreMod()
-        .collection('waves')
-        .doc(currentWave.id)
-        .collection('echoes')
-        .doc(echoId)
-        .delete();
-      // Server Cloud Function will decrement counts.echoes
+      const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
+      await deleteEchoFn({
+        waveId: currentWave.id,
+        echoId
+      });
     } catch (e) {
       console.warn('Delete echo by ID failed', e);
       Alert.alert('Delete failed', 'Could not delete echo right now.');
@@ -5211,7 +5241,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             [`stats.${statField}`]: firestore.FieldValue.increment(-1),
           });
 
-        Alert.alert('Splash removed', 'You unsplashed this vibe.');
+        Alert.alert('Unsplashed', 'You unsplashed this vibe.');
       } else {
         // Add splash
         await firestore()
@@ -5261,7 +5291,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             });
         }
 
-        Alert.alert('Splashed!', 'You splashed this vibe.');
+        Alert.alert('Splashed', 'You splashed this vibe.');
       }
     } catch (error) {
       console.error('Splash error:', error);
@@ -5270,9 +5300,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
 
   const handlePostEcho = (wave: Vibe) => {
-    // Set current wave for echo functionality
+    // Open message typing menu to send message to post author
+    setMessageRecipient({
+      uid: wave.ownerUid || '',
+      name: wave.authorName || 'User'
+    });
+    setMessageText('');
+    setShowSendMessage(true);
+  };
+
+  const handlePostGem = (wave: Vibe) => {
     setCurrentWave(wave);
-    setShowEchoes(true);
+    setSelectedGemCountry('');
+    setSelectedGemPayment('');
+    setShowGems(true);
   };
 
   const getPaymentOptions = (country: string): string[] => {
@@ -9970,7 +10011,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         visible={showEchoes}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowEchoes(false)}
+        onRequestClose={() => {
+          setShowEchoes(false);
+          setEditingEcho(null);
+          updateEchoText('');
+        }}
       >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -10101,7 +10146,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
           <Pressable
             style={styles.dismissBtn}
-            onPress={() => setShowEchoes(false)}
+            onPress={() => {
+              setShowEchoes(false);
+              setEditingEcho(null);
+              updateEchoText('');
+            }}
           >
             <Text style={styles.dismissText}>Close</Text>
           </Pressable>

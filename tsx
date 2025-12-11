@@ -3974,120 +3974,55 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     console.log('[ECHO] Validation passed, proceeding with echo send');
 
     try {
-      let firestoreMod: any;
-      let authMod: any;
+      let functionsMod: any = null;
       try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
-        console.log('[ECHO] Firestore loaded:', !!firestoreMod);
-      } catch (err) {
-        console.log('[ECHO] Firestore load failed:', err);
-      }
+        functionsMod = require('@react-native-firebase/functions').default;
+      } catch {}
+      if (!functionsMod) throw new Error('Firebase Functions not available');
 
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-        console.log('[ECHO] Auth loaded:', !!authMod);
-      } catch (err) {
-        console.log('[ECHO] Auth load failed:', err);
-      }
-
-      const user = authMod?.().currentUser;
-      console.log('[ECHO] Current user:', user?.uid);
-
-      if (!firestoreMod) {
-        console.log('[ECHO] Firestore module not available');
-        showOceanDialog(
-          'Setup Required',
-          'Firestore navigation tools are not installed.',
-        );
-        return;
-      }
-
-      if (!user) {
-        console.log('[ECHO] User not signed in');
-        showOceanDialog(
-          'Sign In Required',
-          'Please sign in to cast echoes across the waves.',
-        );
-        return;
-      }
+      // Get user profile data for the echo
+      let fromName = profileName || accountCreationHandle || null;
+      let fromPhoto = profilePhoto || null;
 
       // Optimistic local insertion for immediate UI feedback
       const pendingId = `pending-${Date.now()}`;
       console.log('[ECHO] Adding optimistic echo:', pendingId);
-      setEchoList(prev => [
-        {
-          id: pendingId,
-          uid: user.uid,
-          text,
-          userName:
-            profileName || accountCreationHandle || user.displayName || 'You',
-          userPhoto: user.photoURL || null,
-          createdAt: new Date(),
-        },
-        ...prev,
-      ]);
+      const user = (() => {
+        try {
+          return require('@react-native-firebase/auth').default?.()?.currentUser;
+        } catch {
+          return null;
+        }
+      })();
+      if (user) {
+        setEchoList(prev => [
+          {
+            id: pendingId,
+            uid: user.uid,
+            text,
+            userName: fromName || user.displayName || 'You',
+            userPhoto: fromPhoto || user.photoURL || null,
+            createdAt: new Date(),
+          },
+          ...prev,
+        ]);
+      }
 
-      console.log('[ECHO] Saving to Firestore...');
-      const echoCollection = firestoreMod()
-        .collection('waves')
-        .doc(currentWave.id)
-        .collection('echoes');
-      const createdAt = firestoreMod.FieldValue?.serverTimestamp
-        ? firestoreMod.FieldValue.serverTimestamp()
-        : new Date();
-
-      const echoData = {
+      const createEchoFn = functionsMod().httpsCallable('createEcho');
+      const result = await createEchoFn({
+        waveId: currentWave.id,
         text,
-        userUid: user.uid,
-        userName:
-          profileName ||
-          accountCreationHandle ||
-          user.displayName ||
-          'Anonymous',
-        userPhoto: user.photoURL || null,
-        createdAt,
-      };
-      console.log('[ECHO] Echo data:', echoData);
+        fromName,
+        fromPhoto
+      });
 
-      const docRef = await echoCollection.add(echoData);
-      console.log('[ECHO] Echo saved with ID:', docRef.id);
+      console.log('[ECHO] Echo created with ID:', result.data.echoId);
 
       // Clear input after successful save
       updateEchoText('');
 
       // Remove pending echo; onSnapshot listener will add the real one
       setEchoList(prev => prev.filter(e => e.id !== pendingId));
-
-      // Server Cloud Function will increment counts.echoes
-
-      // Notify backend (optional)
-      try {
-        const cfgLocal = (() => {
-          try {
-            return require('./liveConfig');
-          } catch {
-            return null;
-          }
-        })();
-        const backendBase: string =
-          (cfgLocal &&
-            (cfgLocal.BACKEND_BASE_URL ||
-              cfgLocal.USER_MGMT_ENDPOINT_BASE ||
-              cfgLocal.USER_MANAGEMENT_BASE_URL)) ||
-          '';
-        if (backendBase) {
-          console.log('[ECHO] Notifying backend...');
-          fetch(`${backendBase}/notify/echo`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              waveId: currentWave.id,
-              actorUid: user.uid,
-              text,
-            }),
-          }).catch(() => {});
-        }
-      } catch {}
 
       // Update local myEcho (count updates via listener)
       setMyEcho({ text });
@@ -4109,53 +4044,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.error('[ECHO] Error code:', e?.code);
       console.error('[ECHO] Error message:', e?.message);
 
-      const code = String(e?.code || e?.message || '');
       const errorMsg = String(e?.message || e || 'Unknown error');
 
-      // Only queue when clearly offline or Firestore unavailable
-      const shouldQueue = /network|unavailable|timeout|failed to connect/i.test(
-        code,
-      );
-      console.log('[ECHO] Should queue?', shouldQueue);
+      // Remove pending echo on failure
+      setEchoList(prev => prev.filter(e => !e.id?.startsWith('pending-')));
 
-      if (shouldQueue) {
-        try {
-          const a =
-            require('@react-native-async-storage/async-storage').default;
-          const uid = (() => {
-            try {
-              return (
-                require('@react-native-firebase/auth').default?.()?.currentUser
-                  ?.uid || 'me'
-              );
-            } catch {
-              return 'me';
-            }
-          })();
-          const key = `pending_echoes_${currentWave?.id}`;
-          const pending = JSON.parse((await a.getItem(key)) || '[]');
-          const echoObj = {
-            uid,
-            text,
-            userName: profileName || accountCreationHandle || 'You',
-            userPhoto: profilePhoto || null,
-            createdAt: new Date().toISOString(),
-            pending: true,
-          };
-          pending.unshift(echoObj);
-          await a.setItem(key, JSON.stringify(pending));
-          console.log('[ECHO] Queued for later');
-          showOceanDialog(
-            'Saved Offline',
-            'Your echo will drift into the sea when you reconnect to the network.',
-          );
-        } catch (queueErr) {
-          console.error('[ECHO] Failed to queue:', queueErr);
-          Alert.alert('Error', `Could not send echo: ${errorMsg}`);
-        }
-      } else {
-        Alert.alert('Error', `Could not send echo: ${errorMsg}`);
-      }
+      Alert.alert('Error', `Could not send echo: ${errorMsg}`);
     }
   };
 
@@ -4183,21 +4077,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
 
     try {
-      let firestoreMod: any;
+      let functionsMod: any = null;
       try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
+        functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
-      if (firestoreMod) {
-        await firestoreMod()
-          .collection('waves')
-          .doc(currentWave.id)
-          .collection('echoes')
-          .doc(echoId)
-          .update({
-            text: newText,
-            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
-          });
-      }
+      if (!functionsMod) throw new Error('Firebase Functions not available');
+
+      const updateEchoFn = functionsMod().httpsCallable('updateEcho');
+      await updateEchoFn({
+        waveId: currentWave.id,
+        echoId,
+        text: newText
+      });
     } catch (e) {
       console.warn('Update echo failed', e);
       Alert.alert('Update failed', 'Could not update echo right now.');
@@ -4206,6 +4097,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const onDeleteMyEcho = async () => {
     if (!currentWave || !myEcho) return;
     try {
+      let functionsMod: any = null;
+      try {
+        functionsMod = require('@react-native-firebase/functions').default;
+      } catch {}
+      if (!functionsMod) throw new Error('Firebase Functions not available');
+
+      // Find the most recent echo by the user to delete it
       let firestoreMod: any;
       let authMod: any;
       try {
@@ -4220,6 +4118,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setMyEcho(null);
         return;
       }
+
       // Find the most recent echo by the user to delete it.
       const query = await firestoreMod()
         .collection('waves')
@@ -4232,8 +4131,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       if (query && typeof query.empty !== 'undefined' && !query.empty) {
         const docToDelete = query.docs[0];
-        await docToDelete.ref.delete();
-        // Server Cloud Function will decrement counts.echoes
+        const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
+        await deleteEchoFn({
+          waveId: currentWave.id,
+          echoId: docToDelete.id
+        });
       }
 
       setEchoList(prev => prev.filter(e => e.uid !== user.uid));
@@ -4259,24 +4161,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
 
     try {
-      let firestoreMod: any;
-      let authMod: any;
+      let functionsMod: any = null;
       try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
+        functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const user = authMod?.().currentUser;
-      if (!firestoreMod || !user) return;
+      if (!functionsMod) throw new Error('Firebase Functions not available');
 
-      await firestoreMod()
-        .collection('waves')
-        .doc(currentWave.id)
-        .collection('echoes')
-        .doc(echoId)
-        .delete();
-      // Server Cloud Function will decrement counts.echoes
+      const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
+      await deleteEchoFn({
+        waveId: currentWave.id,
+        echoId
+      });
     } catch (e) {
       console.warn('Delete echo by ID failed', e);
       Alert.alert('Delete failed', 'Could not delete echo right now.');
