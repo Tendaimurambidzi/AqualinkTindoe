@@ -112,6 +112,7 @@ import {
 } from './src/services/crewService';
 import { uploadPost } from './src/services/uploadPost';
 import CreatePostScreen from './src/screens/CreatePostScreen';
+import VideoWithTapControls from './src/components/VideoWithTapControls';
 
 
 // Navigation stack shared across auth/app flows
@@ -6926,291 +6927,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         {item.link && <Text style={{ color: 'blue', marginTop: 5 }}>{item.link}</Text>}
                       </View>
                     )}
-                    {!!RNVideo &&
-                    (item.playbackUrl || isVideoAsset(item.media)) &&
-                    !(videoErrorMap || {})[item.id] ? (
-                      item.playbackUrl ? (
-                        // Single stream: server-muxed URL
-                        <TouchableOpacity
-                          activeOpacity={1}
-                          onPress={() => setVideoControlsVisible(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                          style={{ position: 'relative' }}
-                        >
-                          <RNVideo
-                            key={`mux-${waveKey}-${item.id}`}
-                            source={{
-                              uri: String(
-                                isOffline && item.media?.uri
-                                  ? item.media.uri
-                                  : item.playbackUrl,
-                              ),
-                            }}
-                            style={videoStyleFor(item.id) as any}
-                            resizeMode={'contain'}
-                            repeat={true}
-                            paused={index !== currentIndex}
-                            maxBitRate={maxBr}
-                            bufferConfig={{
-                              minBufferMs: 20000,
-                              maxBufferMs: 60000,
-                              bufferForPlaybackMs: 5000,
-                              bufferForPlaybackAfterRebufferMs: 10000,
-                            }}
-                            useTextureView={useTextureForVideo}
-                            progressUpdateInterval={750}
-                            poster={String(item.media?.uri || item.playbackUrl)}
-                            posterResizeMode={'cover'}
-                            disableFocus={true}
-                            playInBackground={false}
-                            playWhenInactive={false}
-                            ignoreSilentSwitch={'ignore'}
-                            controls={videoControlsVisible[item.id] || false}
-                            onLoadStart={() => {
-                              try {
-                                if (shouldPlay) {
-                                  markBuffering(item.id, true);
-                                  setVideoLoading(prev => ({ ...prev, [item.id]: true }));
-                                }
-                              } catch {}
-                            }}
-                            onBuffer={(b: any) => {
-                              try {
-                                const isBuffering = !!b?.isBuffering && shouldPlay;
-                                markBuffering(item.id, isBuffering);
-                                setVideoLoading(prev => ({ ...prev, [item.id]: isBuffering }));
-                              } catch {}
-                            }}
-                            onError={(e: any) => {
-                              try {
-                                console.warn('FEED VIDEO ERR', e);
-                                const code = e?.error?.code
-                                  ? String(e.error.code)
-                                  : '';
-                                handleVideoPlaybackError(item.id, code);
-                                setVideoLoading(prev => ({ ...prev, [item.id]: false }));
-                              } catch {}
-                            }}
-                            onLoad={(e: any) => {
-                              try {
-                                markBuffering(item.id, false);
-                                markOverlayReady(item.id, 'video');
-                                setPlaybackDuration(e?.duration || 0);
-                                updateVideoAspect(item.id, e?.naturalSize);
-                                setVideoLoading(prev => ({ ...prev, [item.id]: false }));
-                              } catch {}
-                            }}
-                            onProgress={(e: any) => {
-                              try {
-                                const t = e?.currentTime || 0;
-                                setPlaybackTime(t);
-                                if (
-                                  !isWifi &&
-                                  bridge.autoplayCellular === 'preview' &&
-                                  t >= 4 &&
-                                  index === currentIndex
-                                )
-                                  setIsPaused(true);
-                              } catch {}
-                            }}
-                          />
-                          {videoLoading[item.id] && (
-                            <View style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              backgroundColor: 'rgba(0,0,0,0.3)'
-                            }}>
-                              <ActivityIndicator size="large" color="#00C2FF" />
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                      ) : (
-                        // Fallback: separate video + hidden audio when an overlay audio is present
-                        <>
-                          <TouchableOpacity
-                            activeOpacity={1}
-                            onPress={() => setVideoControlsVisible(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                            style={{ position: 'relative' }}
-                          >
-                          <RNVideo
-                            key={`vid-${waveKey}-${item.id}`}
-                          source={{ uri: String(item.media.uri) }}
-                          style={videoStyleFor(item.id) as any}
-                          resizeMode={'contain'}
-                            repeat={true}
-                            paused={index !== currentIndex}
-                            maxBitRate={maxBr}
-                            bufferConfig={{
-                              minBufferMs: 20000,
-                              maxBufferMs: 60000,
-                              bufferForPlaybackMs: 5000,
-                              bufferForPlaybackAfterRebufferMs: 10000,
-                            }}
-                            useTextureView={useTextureForVideo}
-                            progressUpdateInterval={750}
-                            poster={String(item.media.uri || item.playbackUrl)}
-                            posterResizeMode={'cover'}
-                            muted={!!item.audio?.uri}
-                            disableFocus={true}
-                            playInBackground={false}
-                            playWhenInactive={false}
-                            ignoreSilentSwitch={'ignore'}
-                            controls={videoControlsVisible[item.id] || false}
-                            onLoadStart={() => {
-                              try {
-                                if (shouldPlay) {
-                                  markBuffering(item.id, true);
-                                  setVideoLoading(prev => ({ ...prev, [item.id]: true }));
-                                }
-                              } catch {}
-                            }}
-                            onBuffer={(b: any) => {
-                              try {
-                                const isBuffering = !!b?.isBuffering && shouldPlay;
-                                markBuffering(item.id, isBuffering);
-                                setVideoLoading(prev => ({ ...prev, [item.id]: isBuffering }));
-                              } catch {}
-                            }}
-                            onError={(e: any) => {
-                              try {
-                                console.warn('FEED VIDEO ERR', e);
-                                const code = e?.error?.code
-                                  ? String(e.error.code)
-                                  : '';
-                                handleVideoPlaybackError(item.id, code);
-                                setVideoLoading(prev => ({ ...prev, [item.id]: false }));
-                              } catch {}
-                            }}
-                            onLoad={(e: any) => {
-                              try {
-                                markBuffering(item.id, false);
-                                markOverlayReady(item.id, 'video');
-                                setPlaybackDuration(e?.duration || 0);
-                                updateVideoAspect(item.id, e?.naturalSize);
-                                setVideoLoading(prev => ({ ...prev, [item.id]: false }));
-                              } catch {}
-                            }}
-                            onProgress={(e: any) => {
-                              try {
-                                const t = e?.currentTime || 0;
-                                setPlaybackTime(t);
-                                if (
-                                  !isWifi &&
-                                  bridge.autoplayCellular === 'preview' &&
-                                  t >= 4 &&
-                                  index === currentIndex
-                                )
-                                  setIsPaused(true);
-                              } catch {}
-                            }}
-                          />
-                          {videoLoading[item.id] && (
-                            <View style={{
-                              position: 'absolute',
-                              top: 0,
-                              left: 0,
-                              right: 0,
-                              bottom: 0,
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              backgroundColor: 'rgba(0,0,0,0.3)'
-                            }}>
-                              <ActivityIndicator size="large" color="#00C2FF" />
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                        {RNVideo && item.audio?.uri && (
-                          <RNVideo
-                            key={`aud-${waveKey}-${item.id}`}
-                            source={{ uri: item.audio.uri }}
-                            audioOnly
-                            repeat={true}
-                            paused={!playSynced}
-                            disableFocus={true}
-                            playInBackground={false}
-                            playWhenInactive={false}
-                            volume={1.0}
-                            ignoreSilentSwitch={'ignore'}
-                            style={{
-                              width: 1,
-                              height: 1,
-                              opacity: 0.01,
-                              position: 'absolute',
-                            }}
-                            useTextureView={false}
-                            progressUpdateInterval={500}
-                            onError={(e: any) => {
-                              try {
-                                console.warn('FEED AUDIO ERR', e);
-                              } catch {}
-                            }}
-                            onLoad={(data: any) => {
-                              try {
-                                markOverlayReady(item.id, 'audio');
-                                setPlaybackDuration(data?.duration || 0);
-                              } catch {}
-                            }}
-                            onProgress={(data: any) => {
-                              try {
-                                setPlaybackTime(data?.currentTime || 0);
-                              } catch {}
-                            }}
-                          />
-                        )}
-                        </>
-                      )
-                    ) : (
-                      <>
-                        <Image
-                          source={{ uri: item.media.uri }}
-                          style={[
-                            ...(videoStyleFor(item.id) as any),
-                            { resizeMode: 'cover' },
-                          ]}
-                        />
-                        {RNVideo && item.audio?.uri && (
-                          <RNVideo
-                            source={{ uri: item.audio.uri }}
-                            audioOnly
-                            repeat={true}
-                            paused={!playSynced}
-                            disableFocus={true}
-                            playInBackground={false}
-                            playWhenInactive={false}
-                            volume={1.0}
-                            ignoreSilentSwitch={'ignore'}
-                            style={{
-                              width: 1,
-                              height: 1,
-                              opacity: 0.01,
-                              position: 'absolute',
-                            }}
-                            useTextureView={false}
-                            progressUpdateInterval={500}
-                            onError={(e: any) => {
-                              try {
-                                console.warn('FEED AUDIO ERR', e);
-                              } catch {}
-                            }}
-                            onLoad={(data: any) => {
-                              try {
-                                markOverlayReady(item.id, 'audio');
-                                setPlaybackDuration(data?.duration || 0);
-                              } catch {}
-                            }}
-                            onProgress={(data: any) => {
-                              try {
-                                setPlaybackTime(data?.currentTime || 0);
-                              } catch {}
-                            }}
-                          />
-                        )}
-                      </>
-                    )}
+                    <VideoWithTapControls
+                      source={{ uri: item.media.uri }}
+                      style={videoStyleFor(item.id) as any}
+                      resizeMode={'contain'}
+                      paused={!playSynced}
+                    />
                     {bufferingMap[item.id] && shouldPlay && (
                       <View
                         style={{
@@ -14356,11 +14078,10 @@ function PostDetailScreen({ route, navigation }: any) {
         <View style={{ flex: 1 }}>
           {/* Video or Image */}
           {hasVideo && RNVideo ? (
-            <RNVideo
+            <VideoWithTapControls
               source={{ uri: String(post.playbackUrl || post.media.uri) }}
               style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.6 }}
               resizeMode="contain"
-              repeat={true}
               paused={false}
               maxBitRate={1500000}
               bufferConfig={{
