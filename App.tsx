@@ -6931,7 +6931,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             source={{ uri: item.media.uri }}
                             style={videoStyleFor(item.id) as any}
                             resizeMode={'contain'}
-                            paused={!playSynced}
+                            paused={true}
+                            playInBackground={false}
                           />
                         ) : (
                           <Image
