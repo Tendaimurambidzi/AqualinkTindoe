@@ -1693,6 +1693,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showBridge, setShowBridge] = useState<boolean>(false);
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
+  const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
 
   // Crew (follow/unfollow) state
   const [myCrewCount, setMyCrewCount] = useState<number>(0);
@@ -6905,10 +6906,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       
                       {/* Center - Profile Picture */}
                       <View style={{ alignItems: 'center', flex: 2 }}>
-                        <Image 
-                          source={{ uri: item.user?.avatar || profilePhoto || 'https://via.placeholder.com/40' }} 
-                          style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
-                        />
+                        <TouchableOpacity 
+                          onPress={() => {
+                            const picUri = item.user?.avatar || profilePhoto;
+                            if (picUri) setZoomedProfilePic(picUri);
+                          }}
+                          style={{ 
+                            borderRadius: 25, 
+                            borderWidth: 2, 
+                            borderColor: '#00C2FF',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <Image 
+                            source={{ uri: item.user?.avatar || profilePhoto || 'https://via.placeholder.com/40' }} 
+                            style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
+                          />
+                        </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
                           {item.user?.name || profileName || 'User'}
                         </Text>
@@ -7678,6 +7692,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             onPress={() => setShowProfile(false)}
           >
             <Text style={styles.dismissText}>Close</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      {/* PROFILE PICTURE ZOOM MODAL */}
+      <Modal
+        visible={zoomedProfilePic !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setZoomedProfilePic(null)}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.9)' }]}
+        >
+          <Pressable
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => setZoomedProfilePic(null)}
+          >
+            {zoomedProfilePic && (
+              <Image
+                source={{ uri: zoomedProfilePic }}
+                style={{
+                  width: SCREEN_WIDTH * 0.9,
+                  height: SCREEN_WIDTH * 0.9,
+                  borderRadius: SCREEN_WIDTH * 0.45,
+                  borderWidth: 4,
+                  borderColor: '#00C2FF',
+                }}
+                resizeMode="cover"
+              />
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.dismissBtn, { position: 'absolute', top: 50, right: 20 }]}
+            onPress={() => setZoomedProfilePic(null)}
+          >
+            <Text style={styles.dismissText}>✕</Text>
           </Pressable>
         </View>
       </Modal>
