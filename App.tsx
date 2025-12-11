@@ -7605,85 +7605,68 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   ]}
                 />
               </View>
-              {/* Left and Right sections */}
-              <View style={{ flexDirection: 'row', flex: 1 }}>
-                {/* Left: Profile section */}
-                <View style={[styles.logbookPage, { paddingTop: 0, flex: 1 }]}>
-                  {/* Profile content moved to center above */}
-                </View>
-                {/* Divider flush with statsOverlay */}
-                <View
-                  style={{
-                    width: 1,
-                    backgroundColor: 'rgba(0,0,0,0.4)',
-                    marginTop: 0,
-                    marginBottom: 0,
-                    alignSelf: 'stretch',
-                  }}
-                />
-                {/* Right: My Vibes and My Collection */}
-                <View style={[styles.logbookPage, { paddingTop: 0, flex: 1 }]}> 
-                  <Pressable
-                    style={[styles.logbookAction, { marginTop: 0 }]}
-                    onPress={() => {
-                      setShowProfile(false);
-                      setShowMyWaves(true);
-                    }}
-                  >
-                    <View
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                    >
-                      <View
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 5,
-                          backgroundColor: '#1E90FF',
-                        }}
-                      />
-                      <Text style={styles.logbookActionText}>My Vibes</Text>
+              {/* Stats tab - moved up for better professional layout */}
+              <View style={{ marginBottom: 16 }}>
+                <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
+                  {/* Vertical stats list: label left, count right, no icons/dots */}
+                  {[
+                    { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
+                    { key: 'crew', label: 'Crew', value: myCrewCount },
+                    { key: 'splashes', label: 'Reactions', value: totalSplashesOnMyWaves },
+                    { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves },
+                    { key: 'echoes', label: 'Replies', value: 0 },
+                  ].map((entry) => (
+                    <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
+                      <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
+                      <Text style={{ color: 'white', fontSize: 16, fontWeight: '400', marginLeft: 16 }}>{entry.value}</Text>
                     </View>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.logbookAction, { marginTop: 12 }]}
-                    onPress={() => {
-                      setShowProfile(false);
-                      setShowTreasure(true);
-                    }}
-                  >
-                    <View
-                      style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
-                    >
-                      <View
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 5,
-                          backgroundColor: '#FFD700',
-                        }}
-                      />
-                      <Text style={styles.logbookActionText}>My Collection</Text>
-                    </View>
-                  </Pressable>
+                  ))}
                 </View>
               </View>
-            </View>
-            {/* Stats tab below profile/actions, above close button */}
-            <View style={{ marginTop: 16, marginBottom: 8 }}>
-              <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
-                {/* Vertical stats list: label left, count right, no icons/dots */}
-                {[
-                  { key: 'waves', label: 'Vibes', value: 0 },
-                  { key: 'crew', label: 'Crew', value: 0 },
-                  { key: 'splashes', label: 'Reactions', value: 0 },
-                  { key: 'hugs', label: 'Hugs', value: 0 },
-                  { key: 'echoes', label: 'Replies', value: 0 },
-                ].map((entry) => (
-                  <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
-                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
-                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '400', marginLeft: 16 }}>{entry.value}</Text>
+              {/* My Vibes and My Collection - moved down below stats */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingHorizontal: 20 }}>
+                <Pressable
+                  style={[styles.logbookAction, { flex: 1, marginHorizontal: 8, alignItems: 'center' }]}
+                  onPress={() => {
+                    setShowProfile(false);
+                    setShowMyWaves(true);
+                  }}
+                >
+                  <View
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                  >
+                    <View
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: '#1E90FF',
+                      }}
+                    />
+                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Vibes</Text>
                   </View>
-                ))}
+                </Pressable>
+                <Pressable
+                  style={[styles.logbookAction, { flex: 1, marginHorizontal: 8, alignItems: 'center' }]}
+                  onPress={() => {
+                    setShowProfile(false);
+                    setShowTreasure(true);
+                  }}
+                >
+                  <View
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+                  >
+                    <View
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: '#FFD700',
+                      }}
+                    />
+                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Collection</Text>
+                  </View>
+                </Pressable>
               </View>
             </View>
           </View>
