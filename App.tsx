@@ -1693,6 +1693,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showBridge, setShowBridge] = useState<boolean>(false);
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
+  const [showProfilePictureZoom, setShowProfilePictureZoom] = useState<boolean>(false);
 
   // Crew (follow/unfollow) state
   const [myCrewCount, setMyCrewCount] = useState<number>(0);
@@ -6858,6 +6859,42 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 showUiTemporarily(); // Show toggles on swipe
               }}
             >
+              {/* Profile Picture Banner - Centered at top of feed */}
+              {profilePhoto && (
+                <View style={{ alignItems: 'center', paddingVertical: 20, backgroundColor: '#f0f2f5' }}>
+                  <TouchableOpacity 
+                    onPress={() => setShowProfilePictureZoom(true)}
+                    style={{ 
+                      width: 120, 
+                      height: 120, 
+                      borderRadius: 60, 
+                      borderWidth: 3, 
+                      borderColor: '#00C2FF',
+                      overflow: 'hidden',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.3,
+                      shadowRadius: 4,
+                      elevation: 5,
+                    }}
+                  >
+                    <Image 
+                      source={{ uri: profilePhoto }} 
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+                  <Text style={{ 
+                    marginTop: 10, 
+                    fontSize: 16, 
+                    fontWeight: '600', 
+                    color: '#333',
+                    textAlign: 'center'
+                  }}>
+                    {profileName || 'My Profile'}
+                  </Text>
+                </View>
+              )}
               {displayFeed.map((item, index) => {
                 // Only pause for modals that interfere with video/audio
                 const isAnyModalOpen =
@@ -6899,15 +6936,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       ]}
                     >
                     {/* Post Header */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
-                      <Image source={{ uri: item.user?.avatar || 'https://via.placeholder.com/40' }} style={{ width: 40, height: 40, borderRadius: 20 }} />
-                      <View style={{ marginLeft: 10, flex: 1 }}>
-                        <Text style={{ fontWeight: 'bold' }}>{item.user?.name || 'User'}</Text>
-                        <Text style={{ color: 'gray', fontSize: 12 }}>{item.createdAt?.toDate?.().toLocaleString() || 'Just now'}</Text>
+                    <View style={{ alignItems: 'center', marginBottom: 10 }}>
+                      <Image source={{ uri: item.user?.avatar || 'https://via.placeholder.com/40' }} style={{ width: 40, height: 40, borderRadius: 20, marginBottom: 8 }} />
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontWeight: 'bold' }}>{item.user?.name || 'User'}</Text>
+                          <Text style={{ color: 'gray', fontSize: 12 }}>{item.createdAt?.toDate?.().toLocaleString() || 'Just now'}</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => openWaveOptions(item)}>
+                          <Text style={{ fontSize: 18 }}>⋮</Text>
+                        </TouchableOpacity>
                       </View>
-                      <TouchableOpacity onPress={() => openWaveOptions(item)}>
-                        <Text style={{ fontSize: 18 }}>⋯</Text>
-                      </TouchableOpacity>
                     </View>
                     {/* Post Content - Text or Media */}
                     {item.media ? (
@@ -7498,86 +7537,89 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             )}
             {/* Profile and actions at the top, stats tab below them above close button */}
             <View style={{ flex: 1, flexDirection: 'column', marginTop: 16 }}>
+              {/* Centered Profile Avatar */}
+              <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                <EditableProfileAvatar
+                  initialPhotoUrl={profilePhoto}
+                  onPhotoChanged={async (newUri) => {
+                    // Optionally upload newUri to Firebase Storage and update Firestore
+                    setProfilePhoto(newUri);
+                    try {
+                      let firestoreMod: any = null;
+                      let authMod: any = null;
+                      try {
+                        firestoreMod = require('@react-native-firebase/firestore').default;
+                      } catch {}
+                      try {
+                        authMod = require('@react-native-firebase/auth').default;
+                      } catch {}
+                      const uid = authMod?.()?.currentUser?.uid;
+                      if (firestoreMod && uid) {
+                        await firestoreMod().doc(`users/${uid}`).update({
+                          userPhoto: newUri || null,
+                        });
+                      }
+                    } catch (e) {
+                      // Optionally show error
+                    }
+                  }}
+                />
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: 8,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.8)',
+                      fontSize: 18,
+                      marginRight: 2,
+                    }}
+                  >
+                    /
+                  </Text>
+                  <TextInput
+                    value={(profileName || '/Viber').replace(/^\/+/, '')}
+                    onChangeText={t =>
+                      setProfileName('/' + String(t || '').replace(/^\/+/, ''))
+                    }
+                    placeholder="Viber"
+                    placeholderTextColor="rgba(255,255,255,0.5)"
+                    style={[
+                      styles.profileName as any,
+                      {
+                        marginTop: 0,
+                        padding: 0,
+                        borderBottomWidth: 1,
+                        borderBottomColor: 'rgba(255,255,255,0.3)',
+                      },
+                    ]}
+                  />
+                </View>
+                <TextInput
+                  value={profileBio}
+                  onChangeText={setProfileBio}
+                  placeholder="Write a short bio..."
+                  placeholderTextColor="rgba(255,255,255,0.5)"
+                  multiline
+                  style={[
+                    styles.profileBio as any,
+                    {
+                      marginTop: 8,
+                      width: '100%',
+                      borderBottomWidth: 1,
+                      borderBottomColor: 'rgba(255,255,255,0.2)',
+                    },
+                  ]}
+                />
+              </View>
+              {/* Left and Right sections */}
               <View style={{ flexDirection: 'row', flex: 1 }}>
                 {/* Left: Profile section */}
-                <View style={[styles.logbookPage, { paddingTop: 0, flex: 1 }]}> 
-                  <View style={{ alignItems: 'center', marginBottom: 16 }}>
-                    <EditableProfileAvatar
-                      initialPhotoUrl={profilePhoto}
-                      onPhotoChanged={async (newUri) => {
-                        // Optionally upload newUri to Firebase Storage and update Firestore
-                        setProfilePhoto(newUri);
-                        try {
-                          let firestoreMod: any = null;
-                          let authMod: any = null;
-                          try {
-                            firestoreMod = require('@react-native-firebase/firestore').default;
-                          } catch {}
-                          try {
-                            authMod = require('@react-native-firebase/auth').default;
-                          } catch {}
-                          const uid = authMod?.()?.currentUser?.uid;
-                          if (firestoreMod && uid) {
-                            await firestoreMod().doc(`users/${uid}`).update({
-                              userPhoto: newUri || null,
-                            });
-                          }
-                        } catch (e) {
-                          // Optionally show error
-                        }
-                      }}
-                    />
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        marginTop: 8,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: 'rgba(255,255,255,0.8)',
-                          fontSize: 18,
-                          marginRight: 2,
-                        }}
-                      >
-                        /
-                      </Text>
-                      <TextInput
-                        value={(profileName || '/Viber').replace(/^\/+/, '')}
-                        onChangeText={t =>
-                          setProfileName('/' + String(t || '').replace(/^\/+/, ''))
-                        }
-                        placeholder="Viber"
-                        placeholderTextColor="rgba(255,255,255,0.5)"
-                        style={[
-                          styles.profileName as any,
-                          {
-                            marginTop: 0,
-                            padding: 0,
-                            borderBottomWidth: 1,
-                            borderBottomColor: 'rgba(255,255,255,0.3)',
-                          },
-                        ]}
-                      />
-                    </View>
-                    <TextInput
-                      value={profileBio}
-                      onChangeText={setProfileBio}
-                      placeholder="Write a short bio..."
-                      placeholderTextColor="rgba(255,255,255,0.5)"
-                      multiline
-                      style={[
-                        styles.profileBio as any,
-                        {
-                          marginTop: 8,
-                          width: '100%',
-                          borderBottomWidth: 1,
-                          borderBottomColor: 'rgba(255,255,255,0.2)',
-                        },
-                      ]}
-                    />
-                  </View>
+                <View style={[styles.logbookPage, { paddingTop: 0, flex: 1 }]}>
+                  {/* Profile content moved to center above */}
                 </View>
                 {/* Divider flush with statsOverlay */}
                 <View
@@ -7635,23 +7677,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </Pressable>
                 </View>
               </View>
-              {/* Stats tab below profile/actions, above close button */}
-              <View style={{ marginTop: 16, marginBottom: 8 }}>
-                <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
-                  {/* Vertical stats list: label left, count right, no icons/dots */}
-                  {[
-                    { key: 'waves', label: 'Vibes', value: statsEntries.find(e => e.key === 'waves')?.value ?? 0 },
-                    { key: 'crew', label: 'Crew', value: statsEntries.find(e => e.key === 'crew')?.value ?? 0 },
-                    { key: 'splashes', label: 'Reactions', value: statsEntries.find(e => e.key === 'splashes')?.value ?? 0 },
-                    { key: 'hugs', label: 'Hugs', value: statsEntries.find(e => e.key === 'hugs')?.value ?? 0 },
-                    { key: 'echoes', label: 'Replies', value: statsEntries.find(e => e.key === 'echoes')?.value ?? 0 },
-                  ].map((entry) => (
-                    <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
-                      <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
-                      <Text style={{ color: 'white', fontSize: 16, fontWeight: '400', marginLeft: 16 }}>{formatCount(entry.value)}</Text>
-                    </View>
-                  ))}
-                </View>
+            </View>
+            {/* Stats tab below profile/actions, above close button */}
+            <View style={{ marginTop: 16, marginBottom: 8 }}>
+              <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
+                {/* Vertical stats list: label left, count right, no icons/dots */}
+                {[
+                  { key: 'waves', label: 'Vibes', value: 0 },
+                  { key: 'crew', label: 'Crew', value: 0 },
+                  { key: 'splashes', label: 'Reactions', value: 0 },
+                  { key: 'hugs', label: 'Hugs', value: 0 },
+                  { key: 'echoes', label: 'Replies', value: 0 },
+                ].map((entry) => (
+                  <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '400', marginLeft: 16 }}>{entry.value}</Text>
+                  </View>
+                ))}
               </View>
             </View>
           </View>
@@ -7660,6 +7702,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             onPress={() => setShowProfile(false)}
           >
             <Text style={styles.dismissText}>Close</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      {/* PROFILE PICTURE ZOOM MODAL */}
+      <Modal
+        visible={showProfilePictureZoom}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowProfilePictureZoom(false)}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.9)' }]}
+        >
+          <Pressable
+            style={{ flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' }}
+            onPress={() => setShowProfilePictureZoom(false)}
+          >
+            {profilePhoto && (
+              <Image
+                source={{ uri: profilePhoto }}
+                style={{
+                  width: SCREEN_WIDTH * 0.9,
+                  height: SCREEN_WIDTH * 0.9,
+                  borderRadius: SCREEN_WIDTH * 0.45,
+                  borderWidth: 4,
+                  borderColor: '#00C2FF',
+                }}
+                resizeMode="cover"
+              />
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.dismissBtn, { position: 'absolute', top: 50, right: 20 }]}
+            onPress={() => setShowProfilePictureZoom(false)}
+          >
+            <Text style={styles.dismissText}>✕</Text>
           </Pressable>
         </View>
       </Modal>
