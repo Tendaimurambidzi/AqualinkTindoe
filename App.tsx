@@ -14066,6 +14066,7 @@ function PostDetailScreen({ route, navigation }: any) {
   const { post } = route.params;
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
+  const isFocused = useIsFocused();
 
   // Simplified rendering for post detail
   const renderPostContent = () => {
@@ -14082,7 +14083,7 @@ function PostDetailScreen({ route, navigation }: any) {
               source={{ uri: String(post.playbackUrl || post.media.uri) }}
               style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.6 }}
               resizeMode="contain"
-              paused={false}
+              paused={!isFocused}
               maxBitRate={1500000}
               bufferConfig={{
                 minBufferMs: 20000,

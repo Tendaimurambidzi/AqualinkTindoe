@@ -15,6 +15,12 @@ import Video, {OnProgressData} from "react-native-video";
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
 type Props = {
   source: { uri: string } | number;
   style?: object;
@@ -242,6 +248,11 @@ const VideoWithTapControls: React.FC<Props> = ({
             <Text style={styles.controlIcon}>⏩</Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.timeContainer}>
+          <Text style={styles.timeText}>
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </Text>
+        </View>
       </Animated.View>
     </View>
   );
@@ -276,6 +287,20 @@ const styles = StyleSheet.create({
   },
   controlIcon: {
     fontSize: 24,
+  },
+  timeContainer: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  timeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
 
