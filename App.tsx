@@ -2068,6 +2068,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [bridge.rainEffectsEnabled]);
   const [showPearls, setShowPearls] = useState<boolean>(false);
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
+  const [expandedEchoPost, setExpandedEchoPost] = useState<string | null>(null);
+  const [postEchoTexts, setPostEchoTexts] = useState<{[postId: string]: string}>({});
+  const [postEchoLists, setPostEchoLists] = useState<{[postId: string]: any[]}>({});
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [unreadPingsCount, setUnreadPingsCount] = useState(0);
   const [pings, setPings] = useState<Ping[]>([]);
@@ -5300,13 +5303,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
 
   const handlePostEcho = (wave: Vibe) => {
-    // Open message typing menu to send message to post author
-    setMessageRecipient({
-      uid: wave.ownerUid || '',
-      name: wave.authorName || 'User'
-    });
-    setMessageText('');
-    setShowSendMessage(true);
+    // Toggle inline echo input for this post
+    setExpandedEchoPost(expandedEchoPost === wave.id ? null : wave.id);
   };
 
   const handlePostGem = (wave: Vibe) => {
@@ -5315,6 +5313,110 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setSelectedGemPayment('');
     setShowGems(true);
   };
+
+  const handleSendPostEcho = async (waveId: string) => {
+    const text = postEchoTexts[waveId]?.trim();
+    if (!text) return;
+
+    try {
+      let functionsMod: any = null;
+      try {
+        functionsMod = require('@react-native-firebase/functions').default;
+      } catch {}
+      if (!functionsMod) throw new Error('Firebase Functions not available');
+
+      // Get user profile data for the echo
+      let fromName = null;
+      let fromPhoto = null;
+      try {
+        const userDoc = await firestore().collection('users').doc(firestore().app.auth().currentUser?.uid || '').get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          fromName = userData?.displayName || userData?.name || null;
+          fromPhoto = userData?.photoURL || null;
+        }
+      } catch (e) {
+        // Continue without profile data
+      }
+
+      const createEchoFn = functionsMod().httpsCallable('createEcho');
+      await createEchoFn({
+        waveId,
+        text,
+        fromName,
+        fromPhoto
+      });
+
+      // Clear the input
+      setPostEchoTexts(prev => ({ ...prev, [waveId]: '' }));
+
+      // Update local echo count for immediate UI feedback
+      setVibesFeed(prev => prev.map(vibe => 
+        vibe.id === waveId 
+          ? { ...vibe, counts: { 
+              splashes: vibe.counts?.splashes || 0,
+              echoes: (vibe.counts?.echoes || 0) + 1,
+              gems: vibe.counts?.gems || 0
+            }}
+          : vibe
+      ));
+      setPublicFeed(prev => prev.map(vibe => 
+        vibe.id === waveId 
+          ? { ...vibe, counts: { 
+              splashes: vibe.counts?.splashes || 0,
+              echoes: (vibe.counts?.echoes || 0) + 1,
+              gems: vibe.counts?.gems || 0
+            }}
+          : vibe
+      ));
+
+      // Refresh echo list for this post
+      loadPostEchoes(waveId);
+
+      // Show success message
+      showOceanDialog(
+        'Echo Cast!',
+        'Your echo has been cast!',
+      );
+
+    } catch (e) {
+      console.warn('Send post echo failed', e);
+      Alert.alert('Error', 'Could not send echo right now.');
+    }
+  };
+
+  const loadPostEchoes = async (waveId: string) => {
+    try {
+      const echoesSnap = await firestore()
+        .collection('waves')
+        .doc(waveId)
+        .collection('echoes')
+        .orderBy('createdAt', 'desc')
+        .limit(10)
+        .get();
+
+      const echoes = echoesSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        uid: doc.data().userUid,
+        text: doc.data().text,
+        userName: doc.data().userName,
+        userPhoto: doc.data().userPhoto,
+        createdAt: doc.data().createdAt,
+      }));
+
+      setPostEchoLists(prev => ({ ...prev, [waveId]: echoes }));
+    } catch (e) {
+      console.warn('Load post echoes failed', e);
+    }
+  };
+
+  // Load echoes when a post is expanded
+  useEffect(() => {
+    if (expandedEchoPost) {
+      loadPostEchoes(expandedEchoPost);
+    }
+  }, [expandedEchoPost]);
 
   const getPaymentOptions = (country: string): string[] => {
     const countryCode = country.split(' ')[0];
@@ -7251,6 +7353,99 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text>Placeholder</Text>
                       </TouchableOpacity>
                     </ScrollView>
+
+                    {/* Inline Echo Commenting UI - Facebook Style */}
+                    {expandedEchoPost === item.id && (
+                      <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
+                        {/* Comment Input */}
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          marginBottom: 10,
+                          padding: 12,
+                          backgroundColor: 'rgba(255,255,255,0.95)',
+                          borderRadius: 25,
+                          borderWidth: 2,
+                          borderColor: '#00C2FF',
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.1,
+                          shadowRadius: 4,
+                          elevation: 3,
+                        }}>
+                          <TextInput
+                            placeholder="Write an echo..."
+                            value={postEchoTexts[item.id] || ''}
+                            onChangeText={(text) => setPostEchoTexts(prev => ({ ...prev, [item.id]: text }))}
+                            style={{
+                              flex: 1,
+                              color: 'black',
+                              fontSize: 14,
+                              paddingVertical: 8,
+                              paddingHorizontal: 12,
+                            }}
+                            placeholderTextColor="rgba(0,0,0,0.5)"
+                            multiline
+                          />
+                          <TouchableOpacity
+                            onPress={() => handleSendPostEcho(item.id)}
+                            disabled={!postEchoTexts[item.id]?.trim()}
+                            style={{
+                              marginLeft: 10,
+                              paddingHorizontal: 15,
+                              paddingVertical: 8,
+                              backgroundColor: postEchoTexts[item.id]?.trim() ? '#00C2FF' : 'rgba(255,255,255,0.2)',
+                              borderRadius: 15,
+                            }}
+                          >
+                            <Text style={{
+                              color: postEchoTexts[item.id]?.trim() ? 'white' : 'rgba(255,255,255,0.5)',
+                              fontSize: 12,
+                              fontWeight: '600',
+                            }}>
+                              Send
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+
+                        {/* Echoes List */}
+                        {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
+                          <View style={{ marginTop: 10 }}>
+                            {postEchoLists[item.id].map((echo, idx) => (
+                              <View key={echo.id || idx} style={{
+                                flexDirection: 'row',
+                                marginBottom: 8,
+                                padding: 8,
+                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                borderRadius: 8,
+                              }}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: 'white', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                    {displayHandle(echo.uid, echo.userName || echo.uid)}
+                                  </Text>
+                                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>
+                                    {echo.text}
+                                  </Text>
+                                </View>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        {/* No echoes message */}
+                        {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
+                          <Text style={{
+                            color: 'rgba(255,255,255,0.6)',
+                            fontSize: 12,
+                            textAlign: 'center',
+                            marginTop: 10,
+                            fontStyle: 'italic'
+                          }}>
+                            No echoes yet. Be the first to comment!
+                          </Text>
+                        )}
+                      </View>
+                    )}
                   </View>
                   </Pressable>
                 );
