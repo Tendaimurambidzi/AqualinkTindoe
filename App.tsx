@@ -6909,33 +6909,61 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={{ fontSize: 18 }}>⋯</Text>
                       </TouchableOpacity>
                     </View>
-                    {/* Post Text */}
-                    {item.captionText && (
-                      <View style={{ marginBottom: 10 }}>
-                        <Text style={{ fontSize: 16, lineHeight: 20 }}>
+                    {/* Post Content - Text or Media */}
+                    {item.media ? (
+                      /* Posts with media */
+                      <>
+                        {/* Post Text (if any) */}
+                        {item.captionText && (
+                          <View style={{ marginBottom: 10 }}>
+                            <Text style={{ fontSize: 16, lineHeight: 20 }}>
+                              {expandedPosts[item.id]
+                                ? item.captionText
+                                : item.captionText.length > 500
+                                ? item.captionText.substring(0, 500) + '...'
+                                : item.captionText}
+                            </Text>
+                          </View>
+                        )}
+                        {/* Post Media */}
+                        {isVideoAsset(item.media) ? (
+                          <VideoWithTapControls
+                            source={{ uri: item.media.uri }}
+                            style={videoStyleFor(item.id) as any}
+                            resizeMode={'contain'}
+                            paused={!playSynced}
+                          />
+                        ) : (
+                          <Image
+                            source={{ uri: item.media.uri }}
+                            style={videoStyleFor(item.id) as any}
+                            resizeMode="cover"
+                          />
+                        )}
+                      </>
+                    ) : (
+                      /* Text-only posts - use same height as media, or expand when needed */
+                      <View style={[
+                        expandedPosts[item.id] ? { minHeight: (SCREEN_WIDTH - 40) / (9/16) } : videoStyleFor(item.id),
+                        expandedPosts[item.id] ? {} : { overflow: 'hidden' }
+                      ] as any}>
+                        <Text style={{ fontSize: 16, lineHeight: 20, flex: expandedPosts[item.id] ? 0 : 1 }}>
                           {expandedPosts[item.id]
                             ? item.captionText
                             : item.captionText.length > 500
-                            ? item.captionText.substring(0, 500) + '...'
+                            ? item.captionText.substring(0, 500) + '... '
                             : item.captionText}
+                          {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] && (
+                            <Text
+                              style={{ color: '#00C2FF', fontSize: 16, fontWeight: '600' }}
+                              onPress={() => setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                            >
+                              Read More
+                            </Text>
+                          )}
                         </Text>
                       </View>
                     )}
-                    {/* Post Media */}
-                    {item.media && isVideoAsset(item.media) ? (
-                      <VideoWithTapControls
-                        source={{ uri: item.media.uri }}
-                        style={videoStyleFor(item.id) as any}
-                        resizeMode={'contain'}
-                        paused={!playSynced}
-                      />
-                    ) : item.media ? (
-                      <Image
-                        source={{ uri: item.media.uri }}
-                        style={videoStyleFor(item.id) as any}
-                        resizeMode="cover"
-                      />
-                    ) : null}
                     {bufferingMap[item.id] && shouldPlay && (
                       <View
                         style={{

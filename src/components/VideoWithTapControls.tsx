@@ -221,29 +221,35 @@ const VideoWithTapControls: React.FC<Props> = ({
           <TouchableOpacity
             accessibilityLabel="Rewind ten seconds"
             onPress={onRewind}
-            style={styles.controlButton}
+            style={styles.seekButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.controlIcon}>⏪</Text>
+            <View style={styles.seekCircle}>
+              <Text style={styles.seekNumber}>{seekStep}</Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
             accessibilityRole="button"
             accessibilityLabel={internalPaused ? "Play" : "Pause"}
             onPress={onPlayPause}
-            style={styles.controlButton}
+            style={styles.playButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.controlIcon}>{internalPaused ? "▶️" : "⏸️"}</Text>
+            <View style={styles.playCircle}>
+              <Text style={styles.playSymbol}>{internalPaused ? "▶" : "⏸"}</Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
             accessibilityLabel="Fast forward ten seconds"
             onPress={onFastForward}
-            style={styles.controlButton}
+            style={styles.seekButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={styles.controlIcon}>⏩</Text>
+            <View style={styles.seekCircle}>
+              <Text style={styles.seekNumber}>{seekStep}</Text>
+            </View>
           </TouchableOpacity>
         </View>
         <View style={styles.timeContainer}>
@@ -269,22 +275,47 @@ const styles = StyleSheet.create({
   controlsRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.6)",
-    borderRadius: 30,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
-  controlButton: {
+  seekButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginHorizontal: 8,
     padding: 8,
-    borderRadius: 40,
-    minWidth: 50,
-    minHeight: 50,
-    justifyContent: "center",
-    alignItems: "center",
   },
-  controlIcon: {
-    fontSize: 24,
+  seekCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  seekNumber: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  playButton: {
+    marginHorizontal: 8,
+    padding: 8,
+  },
+  playCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  playSymbol: {
+    color: 'white',
+    fontSize: 20,
+    fontWeight: '600',
   },
   timeContainer: {
     position: 'absolute',
