@@ -72,8 +72,8 @@ const VideoWithTapControls: React.FC<Props> = ({
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(paused);
-  const [controlsVisible, setControlsVisible] = useState<boolean>(true); // Start with controls visible
-  const controlsOpacity = useRef(new Animated.Value(1)).current; // Start with opacity 1
+  const [controlsVisible, setControlsVisible] = useState<boolean>(false); // Start with controls hidden
+  const controlsOpacity = useRef(new Animated.Value(0)).current; // Start with opacity 0
   const hideTimer = useRef<NodeJS.Timeout | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -127,13 +127,11 @@ const VideoWithTapControls: React.FC<Props> = ({
 
     if (locationX < leftThird) {
       safeSeek(currentTime - seekStep);
-      showControls();
     } else if (locationX > rightThird) {
       safeSeek(currentTime + seekStep);
-      showControls();
-    } else {
-      onToggleOverlay();
     }
+    // Always show controls when tapping anywhere on video
+    showControls();
   }, [currentTime, seekStep, safeSeek, showControls]);
 
   const onToggleOverlay = useCallback(() => {

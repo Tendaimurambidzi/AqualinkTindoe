@@ -6915,24 +6915,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={{ fontSize: 16, lineHeight: 20 }}>
                           {expandedPosts[item.id]
                             ? item.captionText
-                            : item.captionText.length > 150
-                            ? item.captionText.substring(0, 150) + '...'
+                            : item.captionText.length > 500
+                            ? item.captionText.substring(0, 500) + '...'
                             : item.captionText}
                         </Text>
-                        {item.captionText.length > 150 && (
-                          <Pressable onPress={() => setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] })) } style={{ marginTop: 5 }}>
-                            <Text style={{ color: 'blue', fontSize: 14 }}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
-                          </Pressable>
-                        )}
-                        {item.link && <Text style={{ color: 'blue', marginTop: 5 }}>{item.link}</Text>}
                       </View>
                     )}
-                    <VideoWithTapControls
-                      source={{ uri: item.media.uri }}
-                      style={videoStyleFor(item.id) as any}
-                      resizeMode={'contain'}
-                      paused={!playSynced}
-                    />
+                    {/* Post Media */}
+                    {item.media && isVideoAsset(item.media) ? (
+                      <VideoWithTapControls
+                        source={{ uri: item.media.uri }}
+                        style={videoStyleFor(item.id) as any}
+                        resizeMode={'contain'}
+                        paused={!playSynced}
+                      />
+                    ) : item.media ? (
+                      <Image
+                        source={{ uri: item.media.uri }}
+                        style={videoStyleFor(item.id) as any}
+                        resizeMode="cover"
+                      />
+                    ) : null}
                     {bufferingMap[item.id] && shouldPlay && (
                       <View
                         style={{
@@ -6947,6 +6950,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       >
                         <ActivityIndicator size="large" color="#00C2FF" />
                       </View>
+                    )}
+                    {/* Read More - positioned above footer */}
+                    {item.captionText && item.captionText.length > 500 && (
+                      <Pressable onPress={() => setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] })) } style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}>
+                        <Text style={{ color: 'blue', fontSize: 14 }}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
+                      </Pressable>
                     )}
                     {/* Post Footer - Splashes, Echoes, Gems, Anchor vibe, Cast vibe, Placeholder */}
                     <ScrollView
