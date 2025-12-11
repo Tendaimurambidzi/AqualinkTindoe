@@ -169,6 +169,11 @@ type Vibe = {
   authorName?: string | null; // display handle (e.g., "/Tindoe")
   ownerUid?: string | null; // creator uid (for self-display as /You)
   image?: string | null;
+  counts?: {
+    splashes: number;
+    echoes: number;
+    gems: number;
+  };
 };
 
 type SearchResult = {
@@ -1683,6 +1688,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
   const [showTextComposer, setShowTextComposer] = useState<boolean>(false);
+  const [showGems, setShowGems] = useState<boolean>(false);
+  const [selectedGemCountry, setSelectedGemCountry] = useState<string>('');
+  const [selectedGemPayment, setSelectedGemPayment] = useState<string>('');
   const [textComposerText, setTextComposerText] = useState<string>('');
   const [isTextStorySending, setIsTextStorySending] =
     useState<boolean>(false);
@@ -3958,6 +3966,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 muxStatus: (data?.muxStatus || null) as any,
                 authorName,
                 ownerUid: (data?.ownerUid || data?.authorId || null) as any,
+                counts: {
+                  splashes: Number(data?.counts?.splashes || 0),
+                  echoes: Number(data?.counts?.echoes || 0),
+                  gems: Number(data?.counts?.gems || 0),
+                },
               });
             }
             if (!cancelled) {
@@ -3971,7 +3984,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 return [...newMyWaves, ...prev];
               });
               // Filter out my own waves from public feed on my device
-              setPublicFeed([]);
+              const publicWaves = out.filter(w => w.ownerUid !== myUid);
+              setPublicFeed(publicWaves);
             }
           });
       } catch {}
@@ -5148,6 +5162,138 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         'Anchor Failed',
         'Could not drop anchor on this wave. The seafloor is unreachable.',
       );
+    }
+  };
+
+  // Post interaction handlers for feed
+  const handlePostSplash = async (wave: Vibe) => {
+    try {
+      const user = auth().currentUser;
+      if (!user) {
+        Alert.alert('Sign in required', 'Please sign in to splash.');
+        return;
+      }
+
+      // Check if user already splashed
+      const splashDoc = await firestore()
+        .collection('waves')
+        .doc(wave.id)
+        .collection('splashes')
+        .doc(user.uid)
+        .get();
+
+      const hasSplashed = splashDoc.exists;
+      const splashData = splashDoc.data();
+
+      if (hasSplashed) {
+        // Remove splash
+        await firestore()
+          .collection('waves')
+          .doc(wave.id)
+          .collection('splashes')
+          .doc(user.uid)
+          .delete();
+
+        // Update counts
+        await firestore()
+          .collection('waves')
+          .doc(wave.id)
+          .update({
+            'counts.splashes': firestore.FieldValue.increment(-1),
+          });
+
+        // Update user stats
+        const statField = splashData?.splashType === 'octopus_hug' ? 'hugsMade' : 'splashesMade';
+        await firestore()
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            [`stats.${statField}`]: firestore.FieldValue.increment(-1),
+          });
+
+        Alert.alert('Splash removed', 'You unsplashed this vibe.');
+      } else {
+        // Add splash
+        await firestore()
+          .collection('waves')
+          .doc(wave.id)
+          .collection('splashes')
+          .doc(user.uid)
+          .set({
+            userUid: user.uid,
+            waveId: wave.id,
+            userName: user.displayName || 'Anonymous',
+            userPhoto: user.photoURL || null,
+            splashType: 'regular',
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          });
+
+        // Update counts
+        await firestore()
+          .collection('waves')
+          .doc(wave.id)
+          .update({
+            'counts.splashes': firestore.FieldValue.increment(1),
+          });
+
+        // Update user stats
+        await firestore()
+          .collection('users')
+          .doc(user.uid)
+          .update({
+            'stats.splashesMade': firestore.FieldValue.increment(1),
+          });
+
+        // Send notification to wave owner
+        if (wave.ownerUid && wave.ownerUid !== user.uid) {
+          await firestore()
+            .collection('users')
+            .doc(wave.ownerUid)
+            .collection('pings')
+            .add({
+              type: 'splash',
+              message: `💧 ${user.displayName || 'Someone'} splashed on your vibe`,
+              fromUid: user.uid,
+              fromName: user.displayName || 'Someone',
+              waveId: wave.id,
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
+        }
+
+        Alert.alert('Splashed!', 'You splashed this vibe.');
+      }
+    } catch (error) {
+      console.error('Splash error:', error);
+      Alert.alert('Error', 'Could not splash this vibe.');
+    }
+  };
+
+  const handlePostEcho = (wave: Vibe) => {
+    // Set current wave for echo functionality
+    setCurrentWave(wave);
+    setShowEchoes(true);
+  };
+
+  const getPaymentOptions = (country: string): string[] => {
+    const countryCode = country.split(' ')[0];
+    switch (countryCode) {
+      case '🇰🇪': // Kenya
+        return ['M-Pesa', 'Airtel Money', 'Equity Bank', 'KCB Bank', 'Co-operative Bank'];
+      case '🇺🇬': // Uganda
+        return ['MTN Mobile Money', 'Airtel Money', 'Centenary Bank', 'Stanbic Bank', 'DFCU Bank'];
+      case '🇹🇿': // Tanzania
+        return ['M-Pesa', 'Tigo Pesa', 'Airtel Money', 'NMB Bank', 'CRDB Bank'];
+      case '🇷🇼': // Rwanda
+        return ['MTN Mobile Money', 'Airtel Money', 'BK Bank', 'Equity Bank Rwanda'];
+      case '🇬🇭': // Ghana
+        return ['MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money', 'GCB Bank', 'Zenith Bank'];
+      case '🇳🇬': // Nigeria
+        return ['MTN Mobile Money', 'Airtel Money', '9Mobile', 'First Bank', 'GTBank', 'Zenith Bank'];
+      case '🇿🇦': // South Africa (if needed)
+        return ['MTN Mobile Money', 'Vodacom Money', 'FNB Bank', 'Absa Bank', 'Standard Bank'];
+      default:
+        return ['Mobile Money', 'Bank Transfer'];
     }
   };
 
@@ -7022,23 +7168,40 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 10 }}
                       style={{ marginTop: 10 }}
                     >
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
-                        <Text style={{ marginRight: 5 }}>💧</Text>
-                        <Text>Splashes</Text>
+                      <TouchableOpacity
+                        onPress={() => handlePostSplash(item)}
+                        style={{ alignItems: 'center', marginRight: 20 }}
+                      >
+                        <Text style={{ marginBottom: 2 }}>💧</Text>
+                        <Text style={{ fontSize: 12 }}>Splashes</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.splashes || 0}</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
-                        <Text style={{ marginRight: 5 }}>📣</Text>
-                        <Text>Echoes</Text>
+                      <TouchableOpacity
+                        onPress={() => handlePostEcho(item)}
+                        style={{ alignItems: 'center', marginRight: 20 }}
+                      >
+                        <Text style={{ marginBottom: 2 }}>📣</Text>
+                        <Text style={{ fontSize: 12 }}>Echoes</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.echoes || 0}</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
-                        <Text style={{ marginRight: 5 }}>💎</Text>
-                        <Text>Gems</Text>
+                      <TouchableOpacity
+                        onPress={() => handlePostGem(item)}
+                        style={{ alignItems: 'center', marginRight: 20 }}
+                      >
+                        <Text style={{ marginBottom: 2 }}>💎</Text>
+                        <Text style={{ fontSize: 12 }}>Gems</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
+                      <TouchableOpacity
+                        onPress={() => anchorWave(item)}
+                        style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}
+                      >
                         <Text style={{ marginRight: 5 }}>⚓</Text>
                         <Text>Anchor vibe</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
+                      <TouchableOpacity
+                        onPress={() => onShareWave(item)}
+                        style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}
+                      >
                         <Text style={{ marginRight: 5 }}>📡</Text>
                         <Text>Cast vibe</Text>
                       </TouchableOpacity>
@@ -7612,7 +7775,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   {[
                     { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
                     { key: 'crew', label: 'Crew', value: myCrewCount },
-                    { key: 'splashes', label: 'Reactions', value: totalSplashesOnMyWaves },
+                    { key: 'splashes', label: 'Splashes', value: userStats.splashesMade },
                     { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves },
                     { key: 'echoes', label: 'Replies', value: 0 },
                   ].map((entry) => (
@@ -9995,6 +10158,124 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             onPress={() => setShowSendMessage(false)}
           >
             <Text style={styles.dismissText}>Cancel</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      {/* GEMS PAYMENT */}
+      <Modal
+        visible={showGems}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGems(false)}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
+        >
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.7,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>💎 Send Gems</Text>
+              <ScrollView>
+                {!selectedGemCountry ? (
+                  <>
+                    <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
+                      Select your country to send gems
+                    </Text>
+                    {[
+                      '🇰🇪 Kenya', '🇺🇬 Uganda', '🇹🇿 Tanzania', '🇷🇼 Rwanda', '🇧🇮 Burundi',
+                      '🇿🇲 Zambia', '🇿🇼 Zimbabwe', '🇧🇼 Botswana', '🇳🇦 Namibia', '🇲🇼 Malawi',
+                      '🇲🇿 Mozambique', '🇱🇸 Lesotho', '🇸🇿 Eswatini', '🇬🇭 Ghana', '🇳🇬 Nigeria',
+                      '🇸🇳 Senegal', '🇨🇮 Côte d\'Ivoire', '🇧🇫 Burkina Faso', '🇲🇱 Mali', '🇳🇪 Niger',
+                      '🇹🇬 Togo', '🇧🇯 Benin', '🇨🇲 Cameroon', '🇬🇦 Gabon', '🇨🇬 Congo', '🇨🇩 DRC',
+                      '🇦🇴 Angola', '🇸🇨 Seychelles', '🇲🇺 Mauritius', '🇲🇬 Madagascar'
+                    ].map((country) => (
+                      <Pressable
+                        key={country}
+                        style={[styles.secondaryBtn, { marginVertical: 4 }]}
+                        onPress={() => setSelectedGemCountry(country)}
+                      >
+                        <Text style={styles.secondaryBtnText}>{country}</Text>
+                      </Pressable>
+                    ))}
+                  </>
+                ) : !selectedGemPayment ? (
+                  <>
+                    <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
+                      Selected: {selectedGemCountry}
+                    </Text>
+                    <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
+                      Choose payment method
+                    </Text>
+                    {getPaymentOptions(selectedGemCountry).map((option) => (
+                      <Pressable
+                        key={option}
+                        style={[styles.secondaryBtn, { marginVertical: 4 }]}
+                        onPress={() => setSelectedGemPayment(option)}
+                      >
+                        <Text style={styles.secondaryBtnText}>{option}</Text>
+                      </Pressable>
+                    ))}
+                    <Pressable
+                      style={[styles.primaryBtn, { marginTop: 16 }]}
+                      onPress={() => setSelectedGemCountry('')}
+                    >
+                      <Text style={styles.primaryBtnText}>Back to Countries</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
+                      Send gems to {currentWave?.authorName || 'this creator'}
+                    </Text>
+                    <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
+                      Country: {selectedGemCountry}
+                    </Text>
+                    <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
+                      Payment: {selectedGemPayment}
+                    </Text>
+                    <TextInput
+                      placeholder="Amount (e.g., 100)"
+                      keyboardType="numeric"
+                      style={styles.logbookInput}
+                      placeholderTextColor="rgba(255,255,255,0.4)"
+                    />
+                    <Pressable
+                      style={[styles.primaryBtn, { marginTop: 16 }]}
+                      onPress={() => {
+                        Alert.alert('Coming Soon', 'Gem payment integration will be available soon!');
+                        setShowGems(false);
+                      }}
+                    >
+                      <Text style={styles.primaryBtnText}>Send Gems</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.secondaryBtn, { marginTop: 8 }]}
+                      onPress={() => setSelectedGemPayment('')}
+                    >
+                      <Text style={styles.secondaryBtnText}>Back to Payment Methods</Text>
+                    </Pressable>
+                  </>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+          <Pressable
+            style={styles.dismissBtn}
+            onPress={() => setShowGems(false)}
+          >
+            <Text style={styles.dismissText}>Close</Text>
           </Pressable>
         </View>
       </Modal>
