@@ -5266,6 +5266,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           },
         }, { merge: true });
 
+      // Update local userStats immediately for real-time MY AURA display
+      setUserStats(prev => ({
+        ...prev,
+        [statField]: prev[statField] + 1,
+      }));
+
       // Send notification to wave owner
       if (wave.ownerUid && wave.ownerUid !== user.uid) {
         const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💧';
