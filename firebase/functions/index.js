@@ -120,11 +120,24 @@ exports.onSplashDelete = onDocumentDeleted('waves/{waveId}/splashes/{uid}', asyn
   
   const waveRef = db.doc(`waves/${waveId}`);
   await db.runTransaction(async (tx) => {
-    await ensureCounts(tx, waveRef);
-    tx.update(waveRef, { 
-      'counts.splashes': admin.firestore.FieldValue.increment(-1),
-      [`counts.${splashType === 'octopus_hug' ? 'hugs' : 'regularSplashes'}`]: admin.firestore.FieldValue.increment(-1)
-    });
+    const snap = await tx.get(waveRef);
+    if (!snap.exists) return;
+    const data = snap.data() || {};
+    const counts = data.counts || { splashes: 0, regularSplashes: 0, hugs: 0, echoes: 0 };
+    
+    // Only decrement if counts are above 0 to prevent negative values
+    const updates = {};
+    if (counts.splashes > 0) {
+      updates['counts.splashes'] = admin.firestore.FieldValue.increment(-1);
+    }
+    const countField = splashType === 'octopus_hug' ? 'hugs' : 'regularSplashes';
+    if (counts[countField] > 0) {
+      updates[`counts.${countField}`] = admin.firestore.FieldValue.increment(-1);
+    }
+    
+    if (Object.keys(updates).length > 0) {
+      tx.update(waveRef, updates);
+    }
   });
 });
 
@@ -154,8 +167,15 @@ exports.onEchoDelete = onDocumentDeleted('waves/{waveId}/echoes/{echoId}', async
   const waveId = event.params.waveId;
   const waveRef = db.doc(`waves/${waveId}`);
   await db.runTransaction(async (tx) => {
-    await ensureCounts(tx, waveRef);
-    tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
+    const snap = await tx.get(waveRef);
+    if (!snap.exists) return;
+    const data = snap.data() || {};
+    const counts = data.counts || { splashes: 0, regularSplashes: 0, hugs: 0, echoes: 0 };
+    
+    // Only decrement if count is above 0 to prevent negative values
+    if (counts.echoes > 0) {
+      tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
+    }
   });
 });
 

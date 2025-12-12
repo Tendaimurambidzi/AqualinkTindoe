@@ -4019,6 +4019,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               // Filter out my own waves from public feed on my device
               const publicWaves = out.filter(w => w.ownerUid !== myUid);
               setPublicFeed(publicWaves);
+              
+              // Initialize waveStats for loaded waves
+              const waveStatsUpdate: Record<string, any> = {};
+              out.forEach(wave => {
+                waveStatsUpdate[wave.id] = {
+                  splashes: Number(wave.counts?.splashes || 0),
+                  echoes: Number(wave.counts?.echoes || 0),
+                  views: Number(wave.counts?.views || 0),
+                  createdAt: wave.createdAt,
+                };
+              });
+              setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
             }
           });
       } catch {}
@@ -4051,8 +4063,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const data = doc?.data?.() || doc?.data || {};
         const stats = data?.stats || {};
         setUserStats({
-          splashesMade: Number(stats?.splashesMade || 0),
-          hugsMade: Number(stats?.hugsMade || 0),
+          splashesMade: Math.max(0, Number(stats?.splashesMade || 0)),
+          hugsMade: Math.max(0, Number(stats?.hugsMade || 0)),
         });
       }).catch(() => {});
       const unsub = ref.onSnapshot((snap: any) => {
@@ -5274,7 +5286,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           });
       }
 
-      // Update local waveStats and show success message together after delay
+      // Update local waveStats and show success message immediately
       const currentCount = waveStats[wave.id]?.splashes || 0;
       const newCount = currentCount + 1;
       
@@ -5283,19 +5295,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
           : 'You splashed this vibe!';
       
-      // Wait 0.5 seconds before showing success message and updating count
-      setTimeout(() => {
-        // Update local waveStats when success message appears
-        setWaveStats(prev => ({
-          ...prev,
-          [wave.id]: {
-            ...prev[wave.id],
-            splashes: newCount,
-            regularSplashes: newCount, // Keep both fields in sync
-          },
-        }));
-        notifySuccess(message);
-      }, 500);
+      // Update local waveStats and show success message immediately
+      setWaveStats(prev => ({
+        ...prev,
+        [wave.id]: {
+          ...prev[wave.id],
+          splashes: newCount,
+          regularSplashes: newCount, // Keep both fields in sync
+        },
+      }));
+      
+      // Update feed arrays for immediate UI feedback
+      setVibesFeed(prev => prev.map(vibe => 
+        vibe.id === wave.id 
+          ? { ...vibe, counts: { 
+              splashes: (vibe.counts?.splashes || 0) + 1,
+              echoes: vibe.counts?.echoes || 0,
+              gems: vibe.counts?.gems || 0
+            }}
+          : vibe
+      ));
+      setPublicFeed(prev => prev.map(vibe => 
+        vibe.id === wave.id 
+          ? { ...vibe, counts: { 
+              splashes: (vibe.counts?.splashes || 0) + 1,
+              echoes: vibe.counts?.echoes || 0,
+              gems: vibe.counts?.gems || 0
+            }}
+          : vibe
+      ));
+      
+      notifySuccess(message);
     } catch (error) {
       console.error('Splash error:', error);
       Alert.alert('Error', 'Could not splash this vibe.');

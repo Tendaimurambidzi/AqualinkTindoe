@@ -3339,6 +3339,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 return [...newMyWaves, ...prev];
               });
               setPublicFeed(out);
+              
+              // Initialize waveStats for loaded waves
+              const waveStatsUpdate: Record<string, any> = {};
+              out.forEach(wave => {
+                waveStatsUpdate[wave.id] = {
+                  splashes: Number(wave.counts?.splashes || 0),
+                  echoes: Number(wave.counts?.echoes || 0),
+                  views: Number(wave.counts?.views || 0),
+                  createdAt: wave.createdAt,
+                };
+              });
+              setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
             }
           });
       } catch {}
@@ -3371,8 +3383,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const data = doc?.data?.() || doc?.data || {};
         const stats = data?.stats || {};
         setUserStats({
-          splashesMade: Number(stats?.splashesMade || 0),
-          hugsMade: Number(stats?.hugsMade || 0),
+          splashesMade: Math.max(0, Number(stats?.splashesMade || 0)),
+          hugsMade: Math.max(0, Number(stats?.hugsMade || 0)),
         });
       }).catch(() => {});
       const unsub = ref.onSnapshot((snap: any) => {
@@ -3880,11 +3892,39 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
             : 'You splashed this vibe!';
         
-        // Wait 0.5 seconds before showing success message and updating splash count
-        setTimeout(() => {
-          setSplashes(prev => prev + 1);
-          notifySuccess(message);
-        }, 500);
+        // Update splash count and show success message immediately
+        setSplashes(prev => prev + 1);
+        
+        // Update waveStats for immediate feed display
+        setWaveStats(prev => ({
+          ...prev,
+          [waveId]: {
+            ...prev[waveId],
+            splashes: (prev[waveId]?.splashes || 0) + 1,
+          },
+        }));
+        
+        // Update feed arrays for immediate UI feedback
+        setVibesFeed(prev => prev.map(vibe => 
+          vibe.id === waveId 
+            ? { ...vibe, counts: { 
+                splashes: (vibe.counts?.splashes || 0) + 1,
+                echoes: vibe.counts?.echoes || 0,
+                gems: vibe.counts?.gems || 0
+              }}
+            : vibe
+        ));
+        setPublicFeed(prev => prev.map(vibe => 
+          vibe.id === waveId 
+            ? { ...vibe, counts: { 
+                splashes: (vibe.counts?.splashes || 0) + 1,
+                echoes: vibe.counts?.echoes || 0,
+                gems: vibe.counts?.gems || 0
+              }}
+            : vibe
+        ));
+        
+        notifySuccess(message);
       try {
         recordPingEvent('splash', waveId, { splashType: splashType || 'regular' });
       } catch {}
