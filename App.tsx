@@ -5339,7 +5339,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Continue without profile data
       }
 
-      const createEchoFn = functionsMod().httpsCallable('createEcho');
+      const createEchoFn = functionsMod().httpsCallable('createEcho', { region: 'us-central1' });
       await createEchoFn({
         waveId,
         text,

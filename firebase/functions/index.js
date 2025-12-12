@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https');
 // ...existing code...
 
 // ...existing code...
@@ -12,7 +12,7 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
  * You can also add FCM/Pings in the onCreate handlers where indicated.
  */
 const functions = require('firebase-functions');
-const { onDocumentCreated, onDocumentDeleted } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentDeleted, onDocumentWritten } = require('firebase-functions/v2/firestore');
 // Already imported at the top
 const admin = require('firebase-admin');
 const os = require('os');
@@ -640,24 +640,22 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     throw new HttpsError('failed-precondition', 'Cannot join your own crew');
   }
 
-  const db = admin.firestore();
-
   // Add to target user's crew
-  await db.collection('users').doc(targetUid).collection('crew').doc(uid).set({
+  await dbMod.collection('users').doc(targetUid).collection('crew').doc(uid).set({
     uid: uid,
     name: (req.auth?.token?.name || 'Anonymous'),
     photo: req.auth?.token?.picture || null,
-    joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+    joinedAt: Timestamp.now(),
   });
 
   // Add to user's boarding (following) list
-  await db.collection('users').doc(uid).collection('boarding').doc(targetUid).set({
+  await dbMod.collection('users').doc(uid).collection('boarding').doc(targetUid).set({
     uid: targetUid,
-    joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+    joinedAt: Timestamp.now(),
   });
 
   // Send ping notification to target user
-  await addPing(targetUid, {
+  await addPingModular(targetUid, {
     type: 'crew_join',
     text: `${req.auth?.token?.name || 'A drifter'} joined your tide ⚓`,
     fromUid: uid,
@@ -668,32 +666,30 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
 });
 
 // Auto-set username_lc field when user is created or updated
-exports.onUserWrite = functions.firestore
-  .document('users/{userId}')
-  .onWrite(async (change, context) => {
-    const after = change.after.exists ? change.after.data() : null;
-    if (!after) return; // User deleted
-    
-    // Extract username from displayName or username field
-    let username = after.username || after.displayName || '';
-    
-    // Remove leading / or @ if present
-    username = username.replace(/^[@\/]/, '');
-    
-    // Create lowercase version
-    const username_lc = username.toLowerCase();
-    
-    // Only update if username_lc is different or doesn't exist
-    if (after.username_lc !== username_lc) {
-      console.log(`Setting username_lc for user ${context.params.userId}: ${username_lc}`);
-      return change.after.ref.update({ username_lc });
-    }
-    
-    return null;
-  });
+exports.onUserWrite = onDocumentWritten('users/{userId}', async (event) => {
+  const after = event.data?.after?.data();
+  if (!after) return; // User deleted
+  
+  // Extract username from displayName or username field
+  let username = after.username || after.displayName || '';
+  
+  // Remove leading / or @ if present
+  username = username.replace(/^[@\/]/, '');
+  
+  // Create lowercase version
+  const username_lc = username.toLowerCase();
+  
+  // Only update if username_lc is different or doesn't exist
+  if (after.username_lc !== username_lc) {
+    console.log(`Setting username_lc for user ${event.params.userId}: ${username_lc}`);
+    return event.data.after.ref.update({ username_lc });
+  }
+  
+  return null;
+});
 
 // One-time migration function - call via HTTP to update all existing users
-exports.migrateUsernames = functions.https.onRequest(async (req, res) => {
+exports.migrateUsernames = onRequest({ region: 'us-central1' }, async (req, res) => {
   try {
     const db = admin.firestore();
     console.log('Fetching all users...');
