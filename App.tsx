@@ -4510,9 +4510,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const onSplash = async (splashType?: 'regular' | 'octopus_hug') => {
     if (splashBusy || !currentWave) return;
 
-    // If no type specified and not already splashed, show choice
-    if (!splashType && !hasSplashed) {
-      // Show splash/hug options, but do NOT show 'withdrawn' alert here
+    // Always show choice dialog first, regardless of current splash state
+    if (!splashType) {
       Alert.alert(
         'Choose Your Splash',
         'How would you like to show appreciation?',
@@ -4661,8 +4660,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         const message =
           splashType === 'octopus_hug'
-            ? '🐙 Octopus hug sent! The wave is embraced with 8 arms'
-            : 'You have glowed the vibe!';
+            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
+            : 'You splashed this vibe!';
         notifySuccess(message);
         // Show octopus hug animation on screen
         // Octopus hug animation removed per user request; only show success message
@@ -5200,7 +5199,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
 
   // Post interaction handlers for feed
-  const handlePostSplash = async (wave: Vibe) => {
+  const handlePostSplash = async (wave: Vibe, splashType?: 'regular' | 'octopus_hug') => {
     try {
       const user = auth().currentUser;
       if (!user) {
@@ -5208,95 +5207,96 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return;
       }
 
-      // Check if user already splashed
-      const splashDoc = await firestore()
+      // Always show choice dialog first, regardless of current splash state
+      if (!splashType) {
+        Alert.alert(
+          'Choose Your Splash',
+          'How would you like to show appreciation?',
+          [
+            {
+              text: '💧 Regular Splash',
+              onPress: () => handlePostSplash(wave, 'regular'),
+            },
+            {
+              text: '🐙 Octopus Hug',
+              onPress: () => handlePostSplash(wave, 'octopus_hug'),
+            },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+        return;
+      }
+
+      // When splashType is provided, ALWAYS add the splash (don't toggle based on current state)
+      // This ensures choosing a splash type always shows success message
+      await firestore()
         .collection('waves')
         .doc(wave.id)
         .collection('splashes')
         .doc(user.uid)
-        .get();
+        .set({
+          userUid: user.uid,
+          waveId: wave.id,
+          userName: user.displayName || 'Anonymous',
+          userPhoto: user.photoURL || null,
+          splashType: splashType,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
 
-      const hasSplashed = splashDoc.exists;
-      const splashData = splashDoc.data();
+      // Update counts
+      const currentCount = waveStats[wave.id]?.splashes || 0;
+      const newCount = currentCount + 1;
+      await firestore()
+        .collection('waves')
+        .doc(wave.id)
+        .update({
+          'counts.splashes': newCount,
+        });
 
-      if (hasSplashed) {
-        // Remove splash
-        await firestore()
-          .collection('waves')
-          .doc(wave.id)
-          .collection('splashes')
-          .doc(user.uid)
-          .delete();
+      // Update local waveStats immediately for instant UI feedback
+      setWaveStats(prev => ({
+        ...prev,
+        [wave.id]: {
+          ...prev[wave.id],
+          splashes: newCount,
+          regularSplashes: newCount, // Keep both fields in sync
+        },
+      }));
 
-        // Update counts
-        await firestore()
-          .collection('waves')
-          .doc(wave.id)
-          .update({
-            'counts.splashes': firestore.FieldValue.increment(-1),
-          });
+      // Update user stats
+      const statField = splashType === 'octopus_hug' ? 'hugsMade' : 'splashesMade';
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .update({
+          [`stats.${statField}`]: firestore.FieldValue.increment(1),
+        });
 
-        // Update user stats
-        const statField = splashData?.splashType === 'octopus_hug' ? 'hugsMade' : 'splashesMade';
+      // Send notification to wave owner
+      if (wave.ownerUid && wave.ownerUid !== user.uid) {
+        const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💧';
+        const splashText = splashType === 'octopus_hug' ? 'sent an octopus hug' : 'splashed';
         await firestore()
           .collection('users')
-          .doc(user.uid)
-          .update({
-            [`stats.${statField}`]: firestore.FieldValue.increment(-1),
-          });
-
-        Alert.alert('Unsplashed', 'You unsplashed this vibe.');
-      } else {
-        // Add splash
-        await firestore()
-          .collection('waves')
-          .doc(wave.id)
-          .collection('splashes')
-          .doc(user.uid)
-          .set({
-            userUid: user.uid,
+          .doc(wave.ownerUid)
+          .collection('pings')
+          .add({
+            type: 'splash',
+            message: `${splashEmoji} ${user.displayName || 'Someone'} ${splashText} on your vibe`,
+            fromUid: user.uid,
+            fromName: user.displayName || 'Someone',
             waveId: wave.id,
-            userName: user.displayName || 'Anonymous',
-            userPhoto: user.photoURL || null,
-            splashType: 'regular',
+            splashType: splashType,
+            read: false,
             createdAt: firestore.FieldValue.serverTimestamp(),
           });
-
-        // Update counts
-        await firestore()
-          .collection('waves')
-          .doc(wave.id)
-          .update({
-            'counts.splashes': firestore.FieldValue.increment(1),
-          });
-
-        // Update user stats
-        await firestore()
-          .collection('users')
-          .doc(user.uid)
-          .update({
-            'stats.splashesMade': firestore.FieldValue.increment(1),
-          });
-
-        // Send notification to wave owner
-        if (wave.ownerUid && wave.ownerUid !== user.uid) {
-          await firestore()
-            .collection('users')
-            .doc(wave.ownerUid)
-            .collection('pings')
-            .add({
-              type: 'splash',
-              message: `💧 ${user.displayName || 'Someone'} splashed on your vibe`,
-              fromUid: user.uid,
-              fromName: user.displayName || 'Someone',
-              waveId: wave.id,
-              read: false,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-        }
-
-        Alert.alert('Splashed', 'You splashed this vibe.');
       }
+
+      const message =
+        splashType === 'octopus_hug'
+          ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
+          : 'You splashed this vibe!';
+      Alert.alert('Success', message);
     } catch (error) {
       console.error('Splash error:', error);
       Alert.alert('Error', 'Could not splash this vibe.');

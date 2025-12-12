@@ -3806,8 +3806,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const onSplash = async (splashType?: 'regular' | 'octopus_hug') => {
     if (splashBusy || !currentWave) return;
 
-    // If no type specified and not already splashed, show choice
-    if (!splashType && !hasSplashed) {
+    // Always show choice dialog first, regardless of current splash state
+    if (!splashType) {
       Alert.alert(
         'Choose Your Splash',
         'How would you like to show appreciation?',
@@ -3826,64 +3826,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
 
-    // Toggle splash/unsplash
-    const isUnsplashing = hasSplashed;
-    const prevCount = splashes;
-    const nextCount = isUnsplashing
-      ? Math.max(0, prevCount - 1)
-      : prevCount + 1;
-
-    setHasSplashed(!isUnsplashing);
-    setSplashes(nextCount);
+    // When splashType is provided, ALWAYS add the splash (don't toggle based on current state)
+    // This ensures choosing a splash type always shows success message
+    setHasSplashed(true);
+    setSplashes(prev => prev + 1);
     setSplashBusy(true);
 
     const waveId = currentWave.id;
     pendingSplashOp.current = { waveId, action: 'splash' };
 
     try {
-      if (isUnsplashing) {
-        // Remove splash
-        const user = auth?.()?.currentUser;
-        if (user) {
-          // Get splash type before removing
-          const splashDoc = await firestore()
-            .collection('waves')
-            .doc(waveId)
-            .collection('splashes')
-            .doc(user.uid)
-            .get();
-          
-          const splashData = splashDoc?.data?.() || splashDoc?.data || {};
-          const removedSplashType = splashData?.splashType || 'regular';
-          
-          // Remove the splash
-          await removeSplashService(waveId);
-          
-          // Decrement user stats
-          const statField = removedSplashType === 'octopus_hug' ? 'hugsMade' : 'splashesMade';
-          await firestore()
-            .collection('users')
-            .doc(user.uid)
-            .set(
-              {
-                stats: {
-                  [statField]: firestore.FieldValue.increment(-1),
-                },
-              },
-              { merge: true }
-            );
-          
-          // Update local state
-          setUserStats(prev => ({
-            ...prev,
-            [statField]: Math.max(0, prev[statField] - 1),
-          }));
-        }
-        notifySuccess('Splash withdrawn from the wave');
-      } else {
-        // Add splash with type
-        const user = auth?.()?.currentUser;
-        if (user) {
+      // Always add splash with type
+      const user = auth?.()?.currentUser;
+      if (user) {
           await firestore()
             .collection('waves')
             .doc(waveId)
@@ -3923,17 +3878,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         const message =
           splashType === 'octopus_hug'
-            ? '🐙 Octopus hug sent! The wave is embraced with 8 arms'
-            : 'Splash made! The wave ripples with your touch';
+            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
+            : 'You splashed this vibe!';
         notifySuccess(message);
-      }
       try {
         recordPingEvent('splash', waveId, { splashType: splashType || 'regular' });
       } catch {}
     } catch (e) {
       console.error('Splash action failed:', e);
-      setHasSplashed(isUnsplashing);
-      setSplashes(prevCount);
+      setHasSplashed(false);
+      setSplashes(prev => Math.max(0, prev - 1));
       notifyError('Could not update splash right now');
     } finally {
       setSplashBusy(false);
