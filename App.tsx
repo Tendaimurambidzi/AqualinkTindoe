@@ -5290,7 +5290,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         splashType === 'octopus_hug'
           ? 'You hugged this vibe - the vibe is embraced with 8 arms! 🌊'
           : 'You splashed this vibe! 🌊';
-      notifySuccess(message);
+      
+      // Wait 0.5 seconds before showing success message to let users see the menu disappear
+      setTimeout(() => {
+        notifySuccess(message);
+      }, 500);
     } catch (error) {
       console.error('Splash error:', error);
       Alert.alert('Error', 'Could not splash this vibe.');
