@@ -1572,6 +1572,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Video controls and loading state
   const [videoControlsVisible, setVideoControlsVisible] = useState<{[key: string]: boolean}>({});
   const [videoLoading, setVideoLoading] = useState<{[key: string]: boolean}>({});
+  const [echoSending, setEchoSending] = useState<{[key: string]: boolean}>({});
 
   // Play falcon sound for ping notification
   const playFalconSound = useCallback(() => {
@@ -3375,7 +3376,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       { key: 'crew', label: 'Crew', value: myCrewCount },
       { key: 'splashes', label: 'Glows', value: totalSplashesOnMyWaves },
       { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves, onPress: handleHugsPress },
-      { key: 'echoes', label: 'Reverbs', value: totalEchoesOnMyWaves, onPress: handleEchoesPress },
+      { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves, onPress: handleEchoesPress },
     ],
     [
       wavesCountDisplay,
@@ -5318,6 +5319,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const text = postEchoTexts[waveId]?.trim();
     if (!text) return;
 
+    // Prevent double-sending
+    if (echoSending[waveId]) return;
+
+    setEchoSending(prev => ({ ...prev, [waveId]: true }));
+
     try {
       let functionsMod: any = null;
       try {
@@ -5382,6 +5388,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch (e) {
       console.warn('Send post echo failed', e);
       Alert.alert('Error', 'Could not send echo right now.');
+    } finally {
+      setEchoSending(prev => ({ ...prev, [waveId]: false }));
     }
   };
 
@@ -5907,6 +5915,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         authorSnap.forEach(doc => ids.add(doc.id));
         if (countCancelled) return;
         setMyWaveCount(ids.size);
+        
+        // Load stats for all user waves to populate profile stats
+        const waveIds = Array.from(ids);
+        if (waveIds.length > 0) {
+          waveIds.forEach(async (waveId) => {
+            try {
+              const waveDoc = await firestoreMod().collection('waves').doc(waveId).get();
+              const waveData = waveDoc.data();
+              const counts = waveData?.counts || {};
+              setWaveStats(prev => ({
+                ...prev,
+                [waveId]: {
+                  splashes: Math.max(0, Number(counts?.splashes || 0)),
+                  regularSplashes: Math.max(0, Number(counts?.regularSplashes || 0)),
+                  hugs: Math.max(0, Number(counts?.hugs || 0)),
+                  echoes: Math.max(0, Number(counts?.echoes || 0)),
+                  views: typeof waveData?.viewsCount === 'number' ? waveData.viewsCount : 0,
+                  createdAt: waveData?.createdAt?.toDate?.()?.getTime() || 0,
+                },
+              }));
+            } catch (error) {
+              console.warn(`Failed to load stats for wave ${waveId}:`, error);
+            }
+          });
+        }
       } catch {}
     })();
     return () => {
@@ -7389,21 +7422,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           />
                           <TouchableOpacity
                             onPress={() => handleSendPostEcho(item.id)}
-                            disabled={!postEchoTexts[item.id]?.trim()}
+                            disabled={!postEchoTexts[item.id]?.trim() || echoSending[item.id]}
                             style={{
                               marginLeft: 10,
                               paddingHorizontal: 15,
                               paddingVertical: 8,
-                              backgroundColor: postEchoTexts[item.id]?.trim() ? '#00C2FF' : 'rgba(255,255,255,0.2)',
+                              backgroundColor: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? '#00C2FF' : 'rgba(255,255,255,0.2)',
                               borderRadius: 15,
                             }}
                           >
                             <Text style={{
-                              color: postEchoTexts[item.id]?.trim() ? 'white' : 'rgba(255,255,255,0.5)',
+                              color: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? 'white' : 'rgba(255,255,255,0.5)',
                               fontSize: 12,
                               fontWeight: '600',
                             }}>
-                              Send
+                              {echoSending[item.id] ? 'Sending...' : 'Send'}
                             </Text>
                           </TouchableOpacity>
                         </View>
@@ -8013,7 +8046,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     { key: 'crew', label: 'Crew', value: myCrewCount },
                     { key: 'splashes', label: 'Splashes', value: userStats.splashesMade },
                     { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves },
-                    { key: 'echoes', label: 'Replies', value: 0 },
+                    { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves },
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
                       <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
