@@ -3878,8 +3878,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         const message =
           splashType === 'octopus_hug'
-            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
-            : 'You splashed this vibe!';
+            ? 'You hugged this vibe - the vibe is embraced with 8 arms! 🌊'
+            : 'You splashed this vibe! 🌊';
         notifySuccess(message);
       try {
         recordPingEvent('splash', waveId, { splashType: splashType || 'regular' });

@@ -5241,19 +5241,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           userPhoto: user.photoURL || null,
           splashType: splashType,
           createdAt: firestore.FieldValue.serverTimestamp(),
-        });
-
-      // Update counts
-      const currentCount = waveStats[wave.id]?.splashes || 0;
-      const newCount = currentCount + 1;
-      await firestore()
-        .collection('waves')
-        .doc(wave.id)
-        .update({
-          'counts.splashes': newCount,
-        });
+        }, { merge: true });
 
       // Update local waveStats immediately for instant UI feedback
+      const currentCount = waveStats[wave.id]?.splashes || 0;
+      const newCount = currentCount + 1;
       setWaveStats(prev => ({
         ...prev,
         [wave.id]: {
@@ -5268,9 +5260,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       await firestore()
         .collection('users')
         .doc(user.uid)
-        .update({
-          [`stats.${statField}`]: firestore.FieldValue.increment(1),
-        });
+        .set({
+          stats: {
+            [statField]: firestore.FieldValue.increment(1),
+          },
+        }, { merge: true });
 
       // Send notification to wave owner
       if (wave.ownerUid && wave.ownerUid !== user.uid) {
@@ -5294,9 +5288,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       const message =
         splashType === 'octopus_hug'
-          ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
-          : 'You splashed this vibe!';
-      Alert.alert('Success', message);
+          ? 'You hugged this vibe - the vibe is embraced with 8 arms! 🌊'
+          : 'You splashed this vibe! 🌊';
+      notifySuccess(message);
     } catch (error) {
       console.error('Splash error:', error);
       Alert.alert('Error', 'Could not splash this vibe.');
