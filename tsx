@@ -3924,7 +3924,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             : vibe
         ));
         
-        notifySuccess(message);
+        // Show success message immediately without any sound
+        setTimeout(() => {
+          notifySuccess(message);
+        }, 0);
       try {
         recordPingEvent('splash', waveId, { splashType: splashType || 'regular' });
       } catch {}

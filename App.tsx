@@ -5325,7 +5325,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           : vibe
       ));
       
-      notifySuccess(message);
+      // Show success message immediately without any sound
+      setTimeout(() => {
+        notifySuccess(message);
+      }, 0);
     } catch (error) {
       console.error('Splash error:', error);
       Alert.alert('Error', 'Could not splash this vibe.');
