@@ -4014,7 +4014,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const newMyWaves = myWavesInPublic.filter(
                   w => !existingMyWaveIds.has(w.id),
                 );
-                return [...newMyWaves, ...prev];
+                // Update counts for existing waves with latest data from Firestore
+                const updatedExistingWaves = prev.map(existingWave => {
+                  const firestoreWave = myWavesInPublic.find(w => w.id === existingWave.id);
+                  if (firestoreWave) {
+                    return {
+                      ...existingWave,
+                      counts: {
+                        splashes: Number(firestoreWave.counts?.splashes || 0),
+                        echoes: Number(firestoreWave.counts?.echoes || 0),
+                        gems: Number(firestoreWave.counts?.gems || 0),
+                      },
+                    };
+                  }
+                  return existingWave;
+                });
+                return [...newMyWaves, ...updatedExistingWaves];
               });
               // Filter out my own waves from public feed on my device
               const publicWaves = out.filter(w => w.ownerUid !== myUid);
@@ -5478,6 +5493,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       // Clear the input
       setPostEchoTexts(prev => ({ ...prev, [waveId]: '' }));
+
+      // Close the echo input immediately after sending
+      setExpandedEchoPost(null);
 
       // Update local echo count for immediate UI feedback
       setVibesFeed(prev => prev.map(vibe => 
@@ -7473,7 +7491,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       >
                         <Text style={{ marginBottom: 2 }}>💧</Text>
                         <Text style={{ fontSize: 12 }}>Splashes</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.splashes || 0}</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{Math.max(0, item.counts?.splashes || 0)}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handlePostEcho(item)}
@@ -8379,15 +8397,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         >
                           Splashes:{' '}
                           <Text style={{ fontWeight: '700', color: 'white' }}>
-                            {waveStats[w.id]?.splashes ?? 0}
+                            {Math.max(0, waveStats[w.id]?.splashes ?? 0)}
                           </Text>
                           {'  '}Echoes:{' '}
                           <Text style={{ fontWeight: '700', color: 'white' }}>
-                            {waveStats[w.id]?.echoes ?? 0}
+                            {Math.max(0, waveStats[w.id]?.echoes ?? 0)}
                           </Text>
                           {'  '}Views:{' '}
                           <Text style={{ fontWeight: '700', color: 'white' }}>
-                            {waveStats[w.id]?.views ?? 0}
+                            {Math.max(0, waveStats[w.id]?.views ?? 0)}
                           </Text>
                         </Text>
                         <Text
