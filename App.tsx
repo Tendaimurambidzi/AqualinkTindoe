@@ -5243,18 +5243,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           createdAt: firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
 
-      // Update local waveStats immediately for instant UI feedback
-      const currentCount = waveStats[wave.id]?.splashes || 0;
-      const newCount = currentCount + 1;
-      setWaveStats(prev => ({
-        ...prev,
-        [wave.id]: {
-          ...prev[wave.id],
-          splashes: newCount,
-          regularSplashes: newCount, // Keep both fields in sync
-        },
-      }));
-
       // Update user stats
       const statField = splashType === 'octopus_hug' ? 'hugsMade' : 'splashesMade';
       await firestore()
@@ -5286,13 +5274,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           });
       }
 
+      // Update local waveStats and show success message together after delay
+      const currentCount = waveStats[wave.id]?.splashes || 0;
+      const newCount = currentCount + 1;
+      
       const message =
         splashType === 'octopus_hug'
-          ? 'You hugged this vibe - the vibe is embraced with 8 arms! 🌊'
-          : 'You splashed this vibe! 🌊';
+          ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
+          : 'You splashed this vibe!';
       
-      // Wait 0.5 seconds before showing success message to let users see the menu disappear
+      // Wait 0.5 seconds before showing success message and updating count
       setTimeout(() => {
+        // Update local waveStats when success message appears
+        setWaveStats(prev => ({
+          ...prev,
+          [wave.id]: {
+            ...prev[wave.id],
+            splashes: newCount,
+            regularSplashes: newCount, // Keep both fields in sync
+          },
+        }));
         notifySuccess(message);
       }, 500);
     } catch (error) {

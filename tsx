@@ -3829,7 +3829,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // When splashType is provided, ALWAYS add the splash (don't toggle based on current state)
     // This ensures choosing a splash type always shows success message
     setHasSplashed(true);
-    setSplashes(prev => prev + 1);
     setSplashBusy(true);
 
     const waveId = currentWave.id;
@@ -3878,11 +3877,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         const message =
           splashType === 'octopus_hug'
-            ? 'You hugged this vibe - the vibe is embraced with 8 arms! 🌊'
-            : 'You splashed this vibe! 🌊';
+            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
+            : 'You splashed this vibe!';
         
-        // Wait 0.5 seconds before showing success message to let users see the menu disappear
+        // Wait 0.5 seconds before showing success message and updating splash count
         setTimeout(() => {
+          setSplashes(prev => prev + 1);
           notifySuccess(message);
         }, 500);
       try {
