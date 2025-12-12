@@ -3384,7 +3384,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const stats = data?.stats || {};
         setUserStats({
           splashesMade: Math.max(0, Number(stats?.splashesMade || 0)),
-          hugsMade: Math.max(0, Number(stats?.hugsMade || 0)),
+          hugsMade: 0, // Reset hugs count
         });
       }).catch(() => {});
       const unsub = ref.onSnapshot((snap: any) => {

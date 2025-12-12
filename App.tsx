@@ -4064,7 +4064,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const stats = data?.stats || {};
         setUserStats({
           splashesMade: Math.max(0, Number(stats?.splashesMade || 0)),
-          hugsMade: Math.max(0, Number(stats?.hugsMade || 0)),
+          hugsMade: 0, // Reset hugs count
         });
       }).catch(() => {});
       const unsub = ref.onSnapshot((snap: any) => {
@@ -8083,7 +8083,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
                     { key: 'crew', label: 'Crew', value: myCrewCount },
                     { key: 'splashes', label: 'Splashes', value: userStats.splashesMade },
-                    { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves },
+                    { key: 'hugs', label: 'Hugs', value: userStats.hugsMade },
                     { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves },
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
