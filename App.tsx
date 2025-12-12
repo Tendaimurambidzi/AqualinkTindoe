@@ -1675,7 +1675,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed],
   );
 
-  const [showPublicFeed, setShowPublicFeed] = useState<boolean>(false);
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
 
@@ -1899,9 +1898,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return false; // Exit app
         }
 
-        // First back press: toggle between My Vibes and Public Vibes
+        // First back press: go to top of feed
         lastBackPressTime.current = now;
-        setShowPublicFeed(prev => !prev);
         setCurrentIndex(0);
         try {
           feedRef.current?.scrollTo({ x: 0, animated: false });
@@ -3218,10 +3216,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, []);
   
-  // Use selected feed for rendering, filtering out blocked and removed users
+  // Combine all feeds (my vibes + public vibes + post feed) for unified display
   const displayFeed = useMemo(() => {
-    const baseFeed = showPublicFeed ? publicFeed : vibesFeed;
-    const combined = [...postFeed, ...baseFeed];
+    const combined = [...postFeed, ...vibesFeed, ...publicFeed];
     const seen = new Set<string>();
     return combined.filter(wave => {
       if (!wave || !wave.id) return false;
@@ -3234,7 +3231,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return true;
     });
   }, [
-    showPublicFeed,
     publicFeed,
     vibesFeed,
     blockedUsers,
@@ -3936,9 +3932,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     didAuthorNameMigration.current = true;
   }, [profileName, vibesFeed]);
 
-  // Load Public Vibes when toggled on (best-effort if Firebase exists)
+  // Always load Public Vibes (best-effort if Firebase exists)
   useEffect(() => {
-    if (!showPublicFeed) return;
     let firestoreMod: any = null;
     let storageMod: any = null;
     let functionsMod: any = null;
@@ -4057,7 +4052,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         unsub && unsub();
       } catch {}
     };
-  }, [showPublicFeed]);
+  }, []);
 
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
@@ -7301,7 +7296,42 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         delayPressIn={0}
       >
         <View style={{ flex: 1 }}>
-          {displayFeed.length > 0 ? (
+          {displayFeed.length === 0 ? (
+            <View
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: 20,
+              }}
+            >
+              <Text style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>
+                🧭
+              </Text>
+              <Text
+                style={[
+                  styles.videoHint,
+                  {
+                    fontSize: 16,
+                    fontWeight: '600',
+                    color: '#00C2FF',
+                    marginBottom: 8,
+                  },
+                ]}
+              >
+                Chart Your Course
+              </Text>
+              <Text
+                style={[
+                  styles.videoHint,
+                  { textAlign: 'center', lineHeight: 20 },
+                ]}
+              >
+                No vibes yet.
+                {'\n'}Tap + to share your first vibe.
+              </Text>
+            </View>
+          ) : (
             <Animated.ScrollView
               ref={feedRef}
               style={{ flex: 1, backgroundColor: '#f0f2f5' }}
@@ -7625,42 +7655,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 );
               })}
             </Animated.ScrollView>
-          ) : (
-            <View
-              style={{
-                flex: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 20,
-              }}
-            >
-              <Text style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>
-                {showPublicFeed ? '🌊' : '🧭'}
-              </Text>
-              <Text
-                style={[
-                  styles.videoHint,
-                  {
-                    fontSize: 16,
-                    fontWeight: '600',
-                    color: '#00C2FF',
-                    marginBottom: 8,
-                  },
-                ]}
-              >
-                {showPublicFeed ? 'Calm Waters Ahead' : 'Chart Your Course'}
-              </Text>
-              <Text
-                style={[
-                  styles.videoHint,
-                  { textAlign: 'center', lineHeight: 20 },
-                ]}
-              >
-                {showPublicFeed
-                  ? 'No vibes drifting in the public yet.\nBe the first to share a vibe!'
-                  : 'No vibes yet.\nTap + to share your first vibe.'}
-              </Text>
-            </View>
           )}
         </View>
       </Pressable>
@@ -7692,26 +7686,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.scrollRow}
               >
-                {/* FEED TOGGLE: My/Public */}
+                {/* VIBES */}
                 <Pressable
                   style={styles.topItem}
                   onPress={withUi(() => {
-                    setShowPublicFeed(p => !p);
                     setCurrentIndex(0);
                     try {
                       feedRef.current?.scrollTo({ x: 0, animated: false });
                     } catch {}
                   })}
                 >
-                  <Text
-                    style={
-                      showPublicFeed ? styles.globeIcon : styles.compassIcon
-                    }
-                  >
-                    {showPublicFeed ? '🌐' : '🎉'}
+                  <Text style={styles.compassIcon}>
+                    🎉
                   </Text>
                   <Text style={styles.topLabel}>
-                    {showPublicFeed ? 'PUBLIC VIBES' : 'MY VIBES'}
+                    VIBES
                   </Text>
                 </Pressable>
                 {/* MAKE WAVES */}
