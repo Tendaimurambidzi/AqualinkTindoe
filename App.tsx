@@ -327,6 +327,7 @@ const waveOptionMenu = [
     description: 'Download a copy of this vibe for offline viewing.',
   },
   { label: 'Share', description: 'Share the vibe link with friends.' },
+  { label: 'Gem', description: 'Send a gem to support this creator.' },
   {
     label: 'Report',
     description: 'Let us know if this vibe violates guidelines.',
@@ -1689,6 +1690,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showNotice, setShowNotice] = useState<boolean>(false);
   const [showSchoolMode, setShowSchoolMode] = useState<boolean>(false);
   const [showBridge, setShowBridge] = useState<boolean>(false);
+  const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
+  const [selectedGemCountry, setSelectedGemCountry] = useState<string>('');
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
   const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
@@ -3567,7 +3570,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         } catch {}
         return;
       }
-                    
+      
+      if (label === 'Gem') {
+        setShowGemDropdown(true);
+        return;
+      }
+      
       if (label === 'Report') {
         Alert.alert(
           entry?.label || label,
@@ -10106,7 +10114,58 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-                    
+      
+      {/* GEM DROPDOWN */}
+      <Modal
+        visible={showGemDropdown}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowGemDropdown(false)}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+          <View
+            style={[styles.logbookContainer, {
+              maxHeight: SCREEN_HEIGHT * 0.6,
+              borderRadius: 12,
+              overflow: 'hidden',
+            }]}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>SELECT COUNTRY</Text>
+              <ScrollView>
+                {[
+                  'Algeria', 'Angola', 'Benin', 'Botswana', 'Burkina Faso', 'Burundi',
+                  'Cabo Verde', 'Cameroon', 'Central African Republic', 'Chad', 'Comoros',
+                  'Congo', 'Côte d\'Ivoire', 'Djibouti', 'Egypt', 'Equatorial Guinea',
+                  'Eritrea', 'Eswatini', 'Ethiopia', 'Gabon', 'Gambia', 'Ghana', 'Guinea',
+                  'Guinea-Bissau', 'Kenya', 'Lesotho', 'Liberia', 'Libya', 'Madagascar',
+                  'Malawi', 'Mali', 'Mauritania', 'Mauritius', 'Morocco', 'Mozambique',
+                  'Namibia', 'Niger', 'Nigeria', 'Rwanda', 'Sao Tome and Principe',
+                  'Senegal', 'Seychelles', 'Sierra Leone', 'Somalia', 'South Africa',
+                  'South Sudan', 'Sudan', 'Tanzania', 'Togo', 'Tunisia', 'Uganda',
+                  'Zambia', 'Zimbabwe'
+                ].map(country => (
+                  <Pressable
+                    key={country}
+                    style={styles.primaryBtn}
+                    onPress={() => {
+                      setSelectedGemCountry(country);
+                      setShowGemDropdown(false);
+                      Alert.alert('Gem Sent!', `You sent a gem to ${country}!`);
+                    }}
+                  >
+                    <Text style={styles.primaryBtnText}>{country}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      
       {/* MY TREASURE */}
       <Modal
         visible={showTreasure}
@@ -10846,9 +10905,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 </Pressable>
               )}
                     
-            {/* Other existing options - filter out Connect Vibe from the static list */}
+            {/* Gem option - show on public vibes and my vibes for development */}
+            <Pressable
+              style={styles.waveOptionsItem}
+              onPress={() => handleWaveOptionSelect('Gem')}
+            >
+              <Text style={styles.waveOptionsItemTitle}>Gem</Text>
+              <Text style={styles.waveOptionsItemDescription}>
+                Send a gem to support this creator.
+              </Text>
+            </Pressable>
+            
+            {/* Other existing options - filter out Connect Vibe and Gem from the static list */}
             {waveOptionMenu
-              .filter(option => option.label !== 'Connect Vibe')
+              .filter(option => option.label !== 'Connect Vibe' && option.label !== 'Gem')
               .map(option => (
                 <Pressable
                   key={option.label}
@@ -10861,10 +10931,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </Text>
                 </Pressable>
               ))}
-                    
+            
             {/* Block User and Ping for other users' waves */}
-            {waveOptionsTarget &&
-              waveOptionsTarget.ownerUid &&
               waveOptionsTarget.ownerUid !== myUid && (
                 <>
                   <Pressable
