@@ -7325,7 +7325,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           {item.user?.name || profileName || 'User'}
                         </Text>
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
-                          {item.createdAt?.toDate?.().toLocaleString() || 'Just now'}
+                          {item.createdAt?.toDate ? getRelativeTime(item.createdAt.toDate()) : 'just now'}
                         </Text>
                       </View>
                       
@@ -7537,6 +7537,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   </Text>
                                   <Text style={{ color: 'black', fontSize: 14 }}>
                                     {echo.text}
+                                  </Text>
+                                  <Text style={{ color: 'gray', fontSize: 10 }}>
+                                    {echo.createdAt?.toDate ? getRelativeTime(echo.createdAt.toDate()) : 'just now'}
                                   </Text>
                                 </View>
                               </View>
@@ -15099,6 +15102,24 @@ const App: React.FC = () => {
     }
     return unsub;
   }, [initializing, appResumeTick]);
+
+  const getRelativeTime = (date: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 1) return 'just now';
+    if (seconds < 60) return seconds === 1 ? '1 sec ago' : `${seconds} secs ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return days === 1 ? '1 day ago' : `${days} days ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
+    const years = Math.floor(months / 12);
+    return years === 1 ? '1 year ago' : `${years} years ago`;
+  };
 
   // Defensive: check for native module errors and show fallback UI
   if (nativeInitError) {
