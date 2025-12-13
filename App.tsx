@@ -7439,7 +7439,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       >
                         <Text style={{ marginBottom: 2 }}>🐙</Text>
                         <Text style={{ fontSize: 12 }}>Hugs</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{Math.max(0, item.counts?.hugs || 0)}</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>0</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handlePostEcho(item)}
@@ -7447,7 +7447,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       >
                         <Text style={{ marginBottom: 2 }}>📣</Text>
                         <Text style={{ fontSize: 12 }}>Echoes</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.echoes || 0}</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>0</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handlePostGem(item)}
@@ -8094,10 +8094,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
                   {/* Vertical stats list: label left, count right, no icons/dots */}
                   {[
-                    { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
-                    { key: 'crew', label: 'Crew', value: myCrewCount },
-                  { key: 'hugs', label: 'Hugs', value: userStats.hugsMade },
-                    { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves },
+                    { key: 'waves', label: 'Vibes', value: 0 },
+                    { key: 'crew', label: 'Crew', value: 0 },
+                    { key: 'hugs', label: 'Hugs', value: 0 },
+                    { key: 'echoes', label: 'Echoes', value: 0 },
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
                       <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
