@@ -242,7 +242,7 @@ export default function CharteredSeaDriftButton(props: Props) {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: 'red' }} />
-            <Text style={[styles.logbookActionText, buttonTextStyle]}>CHARTERED SEA DRIFT</Text>
+            <Text style={[styles.logbookActionText, buttonTextStyle]}>Aqua Premium</Text>
         </View>
       </Pressable>
 

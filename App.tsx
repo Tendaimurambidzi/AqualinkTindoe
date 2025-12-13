@@ -8459,10 +8459,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                 )}
                 <Pressable style={styles.logbookAction} onPress={openCamera}>
-                  <Text style={styles.logbookActionText}>📷 Open Camera</Text>
+                  <Text style={styles.logbookActionText}>📷 Capture Vibe</Text>
                 </Pressable>
                 <Pressable style={styles.logbookAction} onPress={fromGallery}>
-                  <Text style={styles.logbookActionText}>🖼️ From Gallery</Text>
+                  <Text style={styles.logbookActionText}>🖼️ Aqua Vault</Text>
                 </Pressable>
                 <Pressable style={styles.logbookAction} onPress={goDrift}>
                   <View
@@ -8480,7 +8480,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#00C2FF',
                       }}
                     />
-                    <Text style={styles.logbookActionText}>OPEN SEA DRIFT</Text>
+                    <Text style={styles.logbookActionText}>Drift Expo</Text>
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton
@@ -10154,7 +10154,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     onPress={() => {
                       setSelectedGemCountry(country);
                       setShowGemDropdown(false);
-                      Alert.alert('Gem Sent!', `You sent a gem to ${country}!`);
+                      Alert.alert('Coming Soon!', `Gems coming soon to ${country}..`);
                     }}
                   >
                     <Text style={styles.primaryBtnText}>{country}</Text>
