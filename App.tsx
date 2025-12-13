@@ -7293,9 +7293,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Pressable key={item.id}>
                     <View
                       style={[
-                        { backgroundColor: 'white', margin: 10, borderRadius: 10, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+                        { margin: 10, borderRadius: 10, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
                       ]}
                     >
+                    <View style={{ backgroundColor: 'magenta' }}>
                     {/* Post Header */}
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 10 }}>
                       {/* Left side - empty for balance */}
@@ -7412,6 +7413,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={{ color: 'blue', fontSize: 14 }}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
                       </Pressable>
                     )}
+                    </View>
+                    <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%' }} />
+                    <View style={{ backgroundColor: 'white' }}>
                     {/* Post Footer - Splashes, Echoes, Gems, Anchor vibe, Cast vibe, Placeholder */}
                     <ScrollView
                       horizontal
@@ -7554,6 +7558,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         )}
                       </View>
                     )}
+                    </View>
                   </View>
                   </Pressable>
                 );
