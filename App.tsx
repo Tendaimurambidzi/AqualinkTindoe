@@ -5246,7 +5246,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .doc(user.uid)
         .get();
 
-      const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug';
+      const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug' && (wave.counts?.hugs || 0) > 0;
 
       if (hasHugged) {
         // User has already hugged, show a friendly message
@@ -5341,6 +5341,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }}
           : vibe
       ));
+
+      // Update waves state for the main feed
+      setWaves(prev => prev.map(w => w.id === wave.id ? { ...w, counts: { ...w.counts, hugs: (w.counts?.hugs || 0) + 1 } } : w));
 
       // Show success message immediately without any sound
       setTimeout(() => {
