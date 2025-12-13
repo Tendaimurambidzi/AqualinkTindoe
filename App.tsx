@@ -1709,7 +1709,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [waveStats, setWaveStats] = useState<
     Record<
       string,
-      { splashes: number; echoes: number; views: number; createdAt?: number }
+      { splashes: number; hugs: number; echoes: number; views: number; createdAt?: number }
     >
   >({});
   const [userStats, setUserStats] = useState<{
@@ -4033,6 +4033,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               out.forEach(wave => {
                 waveStatsUpdate[wave.id] = {
                   splashes: Number(wave.counts?.splashes || 0),
+                  hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
                   echoes: Number(wave.counts?.echoes || 0),
                   views: Number(wave.counts?.views || 0),
                   createdAt: wave.createdAt,
@@ -8085,7 +8086,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   {[
                     { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
                     { key: 'crew', label: 'Crew', value: myCrewCount },
-                    { key: 'splashes', label: 'Splashes', value: userStats.splashesMade + userStats.hugsMade },
+                  { key: 'hugs', label: 'Hugs', value: userStats.hugsMade },
                     { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves },
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
