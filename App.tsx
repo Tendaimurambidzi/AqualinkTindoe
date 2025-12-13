@@ -5347,7 +5347,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       // Show success message immediately without any sound
       setTimeout(() => {
-        notifySuccess(message);
+        Alert.alert('Success', 'You hugged this wave!');
       }, 0);
     } catch (error) {
       console.error('Hug error:', error);
