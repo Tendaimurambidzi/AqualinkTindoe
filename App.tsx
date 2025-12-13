@@ -5323,6 +5323,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         hugsMade: prev.hugsMade + 1,
       }));
 
+      // Update local vibe counts immediately for real-time display
+      setVibesFeed(prev => prev.map(vibe => 
+        vibe.id === wave.id 
+          ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
+          : vibe
+      ));
+      setPublicFeed(prev => prev.map(vibe => 
+        vibe.id === wave.id 
+          ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
+          : vibe
+      ));
+
       // Send notification to wave owner (only for new hugs, not unhugs)
       // if (wave.ownerUid && wave.ownerUid !== user.uid) {
       //   await firestore()
@@ -5412,18 +5424,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setVibesFeed(prev => prev.map(vibe => 
         vibe.id === waveId 
           ? { ...vibe, counts: { 
-              splashes: vibe.counts?.splashes || 0,
+              ...vibe.counts,
               echoes: (vibe.counts?.echoes || 0) + 1,
-              gems: vibe.counts?.gems || 0
             }}
           : vibe
       ));
       setPublicFeed(prev => prev.map(vibe => 
         vibe.id === waveId 
           ? { ...vibe, counts: { 
-              splashes: vibe.counts?.splashes || 0,
+              ...vibe.counts,
               echoes: (vibe.counts?.echoes || 0) + 1,
-              gems: vibe.counts?.gems || 0
             }}
           : vibe
       ));
