@@ -144,11 +144,6 @@ exports.onSplashDelete = onDocumentDeleted('waves/{waveId}/splashes/{uid}', asyn
 exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async (event) => {
   const snap = event.data;
   const waveId = event.params.waveId;
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    await ensureCounts(tx, waveRef);
-    tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(1) });
-  });
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};

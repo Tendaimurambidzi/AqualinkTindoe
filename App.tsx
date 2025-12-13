@@ -1716,6 +1716,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     splashesMade: number;
     hugsMade: number;
   }>({ splashesMade: 0, hugsMade: 0 });
+  const userStatsLoadedRef = useRef(false);
   const [myWaveCount, setMyWaveCount] = useState<number | null>(null);
   const [waveOptionsTarget, setWaveOptionsTarget] = useState<Vibe | null>(null);
   const [isSavingWave, setIsSavingWave] = useState(false);
@@ -4068,14 +4069,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const ref = firestoreMod().doc(`users/${uid}`);
       // Load user stats for splashes/hugs made
-      ref.get().then((doc: any) => {
-        const data = doc?.data?.() || doc?.data || {};
-        const stats = data?.stats || {};
-        setUserStats({
-          splashesMade: Math.max(0, Number(stats?.splashesMade || 0)),
-          hugsMade: Math.max(0, Number(stats?.hugsMade || 0)),
-        });
-      }).catch(() => {});
+      if (!userStatsLoadedRef.current) {
+        ref.get().then((doc: any) => {
+          const data = doc?.data?.() || doc?.data || {};
+          const stats = data?.stats || {};
+          setUserStats({
+            splashesMade: Math.max(0, Number(stats?.splashesMade || 0)),
+            hugsMade: Math.max(0, Number(stats?.hugsMade || 0)),
+          });
+          userStatsLoadedRef.current = true;
+        }).catch(() => {});
+      }
       const unsub = ref.onSnapshot((snap: any) => {
         try {
           const d = snap?.data() || {};
