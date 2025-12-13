@@ -5241,7 +5241,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .doc(user.uid)
         .get();
 
-      const hasHugged = splashDoc.exists;
+      const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug';
 
       if (hasHugged) {
         // User has already hugged, show a friendly message
