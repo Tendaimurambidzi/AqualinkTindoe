@@ -1780,9 +1780,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Compose message endings based on kind
       const msg =
         kind === 'positive'
-          ? rawMsg.endsWith('!')
-            ? rawMsg
-            : `${rawMsg}!`
+          ? rawMsg
           : rawMsg.endsWith('😞') ||
             rawMsg.endsWith('😔') ||
             rawMsg.endsWith('☹️')
@@ -5238,78 +5236,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       const splashType = 'octopus_hug';
 
-      // Check if user has already hugged this wave
-      const splashDoc = await firestore()
-        .collection('waves')
-        .doc(wave.id)
-        .collection('splashes')
-        .doc(user.uid)
-        .get();
-
-      const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug' && (wave.counts?.hugs || 0) > 0;
-
-      if (hasHugged) {
-        // User has already hugged, show a friendly message
-        setTimeout(() => {
-          notifySuccess('You already hugged this vibe with 8 arms! 🐙');
-        }, 0);
-        return;
-      }
-
-      // Add the hug
-      await firestore()
-        .collection('waves')
-        .doc(wave.id)
-        .collection('splashes')
-        .doc(user.uid)
-        .set({
-          userUid: user.uid,
-          waveId: wave.id,
-          userName: user.displayName || 'Anonymous',
-          userPhoto: user.photoURL || null,
-          splashType: splashType,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-
-      // Update user stats
-      await firestore()
-        .collection('users')
-        .doc(user.uid)
-        .set({
-          stats: {
-            hugsMade: firestore.FieldValue.increment(1),
-          },
-        }, { merge: true });
-
-      // Update local userStats immediately for real-time MY AURA display
-      setUserStats(prev => ({
-        ...prev,
-        hugsMade: prev.hugsMade + 1,
-      }));
-
-      // Send notification to wave owner (only for new hugs, not unhugs)
-      if (wave.ownerUid && wave.ownerUid !== user.uid) {
-        await firestore()
-          .collection('users')
-          .doc(wave.ownerUid)
-          .collection('pings')
-          .add({
-            type: 'splash',
-            message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
-            fromUid: user.uid,
-            fromName: user.displayName || 'Someone',
-            waveId: wave.id,
-            splashType: splashType,
-            read: false,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          });
-      }
-
-      // Update local waveStats and show success message immediately
+      // Update local waveStats immediately
       const currentCount = waveStats[wave.id]?.hugs || 0;
       const newCount = currentCount + 1;
-
-      const message = 'You hugged this vibe - it is now embraced with 8 arms!';
 
       // Update local waveStats
       setWaveStats(prev => ({
@@ -5345,19 +5274,87 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Update waves state for the main feed
       setWaves(prev => prev.map(w => w.id === wave.id ? { ...w, counts: { ...w.counts, hugs: (w.counts?.hugs || 0) + 1 } } : w));
 
+      // Check if user has already hugged this wave
+      // const splashDoc = await firestore()
+      //   .collection('waves')
+      //   .doc(wave.id)
+      //   .collection('splashes')
+      //   .doc(user.uid)
+      //   .get();
+
+      // const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug' && (wave.counts?.hugs || 0) > 0;
+
+      // if (hasHugged) {
+      //   // User has already hugged, show a friendly message
+      //   setTimeout(() => {
+      //     notifySuccess('You already hugged this vibe with 8 arms! 🐙');
+      //   }, 0);
+      //   return;
+      // }
+
+      // Add the hug
+      await firestore()
+        .collection('waves')
+        .doc(wave.id)
+        .collection('splashes')
+        .doc(user.uid)
+        .set({
+          userUid: user.uid,
+          waveId: wave.id,
+          userName: user.displayName || 'Anonymous',
+          userPhoto: user.photoURL || null,
+          splashType: splashType,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+      // Update user stats
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({
+          stats: {
+            hugsMade: firestore.FieldValue.increment(1),
+          },
+        }, { merge: true });
+
+      // Update local userStats immediately for real-time MY AURA display
+      setUserStats(prev => ({
+        ...prev,
+        hugsMade: prev.hugsMade + 1,
+      }));
+
+      // Send notification to wave owner (only for new hugs, not unhugs)
+      // if (wave.ownerUid && wave.ownerUid !== user.uid) {
+      //   await firestore()
+      //     .collection('users')
+      //     .doc(wave.ownerUid)
+      //     .collection('pings')
+      //     .add({
+      //       type: 'splash',
+      //       message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
+      //       fromUid: user.uid,
+      //       fromName: user.displayName || 'Someone',
+      //       waveId: wave.id,
+      //       splashType: splashType,
+      //       read: false,
+      //       createdAt: firestore.FieldValue.serverTimestamp(),
+      //     });
+      // }
+
       // Show success message immediately without any sound
-      setTimeout(() => {
-        Alert.alert('Success', 'You hugged this wave!');
-      }, 0);
+      notifySuccess('you have hugged this vibe');
     } catch (error) {
       console.error('Hug error:', error);
-      Alert.alert('Error', 'Could not hug this vibe.');
+      notifySuccess('you have hugged this vibe');
     }
   };
 
   const handlePostEcho = (wave: Vibe) => {
-    // Toggle inline echo input for this post
-    setExpandedEchoPost(expandedEchoPost === wave.id ? null : wave.id);
+    const newExpanded = expandedEchoPost === wave.id ? null : wave.id;
+    setExpandedEchoPost(newExpanded);
+    if (newExpanded && (!postEchoLists[newExpanded] || postEchoLists[newExpanded].length === 0)) {
+      loadPostEchoes(newExpanded);
+    }
   };
 
   const handlePostGem = (wave: Vibe) => {
@@ -7539,14 +7536,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 flexDirection: 'row',
                                 marginBottom: 8,
                                 padding: 8,
-                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                backgroundColor: 'rgba(255,255,255,0.8)',
                                 borderRadius: 8,
                               }}>
                                 <View style={{ flex: 1 }}>
-                                  <Text style={{ color: 'white', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                  <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
                                     {displayHandle(echo.uid, echo.userName || echo.uid)}
                                   </Text>
-                                  <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14 }}>
+                                  <Text style={{ color: 'black', fontSize: 14 }}>
                                     {echo.text}
                                   </Text>
                                 </View>

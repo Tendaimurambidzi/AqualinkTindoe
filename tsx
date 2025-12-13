@@ -9473,7 +9473,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         }}
                       >
                         <View style={{ paddingVertical: 6 }}>
-                          <Text style={{ color: 'rgba(255,255,255,0.9)' }}>
+                          <Text style={{ color: 'white' }}>
                             <Text style={{ fontWeight: '700' }}>
                               {displayHandle(e.uid, e.userName || e.uid)}
                             </Text>

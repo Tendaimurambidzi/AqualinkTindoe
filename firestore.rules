@@ -130,7 +130,7 @@ service cloud.firestore {
       allow create, update, delete: if isOwner(uid);
 
       match /pings/{pingId} {
-        allow read, create, update, delete: if isOwner(uid);
+        allow read, create, update, delete: if isAuthed();
       }
 
       match /crew/{memberId} {
