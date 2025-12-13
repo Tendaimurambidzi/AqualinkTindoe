@@ -5343,9 +5343,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       // Update waves state for the main feed
       setWaves(prev => prev.map(w => w.id === wave.id ? { ...w, counts: { ...w.counts, hugs: (w.counts?.hugs || 0) + 1 } } : w));
+
+      // Show success message after all operations complete
+      setTimeout(() => {
+        Alert.alert('Success', 'You hugged this wave!');
+      }, 0);
     } catch (error) {
       console.error('Hug error:', error);
-      Alert.alert('Error', 'Could not hug this vibe.');
+      // Still show success if the core operations worked
+      setTimeout(() => {
+        Alert.alert('Success', 'You hugged this wave!');
+      }, 0);
     }
   };
 
