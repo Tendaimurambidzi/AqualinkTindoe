@@ -1685,6 +1685,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showGems, setShowGems] = useState<boolean>(false);
   const [selectedGemCountry, setSelectedGemCountry] = useState<string>('');
   const [selectedGemPayment, setSelectedGemPayment] = useState<string>('');
+  const [isGemCountryPicker, setIsGemCountryPicker] = useState<boolean>(false);
   const [textComposerText, setTextComposerText] = useState<string>('');
   const [isTextStorySending, setIsTextStorySending] =
     useState<boolean>(false);
@@ -3737,6 +3738,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setSelectedCountry(null);
     }
 
+    // Reset gem country picker flag when country picker closes
+    if (!showCountryPicker) {
+      setIsGemCountryPicker(false);
+    }
+
     const handleAppStateChange = (nextAppState: any) => {
       if (nextAppState.match(/inactive|background/)) {
         setIsPaused(true);
@@ -5324,7 +5330,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         vibe.id === wave.id
           ? { ...vibe, counts: {
               splashes: vibe.counts?.splashes || 0,
-              echoes: vibe.counts?.echoes || 0,
+              echoes: vibe.counts?.echoes || 0, // Don't increment echoes when hugging
               gems: vibe.counts?.gems || 0,
               hugs: (vibe.counts?.hugs || 0) + 1
             }}
@@ -5334,7 +5340,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         vibe.id === wave.id
           ? { ...vibe, counts: {
               splashes: vibe.counts?.splashes || 0,
-              echoes: vibe.counts?.echoes || 0,
+              echoes: vibe.counts?.echoes || 0, // Don't increment echoes when hugging
               gems: vibe.counts?.gems || 0,
               hugs: (vibe.counts?.hugs || 0) + 1
             }}
@@ -5441,6 +5447,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         'Echo Cast!',
         'Your echo has been cast!',
       );
+      notifySuccess('You echoed this wave!');
 
     } catch (e) {
       console.warn('Send post echo failed', e);
@@ -5484,21 +5491,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [expandedEchoPost]);
 
   const getPaymentOptions = (country: string): string[] => {
-    const countryCode = country.split(' ')[0];
-    switch (countryCode) {
-      case '🇰🇪': // Kenya
+    // Handle both flag+country format and plain country format
+    const countryName = country.includes(' ') ? country.split(' ').slice(1).join(' ') : country;
+    switch (countryName) {
+      case 'Kenya':
         return ['M-Pesa', 'Airtel Money', 'Equity Bank', 'KCB Bank', 'Co-operative Bank'];
-      case '🇺🇬': // Uganda
+      case 'Uganda':
         return ['MTN Mobile Money', 'Airtel Money', 'Centenary Bank', 'Stanbic Bank', 'DFCU Bank'];
-      case '🇹🇿': // Tanzania
+      case 'Tanzania':
         return ['M-Pesa', 'Tigo Pesa', 'Airtel Money', 'NMB Bank', 'CRDB Bank'];
-      case '🇷🇼': // Rwanda
+      case 'Rwanda':
         return ['MTN Mobile Money', 'Airtel Money', 'BK Bank', 'Equity Bank Rwanda'];
-      case '🇬🇭': // Ghana
+      case 'Ghana':
         return ['MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money', 'GCB Bank', 'Zenith Bank'];
-      case '🇳🇬': // Nigeria
+      case 'Nigeria':
         return ['MTN Mobile Money', 'Airtel Money', '9Mobile', 'First Bank', 'GTBank', 'Zenith Bank'];
-      case '🇿🇦': // South Africa (if needed)
+      case 'South Africa':
         return ['MTN Mobile Money', 'Vodacom Money', 'FNB Bank', 'Absa Bank', 'Standard Bank'];
       default:
         return ['Mobile Money', 'Bank Transfer'];
@@ -8095,8 +8103,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   {[
                     { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
                     { key: 'crew', label: 'Crew', value: myCrewCount },
-                  { key: 'hugs', label: 'Hugs', value: userStats.hugsMade },
-                    { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves },
+                  { key: 'hugs', label: 'Hugs', value: 0 }, // Reset hugs to 0 in MY AURA
+                    { key: 'echoes', label: 'Echoes', value: 0 }, // Reset echoes to 0 in MY AURA
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
                       <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
@@ -10265,7 +10273,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     key={country}
                     style={styles.logbookAction}
                     onPress={() => {
-                      setSelectedCountry(country);
+                      if (isGemCountryPicker) {
+                        setSelectedGemCountry(country);
+                      } else {
+                        setSelectedCountry(country);
+                      }
                       setShowCountryPicker(false);
                     }}
                   >
@@ -10520,22 +10532,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
                       Select your country to send gems
                     </Text>
-                    {[
-                      '🇰🇪 Kenya', '🇺🇬 Uganda', '🇹🇿 Tanzania', '🇷🇼 Rwanda', '🇧🇮 Burundi',
-                      '🇿🇲 Zambia', '🇿🇼 Zimbabwe', '🇧🇼 Botswana', '🇳🇦 Namibia', '🇲🇼 Malawi',
-                      '🇲🇿 Mozambique', '🇱🇸 Lesotho', '🇸🇿 Eswatini', '🇬🇭 Ghana', '🇳🇬 Nigeria',
-                      '🇸🇳 Senegal', '🇨🇮 Côte d\'Ivoire', '🇧🇫 Burkina Faso', '🇲🇱 Mali', '🇳🇪 Niger',
-                      '🇹🇬 Togo', '🇧🇯 Benin', '🇨🇲 Cameroon', '🇬🇦 Gabon', '🇨🇬 Congo', '🇨🇩 DRC',
-                      '🇦🇴 Angola', '🇸🇨 Seychelles', '🇲🇺 Mauritius', '🇲🇬 Madagascar'
-                    ].map((country) => (
-                      <Pressable
-                        key={country}
-                        style={[styles.secondaryBtn, { marginVertical: 4 }]}
-                        onPress={() => setSelectedGemCountry(country)}
-                      >
-                        <Text style={styles.secondaryBtnText}>{country}</Text>
-                      </Pressable>
-                    ))}
+                    <Pressable
+                      style={[styles.primaryBtn, { marginTop: 8 }]}
+                      onPress={() => {
+                        setIsGemCountryPicker(true);
+                        setShowCountryPicker(true);
+                      }}
+                    >
+                      <Text style={styles.primaryBtnText}>
+                        {selectedGemCountry || 'Select a country...'}
+                      </Text>
+                    </Pressable>
+                    <Text
+                      style={[
+                        styles.hint,
+                        {
+                          fontFamily:
+                            Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+                          marginTop: 8,
+                        },
+                      ]}
+                    >
+                      Payment details are available for supported countries.
+                    </Text>
                   </>
                 ) : !selectedGemPayment ? (
                   <>
@@ -10545,6 +10564,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Text style={{ color: 'white', marginBottom: 16, textAlign: 'center' }}>
                       Choose payment method
                     </Text>
+                    <Pressable
+                      style={[styles.primaryBtn, { marginTop: 8 }]}
+                      onPress={() => {
+                        setIsGemCountryPicker(true);
+                        setShowCountryPicker(true);
+                      }}
+                    >
+                      <Text style={styles.primaryBtnText}>
+                        {selectedGemCountry}
+                      </Text>
+                    </Pressable>
+                    <Pressable onPress={() => setSelectedGemCountry('')}>
+                      <Text
+                        style={{
+                          color: '#00C2FF',
+                          fontWeight: '700',
+                          marginBottom: 8,
+                          fontFamily:
+                            Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+                        }}
+                      >
+                        ← Change Country
+                      </Text>
+                    </Pressable>
                     {getPaymentOptions(selectedGemCountry).map((option) => (
                       <Pressable
                         key={option}
