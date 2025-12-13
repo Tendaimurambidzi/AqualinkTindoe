@@ -5287,38 +5287,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         hugsMade: prev.hugsMade + 1,
       }));
 
+      // Show success message immediately after successful operations
+      setTimeout(() => {
+        Alert.alert('Success', 'You hugged this wave!');
+      }, 0);
+
       // Send notification to wave owner (only for new hugs, not unhugs)
-      if (wave.ownerUid && wave.ownerUid !== user.uid) {
-        await firestore()
-          .collection('users')
-          .doc(wave.ownerUid)
-          .collection('pings')
-          .add({
-            type: 'splash',
-            message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
-            fromUid: user.uid,
-            fromName: user.displayName || 'Someone',
-            waveId: wave.id,
-            splashType: splashType,
-            read: false,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          });
+      try {
+        if (wave.ownerUid && wave.ownerUid !== user.uid) {
+          await firestore()
+            .collection('users')
+            .doc(wave.ownerUid)
+            .collection('pings')
+            .add({
+              type: 'splash',
+              message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
+              fromUid: user.uid,
+              fromName: user.displayName || 'Someone',
+              waveId: wave.id,
+              splashType: splashType,
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
+        }
+      } catch (pingError) {
+        console.warn('Failed to send hug ping:', pingError);
+        // Don't fail the whole operation for ping errors
       }
 
-      // Update local waveStats and show success message immediately
+      // Update local waveStats and feed arrays for immediate UI feedback
       const currentCount = waveStats[wave.id]?.hugs || 0;
       const newCount = currentCount + 1;
-
-      const message = 'You hugged this vibe - it is now embraced with 8 arms!';
-
-      // Update local waveStats
-      setWaveStats(prev => ({
-        ...prev,
-        [wave.id]: {
-          ...prev[wave.id],
-          hugs: newCount,
-        },
-      }));
 
       // Update feed arrays for immediate UI feedback
       setVibesFeed(prev => prev.map(vibe =>
@@ -5344,11 +5343,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       // Update waves state for the main feed
       setWaves(prev => prev.map(w => w.id === wave.id ? { ...w, counts: { ...w.counts, hugs: (w.counts?.hugs || 0) + 1 } } : w));
-
-      // Show success message immediately without any sound
-      setTimeout(() => {
-        Alert.alert('Success', 'You hugged this wave!');
-      }, 0);
     } catch (error) {
       console.error('Hug error:', error);
       Alert.alert('Error', 'Could not hug this vibe.');
