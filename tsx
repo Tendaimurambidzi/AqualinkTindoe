@@ -71,7 +71,7 @@ try {
   splashFalcon = require('./assets/falcon_only_transparent.png');
 } catch {}
 try {
-  myLogo = require('./assets/my_logo.jpg');
+  myLogo = require('./assets/my_logo.png');
 } catch {}
 try {
   splashSound = require('./assets/falcon.mp3');
@@ -13563,7 +13563,7 @@ function WelcomeAnimationScreen({ navigation }: any) {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#0A1929',
+        backgroundColor: '#FFFF00',
       }}
       onPress={handleSkip}
     >

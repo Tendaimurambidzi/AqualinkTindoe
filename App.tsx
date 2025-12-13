@@ -1717,6 +1717,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     hugsMade: number;
   }>({ splashesMade: 0, hugsMade: 0 });
   const userStatsLoadedRef = useRef(false);
+  const [timeTick, setTimeTick] = useState(0);
   const [myWaveCount, setMyWaveCount] = useState<number | null>(null);
   const [waveOptionsTarget, setWaveOptionsTarget] = useState<Vibe | null>(null);
   const [isSavingWave, setIsSavingWave] = useState(false);
@@ -1727,6 +1728,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
   const [toastMessage, setToastMessage] = useState('');
   const toastTimerRef = useRef<any>(null);
+
+  // Update timestamps every second
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimeTick(prev => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Ocean Dialog state
   const [oceanDialog, setOceanDialog] = useState<{
@@ -5420,12 +5429,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Close the echo input immediately after sending
       setExpandedEchoPost(null);
 
-      // Update local echo count for immediate UI feedback
+      // Update local echo count for immediate UI feedback and reset hug count
       setVibesFeed(prev => prev.map(vibe => 
         vibe.id === waveId 
           ? { ...vibe, counts: { 
               ...vibe.counts,
               echoes: (vibe.counts?.echoes || 0) + 1,
+              hugs: 0, // Reset hug count when echoing
             }}
           : vibe
       ));
@@ -5434,6 +5444,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? { ...vibe, counts: { 
               ...vibe.counts,
               echoes: (vibe.counts?.echoes || 0) + 1,
+              hugs: 0, // Reset hug count when echoing
             }}
           : vibe
       ));
@@ -7229,11 +7240,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: 20,
+                backgroundColor: '#f0f2f5',
               }}
             >
-              <Text style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>
-                🧭
-              </Text>
+              {/* Empty feed - no placeholder content */}
             </View>
           ) : (
             <Animated.ScrollView
@@ -15107,8 +15117,7 @@ const App: React.FC = () => {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
     const seconds = Math.floor(diff / 1000);
-    if (seconds < 1) return 'just now';
-    if (seconds < 60) return seconds === 1 ? '1 sec ago' : `${seconds} secs ago`;
+    if (seconds < 60) return 'just now';
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`;
     const hours = Math.floor(minutes / 60);

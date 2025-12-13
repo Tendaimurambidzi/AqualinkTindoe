@@ -27,6 +27,7 @@ async function resetCounts() {
           ...currentStats,
           splashesMade: 0,
           hugsMade: 0,
+          echoesMade: 0, // Reset echoes made to 0
           // Keep other stats like hugsWithdrawn, etc.
         }
       });
@@ -47,7 +48,8 @@ async function resetCounts() {
           splashes: 0,
           hugs: 0,
           regularSplashes: 0,
-          // Keep echoes and other counts
+          echoes: 0, // Reset echoes to 0 as well
+          // Keep other counts if any
         }
       });
       console.log(`Reset counts for wave: ${waveDoc.id}`);
@@ -66,6 +68,22 @@ async function resetCounts() {
       if (splashesSnapshot.docs.length > 0) {
         await batch.commit();
         console.log(`Deleted ${splashesSnapshot.docs.length} splashes for wave: ${waveDoc.id}`);
+      }
+    }
+
+    // Delete all echo documents from waves/{waveId}/echoes collections
+    console.log('Deleting all echo records...');
+    for (const waveDoc of wavesSnapshot.docs) {
+      const echoesSnapshot = await waveDoc.ref.collection('echoes').get();
+      const batch = db.batch();
+
+      echoesSnapshot.docs.forEach((echoDoc) => {
+        batch.delete(echoDoc.ref);
+      });
+
+      if (echoesSnapshot.docs.length > 0) {
+        await batch.commit();
+        console.log(`Deleted ${echoesSnapshot.docs.length} echoes for wave: ${waveDoc.id}`);
       }
     }
 
