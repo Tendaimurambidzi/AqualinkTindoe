@@ -7619,7 +7619,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   })}
                 >
                   <Text style={styles.compassIcon}>
-                    🎉
+                    �
                   </Text>
                   <Text style={styles.topLabel}>
                     VIBES
@@ -7630,7 +7630,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   style={styles.topItem}
                   onPress={withUi(() => setShowMakeWaves(true))}
                 >
-                  <Text style={styles.dolphinIcon}>🎉</Text>
+                  <Text style={styles.dolphinIcon}>✨</Text>
                   <Text style={styles.topLabel}>DROP A VIBE</Text>
                 </Pressable>
                 {/* PINGS */}
