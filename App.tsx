@@ -1716,7 +1716,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [userStats, setUserStats] = useState<{
     splashesMade: number;
     hugsMade: number;
-  }>({ splashesMade: 0, hugsMade: 0 });
+    echoesMade: number;
+  }>({ splashesMade: 0, hugsMade: 0, echoesMade: 0 });
   const userStatsLoadedRef = useRef(false);
   const [myWaveCount, setMyWaveCount] = useState<number | null>(null);
   const [waveOptionsTarget, setWaveOptionsTarget] = useState<Vibe | null>(null);
@@ -4000,9 +4001,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 authorName,
                 ownerUid: (data?.ownerUid || data?.authorId || null) as any,
                 counts: {
-                  splashes: Number(data?.counts?.splashes || 0),
-                  echoes: Number(data?.counts?.echoes || 0),
-                  gems: Number(data?.counts?.gems || 0),
+                  splashes: 0, // Always start at 0
+                  echoes: 0, // Always start at 0
+                  gems: 0, // Always start at 0
                 },
               });
             }
@@ -4021,9 +4022,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     return {
                       ...existingWave,
                       counts: {
-                        splashes: Number(firestoreWave.counts?.splashes || 0),
-                        echoes: Number(firestoreWave.counts?.echoes || 0),
-                        gems: Number(firestoreWave.counts?.gems || 0),
+                        splashes: 0, // Always start at 0
+                        echoes: 0, // Always start at 0
+                        gems: 0, // Always start at 0
                       },
                     };
                   }
@@ -4039,10 +4040,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               const waveStatsUpdate: Record<string, any> = {};
               out.forEach(wave => {
                 waveStatsUpdate[wave.id] = {
-                  splashes: Number(wave.counts?.splashes || 0),
-                  hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
-                  echoes: Number(wave.counts?.echoes || 0),
-                  views: Number(wave.counts?.views || 0),
+                  splashes: 0, // Always start at 0
+                  hugs: 0, // Always start at 0
+                  echoes: 0, // Always start at 0
+                  views: 0, // Always start at 0
                   createdAt: wave.createdAt,
                 };
               });
@@ -4076,15 +4077,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const ref = firestoreMod().doc(`users/${uid}`);
       // Load user stats for splashes/hugs made
       if (!userStatsLoadedRef.current) {
-        ref.get().then((doc: any) => {
-          const data = doc?.data?.() || doc?.data || {};
-          const stats = data?.stats || {};
-          setUserStats({
-            splashesMade: Math.max(0, Number(stats?.splashesMade || 0)),
-            hugsMade: Math.max(0, Number(stats?.hugsMade || 0)),
-          });
-          userStatsLoadedRef.current = true;
-        }).catch(() => {});
+        // Always start with 0 - no persistence for user interaction counts
+        setUserStats({
+          splashesMade: 0,
+          hugsMade: 0,
+          echoesMade: 0,
+        });
+        userStatsLoadedRef.current = true;
       }
       const unsub = ref.onSnapshot((snap: any) => {
         try {
@@ -5438,6 +5437,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }}
           : vibe
       ));
+
+      // Update user stats
+      await firestore()
+        .collection('users')
+        .doc(firestore().app.auth().currentUser?.uid || '')
+        .set({
+          stats: {
+            echoesMade: firestore.FieldValue.increment(1),
+          },
+        }, { merge: true });
+
+      // Update local userStats immediately for real-time MY AURA display
+      setUserStats(prev => ({
+        ...prev,
+        echoesMade: prev.echoesMade + 1,
+      }));
 
       // Refresh echo list for this post
       loadPostEchoes(waveId);
@@ -8103,8 +8118,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   {[
                     { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
                     { key: 'crew', label: 'Crew', value: myCrewCount },
-                  { key: 'hugs', label: 'Hugs', value: 0 }, // Reset hugs to 0 in MY AURA
-                    { key: 'echoes', label: 'Echoes', value: 0 }, // Reset echoes to 0 in MY AURA
+                  { key: 'hugs', label: 'Hugs', value: userStats.hugsMade },
+                    { key: 'echoes', label: 'Echoes', value: userStats.echoesMade },
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
                       <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>

@@ -23,8 +23,8 @@ export default function WaveStatsBadge({
       try {
         const d = snap?.data?.() || snap?.data || {};
         const counts = d?.counts || {};
-        setSplashes(Math.max(0, Number(counts?.splashes || 0)));
-        setEchoes(Math.max(0, Number(counts?.echoes || 0)));
+        setSplashes(0); // Always start at 0
+        setEchoes(0); // Always start at 0
       } catch {}
     }, () => {});
 
