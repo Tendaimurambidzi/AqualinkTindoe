@@ -5241,167 +5241,106 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .doc(user.uid)
         .get();
 
-      const hasSplashed = splashDoc.exists;
-      const isUnsplash = hasSplashed;
+      const hasHugged = splashDoc.exists;
 
-      if (isUnsplash) {
-        // Remove the hug
-        await firestore()
-          .collection('waves')
-          .doc(wave.id)
-          .collection('splashes')
-          .doc(user.uid)
-          .delete();
-
-        // Update user stats (decrement)
-        await firestore()
-          .collection('users')
-          .doc(user.uid)
-          .set({
-            stats: {
-              hugsMade: firestore.FieldValue.increment(-1),
-            },
-          }, { merge: true });
-
-        // Update local userStats immediately for real-time MY AURA display
-        setUserStats(prev => ({
-          ...prev,
-          hugsMade: Math.max(0, prev.hugsMade - 1),
-        }));
-
-        // Update local waveStats
-        const currentCount = waveStats[wave.id]?.hugs || 0;
-        const newCount = Math.max(0, currentCount - 1);
-
-        const message = 'You unhugged this vibe';
-
-        // Update local waveStats
-        setWaveStats(prev => ({
-          ...prev,
-          [wave.id]: {
-            ...prev[wave.id],
-            hugs: newCount,
-          },
-        }));
-
-        // Update feed arrays for immediate UI feedback
-        setVibesFeed(prev => prev.map(vibe =>
-          vibe.id === wave.id
-            ? { ...vibe, counts: {
-                splashes: vibe.counts?.splashes || 0,
-                echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0,
-                hugs: Math.max(0, (vibe.counts?.hugs || 0) - 1)
-              }}
-            : vibe
-        ));
-        setPublicFeed(prev => prev.map(vibe =>
-          vibe.id === wave.id
-            ? { ...vibe, counts: {
-                splashes: vibe.counts?.splashes || 0,
-                echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0,
-                hugs: Math.max(0, (vibe.counts?.hugs || 0) - 1)
-              }}
-            : vibe
-        ));
-
-        // Show success message immediately without any sound
+      if (hasHugged) {
+        // User has already hugged, show a friendly message
         setTimeout(() => {
-          notifySuccess(message);
+          notifySuccess('You already hugged this vibe with 8 arms! 🐙');
         }, 0);
-      } else {
-        // Add the hug
-        await firestore()
-          .collection('waves')
-          .doc(wave.id)
-          .collection('splashes')
-          .doc(user.uid)
-          .set({
-            userUid: user.uid,
-            waveId: wave.id,
-            userName: user.displayName || 'Anonymous',
-            userPhoto: user.photoURL || null,
-            splashType: splashType,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
-
-        // Update user stats
-        await firestore()
-          .collection('users')
-          .doc(user.uid)
-          .set({
-            stats: {
-              hugsMade: firestore.FieldValue.increment(1),
-            },
-          }, { merge: true });
-
-        // Update local userStats immediately for real-time MY AURA display
-        setUserStats(prev => ({
-          ...prev,
-          hugsMade: prev.hugsMade + 1,
-        }));
-
-        // Send notification to wave owner (only for new hugs, not unhugs)
-        if (wave.ownerUid && wave.ownerUid !== user.uid) {
-          await firestore()
-            .collection('users')
-            .doc(wave.ownerUid)
-            .collection('pings')
-            .add({
-              type: 'splash',
-              message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
-              fromUid: user.uid,
-              fromName: user.displayName || 'Someone',
-              waveId: wave.id,
-              splashType: splashType,
-              read: false,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-        }
-
-        // Update local waveStats and show success message immediately
-        const currentCount = waveStats[wave.id]?.hugs || 0;
-        const newCount = currentCount + 1;
-
-        const message = 'You hugged this vibe - the vibe is embraced with 8 arms!';
-
-        // Update local waveStats
-        setWaveStats(prev => ({
-          ...prev,
-          [wave.id]: {
-            ...prev[wave.id],
-            hugs: newCount,
-          },
-        }));
-
-        // Update feed arrays for immediate UI feedback
-        setVibesFeed(prev => prev.map(vibe =>
-          vibe.id === wave.id
-            ? { ...vibe, counts: {
-                splashes: vibe.counts?.splashes || 0,
-                echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0,
-                hugs: (vibe.counts?.hugs || 0) + 1
-              }}
-            : vibe
-        ));
-        setPublicFeed(prev => prev.map(vibe =>
-          vibe.id === wave.id
-            ? { ...vibe, counts: {
-                splashes: vibe.counts?.splashes || 0,
-                echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0,
-                hugs: (vibe.counts?.hugs || 0) + 1
-              }}
-            : vibe
-        ));
-
-        // Show success message immediately without any sound
-        setTimeout(() => {
-          notifySuccess(message);
-        }, 0);
+        return;
       }
+
+      // Add the hug
+      await firestore()
+        .collection('waves')
+        .doc(wave.id)
+        .collection('splashes')
+        .doc(user.uid)
+        .set({
+          userUid: user.uid,
+          waveId: wave.id,
+          userName: user.displayName || 'Anonymous',
+          userPhoto: user.photoURL || null,
+          splashType: splashType,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+
+      // Update user stats
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({
+          stats: {
+            hugsMade: firestore.FieldValue.increment(1),
+          },
+        }, { merge: true });
+
+      // Update local userStats immediately for real-time MY AURA display
+      setUserStats(prev => ({
+        ...prev,
+        hugsMade: prev.hugsMade + 1,
+      }));
+
+      // Send notification to wave owner (only for new hugs, not unhugs)
+      if (wave.ownerUid && wave.ownerUid !== user.uid) {
+        await firestore()
+          .collection('users')
+          .doc(wave.ownerUid)
+          .collection('pings')
+          .add({
+            type: 'splash',
+            message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
+            fromUid: user.uid,
+            fromName: user.displayName || 'Someone',
+            waveId: wave.id,
+            splashType: splashType,
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          });
+      }
+
+      // Update local waveStats and show success message immediately
+      const currentCount = waveStats[wave.id]?.hugs || 0;
+      const newCount = currentCount + 1;
+
+      const message = 'You hugged this vibe - it is now embraced with 8 arms!';
+
+      // Update local waveStats
+      setWaveStats(prev => ({
+        ...prev,
+        [wave.id]: {
+          ...prev[wave.id],
+          hugs: newCount,
+        },
+      }));
+
+      // Update feed arrays for immediate UI feedback
+      setVibesFeed(prev => prev.map(vibe =>
+        vibe.id === wave.id
+          ? { ...vibe, counts: {
+              splashes: vibe.counts?.splashes || 0,
+              echoes: vibe.counts?.echoes || 0,
+              gems: vibe.counts?.gems || 0,
+              hugs: (vibe.counts?.hugs || 0) + 1
+            }}
+          : vibe
+      ));
+      setPublicFeed(prev => prev.map(vibe =>
+        vibe.id === wave.id
+          ? { ...vibe, counts: {
+              splashes: vibe.counts?.splashes || 0,
+              echoes: vibe.counts?.echoes || 0,
+              gems: vibe.counts?.gems || 0,
+              hugs: (vibe.counts?.hugs || 0) + 1
+            }}
+          : vibe
+      ));
+
+      // Show success message immediately without any sound
+      setTimeout(() => {
+        notifySuccess(message);
+      }, 0);
     } catch (error) {
       console.error('Hug error:', error);
       Alert.alert('Error', 'Could not hug this vibe.');
