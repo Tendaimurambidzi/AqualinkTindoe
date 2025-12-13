@@ -3370,7 +3370,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         onPress: openMyWavesFromStats,
       },
       { key: 'crew', label: 'Crew', value: myCrewCount },
-      { key: 'splashes', label: 'Glows', value: totalSplashesOnMyWaves },
       { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves, onPress: handleHugsPress },
       { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves, onPress: handleEchoesPress },
     ],
@@ -3378,7 +3377,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       wavesCountDisplay,
       openMyWavesFromStats,
       myCrewCount,
-      totalSplashesOnMyWaves,
       totalHugsOnMyWaves,
       handleHugsPress,
       totalEchoesOnMyWaves,
@@ -5225,35 +5223,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
 
   // Post interaction handlers for feed
-  const handlePostSplash = async (wave: Vibe, splashType?: 'regular' | 'octopus_hug') => {
+  const handlePostHug = async (wave: Vibe) => {
     try {
       const user = auth().currentUser;
       if (!user) {
-        Alert.alert('Sign in required', 'Please sign in to splash.');
+        Alert.alert('Sign in required', 'Please sign in to hug.');
         return;
       }
 
-      // Always show choice dialog first, regardless of current splash state
-      if (!splashType) {
-        Alert.alert(
-          'Choose Your Splash',
-          'How would you like to show appreciation?',
-          [
-            {
-              text: '💧 Regular Splash',
-              onPress: () => handlePostSplash(wave, 'regular'),
-            },
-            {
-              text: '🐙 Octopus Hug',
-              onPress: () => handlePostSplash(wave, 'octopus_hug'),
-            },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-        return;
-      }
+      const splashType = 'octopus_hug';
 
-      // Check if user has already splashed this wave with this splashType
+      // Check if user has already hugged this wave
       const splashDoc = await firestore()
         .collection('waves')
         .doc(wave.id)
@@ -5261,11 +5241,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .doc(user.uid)
         .get();
 
-      const hasSplashed = splashDoc.exists && splashDoc.data()?.splashType === splashType;
+      const hasSplashed = splashDoc.exists;
       const isUnsplash = hasSplashed;
 
       if (isUnsplash) {
-        // Remove the splash
+        // Remove the hug
         await firestore()
           .collection('waves')
           .doc(wave.id)
@@ -5274,38 +5254,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .delete();
 
         // Update user stats (decrement)
-        const statField = splashType === 'octopus_hug' ? 'hugsMade' : 'splashesMade';
         await firestore()
           .collection('users')
           .doc(user.uid)
           .set({
             stats: {
-              [statField]: firestore.FieldValue.increment(-1),
+              hugsMade: firestore.FieldValue.increment(-1),
             },
           }, { merge: true });
 
         // Update local userStats immediately for real-time MY AURA display
         setUserStats(prev => ({
           ...prev,
-          [statField]: Math.max(0, prev[statField] - 1),
+          hugsMade: Math.max(0, prev.hugsMade - 1),
         }));
 
-        // Update local waveStats and show success message immediately
-        const currentCount = waveStats[wave.id]?.splashes || 0;
+        // Update local waveStats
+        const currentCount = waveStats[wave.id]?.hugs || 0;
         const newCount = Math.max(0, currentCount - 1);
 
-        const message =
-          splashType === 'octopus_hug'
-            ? 'You unhugged this vibe'
-            : 'You unsplashed this vibe';
+        const message = 'You unhugged this vibe';
 
         // Update local waveStats
         setWaveStats(prev => ({
           ...prev,
           [wave.id]: {
             ...prev[wave.id],
-            splashes: newCount,
-            regularSplashes: newCount, // Keep both fields in sync
+            hugs: newCount,
           },
         }));
 
@@ -5313,18 +5288,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setVibesFeed(prev => prev.map(vibe =>
           vibe.id === wave.id
             ? { ...vibe, counts: {
-                splashes: Math.max(0, (vibe.counts?.splashes || 0) - 1),
+                splashes: vibe.counts?.splashes || 0,
                 echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0
+                gems: vibe.counts?.gems || 0,
+                hugs: Math.max(0, (vibe.counts?.hugs || 0) - 1)
               }}
             : vibe
         ));
         setPublicFeed(prev => prev.map(vibe =>
           vibe.id === wave.id
             ? { ...vibe, counts: {
-                splashes: Math.max(0, (vibe.counts?.splashes || 0) - 1),
+                splashes: vibe.counts?.splashes || 0,
                 echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0
+                gems: vibe.counts?.gems || 0,
+                hugs: Math.max(0, (vibe.counts?.hugs || 0) - 1)
               }}
             : vibe
         ));
@@ -5334,7 +5311,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           notifySuccess(message);
         }, 0);
       } else {
-        // Add the splash
+        // Add the hug
         await firestore()
           .collection('waves')
           .doc(wave.id)
@@ -5350,33 +5327,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }, { merge: true });
 
         // Update user stats
-        const statField = splashType === 'octopus_hug' ? 'hugsMade' : 'splashesMade';
         await firestore()
           .collection('users')
           .doc(user.uid)
           .set({
             stats: {
-              [statField]: firestore.FieldValue.increment(1),
+              hugsMade: firestore.FieldValue.increment(1),
             },
           }, { merge: true });
 
         // Update local userStats immediately for real-time MY AURA display
         setUserStats(prev => ({
           ...prev,
-          [statField]: prev[statField] + 1,
+          hugsMade: prev.hugsMade + 1,
         }));
 
-        // Send notification to wave owner (only for new splashes, not unsplashes)
+        // Send notification to wave owner (only for new hugs, not unhugs)
         if (wave.ownerUid && wave.ownerUid !== user.uid) {
-          const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💧';
-          const splashText = splashType === 'octopus_hug' ? 'sent an octopus hug' : 'splashed';
           await firestore()
             .collection('users')
             .doc(wave.ownerUid)
             .collection('pings')
             .add({
               type: 'splash',
-              message: `${splashEmoji} ${user.displayName || 'Someone'} ${splashText} on your vibe`,
+              message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
               fromUid: user.uid,
               fromName: user.displayName || 'Someone',
               waveId: wave.id,
@@ -5387,21 +5361,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
 
         // Update local waveStats and show success message immediately
-        const currentCount = waveStats[wave.id]?.splashes || 0;
+        const currentCount = waveStats[wave.id]?.hugs || 0;
         const newCount = currentCount + 1;
 
-        const message =
-          splashType === 'octopus_hug'
-            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
-            : 'You splashed this vibe!';
+        const message = 'You hugged this vibe - the vibe is embraced with 8 arms!';
 
-        // Update local waveStats and show success message immediately
+        // Update local waveStats
         setWaveStats(prev => ({
           ...prev,
           [wave.id]: {
             ...prev[wave.id],
-            splashes: newCount,
-            regularSplashes: newCount, // Keep both fields in sync
+            hugs: newCount,
           },
         }));
 
@@ -5409,18 +5379,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setVibesFeed(prev => prev.map(vibe =>
           vibe.id === wave.id
             ? { ...vibe, counts: {
-                splashes: (vibe.counts?.splashes || 0) + 1,
+                splashes: vibe.counts?.splashes || 0,
                 echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0
+                gems: vibe.counts?.gems || 0,
+                hugs: (vibe.counts?.hugs || 0) + 1
               }}
             : vibe
         ));
         setPublicFeed(prev => prev.map(vibe =>
           vibe.id === wave.id
             ? { ...vibe, counts: {
-                splashes: (vibe.counts?.splashes || 0) + 1,
+                splashes: vibe.counts?.splashes || 0,
                 echoes: vibe.counts?.echoes || 0,
-                gems: vibe.counts?.gems || 0
+                gems: vibe.counts?.gems || 0,
+                hugs: (vibe.counts?.hugs || 0) + 1
               }}
             : vibe
         ));
@@ -5431,8 +5403,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }, 0);
       }
     } catch (error) {
-      console.error('Splash error:', error);
-      Alert.alert('Error', 'Could not splash this vibe.');
+      console.error('Hug error:', error);
+      Alert.alert('Error', 'Could not hug this vibe.');
     }
   };
 
@@ -7516,12 +7488,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={{ marginTop: 10 }}
                     >
                       <TouchableOpacity
-                        onPress={() => handlePostSplash(item)}
+                        onPress={() => handlePostHug(item)}
                         style={{ alignItems: 'center', marginRight: 20 }}
                       >
-                        <Text style={{ marginBottom: 2 }}>💧</Text>
-                        <Text style={{ fontSize: 12 }}>Splashes</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{Math.max(0, item.counts?.splashes || 0)}</Text>
+                        <Text style={{ marginBottom: 2 }}>🐙</Text>
+                        <Text style={{ fontSize: 12 }}>Hugs</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{Math.max(0, item.counts?.hugs || 0)}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => handlePostEcho(item)}
