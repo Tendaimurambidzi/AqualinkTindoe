@@ -5289,7 +5289,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       // Show success message immediately after successful operations
       setTimeout(() => {
-        Alert.alert('Success', 'You hugged this wave!');
+        notifySuccess('You hugged this wave!');
       }, 0);
 
       // Send notification to wave owner (only for new hugs, not unhugs)
