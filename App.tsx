@@ -1685,6 +1685,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showGems, setShowGems] = useState<boolean>(false);
   const [selectedGemCountry, setSelectedGemCountry] = useState<string>('');
   const [selectedGemPayment, setSelectedGemPayment] = useState<string>('');
+  const [showGemsDropdown, setShowGemsDropdown] = useState<boolean>(false);
   const [textComposerText, setTextComposerText] = useState<string>('');
   const [isTextStorySending, setIsTextStorySending] =
     useState<boolean>(false);
@@ -5382,7 +5383,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setCurrentWave(wave);
     setSelectedGemCountry('');
     setSelectedGemPayment('');
-    setShowGems(true);
+    setShowGemsDropdown(true);
   };
                     
   const handleSendPostEcho = async (waveId: string) => {
@@ -7456,6 +7457,50 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={{ marginBottom: 2 }}>💎</Text>
                         <Text style={{ fontSize: 12 }}>Gems</Text>
                       </TouchableOpacity>
+                      {showGemsDropdown && (
+                        <View style={{
+                          position: 'absolute',
+                          top: 60,
+                          left: 0,
+                          right: 0,
+                          backgroundColor: 'rgba(0,0,0,0.9)',
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor: '#00BFFF',
+                          maxHeight: 200,
+                          zIndex: 1000,
+                        }}>
+                          <ScrollView style={{ maxHeight: 180 }}>
+                            {AFRICAN_COUNTRIES.map((country) => (
+                              <TouchableOpacity
+                                key={country}
+                                style={{
+                                  padding: 10,
+                                  borderBottomWidth: 1,
+                                  borderBottomColor: 'rgba(255,255,255,0.1)',
+                                }}
+                                onPress={() => {
+                                  setSelectedGemCountry(country);
+                                  setShowGemsDropdown(false);
+                                  setShowGems(true); // Open the payment modal after selecting country
+                                }}
+                              >
+                                <Text style={{ color: 'white', fontSize: 14 }}>{country}</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </ScrollView>
+                          <TouchableOpacity
+                            style={{
+                              padding: 10,
+                              backgroundColor: 'rgba(255,0,0,0.8)',
+                              alignItems: 'center',
+                            }}
+                            onPress={() => setShowGemsDropdown(false)}
+                          >
+                            <Text style={{ color: 'white', fontSize: 14 }}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )}
                       <TouchableOpacity
                         onPress={() => anchorWave(item)}
                         style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}
