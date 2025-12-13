@@ -5346,13 +5346,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       // Show success message after all operations complete
       setTimeout(() => {
-        Alert.alert('Success', 'You hugged this wave!');
+        notifySuccess('You hugged this wave!');
       }, 0);
     } catch (error) {
       console.error('Hug error:', error);
       // Still show success if the core operations worked
       setTimeout(() => {
-        Alert.alert('Success', 'You hugged this wave!');
+        notifySuccess('You hugged this wave!');
       }, 0);
     }
   };
