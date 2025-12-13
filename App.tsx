@@ -1,13 +1,13 @@
 // Correct "Send Echo" (comment) transaction
 import firestore from '@react-native-firebase/firestore';
-
+                    
 async function sendEcho(waveId: string, text: string) {
   const uid = firestore().app.auth().currentUser?.uid; // or however you get uid
   if (!uid) throw new Error('Not signed in');
-
+                    
   const trimmed = text.trim();
   if (!trimmed) return;
-
+                    
   // Get user profile data for the echo
   let fromName = null;
   let fromPhoto = null;
@@ -21,14 +21,14 @@ async function sendEcho(waveId: string, text: string) {
   } catch (e) {
     // Continue without profile data
   }
-
+                    
   // Use Firebase callable function instead of direct Firestore
   let functionsMod: any = null;
   try {
     functionsMod = require('@react-native-firebase/functions').default;
   } catch {}
   if (!functionsMod) throw new Error('Firebase Functions not available');
-
+                    
   const createEchoFn = functionsMod().httpsCallable('createEcho');
   await createEchoFn({
     waveId,
@@ -95,7 +95,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary, CameraOptions, Asset, ImagePickerResponse } from 'react-native-image-picker';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
-
+                    
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
 import {
@@ -107,11 +107,11 @@ import {
 import { uploadPost } from './src/services/uploadPost';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
-
-
+                    
+                    
 // Navigation stack shared across auth/app flows
 const Stack = createNativeStackNavigator();
-
+                    
 // Try to use react-native-video if installed; otherwise fall back to hiding video elements
 let RNVideo: any = null;
 try {
@@ -119,7 +119,7 @@ try {
 } catch (err) {
   console.warn('react-native-video not available, video playback disabled:', err?.message || err);
 }
-
+                    
 // Paper texture is optional; keep null-safe to avoid crashes if the asset is missing
 const paperTexture = null;
 const myLogo = (() => {
@@ -129,17 +129,17 @@ const myLogo = (() => {
     return null;
   }
 })();
-
+                    
 // Debug safety switch: keep false unless intentionally force-signing users out on cold start
 const FORCE_SIGN_OUT_ON_START = true;
-
+                    
 // Default dimensions for overlay UI; used in live stats panels
 const STATS_OVERLAY_HEIGHT = 220;
-
+                    
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const TEXT_STORY_PLACEHOLDER =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAF/wJ+XmYjAAAAAElFTkSuQmCC';
-
+                    
 const isVideoAsset = (asset: Asset | null | undefined): boolean => {
   if (!asset) return false;
   const t = (asset.type || '').toLowerCase();
@@ -151,7 +151,7 @@ const isVideoAsset = (asset: Asset | null | undefined): boolean => {
   if (isLocal && !isImageExt) return true;
   return false;
 };
-
+                    
 type Vibe = {
   id: string;
   media?: Asset | null;
@@ -169,14 +169,14 @@ type Vibe = {
     gems: number;
   };
 };
-
+                    
 type SearchResult = {
   kind: 'user' | 'vibe';
   id: string;
   label: string;
   extra?: Record<string, any>;
 };
-
+                    
 type Ping = {
   id: string;
   type:
@@ -197,36 +197,36 @@ type Ping = {
   read: boolean;
   splashType?: 'regular' | 'octopus_hug'; // To differentiate between splash and hug
 };
-
+                    
 type LivePollOption = {
   id: string;
   label: string;
 };
-
+                    
 type LivePoll = {
   question: string;
   options: LivePollOption[];
   votes: Record<string, number>;
 };
-
+                    
 type LiveGoal = {
   target: number;
   current: number;
   label?: string;
 };
-
+                    
 const formatCount = (n: number) => {
   if (n < 1000) return String(n);
   return `${Math.floor(n / 1000)}k`;
 };
-
+                    
 type VibeAlert = {
   hostUid: string;
   liveId: string;
   hostName: string;
   hostPhoto: string | null;
 };
-
+                    
 const toJSDate = (ts: any) => {
   try {
     if (!ts) return new Date(0);
@@ -237,7 +237,7 @@ const toJSDate = (ts: any) => {
     return new Date(0);
   }
 };
-
+                    
 const getAppVersionInfo = () => {
   const platformConstants: any =
     (NativeModules as any)?.PlatformConstants ||
@@ -263,7 +263,7 @@ const getAppVersionInfo = () => {
     '1';
   return { version: String(version), build: String(build) };
 };
-
+                    
 const fetchBackendVersionInfo = async () => {
   try {
     const cfgModule = require('./liveConfig');
@@ -295,13 +295,13 @@ const fetchBackendVersionInfo = async () => {
     return null;
   }
 };
-
+                    
 function useAppVersionInfo() {
   const [info, setInfo] = useState({
     ...getAppVersionInfo(),
     source: 'native',
   });
-
+                    
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -314,10 +314,10 @@ function useAppVersionInfo() {
       cancelled = true;
     };
   }, []);
-
+                    
   return info;
 }
-
+                    
 const waveOptionMenu = [
   {
     label: 'Connect Vibe',
@@ -333,7 +333,7 @@ const waveOptionMenu = [
     description: 'Let us know if this vibe violates guidelines.',
   },
 ];
-
+                    
 // ======================== STYLES ========================
 const NAVY_BLUE = '#00BFFF';
 const styles = StyleSheet.create({
@@ -357,10 +357,10 @@ const styles = StyleSheet.create({
   },
   umbrellaIcon: { fontSize: 20, textAlign: 'center' },
   profileLabel: { color: 'white', fontWeight: '700', letterSpacing: 1.2 },
-
+                    
   lowerRow: { height: 64 },
   scrollRow: { alignItems: 'center', gap: 18, paddingHorizontal: 12 },
-
+                    
   topItem: {
     alignItems: 'center',
     justifyContent: 'flex-end',
@@ -373,7 +373,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 0.5,
   },
-
+                    
   // Icons above words
   dolphinIcon: { fontSize: 18, marginBottom: 2 },
   pingsIcon: { fontSize: 18, marginBottom: 2 },
@@ -400,7 +400,7 @@ const styles = StyleSheet.create({
   schoolIcon: { fontSize: 18, marginBottom: 2 },
   gearIcon: { fontSize: 18, marginBottom: 2, color: 'white' },
   placeholderIcon: { fontSize: 18, marginBottom: 2 },
-
+                    
   videoSpace: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#f0f2f5',
@@ -500,7 +500,7 @@ const styles = StyleSheet.create({
   waveOptionsCancel: {
     borderBottomWidth: 0,
   },
-
+                    
   rightBubbles: {
     position: 'absolute',
     right: 12,
@@ -583,7 +583,7 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowRadius: 4,
   },
-
+                    
   modalRoot: { flex: 1, backgroundColor: 'rgba(0, 10, 20, 0.92)' },
   modalHeader: {
     paddingHorizontal: 16,
@@ -614,7 +614,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.25)',
   },
   closeText: { color: 'white', fontWeight: '700' },
-
+                    
   // Captain's Log Profile
   logbookContainer: {
     flex: 1,
@@ -708,7 +708,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 6,
   },
-
+                    
   // Profile-specific styles for the logbook
   avatar: {
     width: 72,
@@ -769,7 +769,7 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   statLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 10, textAlign: 'center' },
-
+                    
   // Generic button for logbook-style modals
   primaryBtn: {
     backgroundColor: 'rgba(0,0,0,0.45)',
@@ -782,7 +782,7 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '800' },
   hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
-
+                    
   // Old sheet styles, kept for reference or other modals if needed
   sheetOverlay: {
     flex: 1,
@@ -815,7 +815,7 @@ const styles = StyleSheet.create({
   },
   actionIcon: { fontSize: 22 },
   actionLabel: { color: 'white', fontWeight: '700' },
-
+                    
   // Generic styles for logbook content
   sectionTitle: { color: 'white', fontWeight: '800', fontSize: 14 },
   subLabel: { color: 'rgba(255,255,255,0.9)', fontWeight: '700' },
@@ -897,7 +897,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 12,
   },
-
+                    
   dismissBtn: {
     alignSelf: 'center',
     marginTop: 6,
@@ -928,7 +928,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   tagText: { color: 'white', fontWeight: '700' },
-
+                    
   pingItem: {
     backgroundColor: 'rgba(255,255,255,0.06)',
     padding: 12,
@@ -939,7 +939,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
-
+                    
   pingButton: {
     backgroundColor: 'rgba(0,194,255,0.15)',
     paddingHorizontal: 12,
@@ -965,7 +965,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255,255,255,0.2)',
   },
   dropdownItemText: { color: 'white', fontSize: 16, fontWeight: '600' },
-
+                    
   // Tidal Interaction Bar
   bottomBarContainer: {
     position: 'absolute',
@@ -1008,7 +1008,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
     minHeight: 14,
   },
-
+                    
   toggleButton: {
     width: 28,
     height: 28,
@@ -1034,7 +1034,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-
+                    
   // Avatar Stack for recent posters
   avatarStack: {
     flexDirection: 'column',
@@ -1056,7 +1056,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 18,
   },
-
+                    
   bouncingIcon: {
     transform: [{ scale: 1 }],
   },
@@ -1167,7 +1167,7 @@ const editorStyles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 2,
   },
-
+                    
   // Live bottom media editor bar (TikTok-style)
   liveBottomBar: {
     position: 'absolute',
@@ -1233,7 +1233,7 @@ const editorStyles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 16,
   },
-
+                    
   // Right-side action stack (from bottom to top)
   liveRightControls: {
     position: 'absolute',
@@ -1274,7 +1274,7 @@ const editorStyles = StyleSheet.create({
     fontWeight: '600',
     marginLeft: 6,
   },
-
+                    
   // Comments overlay and input
   liveCommentsOverlay: {
     position: 'absolute',
@@ -1324,7 +1324,7 @@ const editorStyles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-
+                    
 const AFRICAN_COUNTRIES = [
   'Algeria',
   'Angola',
@@ -1382,7 +1382,7 @@ const AFRICAN_COUNTRIES = [
 ];
 // Payment details are only configured for these countries
 const SUPPORTED_PEARL_COUNTRIES = ['Zimbabwe', 'Kenya'];
-
+                    
 // ⬆️ put near other top-level helpers, outside components
 export const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
   if (Platform.OS !== 'android') return true;
@@ -1419,7 +1419,7 @@ export const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
     return false;
   }
 };
-
+                    
 /* ---------------------- Reusable UI bits ----------------------- */
 function Field({
   label,
@@ -1452,7 +1452,7 @@ function Field({
     </View>
   );
 }
-
+                    
 function AuthButton({
   title,
   onPress,
@@ -1466,7 +1466,7 @@ function AuthButton({
     </TouchableOpacity>
   );
 }
-
+                    
 function AuthBackground() {
   return (
     <View style={[StyleSheet.absoluteFill, { backgroundColor: 'black' }]}>
@@ -1480,14 +1480,14 @@ function AuthBackground() {
     </View>
   );
 }
-
+                    
 // ======================== INNER APP ========================
 type InnerAppProps = { allowPlayback?: boolean };
 const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const navigation = useNavigation();
   // Get current user for ocean features
   const [user, setUser] = useState<any>(null);
-  
+                    
   // Belt-and-suspenders: even if the user somehow gets to this screen
   // without being logged in, reset them to the sign-up flow.
   useEffect(() => {
@@ -1511,7 +1511,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // temporarily set this to: (__DEV__ && Platform.OS === 'android')
   const DEV_SKIP_STORAGE_UPLOAD = false;
   const versionInfo = useAppVersionInfo();
-
+                    
   const editorTools = useMemo(
     () => [
       { icon: '🎵', label: 'Ocean melodies' },
@@ -1525,7 +1525,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     ],
     [],
   );
-
+                    
   const [splashes, setSplashes] = useState<number>(0);
   const [echoes, setEchoes] = useState<number>(0);
   const [hasSplashed, setHasSplashed] = useState<boolean>(false);
@@ -1564,16 +1564,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
   const myUid = auth?.()?.currentUser?.uid || null;
-  
+                    
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
-
+                    
   // Video controls and loading state
   const [videoControlsVisible, setVideoControlsVisible] = useState<{[key: string]: boolean}>({});
   const [videoLoading, setVideoLoading] = useState<{[key: string]: boolean}>({});
   const [echoSending, setEchoSending] = useState<{[key: string]: boolean}>({});
-
+                    
   // Play falcon sound for ping notification
   const playFalconSound = useCallback(() => {
     try {
@@ -1596,7 +1596,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // ignore sound errors
     }
   }, []);
-
+                    
   // Format a display handle: replace any leading '@' or '/' with a single '/'
   const formatHandle = useCallback((name?: string | null) => {
     try {
@@ -1607,7 +1607,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return '/viber';
     }
   }, []);
-
+                    
   const normalizeUserHandle = useCallback((value?: string | null) => {
     const trimmed = String(value ?? '')
       .trim()
@@ -1652,7 +1652,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   // Public feed toggle and data
-
+                    
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
@@ -1674,10 +1674,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed],
   );
-
+                    
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
-
+                    
   const [showProfile, setShowProfile] = useState<boolean>(false);
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
@@ -1696,7 +1696,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
   const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
-
+                    
   // Crew (follow/unfollow) state
   const [myCrewCount, setMyCrewCount] = useState<number>(0);
   const [myBoardingCount, setMyBoardingCount] = useState<number>(0);
@@ -1728,7 +1728,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
   const [toastMessage, setToastMessage] = useState('');
   const toastTimerRef = useRef<any>(null);
-
+                    
   // Update timestamps every second
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1736,7 +1736,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }, 1000);
     return () => clearInterval(interval);
   }, []);
-
+                    
   // Ocean Dialog state
   const [oceanDialog, setOceanDialog] = useState<{
     visible: boolean;
@@ -1748,7 +1748,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       style?: 'default' | 'cancel' | 'destructive';
     }>;
   }>({ visible: false, title: '', message: '' });
-
+                    
   // ========== SIMPLE OCEAN EFFECTS STATE ==========
   const [tapEffects, setTapEffects] = useState<Array<{ id: number; x: number; y: number }>>([]);
   const [oceanAmbienceEnabled, setOceanAmbienceEnabled] = useState(false);
@@ -1766,7 +1766,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   });
   const [safeHarborExpanded, setSafeHarborExpanded] = useState<boolean>(true);
   // ========== END OCEAN EFFECTS STATE ==========
-
+                    
   // Track pending splash operation to avoid listener reverting optimistic UI
   const pendingSplashOp = useRef<{ waveId: string; action: 'splash' } | null>(
     null,
@@ -1783,7 +1783,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     desiredCount: number;
     ignoreUntil: number;
   } | null>(null);
-
+                    
   const showToast = useCallback(
     (kind: 'positive' | 'negative', rawMsg: string, durationMs = 2000) => {
       // Compose message endings based on kind
@@ -1812,7 +1812,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [],
   );
-
+                    
   const notifySuccess = useCallback(
     (msg: string) => showToast('positive', msg),
     [showToast],
@@ -1821,7 +1821,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     (msg: string) => showToast('negative', msg),
     [showToast],
   );
-
+                    
   const handleSendTextStory = useCallback(async () => {
     const trimmed = textComposerText.trim();
     if (!trimmed) {
@@ -1873,7 +1873,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     profileName,
     textComposerText,
   ]);
-
+                    
   // Ocean Dialog helper
   const showOceanDialog = useCallback(
     (
@@ -1889,10 +1889,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [],
   );
-
+                    
   // Do not render the feed while this screen is not focused (e.g., while Welcome is visible)
   const isFocused = useIsFocused();
-
+                    
   // Back handler logic - TikTok-style: first back toggles feed view, second back exits
   const lastBackPressTime = useRef<number>(0);
   useEffect(() => {
@@ -1900,12 +1900,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (isFocused) {
         const now = Date.now();
         const timeSinceLastPress = now - lastBackPressTime.current;
-
+                    
         // If less than 2 seconds since last back press, allow app exit
         if (timeSinceLastPress < 2000) {
           return false; // Exit app
         }
-
+                    
         // First back press: go to top of feed
         lastBackPressTime.current = now;
         setCurrentIndex(0);
@@ -1917,15 +1917,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // If not focused, let default handler run
       return false;
     };
-
+                    
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
       onBackPress,
     );
-
+                    
     return () => subscription.remove();
   }, [isFocused]);
-
+                    
   // ----- Profile photo handlers -----
   const onEditAvatar = async () => {
     const uploadAndSave = async (localOrRemoteUri: string) => {
@@ -1977,7 +1977,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     };
-
+                    
     try {
       const actions: any[] = [];
       actions.push({
@@ -2025,7 +2025,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         showOceanDialog('Profile Photo', 'Update your avatar', actions);
     } catch {}
   };
-
+                    
   // Bridge settings (Data Saver)
   type BridgeSettings = {
     dataSaverDefaultOnCell: boolean;
@@ -2047,7 +2047,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     backgroundDataCell: boolean;
     rainEffectsEnabled: boolean;
   };
-
+                    
   const [bridge, setBridge] = useState<BridgeSettings>({
     dataSaverDefaultOnCell: true,
     wifiOnlyHD: true,
@@ -2082,7 +2082,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [unreadPingsCount, setUnreadPingsCount] = useState(0);
   const [pings, setPings] = useState<Ping[]>([]);
   const notificationInitRef = useRef<string | null>(null);
-
+                    
   // Load pings from AsyncStorage on mount
   useEffect(() => {
     (async () => {
@@ -2102,7 +2102,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     })();
   }, []);
-
+                    
   // Persist pings to AsyncStorage whenever they change
   useEffect(() => {
     if (pings.length === 0) return;
@@ -2114,7 +2114,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     })();
   }, [pings]);
-
+                    
   const [showDeepSearch, setShowDeepSearch] = useState(false);
   const [deepQuery, setDeepQuery] = useState('');
   const [deepResults, setDeepResults] = useState<SearchResult[]>([]);
@@ -2149,7 +2149,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.log('Firestore not available, returning empty');
       return [];
     }
-
+                    
     const lowerTerm = normalized.toLowerCase();
     const usersRef = firestoreMod().collection('users');
     const results: SearchResult[] = [];
@@ -2171,7 +2171,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         },
       });
     };
-
+                    
     try {
       console.log('Searching Firestore users by username_lc...');
       // Search by username_lc first since that's more likely to match
@@ -2182,7 +2182,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .get();
       console.log('Username_lc search results:', lcSnap.size);
       lcSnap.forEach(addUserDoc);
-
+                    
       // Also try displayName if we don't have many results
       if (results.length < 5) {
         console.log('Searching by displayName...');
@@ -2198,7 +2198,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch (err) {
       console.log('Firestore search error:', err);
     }
-
+                    
     const seenWaves = new Set<string>();
     try {
       const waveSnap = await firestoreMod()
@@ -2239,10 +2239,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         });
       });
     } catch {}
-
+                    
     return results;
   }, []);
-
+                    
   const searchOceanEntities = useCallback(
     async (term: string): Promise<SearchResult[]> => {
       const normalized = term.trim();
@@ -2374,7 +2374,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Search', 'Please enter a username.');
       return;
     }
-
+                    
     const createVariants = (value: string) => {
       const trimmed = value.trim();
       if (!trimmed) return [];
@@ -2389,12 +2389,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ),
       );
     };
-
+                    
     setDeepSearchError(null);
     setDeepResults([]);
     setDeepSearchLoading(true);
     console.log('Deep dive search started for:', term);
-
+                    
     try {
       const variants = createVariants(term);
       let aggregatedResults: SearchResult[] = [];
@@ -2413,13 +2413,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           console.error('Deep dive candidate failed:', candidate, err);
         }
       }
-
+                    
       if (aggregatedResults.length === 0 && searchException) {
         throw searchException;
       }
-
+                    
       setDeepResults(aggregatedResults);
-
+                    
       if (aggregatedResults.length === 0) {
         const noResultsMsg = `No users found matching "${term}"`;
         console.log('Deep dive no results:', term);
@@ -2491,7 +2491,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
   const [audioUrlInput, setAudioUrlInput] = useState<string>('');
   const [transcoding, setTranscoding] = useState<boolean>(false);
-
+                    
   // DM subscription - adds messages to pings automatically
   useEffect(() => {
     let firestoreMod: any = null;
@@ -2546,7 +2546,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, []);
-
+                    
   // Editor state
   const [showCaptionInput, setShowCaptionInput] = useState(false);
   const [captionText, setCaptionText] = useState('');
@@ -2649,7 +2649,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
   const flickerAnim = useRef(new Animated.Value(0)).current;
-
+                    
   const loadDriftWatchers = useCallback(async () => {
     try {
       const user = auth()?.currentUser;
@@ -2669,7 +2669,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.warn('Could not load drift watchers', error);
     }
   }, []);
-
+                    
   const loadBlockedAndRemovedUsers = useCallback(async () => {
     try {
       const user = auth()?.currentUser;
@@ -2678,7 +2678,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setRemovedUsers(new Set());
         return;
       }
-
+                    
       // Load blocked users
       const blockedSnap = await firestore()
         .collection('users')
@@ -2687,7 +2687,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .get();
       const blocked = new Set((blockedSnap?.docs || []).map(doc => doc.id));
       setBlockedUsers(blocked);
-
+                    
       // Load removed users
       const removedSnap = await firestore()
         .collection('users')
@@ -2696,13 +2696,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .get();
       const removed = new Set((removedSnap?.docs || []).map(doc => doc.id));
       setRemovedUsers(removed);
-
+                    
       console.log(`Loaded ${blocked.size} blocked users and ${removed.size} removed users`);
     } catch (error) {
       console.warn('Could not load blocked/removed users', error);
     }
   }, []);
-
+                    
   useEffect(() => {
     loadDriftWatchers();
     loadBlockedAndRemovedUsers();
@@ -2712,7 +2712,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     });
     return () => sub && sub();
   }, [loadDriftWatchers, loadBlockedAndRemovedUsers]);
-
+                    
   const showVibeAlert = useCallback((alert: VibeAlert) => {
     if (driftAlertTimerRef.current) {
       clearTimeout(driftAlertTimerRef.current);
@@ -2724,13 +2724,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       lastDriftHostRef.current = null;
     }, 10000);
   }, []);
-
+                    
   useEffect(() => () => {
     if (driftAlertTimerRef.current) {
       clearTimeout(driftAlertTimerRef.current);
     }
   }, []);
-
+                    
   useEffect(() => {
     if (!vibeAlert) {
       flickerAnim.setValue(0);
@@ -2753,12 +2753,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     anim.start();
     return () => anim.stop();
   }, [vibeAlert, flickerAnim]);
-
+                    
   const watchersKey = useMemo(
     () => driftWatchers.slice().sort().join(','),
     [driftWatchers],
   );
-
+                    
   useEffect(() => {
     if (!watchersKey) {
       setVibeAlert(null);
@@ -2832,7 +2832,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [profileName],
   );
-
+                    
   const [editorPlaying, setEditorPlaying] = useState(true);
   const [audioUnpaused, setAudioUnpaused] = useState(true);
   const overlayAudioDelayMs = 80; // small delay to align overlay audio with video start
@@ -2877,18 +2877,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       clearInterval(iv);
     };
   }, []);
-
+                    
   // Fetch recent wave posters (users who posted waves recently)
   useEffect(() => {
     const user = auth?.()?.currentUser;
     if (!user?.uid) return;
-
+                    
     let firestoreMod: any = null;
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
     } catch {}
     if (!firestoreMod) return;
-
+                    
     const unsub = firestoreMod()
       .collection('users')
       .doc(user.uid)
@@ -2912,10 +2912,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setRecentPosters([]);
         },
       );
-
+                    
     return () => unsub();
   }, []);
-
+                    
   // Fallback: derive recent posters from latest waves if user-specific list is empty
   useEffect(() => {
     let firestoreMod: any = null;
@@ -2923,7 +2923,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       firestoreMod = require('@react-native-firebase/firestore').default;
     } catch {}
     if (!firestoreMod) return;
-
+                    
     const unsub = firestoreMod()
       .collection('waves')
       .orderBy('createdAt', 'desc')
@@ -2962,21 +2962,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           // ignore
         },
       );
-
+                    
     return () => {
       try {
         unsub && unsub();
       } catch {}
     };
   }, []);
-
+                    
   // Load echoes when echo modal opens
   useEffect(() => {
     if (!showEchoes || !currentWave) {
       setEchoList([]);
       return;
     }
-
+                    
     const loadEchoes = async () => {
       try {
         const echoesSnap = await firestore()
@@ -2985,7 +2985,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .collection('echoes')
           .orderBy('createdAt', 'desc')
           .get();
-
+                    
         const echoes = echoesSnap.docs.map(doc => ({
           id: doc.id,
           uid: doc.data().userUid,
@@ -2994,17 +2994,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           updatedAt: doc.data().createdAt,
           userPhoto: doc.data().userPhoto || null,
         }));
-
+                    
         setEchoList(echoes);
       } catch (error) {
         console.error('Error loading echoes:', error);
         setEchoList([]);
       }
     };
-
+                    
     loadEchoes();
   }, [showEchoes, currentWave]);
-
+                    
   // Adjust right-side bubble vertical anchor to fit up to 3 stacks
   const rightBubblesTop = useMemo(() => {
     // Base at 45% of screen height; nudge upward as more stacks are shown
@@ -3016,9 +3016,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Convert percentage to pixels for RN style 'top'
     return (SCREEN_HEIGHT * topPct) / 100;
   }, [recentPosters.length, recentSplashers.length]);
-
+                    
   // Recent splashers (moved below currentWave declaration)
-
+                    
   // Playback HUD state (for posted wave)
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
@@ -3032,7 +3032,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [videoAspectMap, setVideoAspectMap] = useState<Record<string, number>>(
     {},
   );
-
+                    
   // Prefer SurfaceView on Android to avoid TextureView decoder crashes on low-end devices (e.g., Tecno Pop 7)
   // Device-specific video surface selection: default SurfaceView on Android; allow opt-in to TextureView for whitelisted devices later
   const useTextureForVideo = useMemo(() => {
@@ -3040,7 +3040,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Force SurfaceView for broader stability; TextureView can crash on some decoders.
     return false;
   }, []);
-
+                    
   const updateVideoAspect = useCallback(
     (id: string, naturalSize: any) => {
       try {
@@ -3068,7 +3068,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [],
   );
-
+                    
   const videoStyleFor = useCallback(
     (id: string) => {
       const ar = videoAspectMap[id] || 9 / 16;
@@ -3193,7 +3193,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // UI Visibility states
   const [isUiVisible, setIsUiVisible] = useState(false);
   const hideUiTimerRef = useRef<any>(null);
-
+                    
   const showUiTemporarily = useCallback(() => {
     setIsUiVisible(true);
     try {
@@ -3223,7 +3223,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return null;
     }
   }, []);
-  
+                    
   // Combine all feeds (my vibes + public vibes + post feed) for unified display
   const displayFeed = useMemo(() => {
     const combined = [...postFeed, ...vibesFeed, ...publicFeed];
@@ -3255,7 +3255,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return true;
     });
   }, [vibesFeed]);
-
+                    
   const currentWave =
     displayFeed.length > 0 && currentIndex >= 0
       ? displayFeed[currentIndex]
@@ -3391,13 +3391,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       handleEchoesPress,
     ],
   );
-  
+                    
   const handleWaveOptionSelect = useCallback(
     async (label: string) => {
       if (!waveOptionsTarget) return;
       const entry = waveOptionMenu.find(item => item.label === label);
       setWaveOptionsTarget(null);
-
+                    
       // Handle Connect/Disconnect Vibe
       if (label === 'Connect Vibe') {
         if (!waveOptionsTarget.ownerUid || waveOptionsTarget.ownerUid === myUid) {
@@ -3410,15 +3410,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
         return;
       }
-
+                    
       if (label === 'Save to device') {
         if (isSavingWave) return;
         setIsSavingWave(true);
-
+                    
         try {
           // Try backend endpoint first
           let downloadUrl: string | null = null;
-
+                    
           try {
             const cfgLocal = (() => {
               try {
@@ -3433,21 +3433,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   cfgLocal.USER_MGMT_ENDPOINT_BASE ||
                   cfgLocal.USER_MANAGEMENT_BASE_URL)) ||
               '';
-
+                    
             if (backendBase) {
               const resp = await fetch(`${backendBase}/wave/download`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ waveId: waveOptionsTarget.id }),
               });
-
+                    
               if (resp.ok) {
                 const data = await resp.json();
                 downloadUrl = data.downloadUrl;
               }
             }
           } catch {}
-
+                    
           // Fallback: Try to get download URL directly from Firestore + Storage
           if (!downloadUrl) {
             try {
@@ -3460,7 +3460,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               try {
                 storageMod = require('@react-native-firebase/storage').default;
               } catch {}
-
+                    
               if (firestoreMod && storageMod) {
                 const waveDoc = await firestoreMod()
                   .collection('waves')
@@ -3471,7 +3471,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   waveData.mediaPath ||
                   waveData.playbackUrl ||
                   waveData.mediaUrl;
-
+                    
                 if (mediaPath) {
                   // If it's a full URL, use it directly
                   if (
@@ -3491,9 +3491,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               console.error('Storage download error:', storageError);
             }
           }
-
+                    
           if (downloadUrl) {
-
+                    
             // On Android, request storage permission only if needed (pre-Android 10)
             if (Platform.OS === 'android') {
               try {
@@ -3521,7 +3521,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 console.warn('Permission request failed:', permErr);
               }
             }
-
+                    
             // Open download URL - system will handle the download
             try {
               await Linking.openURL(String(downloadUrl));
@@ -3562,7 +3562,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         return;
       }
-
+                    
       if (label === 'Share' && currentWave) {
         try {
           await Share.share({
@@ -3571,7 +3571,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         } catch {}
         return;
       }
-
+                    
       if (label === 'Report') {
         Alert.alert(
           entry?.label || label,
@@ -3579,7 +3579,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         );
         return;
       }
-
+                    
       Alert.alert(entry?.label || label, entry?.description || 'Coming soon!');
     },
     [waveOptionsTarget, functionsClient, isSavingWave, currentWave],
@@ -3590,7 +3590,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const dragStartYRef = useRef(0);
   const dragStartTimeRef = useRef(0);
   const touchStartRef = useRef(0);
-
+                    
   const deleteWave = (waveId: string) => {
     // Only update UI after confirmed deletion
     const doDelete = async (retryCount = 0) => {
@@ -3611,7 +3611,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Delete failed', 'Not signed in or backend unavailable.');
         return;
       }
-
+                    
       const deleteCollectionInChunks = async (
         path: string,
         chunkSize = 400,
@@ -3625,7 +3625,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           if (snap.size < chunkSize) break;
         }
       };
-
+                    
       const deleteStoragePath = async (path?: string | null) => {
         if (!storageMod || !path) return;
         try {
@@ -3638,7 +3638,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           console.warn('Delete storage skipped', err);
         }
       };
-
+                    
       try {
         // Get wave doc
         const waveDoc = await firestoreMod().collection('waves').doc(waveId).get();
@@ -3687,7 +3687,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     doDelete();
   };
-
+                    
   // Recent splashers for the current wave (third avatar stack)
   useEffect(() => {
     const waveId = currentWave?.id;
@@ -3695,13 +3695,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setRecentSplashers([]);
       return;
     }
-
+                    
     let firestoreMod: any = null;
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
     } catch {}
     if (!firestoreMod) return;
-
+                    
     const unsub = firestoreMod()
       .collection(`waves/${waveId}/splashes`)
       .orderBy('createdAt', 'desc')
@@ -3723,14 +3723,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setRecentSplashers([]);
         },
       );
-
+                    
     return () => {
       try {
         unsub && unsub();
       } catch {}
     };
   }, [currentWave?.id]);
-
+                    
   useEffect(() => {
     // Reset timer when a new wave is shown
     setPlaybackTime(0);
@@ -3738,12 +3738,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setIsPaused(false);
     // Show toggles for 7s when a new wave appears
     showUiTemporarily();
-
+                    
     // Reset pearls country selection when modal is closed
     if (!showPearls) {
       setSelectedCountry(null);
     }
-
+                    
     const handleAppStateChange = (nextAppState: any) => {
       if (nextAppState.match(/inactive|background/)) {
         setIsPaused(true);
@@ -3754,34 +3754,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setVideoErrorMap({});
       }
     };
-
+                    
     const subscription = AppState.addEventListener(
       'change',
       handleAppStateChange,
     );
-
+                    
     return () => {
       subscription.remove();
     };
   }, [waveKey, currentWave?.id, showPearls]);
-
+                    
   // Resume playback when Make Vibes modal closes
   useEffect(() => {
     if (!showMakeWaves) setIsPaused(false);
   }, [showMakeWaves]);
-
+                    
   useEffect(() => {
     if (!showMakeWaves) {
       setShowTextComposer(false);
       setTextComposerText('');
     }
   }, [showMakeWaves]);
-
+                    
   // Reset overlay ready flags when switching waves or refreshing the feed
   useEffect(() => {
     setOverlayReadyMap({});
   }, [currentIndex, waveKey, displayFeed.length]);
-
+                    
   // Persistence of waves with AsyncStorage if available, otherwise file-based via react-native-fs
   useEffect(() => {
     const loadPersisted = async () => {
@@ -3793,7 +3793,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         FS = require('react-native-fs');
       } catch {}
-
+                    
       try {
         let raw: string | null = null;
         if (AS && typeof AS.getItem === 'function') {
@@ -3841,7 +3841,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     loadPersisted();
   }, []);
-
+                    
   useEffect(() => {
     if (!isFeedLoaded) return;
     const savePersisted = async () => {
@@ -3890,7 +3890,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     savePersisted();
   }, [vibesFeed, isFeedLoaded]);
-
+                    
   // One-time migration: backfill authorName on existing saved waves and update remote docs best-effort
   const didAuthorNameMigration = useRef(false);
   useEffect(() => {
@@ -3937,7 +3937,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
     didAuthorNameMigration.current = true;
   }, [profileName, vibesFeed]);
-
+                    
   // Always load Public Vibes (best-effort if Firebase exists)
   useEffect(() => {
     let firestoreMod: any = null;
@@ -3953,12 +3953,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       functionsMod = require('@react-native-firebase/functions').default;
     } catch {}
     if (!firestoreMod) return;
-    
+                    
     let unsub: any = null;
     let cancelled = false;
-    
+                    
     const run = async () => {
-      
+                    
       try {
         unsub = firestoreMod()
           .collection('waves')
@@ -4035,7 +4035,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               // Filter out my own waves from public feed on my device
               const publicWaves = out.filter(w => w.ownerUid !== myUid);
               setPublicFeed(publicWaves);
-              
+                    
               // Initialize waveStats for loaded waves
               const waveStatsUpdate: Record<string, any> = {};
               out.forEach(wave => {
@@ -4060,7 +4060,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, []);
-
+                    
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
     let firestoreMod: any = null;
@@ -4104,17 +4104,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       };
     } catch {}
   }, []);
-
+                    
   // Single, gated FCM bootstrap (runs only after sign-in and permission)
   useEffect(() => {
     let cleanup: Array<() => void> = [];
     let cancelled = false;
-
+                    
     const setupNotifications = async () => {
       if (!user?.uid) return;
       if (notificationInitRef.current === user.uid) return;
       notificationInitRef.current = user.uid;
-
+                    
       let messagingMod: any = null;
       let firestoreMod: any = null;
       try {
@@ -4124,7 +4124,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         firestoreMod = require('@react-native-firebase/firestore').default;
       } catch {}
       if (!messagingMod) return;
-
+                    
       // Android 13+ explicit notification permission
       if (Platform.OS === 'android' && Platform.Version >= 33) {
         try {
@@ -4133,7 +4133,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           );
         } catch {}
       }
-
+                    
       let authStatus: any = null;
       try {
         authStatus = await messagingMod().requestPermission();
@@ -4147,14 +4147,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.log('Notification permission not granted; skipping FCM init');
         return;
       }
-
+                    
       let token: string | null = null;
       try {
         token = await messagingMod().getToken();
       } catch (err) {
         console.warn('Failed to get FCM token', err);
       }
-
+                    
       if (token && firestoreMod) {
         try {
           await firestoreMod()
@@ -4174,7 +4174,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           console.warn('Failed to persist FCM token', err);
         }
       }
-
+                    
       try {
         const unsubTokenRefresh = messagingMod().onTokenRefresh(
           async (newToken: string) => {
@@ -4204,7 +4204,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           } catch {}
         });
       } catch {}
-
+                    
       try {
         const unsubMessage = messagingMod().onMessage(handleForegroundRemoteMessage);
         cleanup.push(() => {
@@ -4213,7 +4213,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           } catch {}
         });
       } catch {}
-
+                    
       try {
         const unsubOpened = messagingMod().onNotificationOpenedApp(
           (remoteMessage: any) => {
@@ -4226,7 +4226,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           } catch {}
         });
       } catch {}
-
+                    
       try {
         const initial = await messagingMod().getInitialNotification();
         if (initial && !cancelled) {
@@ -4236,9 +4236,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.warn('Failed to process initial notification', err);
       }
     };
-
+                    
     setupNotifications();
-
+                    
     return () => {
       cancelled = true;
       cleanup.forEach(fn => {
@@ -4249,12 +4249,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (!user?.uid) notificationInitRef.current = null;
     };
   }, [user?.uid, handleForegroundRemoteMessage, handleNotificationNavigation]);
-
+                    
   const markPingsAsRead = async () => {
     try {
       let firestoreMod: any = null;
       let authMod: any = null;
-
+                    
       // Safely require modules
       try {
         firestoreMod = require('@react-native-firebase/firestore').default;
@@ -4262,29 +4262,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.warn('Firestore module not available');
         return;
       }
-
+                    
       try {
         authMod = require('@react-native-firebase/auth').default;
       } catch (e) {
         console.warn('Auth module not available');
         return;
       }
-
+                    
       // Check if modules loaded properly
       if (!firestoreMod || !authMod) {
         console.warn('Firebase modules not available');
         return;
       }
-
+                    
       const currentUser = authMod().currentUser;
       if (!currentUser) {
         console.warn('No user signed in');
         return;
       }
-
+                    
       const uid = currentUser.uid;
       if (!uid || unreadPingsCount === 0) return;
-
+                    
       let unreadPings: any = null;
       try {
         // Execute query with error handling
@@ -4297,19 +4297,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.warn('Error executing Firestore query:', queryError);
         return;
       }
-
+                    
       // SAFE CHECK - Prevents "cannot read property 'empty' of null"
       if (!unreadPings || typeof unreadPings.empty === 'undefined') {
         console.warn('Invalid query result received');
         return;
       }
-
+                    
       if (unreadPings.empty) {
         // No unread pings to update
         setUnreadPingsCount(0);
         return;
       }
-
+                    
       // Process the batch update (guard for malformed docs)
       const batch = firestoreMod().batch();
       const docs = Array.isArray((unreadPings as any)?.docs)
@@ -4325,7 +4325,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (updates > 0) {
         await batch.commit();
       }
-
+                    
       // Update server-side counter
       await firestoreMod()
         .doc(`users/${uid}`)
@@ -4335,14 +4335,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           },
           { merge: true },
         );
-
+                    
       // Update local state
       setUnreadPingsCount(0);
     } catch (error) {
       console.warn('Error in markPingsAsRead:', error);
     }
   };
-
+                    
   // Local + remote ping recording for in-app activity
   const recordPingEvent = async (
     type: Ping['type'],
@@ -4397,7 +4397,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     } catch {}
   };
-
+                    
   const handlePingAction = (ping: Ping) => {
     if (ping.waveId) {
       const waveIndex = vibesFeed.findIndex(w => w.id === ping.waveId);
@@ -4414,7 +4414,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     // Could add 'follow' action here
   };
-
+                    
   const onSendMessage = async () => {
     const text = messageText.trim();
     if (!text || !messageRecipient) return;
@@ -4455,7 +4455,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           createdAt: firestoreMod.FieldValue.serverTimestamp(),
           type: 'message', // To distinguish from other mention types if needed
         });
-
+                    
       setShowSendMessage(false);
       notifySuccess('Ping sent!');
       showOceanDialog(
@@ -4469,14 +4469,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     }
   };
-
+                    
   const formatTime = (secs: number) => {
     const s = Math.max(0, Math.floor(secs || 0));
     const m = Math.floor(s / 60);
     const ss = String(s % 60).padStart(2, '0');
     return `${m}:${ss}`;
   };
-
+                    
   const extractBaseName = (uri: string | undefined | null): string => {
     if (!uri) return '';
     try {
@@ -4487,7 +4487,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return '';
     }
   };
-
+                    
   const getWaveTitle = (w: Vibe | null): string => {
     if (!w) return ' ';
     // Prioritize audio title if an overlay audio is present
@@ -4497,7 +4497,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Otherwise, use the video or image file name
     return w.media.fileName || extractBaseName(w.media.uri) || 'Vibe';
   };
-
+                    
   const explore = useMemo(
     () => [
       {
@@ -4535,13 +4535,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     ],
     [],
   );
-
+                    
   // Shared helper to update counts with update() then merge fallback
   // Note: counts for splashes/echoes are updated server-side via Cloud Functions triggers
-
+                    
   const onSplash = async (splashType?: 'regular' | 'octopus_hug') => {
     if (splashBusy || !currentWave) return;
-
+                    
     // Always show choice dialog first, regardless of current splash state
     if (!splashType) {
       Alert.alert(
@@ -4561,7 +4561,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       return;
     }
-
+                    
     // Check if user has already splashed this wave with this splashType
     const splashDoc = await firestore()
       .collection('waves')
@@ -4569,24 +4569,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .collection('splashes')
       .doc(user.uid)
       .get();
-
+                    
     const hasSplashedThisType = splashDoc.exists && splashDoc.data()?.splashType === splashType;
     const isUnsplashing = hasSplashedThisType;
-
+                    
     const prevCount = splashes;
     const nextCount = isUnsplashing
       ? Math.max(0, prevCount - 1)
       : prevCount + 1;
-
+                    
     // Update hasSplashed - it should be true if user has any splash after this action
     const willHaveAnySplash = isUnsplashing ? (hasSplashed && !hasSplashedThisType) : true;
     setHasSplashed(willHaveAnySplash);
     setSplashes(nextCount);
     setSplashBusy(true);
-
+                    
     const waveId = currentWave.id;
     pendingSplashOp.current = { waveId, action: 'splash' };
-
+                    
     try {
       if (isUnsplashing) {
         // Remove splash silently (no alert/notification)
@@ -4727,7 +4727,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       'Current wave:',
       currentWave?.id,
     );
-
+                    
     if (!text || text.length === 0) {
       console.log('[ECHO] No text provided - text is empty');
       showOceanDialog(
@@ -4736,7 +4736,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       return;
     }
-
+                    
     if (!currentWave) {
       console.log('[ECHO] No current wave');
       showOceanDialog(
@@ -4745,9 +4745,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       return;
     }
-
+                    
     console.log('[ECHO] Validation passed, proceeding with echo send');
-
+                    
     try {
       // Optimistic local insertion for immediate UI feedback
       const rawText = echoTextRef.current || '';
@@ -4765,10 +4765,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         },
         ...prev,
       ]);
-
+                    
       // Use the new sendEcho transaction
       await sendEcho(currentWave.id, text);
-
+                    
       // Send ping notification to wave owner (if not self)
       if (currentWave.ownerUid && currentWave.ownerUid !== (auth?.()?.currentUser?.uid)) {
         const userName = profileName || accountCreationHandle || 'Someone';
@@ -4789,7 +4789,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             createdAt: firestore.FieldValue.serverTimestamp(),
           });
       }
-
+                    
       // Clear input and hide echo UI before showing success
       updateEchoText('');
       setEchoList(prev => prev.filter(e => e.id !== pendingId));
@@ -4819,18 +4819,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Error', `Could not send echo: ${e?.message || e || 'Unknown error'}`);
     }
   };
-
+                    
   const onEditMyEcho = (echo: { id: string; text: string }) => {
     setEditingEcho(echo);
     updateEchoText(echo.text);
     setShowEchoes(true);
   };
-
+                    
   const onSaveEditedEcho = async () => {
     if (!editingEcho || !currentWave) return;
     const newText = echoText.trim();
     if (!newText) return;
-
+                    
     const echoId = editingEcho.id;
     setEchoList(prev =>
       prev.map(e => (e.id === echoId ? { ...e, text: newText } : e)),
@@ -4842,14 +4842,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       'Echo Updated',
       'Your echo has been recast into the waves!',
     );
-
+                    
     try {
       let functionsMod: any = null;
       try {
         functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
       if (!functionsMod) throw new Error('Firebase Functions not available');
-
+                    
       const updateEchoFn = functionsMod().httpsCallable('updateEcho');
       await updateEchoFn({
         waveId: currentWave.id,
@@ -4869,7 +4869,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
       if (!functionsMod) throw new Error('Firebase Functions not available');
-
+                    
       // Find the most recent echo by the user to delete it
       let firestoreMod: any;
       let authMod: any;
@@ -4885,7 +4885,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setMyEcho(null);
         return;
       }
-
+                    
       // Find the most recent echo by the user to delete it.
       const query = await firestoreMod()
         .collection('waves')
@@ -4895,7 +4895,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .orderBy('createdAt', 'desc')
         .limit(1)
         .get();
-
+                    
       const docToDelete = query?.docs?.[0];
       if (docToDelete) {
         const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
@@ -4904,7 +4904,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           echoId: docToDelete.id
         });
       }
-
+                    
       setEchoList(prev => prev.filter(e => e.uid !== user.uid));
       setMyEcho(null);
       updateEchoText('');
@@ -4917,7 +4917,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       notifyError('Could not delete echo right now');
     }
   };
-
+                    
   const onDeleteEchoById = async (echoId: string) => {
     if (!currentWave) return;
     setEchoList(prev => prev.filter(e => e.id !== echoId));
@@ -4926,14 +4926,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       'Echo Removed',
       'Your echo has been pulled from the waves.',
     );
-
+                    
     try {
       let functionsMod: any = null;
       try {
         functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
       if (!functionsMod) throw new Error('Firebase Functions not available');
-
+                    
       const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
       await deleteEchoFn({
         waveId: currentWave.id,
@@ -4944,7 +4944,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Delete failed', 'Could not delete echo right now.');
     }
   };
-
+                    
   // Keep hasSplashed and counters in sync when the current wave changes
   useEffect(() => {
     if (!currentWave?.id) {
@@ -4955,16 +4955,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setEchoList([]);
       return;
     }
-
+                    
     // Reset splash state immediately when switching waves
     setHasSplashed(false);
     setSplashes(0);
-
+                    
     let unsubSplash: any = null;
     let unsubMyEcho: any = null;
     let unsubEchoList: any = null;
     let unsubWaveCounts: any = null;
-
+                    
     (async () => {
       let firestoreMod: any = null;
       let authMod: any = null;
@@ -4975,9 +4975,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         authMod = require('@react-native-firebase/auth').default;
       } catch {}
       const uid = authMod?.().currentUser?.uid;
-
+                    
       if (!firestoreMod || !currentWave?.id) return;
-
+                    
       // Listen to wave counts
       unsubWaveCounts = firestoreMod()
         .doc(`waves/${currentWave.id}`)
@@ -4991,11 +4991,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           );
           const nextHugs = Math.max(0, counts.hugs || 0);
           const nextEchoes = Math.max(0, counts.echoes || 0);
-
+                    
           console.log(
             `[SPLASH DEBUG] Wave ${currentWave.id} counts from Firestore: splashes=${nextSplashes}, echoes=${nextEchoes}`,
           );
-
+                    
           // Always update counts from Firestore - no gating
           setSplashes(nextSplashes);
           setEchoes(nextEchoes);
@@ -5010,7 +5010,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             },
           }));
         });
-
+                    
       if (uid) {
         // Check if current user has splashed this wave
         unsubSplash = firestoreMod()
@@ -5024,7 +5024,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               // Always set splash state based on Firestore - permanent state
               const exists = !!(doc && doc.exists);
               setHasSplashed(exists === true);
-
+                    
               // Clear any pending operations when Firestore confirms
               const waiter = pendingSplashAwait.current;
               if (
@@ -5044,7 +5044,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               setHasSplashed(false);
             },
           );
-
+                    
         // Check if current user has reverbed this vibe (with error fallback for index)
         const handleMyEchoSnapshot = (querySnapshot: any) => {
           try {
@@ -5064,7 +5064,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             setMyEcho(null);
           }
         };
-
+                    
         const myEchoQuery = firestoreMod()
           .collection('waves')
           .doc(currentWave.id)
@@ -5072,7 +5072,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .where('userUid', '==', uid)
           .orderBy('createdAt', 'desc')
           .limit(1);
-
+                    
         let altSubscribed = false;
         unsubMyEcho = myEchoQuery.onSnapshot(
           handleMyEchoSnapshot,
@@ -5106,7 +5106,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           },
         );
       }
-
+                    
       // Listen to all echoes for this wave
       unsubEchoList = firestoreMod()
         .collection('waves')
@@ -5138,7 +5138,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         });
     })();
-
+                    
     return () => {
       try {
         unsubSplash && unsubSplash();
@@ -5233,7 +5233,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     }
   };
-
+                    
   // Post interaction handlers for feed
   const handlePostHug = async (wave: Vibe) => {
     try {
@@ -5242,13 +5242,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Sign in required', 'Please sign in to hug.');
         return;
       }
-
+                    
       const splashType = 'octopus_hug';
-
+                    
       // Update local waveStats immediately
       const currentCount = waveStats[wave.id]?.hugs || 0;
       const newCount = currentCount + 1;
-
+                    
       // Update local waveStats
       setWaveStats(prev => ({
         ...prev,
@@ -5257,7 +5257,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           hugs: newCount,
         },
       }));
-
+                    
       // Update feed arrays for immediate UI feedback
       setVibesFeed(prev => prev.map(vibe =>
         vibe.id === wave.id
@@ -5279,10 +5279,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }}
           : vibe
       ));
-
+                    
       // Update waves state for the main feed
       setWaves(prev => prev.map(w => w.id === wave.id ? { ...w, counts: { ...w.counts, hugs: (w.counts?.hugs || 0) + 1 } } : w));
-
+                    
       // Check if user has already hugged this wave
       // const splashDoc = await firestore()
       //   .collection('waves')
@@ -5290,9 +5290,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       //   .collection('splashes')
       //   .doc(user.uid)
       //   .get();
-
+                    
       // const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug' && (wave.counts?.hugs || 0) > 0;
-
+                    
       // if (hasHugged) {
       //   // User has already hugged, show a friendly message
       //   setTimeout(() => {
@@ -5300,7 +5300,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       //   }, 0);
       //   return;
       // }
-
+                    
       // Add the hug
       await firestore()
         .collection('waves')
@@ -5315,7 +5315,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           splashType: splashType,
           createdAt: firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
-
+                    
       // Update user stats
       await firestore()
         .collection('users')
@@ -5325,13 +5325,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             hugsMade: firestore.FieldValue.increment(1),
           },
         }, { merge: true });
-
+                    
       // Update local userStats immediately for real-time MY AURA display
       setUserStats(prev => ({
         ...prev,
         hugsMade: prev.hugsMade + 1,
       }));
-
+                    
       // Update local vibe counts immediately for real-time display
       setVibesFeed(prev => prev.map(vibe => 
         vibe.id === wave.id 
@@ -5343,7 +5343,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
           : vibe
       ));
-
+                    
       // Send notification to wave owner (only for new hugs, not unhugs)
       // if (wave.ownerUid && wave.ownerUid !== user.uid) {
       //   await firestore()
@@ -5361,7 +5361,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       //       createdAt: firestore.FieldValue.serverTimestamp(),
       //     });
       // }
-
+                    
       // Show success message immediately without any sound
       notifySuccess('you have hugged this vibe');
     } catch (error) {
@@ -5369,7 +5369,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       notifySuccess('you have hugged this vibe');
     }
   };
-
+                    
   const handlePostEcho = (wave: Vibe) => {
     const newExpanded = expandedEchoPost === wave.id ? null : wave.id;
     setExpandedEchoPost(newExpanded);
@@ -5377,30 +5377,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       loadPostEchoes(newExpanded);
     }
   };
-
+                    
   const handlePostGem = (wave: Vibe) => {
     setCurrentWave(wave);
     setSelectedGemCountry('');
     setSelectedGemPayment('');
     setShowGems(true);
   };
-
+                    
   const handleSendPostEcho = async (waveId: string) => {
     const text = postEchoTexts[waveId]?.trim();
     if (!text) return;
-
+                    
     // Prevent double-sending
     if (echoSending[waveId]) return;
-
+                    
     setEchoSending(prev => ({ ...prev, [waveId]: true }));
-
+                    
     try {
       let functionsMod: any = null;
       try {
         functionsMod = require('@react-native-firebase/functions').default;
       } catch {}
       if (!functionsMod) throw new Error('Firebase Functions not available');
-
+                    
       // Get user profile data for the echo
       let fromName = null;
       let fromPhoto = null;
@@ -5414,7 +5414,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch (e) {
         // Continue without profile data
       }
-
+                    
       const createEchoFn = functionsMod().httpsCallable('createEcho', { region: 'us-central1' });
       await createEchoFn({
         waveId,
@@ -5422,13 +5422,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         fromName,
         fromPhoto
       });
-
+                    
       // Clear the input
       setPostEchoTexts(prev => ({ ...prev, [waveId]: '' }));
-
+                    
       // Close the echo input immediately after sending
       setExpandedEchoPost(null);
-
+                    
       // Update local echo count for immediate UI feedback and reset hug count
       setVibesFeed(prev => prev.map(vibe => 
         vibe.id === waveId 
@@ -5448,16 +5448,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }}
           : vibe
       ));
-
+                    
       // Refresh echo list for this post
       loadPostEchoes(waveId);
-
+                    
       // Show success message
       showOceanDialog(
         'Echo Cast!',
         'Your echo has been cast!',
       );
-
+                    
     } catch (e) {
       console.warn('Send post echo failed', e);
       Alert.alert('Error', 'Could not send echo right now.');
@@ -5465,7 +5465,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setEchoSending(prev => ({ ...prev, [waveId]: false }));
     }
   };
-
+                    
   const loadPostEchoes = async (waveId: string) => {
     try {
       const echoesSnap = await firestore()
@@ -5475,7 +5475,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .orderBy('createdAt', 'desc')
         .limit(10)
         .get();
-
+                    
       const echoes = echoesSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -5485,20 +5485,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         userPhoto: doc.data().userPhoto,
         createdAt: doc.data().createdAt,
       }));
-
+                    
       setPostEchoLists(prev => ({ ...prev, [waveId]: echoes }));
     } catch (e) {
       console.warn('Load post echoes failed', e);
     }
   };
-
+                    
   // Load echoes when a post is expanded
   useEffect(() => {
     if (expandedEchoPost) {
       loadPostEchoes(expandedEchoPost);
     }
   }, [expandedEchoPost]);
-
+                    
   const getPaymentOptions = (country: string): string[] => {
     const countryCode = country.split(' ')[0];
     switch (countryCode) {
@@ -5520,7 +5520,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return ['Mobile Money', 'Bank Transfer'];
     }
   };
-
+                    
   // Crew (Follow/Unfollow) handlers
   const handleJoinCrew = async (targetUid: string, targetName?: string) => {
     if (crewLoading) return;
@@ -5531,7 +5531,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Sign in required', 'Please sign in to connect vibe.');
         return;
       }
-
+                    
       await joinCrew(targetUid);
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
       notifySuccess(`Connected to ${targetName || 'user'}'s vibe`);
@@ -5548,7 +5548,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCrewLoading(false);
     }
   };
-
+                    
   const handleLeaveCrew = async (targetUid: string, targetName?: string) => {
     if (crewLoading) return;
     setCrewLoading(true);
@@ -5565,7 +5565,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCrewLoading(false);
     }
   };
-
+                    
   const handleBlockUser = async (targetUid: string, targetName?: string) => {
     try {
       const user = auth().currentUser;
@@ -5573,7 +5573,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Sign in required', 'Please sign in to block users.');
         return;
       }
-
+                    
       // Store in Firestore
       await firestore()
         .collection('users')
@@ -5584,11 +5584,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           blockedAt: firestore.FieldValue.serverTimestamp(),
           blockedName: targetName || 'Unknown',
         });
-
+                    
       // Remove blocked user's waves from feed immediately
       setVibesFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
       setPublicFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
-
+                    
       // Also update backend for real-time drift matching enforcement
       try {
         const cfg = require('./liveConfig');
@@ -5603,17 +5603,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch (backendErr) {
         console.log('Backend block update skipped:', backendErr);
       }
-
+                    
       // Reload blocked users list
       await loadBlockedAndRemovedUsers();
-
+                    
       notifySuccess(`Blocked ${targetName || 'user'}. Their waves are now hidden.`);
     } catch (e) {
       console.error('Block user error:', e);
       notifyError('Could not block user right now');
     }
   };
-
+                    
   const handleRemoveFromDrift = async (targetUid: string, targetName?: string) => {
     try {
       const user = auth().currentUser;
@@ -5621,7 +5621,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Sign in required', 'Please sign in to manage your drift.');
         return;
       }
-
+                    
       await firestore()
         .collection('users')
         .doc(user.uid)
@@ -5631,21 +5631,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           removedAt: firestore.FieldValue.serverTimestamp(),
           removedName: targetName || 'Unknown',
         });
-
+                    
       // Remove this user's waves from both feeds immediately
       setVibesFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
       setPublicFeed(prev => prev.filter(wave => wave.ownerUid !== targetUid));
-
+                    
       // Reload removed users list
       await loadBlockedAndRemovedUsers();
-
+                    
       notifySuccess(`Removed ${targetName || 'user'} from your drift. Their waves are now hidden.`);
     } catch (e) {
       console.error('Remove user error:', e);
       notifyError('Could not remove user from drift right now');
     }
   };
-
+                    
   const loadCrewCounts = async () => {
     try {
       const user = auth().currentUser;
@@ -5656,7 +5656,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.error('Load crew counts error:', e);
     }
   };
-
+                    
   const checkIfInCrew = async (targetUid: string) => {
     try {
       const inCrew = await isInCrew(targetUid);
@@ -5674,14 +5674,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       useNativeDriver: true,
     }).start();
   };
-
+                    
   // Ocean-themed echo animation - expanding ripples like sound waves in water
   const runEchoRippleAnimation = (message?: string) => {
     const rippleDurationMs = 3500;
     const rippleDelayMs = 200;
     const noticeDurationMs = 3600;
     const noticeText = message ?? 'Your echo drifts across the open sea';
-
+                    
     console.log(
       '[ANIMATION] Starting echo ripple animation with message:',
       noticeText,
@@ -5691,17 +5691,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setShowEchoRipple(true);
     console.log('[ANIMATION] showEchoRipple set to TRUE');
     echoRipples.forEach(ripple => ripple.setValue(0));
-
+                    
     // Clear any existing timer
     if (oceanEchoNoticeTimer.current) {
       clearTimeout(oceanEchoNoticeTimer.current);
       oceanEchoNoticeTimer.current = null;
     }
-
+                    
     // Don't show top notification, only center ripple message
     setShowOceanEchoNotice(false);
     console.log('[ANIMATION] Center ripple message will be shown');
-
+                    
     const createTiming = (ripple: Animated.Value) =>
       Animated.timing(ripple, {
         toValue: 1,
@@ -5709,7 +5709,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       });
-
+                    
     Animated.stagger(rippleDelayMs, [
       createTiming(echoRipples[0]),
       createTiming(echoRipples[1]),
@@ -5720,7 +5720,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setRippleSuccessText('');
     });
   };
-
+                    
   // Detect Wi-Fi vs cellular (optional dependency)
   useEffect(() => {
     let unsub: any = null;
@@ -5753,7 +5753,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, []);
-
+                    
   // Flush any pending echoes stored locally (best-effort)
   const flushPendingEchoes = async () => {
     try {
@@ -5801,7 +5801,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       await AS.removeItem(key);
     } catch {}
   };
-
+                    
   // Load Bridge settings from Firestore on first open and on startup
   useEffect(() => {
     let did = false;
@@ -5829,7 +5829,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       did = true;
     };
   }, []);
-
+                    
   const saveBridge = async (next?: Partial<BridgeSettings>) => {
     const updated: BridgeSettings = {
       ...bridge,
@@ -5852,7 +5852,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .set(updated, { merge: true });
     } catch {}
   };
-
+                    
   const shareProfile = async () => {
     try {
       let authMod: any = null;
@@ -5869,7 +5869,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
     }
   };
-
+                    
   // Load vibe stats for current vibesFeed (best-effort if Firebase exists)
   useEffect(() => {
     if (vibesFeed.length === 0) return;
@@ -5913,7 +5913,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       mounted = false;
     };
   }, [vibesFeed]);
-
+                    
   const shareProfileLink = async () => {
     try {
       let authMod: any = null;
@@ -5931,7 +5931,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Share failed', 'Unable to share the link right now.');
     }
   };
-
+                    
   // Load profile from Firestore when opening MY SHORE
   useEffect(() => {
     if (!showProfile) return;
@@ -5988,7 +5988,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         authorSnap.forEach(doc => ids.add(doc.id));
         if (countCancelled) return;
         setMyWaveCount(ids.size);
-        
+                    
         // Load stats for all user waves to populate profile stats
         const waveIds = Array.from(ids);
         if (waveIds.length > 0) {
@@ -6019,7 +6019,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       countCancelled = true;
     };
   }, [showProfile]);
-
+                    
   // Check crew status when wave options target changes
   useEffect(() => {
     if (
@@ -6031,7 +6031,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     checkIfInCrew(waveOptionsTarget.ownerUid);
   }, [waveOptionsTarget, myUid]);
-
+                    
   // Load Treasure stats when Treasure sheet is opened
   useEffect(() => {
     if (!showTreasure) return;
@@ -6059,7 +6059,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .catch(() => {
         setTreasureStats({ tipsTotal: 0, withdrawable: 0 });
       });
-
+                    
     // Fetch recent tips. Prefer nested collection users/{uid}/private/treasure/tips; fallback to users/{uid}/tips
     const fetchTips = async () => {
       try {
@@ -6085,7 +6085,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
     fetchTips();
-
+                    
     // Fetch past withdrawals
     const fetchWithdrawals = async () => {
       try {
@@ -6101,7 +6101,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     fetchWithdrawals();
   }, [showTreasure]);
-
+                    
   const pickProfileImage = async () => {
     try {
       const res = await launchImageLibrary({
@@ -6112,7 +6112,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (asset?.uri) setProfilePhoto(asset.uri);
     } catch {}
   };
-
+                    
   const captureProfileImage = async () => {
     try {
       const res = await launchCamera({
@@ -6123,7 +6123,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (asset?.uri) setProfilePhoto(asset.uri);
     } catch {}
   };
-
+                    
   const saveProfile = async () => {
     let firestoreMod: any = null;
     let authMod: any = null;
@@ -6174,7 +6174,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           finalPhotoUrl = await storageMod().ref(dest).getDownloadURL();
         }
       }
-
+                    
       await firestoreMod()
         .doc(`users/${uid}`)
         .set(
@@ -6200,13 +6200,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     }
   };
-
+                    
   // Cross-platform permission request for Camera and Microphone
   const requestMediaPermissions = async (): Promise<boolean> => {
     if (Platform.OS === 'android') {
       return await ensureCamMicPermissionsAndroid();
     }
-
+                    
     if (Platform.OS === 'ios') {
       // On iOS, permissions are implicitly requested when you first try to use the feature.
       // Libraries like react-native-agora or react-native-camera handle this.
@@ -6218,11 +6218,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       return true;
     }
-
+                    
     // For other platforms, assume permissions are not needed or handled differently.
     return true;
   };
-
+                    
   const handleCameraLaunch = (options: CameraOptions) => {
     launchCamera(options, response => {
       if (response.didCancel) {
@@ -6241,7 +6241,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     });
   };
-
+                    
   const handleMediaSelect = (response: ImagePickerResponse) => {
     if (response.didCancel) {
       console.log('User cancelled media selection');
@@ -6258,7 +6258,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setTranscoding(false);
     }
   };
-
+                    
   // Start in-app Live with editor overlays (TikTok-style)
   const goLiveEditor = async () => {
     setShowMakeWaves(false);
@@ -6284,7 +6284,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     setShowLive(true);
   };
-
+                    
   const openCamera = async () => {
     Alert.alert(
       'Create a Wave',
@@ -6305,11 +6305,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       { cancelable: true },
     );
   };
-
+                    
   const fromGallery = () => {
     launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, handleMediaSelect);
   };
-
+                    
   const pickAudioFromDevice = () => {
     const ensureAudioPermissionAndroid = async (): Promise<boolean> => {
       if (Platform.OS !== 'android') return true;
@@ -6346,7 +6346,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return false;
       }
     };
-
+                    
     const startPick = () =>
       launchImageLibrary(
         { mediaType: 'mixed', selectionLimit: 1 },
@@ -6392,7 +6392,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         },
       );
-
+                    
     if (Platform.OS === 'android') {
       ensureAudioPermissionAndroid().then(ok => {
         if (!ok) {
@@ -6408,7 +6408,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       startPick();
     }
   };
-
+                    
   // Map a user identifier to display label; show "/You" for the signed-in user
   const displayHandle = useCallback(
     (ownerUid?: string | null, name?: string | null) => {
@@ -6437,7 +6437,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [formatHandle, profileName],
   );
-
+                    
   // Format ping message with proper action verb
   const formatPingMessage = useCallback(
     (ping: Ping) => {
@@ -6445,7 +6445,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         (ping as any).fromUid || null,
         ping.actorName || null,
       );
-
+                    
       switch (ping.type) {
         case 'splash': {
           // Always use the poster's name from the feed for notifications
@@ -6473,7 +6473,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [displayHandle],
   );
-
+                    
   // Format timestamp for pings
   const formatPingTime = useCallback((timestamp: any) => {
     try {
@@ -6483,7 +6483,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const minutes = Math.floor(diff / 60000);
       const hours = Math.floor(diff / 3600000);
       const days = Math.floor(diff / 86400000);
-
+                    
       if (minutes < 1) return 'Just now';
       if (minutes < 60) return `${minutes}m ago`;
       if (hours < 24) return `${hours}h ago`;
@@ -6493,7 +6493,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return '';
     }
   }, []);
-
+                    
   const handleNotificationNavigation = useCallback(
     (data: any) => {
       if (data?.waveId) {
@@ -6508,7 +6508,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [vibesFeed],
   );
-
+                    
   const handleForegroundRemoteMessage = useCallback(
     (rm: any) => {
       try {
@@ -6531,7 +6531,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ? 'message'
             : 'system_message'
         ) as any;
-
+                    
         setPings(prev => {
           const exists = prev.some(p => p.id === id);
           if (exists) return prev;
@@ -6549,7 +6549,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ];
         });
         setUnreadPingsCount(n => n + 1);
-
+                    
         if (rm?.notification?.body) {
           notifySuccess(rm.notification.body || 'You have new activity');
           playFalconSound();
@@ -6562,7 +6562,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [notifySuccess, playFalconSound, setPings, setUnreadPingsCount],
   );
-
+                    
   // Cross-version Android audio permission helper (A12/A13/A14)
   const ensureAudioPermission = async (): Promise<boolean> => {
     if (Platform.OS !== 'android') return true;
@@ -6597,7 +6597,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return false;
     }
   };
-
+                    
   // Use custom AudioPicker native module for true file system access (internal storage, SD card, downloads, etc.)
   const pickAudioWithDocumentPicker = async () => {
     try {
@@ -6612,7 +6612,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Audio Picker Error', err?.message || 'Unknown error');
     }
   };
-
+                    
   // Go Drift (LIVE): request permissions and open in-app live modal (with camera preview + details UI)
   const goDrift = async () => {
     setShowMakeWaves(false);
@@ -6640,14 +6640,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Open in-app live UI so camera preview and overlays show together
     setShowLive(true);
   };
-
+                    
   // Initialize caption near the vertical middle of the media area (draggable)
   useEffect(() => {
     if (capturedMedia && stageSize.h > 0 && !captionPos) {
       setCaptionPos({ x: 24, y: Math.floor(stageSize.h * 0.35) });
     }
   }, [capturedMedia, showCaptionInput, stageSize, captionPos]);
-
+                    
   // (removed Movable Textbox state)
   const onEditorToolPress = async (toolLabel: string) => {
     if (
@@ -6691,7 +6691,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     Alert.alert(toolLabel, 'This editing tool is not yet implemented.');
   };
-
+                    
   // Arm audio delay based on whether media is video or image
   useEffect(() => {
     if (audioDelayTimerRef.current) {
@@ -6717,7 +6717,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
   }, [capturedMedia?.uri, attachedAudio?.uri]);
-
+                    
   const onPostWave = async () => {
     if (!capturedMedia) {
       Alert.alert('No media', 'Please select or capture media first.');
@@ -6740,7 +6740,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         authMod = require('@react-native-firebase/auth').default;
       } catch {}
-
+                    
       if (storageMod && firestoreMod && authMod) {
         const a = authMod();
         // Removed: await a.signInAnonymously(); This was causing auto-login.
@@ -6812,7 +6812,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? 'jpg'
           : 'dat';
         const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
-
+                    
         // Normalize local URI for putFile
         let localPath = String(capturedMedia.uri || '');
         try {
@@ -6850,7 +6850,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const uploadPath = localPath;
         const uploadContentType =
           type && type.startsWith('video/') ? type : 'video/mp4';
-
+                    
         await storageMod()
           .ref(filePath)
           .putFile(uploadPath, { contentType: uploadContentType });
@@ -7102,17 +7102,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setWaveKey(Date.now()); // Force the feed to update and play the new wave
     }
   };
-
+                    
   const onFinishCaption = () => {
     // Exit editing mode but keep the overlay visible on media
     setShowCaptionInput(false);
   };
-
-
+                    
+                    
   if (!isFocused) {
     return <SafeAreaView style={{ flex: 1, backgroundColor: 'black' }} />;
   }
-
+                    
   return (
     <SafeAreaView
       style={styles.root}
@@ -7311,7 +7311,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 10 }}>
                       {/* Left side - empty for balance */}
                       <View style={{ flex: 1 }} />
-                      
+                    
                       {/* Center - Profile Picture */}
                       <View style={{ alignItems: 'center', flex: 2 }}>
                         <TouchableOpacity 
@@ -7338,7 +7338,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           {item.createdAt?.toDate ? getRelativeTime(item.createdAt.toDate()) : 'just now'}
                         </Text>
                       </View>
-                      
+                    
                       {/* Right side - Menu button */}
                       <View style={{ flex: 1, alignItems: 'flex-end' }}>
                         <TouchableOpacity onPress={() => openWaveOptions(item)}>
@@ -7475,7 +7475,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text>Placeholder</Text>
                       </TouchableOpacity>
                     </ScrollView>
-
+                    
                     {/* Inline Echo Commenting UI - Facebook Style */}
                     {expandedEchoPost === item.id && (
                       <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
@@ -7529,7 +7529,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             </Text>
                           </TouchableOpacity>
                         </View>
-
+                    
                         {/* Echoes List */}
                         {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
                           <View style={{ marginTop: 10 }}>
@@ -7556,7 +7556,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             ))}
                           </View>
                         )}
-
+                    
                         {/* No echoes message */}
                         {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
                           <Text style={{
@@ -7580,7 +7580,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           )}
         </View>
       </Pressable>
-
+                    
       {/* Top function bar with toggle */}
       <View
         style={[
@@ -7618,8 +7618,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     } catch {}
                   })}
                 >
-                  <Text style={styles.compassIcon}>
-                    �
+                  <Text style={[styles.compassIcon, { color: 'red' }]}>
+                    🐬
                   </Text>
                   <Text style={styles.topLabel}>
                     VIBES
@@ -7661,7 +7661,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.dolphinIcon}>🔎</Text>
                   <Text style={styles.topLabel}>VIBE HUNT</Text>
                 </Pressable>
-
+                    
                 {/* MY SHORE */}
                 <Pressable
                   style={styles.topItem}
@@ -7718,7 +7718,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             )}
           </View>
         </View>
-
+                    
       {/* Media title + timer overlay (at bottom above interactions) */}
       {currentWave && !isUiVisible && (
         <View
@@ -7738,7 +7738,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Text>
         </View>
       )}
-
+                    
       {/* Right-edge overlapped bubbles */}
       {/* Notification Toast */}
       <NotificationToast
@@ -7747,9 +7747,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         visible={toastVisible}
         logo={myLogo}
       />
-
+                    
       {/* ========== SIMPLE OCEAN EFFECTS ========== */}
-      
+                    
       {/* Bioluminescent tap effects - glowing particle trails on finger touch */}
       {(() => {
         try {
@@ -7772,7 +7772,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return null;
         }
       })()}
-
+                    
       {/* Wave ripple on interactions - replaces button press effects */}
       {(() => {
         try {
@@ -7782,7 +7782,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return null;
         }
       })()}
-
+                    
       {/* Auto night-mode with moon reflection */}
       {(() => {
         try {
@@ -7792,7 +7792,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return null;
         }
       })()}
-
+                    
       {/* Interactive wave physics - drag to create waves, bubble trails */}
       {(() => {
         try {
@@ -7802,7 +7802,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return null;
         }
       })()}
-
+                    
       {/* Shake for storms - shake phone for rain/thunder effects */}
       {(() => {
         try {
@@ -7812,9 +7812,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return null;
         }
       })()}
-
+                    
       {/* ========== END OCEAN EFFECTS ========== */}
-
+                    
       {/* Ocean echo confirmation */}
       {showOceanEchoNotice && (
         <View
@@ -7863,7 +7863,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Animated.View>
         </View>
       )}
-
+                    
       {/* Ocean Echo Ripples - Interactive notification for cast echoes */}
       {showEchoRipple && (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -7985,7 +7985,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </View>
       )}
-
+                    
       {/* MY SHORE */}
       <Modal
         visible={showProfile}
@@ -8161,7 +8161,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* PROFILE PICTURE ZOOM MODAL */}
       <Modal
         visible={zoomedProfilePic !== null}
@@ -8198,7 +8198,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* MY VIBES LIST */}
       <Modal
         visible={showMyWaves}
@@ -8403,7 +8403,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* MAKE WAVES */}
       <Modal
         visible={showMakeWaves}
@@ -8539,7 +8539,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* PINGS */}
       <Modal
         visible={showPings}
@@ -8685,7 +8685,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* SET SAIL */}
       <Modal
         visible={showExplore}
@@ -8746,7 +8746,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* NOTICE BOARD */}
       <Modal
         visible={showNotice}
@@ -8830,7 +8830,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* SCHOOL MODE */}
       <Modal
         visible={showSchoolMode}
@@ -9193,7 +9193,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* THE BRIDGE */}
       <Modal
         visible={showBridge}
@@ -9259,7 +9259,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           </Text>
                         </Pressable>
                       </View>
-
+                    
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
@@ -9280,7 +9280,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           </Text>
                         </Pressable>
                       </View>
-
+                    
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
@@ -9301,7 +9301,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           </Text>
                         </Pressable>
                       </View>
-
+                    
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
@@ -9322,7 +9322,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           </Text>
                         </Pressable>
                       </View>
-
+                    
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
@@ -9350,7 +9350,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Text>
                   )}
                 </View>
-
+                    
                 <View
                   style={{
                     paddingVertical: 12,
@@ -9386,7 +9386,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Text>
                   </Pressable>
                 </View>
-
+                    
                 {/* Data Saver Section */}
                 <View style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
                   <Text style={[styles.logbookActionText, { fontSize: 18, marginBottom: 8 }]}>Data Saver</Text>
@@ -9645,7 +9645,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </View>
       </Modal>
-
+                    
       {/* DEEP DIVE Modal */}
       <Modal
         visible={showDeepSearch}
@@ -9663,7 +9663,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ]}
           >
             <Text style={styles.modalTitle}>DEEP DIVE - Find Vibers</Text>
-            
+                    
             <Text style={[styles.hint, { marginBottom: 8 }]}>
               Search by username:
             </Text>
@@ -9751,7 +9751,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             </Text>
                           )}
                         </View>
-                        
+                    
                         {/* User Info */}
                         <View style={{ flex: 1 }}>
                           <Text style={{
@@ -9775,7 +9775,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           )}
                         </View>
                       </View>
-                      
+                    
                       {/* Action Buttons */}
                       <View style={{
                         flexDirection: 'row',
@@ -9826,7 +9826,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             {isInUserCrew[result.id] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
                           </Text>
                         </Pressable>
-                        
+                    
                         {/* Send Message Button */}
                         <Pressable
                           style={{
@@ -9865,7 +9865,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             💬 Message
                           </Text>
                         </Pressable>
-                        
+                    
                         {/* Invite to Drift Button */}
                         <Pressable
                           style={{
@@ -9891,7 +9891,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             🎙️ Invite Drift
                           </Text>
                         </Pressable>
-                        
+                    
                         {/* Request to Join Their Drift (if they're live) */}
                         {result.extra?.liveId && (
                           <Pressable
@@ -9937,7 +9937,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </View>
       </Modal>
-
+                    
       {/* PEARLS */}
       <Modal
         visible={showPearls}
@@ -10128,7 +10128,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* MY TREASURE */}
       <Modal
         visible={showTreasure}
@@ -10238,7 +10238,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* Country Picker Modal */}
       <Modal
         visible={showCountryPicker}
@@ -10284,7 +10284,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* ECHOES */}
       <Modal
         visible={showEchoes}
@@ -10435,7 +10435,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
-
+                    
       {/* SEND MESSAGE */}
       <Modal
         visible={showSendMessage}
@@ -10489,7 +10489,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* GEMS PAYMENT */}
       <Modal
         visible={showGems}
@@ -10607,7 +10607,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       {/* MEDIA EDITOR */}
       <Modal
         visible={!!capturedMedia}
@@ -10758,7 +10758,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
             )}
           </View>
-
+                    
           {/* Attached Audio Summary */}
           {attachedAudio && (
             <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
@@ -10787,7 +10787,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
             </View>
           )}
-
+                    
           {/* Editor Controls */}
           <View
             style={[
@@ -10851,7 +10851,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </View>
       </Modal>
-
+                    
       {/* OCEAN MELODIES: Attach Audio */}
       <Modal
         visible={showAudioModal}
@@ -10951,7 +10951,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-
+                    
       <Modal
         visible={!!waveOptionsTarget}
         transparent
@@ -10985,7 +10985,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </Text>
                 </Pressable>
               )}
-
+                    
             {/* Other existing options - filter out Connect Vibe from the static list */}
             {waveOptionMenu
               .filter(option => option.label !== 'Connect Vibe')
@@ -11001,7 +11001,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </Text>
                 </Pressable>
               ))}
-            
+                    
             {/* Block User and Ping for other users' waves */}
             {waveOptionsTarget &&
               waveOptionsTarget.ownerUid &&
@@ -11062,7 +11062,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </Pressable>
       </Modal>
-
+                    
       {/* GO DRIFT (LIVE) */}
       <LiveStreamModal
         // Pass required styles down to the modal to fix scope issue
@@ -11083,12 +11083,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setIsCharteredDrift(false);
         }}
       />
-
+                    
       {/* Octopus Hug Animation Overlay removed per user request */}
     </SafeAreaView>
   );
 };
-
+                    
 // ======================== AGORA LIVE STREAM COMPONENT ========================
 const LiveStreamModal = ({
   visible,
@@ -11232,7 +11232,7 @@ const LiveStreamModal = ({
     text: string;
   } | null>(null);
   const splashAnim = useRef(new Animated.Value(0)).current;
-
+                    
   // Placeholder functions for comment interactions
   const onSplashComment = (commentId: string) => {
     Alert.alert('Splash Comment', `Splashed comment ${commentId}`);
@@ -11240,7 +11240,7 @@ const LiveStreamModal = ({
   const onEchoBack = (comment: { id: string; from?: string; text: string }) => {
     Alert.alert('Echo Back', `Replying to ${comment.from}: "${comment.text}"`);
   };
-
+                    
   // --- Enhanced Live Controls state (safe stubs) ---
   const [isRecording, setIsRecording] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -11273,7 +11273,7 @@ const LiveStreamModal = ({
   const promptSubmitRef = useRef<undefined | ((val: string) => void)>(
     undefined,
   );
-
+                    
   useEffect(() => {
     if (isChartered) {
       setLivePrivacy('private');
@@ -11281,7 +11281,7 @@ const LiveStreamModal = ({
       setLivePrivacy('public');
     }
   }, [isChartered]);
-
+                    
   // Connect to Drift room SSE for pending requests (host view)
   useEffect(() => {
     let interval: any = null;
@@ -11379,7 +11379,7 @@ const LiveStreamModal = ({
       } catch {}
     };
   }, [isLiveStarted, liveDocId]);
-
+                    
   // Prevent Android back button from closing the modal right after permission prompts
   useEffect(() => {
     // Load host info for avatar/name badge
@@ -11405,20 +11405,20 @@ const LiveStreamModal = ({
       } catch {}
     };
   }, [visible, onClose]);
-
+                    
   // Real-time comments listener
   useEffect(() => {
     if (!isLiveStarted || !liveDocId) {
       setLiveComments([]);
       return;
     }
-
+                    
     let firestoreMod: any = null;
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
     } catch {}
     if (!firestoreMod) return;
-
+                    
     const unsubscribe = firestoreMod()
       .collection(`live/${liveDocId}/comments`)
       .orderBy('createdAt', 'asc')
@@ -11439,10 +11439,10 @@ const LiveStreamModal = ({
           });
         }
       });
-
+                    
     return () => unsubscribe();
   }, [isLiveStarted, liveDocId]);
-
+                    
   useEffect(() => {
     if (!visible || !Agora || !appId) return;
     (async () => {
@@ -11508,7 +11508,7 @@ const LiveStreamModal = ({
       }
     };
   }, [visible, Agora, appId]);
-
+                    
   // Join channel when user taps Start Live and a token/channel are set
   useEffect(() => {
     const engine = engineRef.current;
@@ -11562,7 +11562,7 @@ const LiveStreamModal = ({
       }
     })();
   }, [isLiveStarted, liveUid, liveToken, liveChannel]);
-
+                    
   const handleEndDrift = async () => {
     try {
       // notify backend that live ended
@@ -11580,13 +11580,13 @@ const LiveStreamModal = ({
     } catch {}
     onClose();
   };
-
+                    
   const handleShareDriftLink = async () => {
     if (!liveDocId || !liveChannel) {
       Alert.alert('Error', 'Drift not started yet');
       return;
     }
-
+                    
     try {
       const result = await shareDriftLink(liveDocId, liveChannel, liveTitle);
       await Share.share({
@@ -11598,13 +11598,13 @@ const LiveStreamModal = ({
       console.error('Share drift link error:', error);
     }
   };
-
+                    
   const sendLiveComment = async () => {
     const txt = (commentText || '').trim();
     if (!txt) return;
     // Close input after sending; user can reopen when needed
     setShowCommentInput(false);
-
+                    
     try {
       let firestoreMod: any = null;
       let authMod: any = null;
@@ -11628,14 +11628,14 @@ const LiveStreamModal = ({
           });
       }
     } catch {}
-
+                    
     setCommentText('');
     setShowCommentInput(false);
-
+                    
     // Spawn a local flying comment immediately for instant feedback
     spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
   };
-
+                    
   const spawnFlyingComment = (c: {
     id: string;
     text: string;
@@ -11670,7 +11670,7 @@ const LiveStreamModal = ({
       }),
     ]).start(() => setSplashedComment(null));
   };
-
+                    
   const startLiveNow = async () => {
     setStartError(null);
     setIsStartingLive(true);
@@ -11688,7 +11688,7 @@ const LiveStreamModal = ({
       const chan = (channelInput || '').trim() || defaultChannel;
       const initialTok = (tokenInput || '').trim() || staticToken || null;
       const uidNum = parseInt(uidInput || '0', 10);
-
+                    
       // Get current user UID for backend
       let currentUserUid = 'unknown';
       try {
@@ -11698,7 +11698,7 @@ const LiveStreamModal = ({
           currentUserUid = user.uid;
         }
       } catch {}
-
+                    
       // Optional: notify backend we're starting and fetch a fresh token/liveId
       try {
         const startUrl = (cfg && cfg.START_LIVE_ENDPOINT) || '';
@@ -11753,7 +11753,7 @@ const LiveStreamModal = ({
       setIsStartingLive(false);
     }
   };
-
+                    
   // --- Enhanced Live Controls handlers (guarded; stubs are no-ops when unsupported) ---
   const requestScreenCapturePermission = async (): Promise<boolean> => {
     try {
@@ -11762,7 +11762,7 @@ const LiveStreamModal = ({
       return false;
     }
   };
-
+                    
   const handleScreenShare = async () => {
     if (!isLiveStarted) return;
     try {
@@ -11800,7 +11800,7 @@ const LiveStreamModal = ({
       console.warn('Screen share failed:', e);
     }
   };
-
+                    
   const toggleVirtualBackground = () => {
     const backgrounds = [null, 'beach', 'underwater', 'space', 'studio'];
     const idx = backgrounds.indexOf(virtualBackground);
@@ -11822,7 +11822,7 @@ const LiveStreamModal = ({
       }
     }
   };
-
+                    
   const toggleBeautyFilter = () => {
     const next = !beautyFilterEnabled;
     setBeautyFilterEnabled(next);
@@ -11835,7 +11835,7 @@ const LiveStreamModal = ({
       });
     } catch {}
   };
-
+                    
   const toggleRecording = async () => {
     if (!isLiveStarted) return;
     try {
@@ -11868,15 +11868,15 @@ const LiveStreamModal = ({
       console.warn('Recording toggle failed:', e);
     }
   };
-
+                    
   const showProductStore = () => {
     Alert.alert('Product Store', 'Showcase products, prices, and add-to-cart.');
   };
-
+                    
   const broadcastPollToViewers = (_q: string) => {
     // placeholder
   };
-
+                    
   const composeLivePoll = (initialQuestion?: string) => {
     if (!liveDocId) {
       Alert.alert('Live Polls', 'Start a live session to create a poll.');
@@ -11942,7 +11942,7 @@ const LiveStreamModal = ({
       initialQuestion,
     );
   };
-
+                    
   const voteOnLivePoll = async (optionId: string) => {
     if (!liveDocId) return;
     try {
@@ -11963,7 +11963,7 @@ const LiveStreamModal = ({
       console.warn('Failed to vote on live poll', err);
     }
   };
-
+                    
   const createLivePoll = () => {
     if (!livePoll) {
       composeLivePoll();
@@ -11985,7 +11985,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const handleSetLiveGoal = () => {
     if (!liveDocId) {
       Alert.alert('Live Goal', 'Start a live session to set a goal.');
@@ -12024,20 +12024,20 @@ const LiveStreamModal = ({
       });
     });
   };
-
+                    
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteQuery, setInviteQuery] = useState('');
   const [inviteResults, setInviteResults] = useState<
     Array<{ uid: string; name?: string; email?: string; photo?: string }>
   >([]);
   const [inviteBusy, setInviteBusy] = useState(false);
-
+                    
   const inviteCoHost = async () => {
     setInviteQuery('');
     setInviteResults([]);
     setShowInviteModal(true);
   };
-
+                    
   const searchInviteCandidates = async () => {
     try {
       let firestoreMod: any = null;
@@ -12092,7 +12092,7 @@ const LiveStreamModal = ({
       setInviteResults(out);
     } catch {}
   };
-
+                    
   const inviteUserToDrift = async (targetUid: string) => {
     const me = auth?.()?.currentUser;
     if (!me) throw new Error('Sign in required');
@@ -12111,7 +12111,7 @@ const LiveStreamModal = ({
     });
     return result?.data?.status === 'sent';
   };
-
+                    
   const sendInviteTo = async (
     to: { uid?: string; email?: string } | string,
   ) => {
@@ -12123,12 +12123,12 @@ const LiveStreamModal = ({
       if (to.uid) toUid = to.uid;
       else return;
     }
-
+                    
     if (!toUid) {
       Alert.alert('Error', 'Invalid user ID');
       return;
     }
-
+                    
     setInviteBusy(true);
     try {
       const sent = await inviteUserToDrift(toUid);
@@ -12145,7 +12145,7 @@ const LiveStreamModal = ({
       setInviteBusy(false);
     }
   };
-
+                    
   const showLiveAnalytics = () => {
     const analytics = {
       viewers: 150,
@@ -12160,7 +12160,7 @@ const LiveStreamModal = ({
       `Viewers: ${analytics.viewers}\nPeak: ${analytics.peakViewers}\nAvg Watch: ${analytics.avgWatchTime}\nNew Followers: ${analytics.newFollowers}\nTips: $${analytics.totalTips}`,
     );
   };
-
+                    
   const soundEffects = useMemo(
     () => [
       {
@@ -12184,16 +12184,16 @@ const LiveStreamModal = ({
     ],
     [],
   );
-
+                    
   const playSoundEffect = (sound: { file: string; label: string }) => {
     if (!Sound) {
       Alert.alert('Sound Not Available', 'Sound library not loaded');
       return;
     }
-    
+                    
     try {
       console.log('Attempting to play sound:', sound.label, sound.file);
-      
+                    
       // Play from raw folder (no extension needed)
       const soundPlayer = new Sound(sound.file, Sound.MAIN_BUNDLE, (error: any) => {
         if (error) {
@@ -12201,12 +12201,12 @@ const LiveStreamModal = ({
           Alert.alert('Sound Error', `Failed to load ${sound.label}: ${JSON.stringify(error)}`);
           return;
         }
-        
+                    
         console.log('Sound loaded successfully:', sound.label, 'Duration:', soundPlayer.getDuration());
-        
+                    
         // Set volume to maximum
         soundPlayer.setVolume(1.0);
-        
+                    
         // Play the sound
         soundPlayer.play((success: boolean) => {
           if (success) {
@@ -12223,7 +12223,7 @@ const LiveStreamModal = ({
       Alert.alert('Error', `Sound error: ${error.message || error}`);
     }
   };
-
+                    
   const showSoundBoard = () => {
     Alert.alert(
       'Sound Effects',
@@ -12237,7 +12237,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   // ---------- System/helper utilities ----------
   const userMgmtBase: string =
     (cfg &&
@@ -12245,7 +12245,7 @@ const LiveStreamModal = ({
         cfg.BACKEND_BASE_URL ||
         cfg.USER_MANAGEMENT_BASE_URL)) ||
     '';
-
+                    
   const sendSystemMessage = async (message: string) => {
     try {
       let firestoreMod: any = null;
@@ -12265,7 +12265,7 @@ const LiveStreamModal = ({
       }
     } catch {}
   };
-
+                    
   const askForText = (
     title: string,
     placeholder: string,
@@ -12277,7 +12277,7 @@ const LiveStreamModal = ({
     promptSubmitRef.current = onSubmit;
     setPromptVisible(true);
   };
-
+                    
   // ---------- User management actions ----------
   const makeModerator = (userId: string, username: string) => {
     if (!userMgmtBase) {
@@ -12308,7 +12308,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const removeModerator = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12334,7 +12334,7 @@ const LiveStreamModal = ({
       },
     ]);
   };
-
+                    
   const muteUser = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12372,7 +12372,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const unmuteUser = (userId: string, username: string) => {
     try {
       engineRef.current?.muteRemoteAudioStream?.(userId as any, false);
@@ -12387,7 +12387,7 @@ const LiveStreamModal = ({
     setMutedUsers(prev => prev.filter(id => id !== userId));
     sendSystemMessage(`${username} has been unmuted`);
   };
-
+                    
   const kickUser = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12421,7 +12421,7 @@ const LiveStreamModal = ({
       },
     ]);
   };
-
+                    
   const blockUser = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12458,7 +12458,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const unblockUser = (userId: string, username: string) => {
     if (userMgmtBase) {
       fetch(`${userMgmtBase}/unblock-user`, {
@@ -12469,7 +12469,7 @@ const LiveStreamModal = ({
     }
     setBlockedUsers(prev => prev.filter(id => id !== userId));
   };
-
+                    
   const timeoutUser = (userId: string, username: string) => {
     Alert.alert(
       'Timeout User',
@@ -12482,7 +12482,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const applyTimeout = async (
     userId: string,
     username: string,
@@ -12511,7 +12511,7 @@ const LiveStreamModal = ({
       Alert.alert('Error', 'Failed to timeout user');
     }
   };
-
+                    
   const pinUser = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12539,7 +12539,7 @@ const LiveStreamModal = ({
       },
     ]);
   };
-
+                    
   const unpinUser = (userId: string, username: string) => {
     try {
       engineRef.current?.setRemoteVideoStreamType?.(userId as any, 1);
@@ -12553,7 +12553,7 @@ const LiveStreamModal = ({
     }
     sendSystemMessage(`${username} is no longer featured`);
   };
-
+                    
   const inviteCoHostById = (userId: string, username: string) => {
     if (userId && username) {
       if (!userMgmtBase) {
@@ -12590,7 +12590,7 @@ const LiveStreamModal = ({
       Alert.alert('Co-host', 'Search for users to invite as co-hosts');
     }
   };
-
+                    
   const removeCoHost = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12620,7 +12620,7 @@ const LiveStreamModal = ({
       },
     ]);
   };
-
+                    
   const transferHost = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12656,7 +12656,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const disableUserChat = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12685,7 +12685,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const enableUserChat = (userId: string, username: string) => {
     if (userMgmtBase) {
       fetch(`${userMgmtBase}/enable-chat`, {
@@ -12696,7 +12696,7 @@ const LiveStreamModal = ({
     }
     sendSystemMessage(`${username} can now send messages`);
   };
-
+                    
   const sendPrivateMessage = (userId: string, username: string) => {
     // Open the built-in Send Message modal (writes to Firestore)
     try {
@@ -12710,7 +12710,7 @@ const LiveStreamModal = ({
       );
     }
   };
-
+                    
   const giveShoutout = (userId: string, username: string) => {
     askForText(
       'Give Shout-out',
@@ -12734,7 +12734,7 @@ const LiveStreamModal = ({
       },
     );
   };
-
+                    
   const awardBadge = (userId: string, username: string) => {
     const badges = [
       { name: 'Super Fan', icon: '⭐' },
@@ -12751,7 +12751,7 @@ const LiveStreamModal = ({
       })),
     );
   };
-
+                    
   const applyBadge = async (userId: string, username: string, badge: any) => {
     try {
       if (userMgmtBase) {
@@ -12775,7 +12775,7 @@ const LiveStreamModal = ({
       Alert.alert('Error', 'Failed to award badge');
     }
   };
-
+                    
   const displaySupporterOnScreen = (userId: string, username: string) => {
     setTopSupporters(prev => [...prev, { id: userId, username }]);
     setTimeout(
@@ -12783,7 +12783,7 @@ const LiveStreamModal = ({
       15000,
     );
   };
-
+                    
   const featureInSupporters = (userId: string, username: string) => {
     if (!userMgmtBase) {
       Alert.alert('Config', 'User management base URL not set.');
@@ -12815,7 +12815,7 @@ const LiveStreamModal = ({
       ],
     );
   };
-
+                    
   const handleUserAction = (
     action: string,
     userId: string,
@@ -12915,7 +12915,7 @@ const LiveStreamModal = ({
         return;
     }
   };
-
+                    
     // ---------- UserManagementPanel component ----------
   const UserManagementPanel = ({
     viewers,
@@ -12942,7 +12942,7 @@ const LiveStreamModal = ({
     const filtered = viewers.filter(u =>
       (u.username || '').toLowerCase().includes(searchQuery.toLowerCase()),
     );
-
+                    
     const panelMode = mode;
     const panelHints: Record<typeof panelMode, string | null> = {
       none: null,
@@ -12950,7 +12950,7 @@ const LiveStreamModal = ({
       block: 'Search for a viber and tap to add them to the backend block list.',
       remove: 'Search for a viber and tap to remove them from your crew.',
     };
-
+                    
     const runUserPanelSearch = useCallback(async () => {
       if (panelMode === 'none') return;
       const term = searchQuery.trim();
@@ -12974,8 +12974,8 @@ const LiveStreamModal = ({
         setPanelSearchLoading(false);
       }
     }, [panelMode, searchQuery, searchOceanEntities]);
-
-
+                    
+                    
     const getUserActions = (user: any) => {
       const base = [
         { label: 'Send Message', action: 'message', icon: '💬' },
@@ -13009,9 +13009,9 @@ const LiveStreamModal = ({
         ...crewActions,
       ];
     };
-
+                    
     const isSearchMode = panelMode !== 'none';
-
+                    
     const shouldShowSearchResults =
       isSearchMode && (panelSearchResults.length > 0 || searchQuery.trim().length > 0);
     const displayUsers = shouldShowSearchResults 
@@ -13023,13 +13023,13 @@ const LiveStreamModal = ({
           isSubscriber: false,
         }))
       : filtered;
-
+                    
     const handleActionSelect = (action: string) => {
       if (!actionTarget) return;
       onUserAction(action, actionTarget.id, actionTarget.username);
       setActionTarget(null);
     };
-
+                    
     return (
       <View style={userManagementStyles.panel}>
         <TextInput
@@ -13249,7 +13249,7 @@ const LiveStreamModal = ({
       fontStyle: 'italic',
     },
   });
-
+                    
   if (!visible) return null;
   if (!Agora) {
     return (
@@ -13303,14 +13303,14 @@ const LiveStreamModal = ({
       </Modal>
     );
   }
-
+                    
   const AVView = Agora?.AgoraVideoView;
   const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
   const RtcTextureView = (Agora as any)?.RtcTextureView;
   const RtcLocalView = Agora?.RtcLocalView;
   const VideoRenderMode = Agora?.VideoRenderMode;
   const VideoSourceType = Agora?.VideoSourceType;
-
+                    
   return (
     <Modal
       visible={visible}
@@ -13608,7 +13608,7 @@ const LiveStreamModal = ({
                 Viewers ({viewers.length})
               </Text>
             </Pressable>
-
+                    
             {/* NEW LIVE CONTROLS */}
             {/* Screen Share */}
             <Pressable
@@ -13620,7 +13620,7 @@ const LiveStreamModal = ({
                 {isScreenSharing ? 'Stop Share' : 'Share Screen'}
               </Text>
             </Pressable>
-
+                    
             {/* Virtual Background */}
             <Pressable
               style={[
@@ -13640,7 +13640,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🏞️</Text>
               <Text style={editorStyles.liveRightLabel}>Background</Text>
             </Pressable>
-
+                    
             {/* Beauty Filter */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13651,7 +13651,7 @@ const LiveStreamModal = ({
                 {beautyFilterEnabled ? 'Beauty On' : 'Beauty'}
               </Text>
             </Pressable>
-
+                    
             {/* Recording Control */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13662,7 +13662,7 @@ const LiveStreamModal = ({
                 {isRecording ? 'Stop Rec' : 'Record'}
               </Text>
             </Pressable>
-
+                    
             {/* Live Products/Store */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13671,7 +13671,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🛍️</Text>
               <Text style={editorStyles.liveRightLabel}>Products</Text>
             </Pressable>
-
+                    
             {/* Live Polls */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13680,7 +13680,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>📊</Text>
               <Text style={editorStyles.liveRightLabel}>Polls</Text>
             </Pressable>
-
+                    
             {/* Live Goals */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13689,7 +13689,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🎯</Text>
               <Text style={editorStyles.liveRightLabel}>Goals</Text>
             </Pressable>
-
+                    
             {/* Co-host */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13698,7 +13698,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>👥</Text>
               <Text style={editorStyles.liveRightLabel}>Co-host</Text>
             </Pressable>
-
+                    
             {/* Live Analytics */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13707,7 +13707,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>📈</Text>
               <Text style={editorStyles.liveRightLabel}>Stats</Text>
             </Pressable>
-
+                    
             {/* Sound Effects */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13716,7 +13716,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🎶</Text>
               <Text style={editorStyles.liveRightLabel}>Sounds</Text>
             </Pressable>
-
+                    
             {/* Mute mic */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13734,7 +13734,7 @@ const LiveStreamModal = ({
                 {micMuted ? 'Unmute' : 'Mute'}
               </Text>
             </Pressable>
-
+                    
             {/* Hide/Show camera */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13749,7 +13749,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>{cameraHidden ? '🎥🚫' : '🎥'}</Text>
               <Text style={editorStyles.liveRightLabel}>{cameraHidden ? 'Show' : 'Hide'}</Text>
             </Pressable>
-
+                    
             {/* Flip camera */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13762,7 +13762,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🔄</Text>
               <Text style={editorStyles.liveRightLabel}>Flip</Text>
             </Pressable>
-
+                    
             {/* Share live */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13771,7 +13771,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🎣</Text>
               <Text style={editorStyles.liveRightLabel}>Casta drift</Text>
             </Pressable>
-
+                    
             {/* Report */}
             <Pressable
               style={editorStyles.liveRightButton}
@@ -13784,7 +13784,7 @@ const LiveStreamModal = ({
             </Pressable>
           </ScrollView>
         )}
-
+                    
         {/* Invite Modal */}
         <Modal
           visible={showInviteModal}
@@ -13931,7 +13931,7 @@ const LiveStreamModal = ({
             </View>
           </View>
         </Modal>
-
+                    
         {/* Comment Splash Animation */}
         {splashedComment && (
           <View
@@ -13963,7 +13963,7 @@ const LiveStreamModal = ({
             </Animated.View>
           </View>
         )}
-
+                    
         {/* Media editor strip (above End Vibe) */}
         {isLiveStarted && (
           <View
@@ -14046,7 +14046,7 @@ const LiveStreamModal = ({
             </ScrollView>
           </View>
         )}
-
+                    
         {/* Comment input bar (toggles from media editor) */}
         {isLiveStarted && showCommentInput && (
           <KeyboardAvoidingView
@@ -14150,7 +14150,7 @@ const LiveStreamModal = ({
             </View>
           </View>
         )}
-
+                    
         {/* Bottom action bar */}
         <View
           style={[
@@ -14270,7 +14270,7 @@ const LiveStreamModal = ({
     </Modal>
   );
 };
-
+                    
 // Optional enhanced styles for future features
 const enhancedLiveStyles = StyleSheet.create({
   liveControlPanel: {
@@ -14397,7 +14397,7 @@ const enhancedLiveStyles = StyleSheet.create({
   analyticsLabel: { color: 'rgba(255,255,255,0.8)', fontSize: 14 },
   analyticsValue: { color: 'white', fontSize: 14, fontWeight: '700' },
 });
-
+                    
 /* ----------------------- Auth Screens ------------------------- */
 function SignUpScreen({ navigation }: any) {
   const [username, setUsername] = useState('');
@@ -14405,7 +14405,7 @@ function SignUpScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-
+                    
   const validatePassword = (p: string) => {
     if (p.length < 8 || p.length > 64) return false;
     const checks = [
@@ -14416,11 +14416,11 @@ function SignUpScreen({ navigation }: any) {
     ];
     return checks.filter(Boolean).length >= 3;
   };
-
+                    
   const signUp = async () => {
     const trimmedEmail = email.trim();
     const trimmedUsername = username.trim();
-
+                    
     if (!trimmedEmail || !password || !confirmPassword || !trimmedUsername) {
       Alert.alert('Missing Info', 'Please fill out all fields.');
       return;
@@ -14463,7 +14463,7 @@ function SignUpScreen({ navigation }: any) {
         const usernameWithSlash = trimmedUsername.startsWith('/') ? trimmedUsername : '/' + trimmedUsername;
         // Store username_lc without / for search
         const usernameLc = trimmedUsername.replace(/^[\/]+/, '').toLowerCase();
-        
+                    
         await firestore().collection('users').doc(userCredential.user.uid).set({
           username: usernameWithSlash,
           displayName: usernameWithSlash,
@@ -14471,10 +14471,10 @@ function SignUpScreen({ navigation }: any) {
           email: trimmedEmail,
           createdAt: firestore.FieldValue.serverTimestamp(),
         });
-
+                    
         // Sign the user out immediately after creation
         await auth().signOut();
-
+                    
         Alert.alert(
           'Account Created!',
           'Your account has been successfully created. Please sign in to continue.',
@@ -14492,7 +14492,7 @@ function SignUpScreen({ navigation }: any) {
       }
     }
   };
-
+                    
   return (
     <View style={authStyles.screen}>
       <AuthBackground />
@@ -14502,14 +14502,14 @@ function SignUpScreen({ navigation }: any) {
       >
         <ScrollView showsVerticalScrollIndicator={false}>
           <Text style={authStyles.title}>Create your account</Text>
-
+                    
           <Field
             label="Username"
             value={username}
             onChangeText={setUsername}
             autoCapitalize="none"
           />
-
+                    
           <Field
             label="Email"
             value={email}
@@ -14538,7 +14538,7 @@ function SignUpScreen({ navigation }: any) {
             onChangeText={setConfirmPassword}
             secureTextEntry
           />
-
+                    
           <View
             style={{
               flexDirection: 'row',
@@ -14589,9 +14589,9 @@ function SignUpScreen({ navigation }: any) {
               .
             </Text>
           </View>
-
+                    
           <AuthButton title="Sign Up" onPress={signUp} />
-
+                    
           <TouchableOpacity
             onPress={() => navigation.replace('SignIn')}
             style={{ marginTop: 14 }}
@@ -14605,11 +14605,11 @@ function SignUpScreen({ navigation }: any) {
     </View>
   );
 }
-
+                    
 function SignInScreen({ navigation }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-
+                    
   const signIn = async () => {
     if (!email || !password) {
       Alert.alert('Missing info', 'Enter email and password.');
@@ -14622,14 +14622,14 @@ function SignInScreen({ navigation }: any) {
       Alert.alert('Sign in failed', e?.message ?? 'Try again.');
     }
   };
-
+                    
   const resetPassword = async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
       Alert.alert('Missing Email', 'Enter your email to reset the password.');
       return;
     }
-
+                    
     try {
       await auth().sendPasswordResetEmail(trimmedEmail);
       Alert.alert(
@@ -14640,7 +14640,7 @@ function SignInScreen({ navigation }: any) {
       Alert.alert('Reset Failed', e?.message ?? 'Unable to send reset link.');
     }
   };
-
+                    
   return (
     <View style={authStyles.screen}>
       <AuthBackground />
@@ -14649,7 +14649,7 @@ function SignInScreen({ navigation }: any) {
         style={{ flex: 1, justifyContent: 'center' }}
       >
         <Text style={authStyles.title}>Welcome back</Text>
-
+                    
         <Field
           label="Email"
           value={email}
@@ -14662,15 +14662,15 @@ function SignInScreen({ navigation }: any) {
           onChangeText={setPassword}
           secureTextEntry
         />
-
+                    
         <TouchableOpacity onPress={resetPassword} style={{ marginTop: 6 }}>
           <Text style={authStyles.link}>Forgot Password?</Text>
         </TouchableOpacity>
-
+                    
         <View style={{ marginTop: 4 }}>
           <AuthButton title="Sign In" onPress={signIn} />
         </View>
-
+                    
         <TouchableOpacity
           onPress={() => navigation.replace('SignUp')}
           style={{ marginTop: 14 }}
@@ -14681,11 +14681,11 @@ function SignInScreen({ navigation }: any) {
     </View>
   );
 }
-
+                    
 function WelcomeAnimationScreen({ navigation }: any) {
   const isMounted = React.useRef(true);
   const bounceAnim = React.useRef(new Animated.Value(0)).current;
-
+                    
   React.useEffect(() => {
     // Gentle bounce animation
     Animated.spring(bounceAnim, {
@@ -14694,31 +14694,31 @@ function WelcomeAnimationScreen({ navigation }: any) {
       tension: 40,
       useNativeDriver: true,
     }).start();
-
+                    
     // Auto navigate after 4 seconds
     const timer = setTimeout(() => {
       if (isMounted.current) {
         navigation.replace('AppHome');
       }
     }, 4000);
-
+                    
     return () => {
       isMounted.current = false;
       clearTimeout(timer);
     };
   }, [navigation, bounceAnim]);
-
+                    
   const bounceTranslateY = bounceAnim.interpolate({
     inputRange: [0, 0.5, 1],
     outputRange: [50, -10, 0],
   });
-
+                    
   const handleSkip = () => {
     if (isMounted.current) {
       navigation.replace('AppHome');
     }
   };
-
+                    
   return (
     <Pressable
       style={{
@@ -14750,20 +14750,20 @@ function WelcomeAnimationScreen({ navigation }: any) {
     </Pressable>
   );
 }
-
+                    
 function PostDetailScreen({ route, navigation }: any) {
   const { post } = route.params;
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const isFocused = useIsFocused();
-
+                    
   // Simplified rendering for post detail
   const renderPostContent = () => {
     try {
       const hasVideo = post.playbackUrl || (post.media && isVideoAsset(post.media));
       const hasImage = post.media && !isVideoAsset(post.media);
       const hasText = post.captionText || post.link;
-
+                    
       return (
         <View style={{ flex: 1 }}>
           {/* Video or Image */}
@@ -14801,7 +14801,7 @@ function PostDetailScreen({ route, navigation }: any) {
               style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.6, resizeMode: 'cover' }}
             />
           ) : null}
-
+                    
           {/* Text */}
           {hasText && (
             <View style={{ padding: 20 }}>
@@ -14827,7 +14827,7 @@ function PostDetailScreen({ route, navigation }: any) {
       );
     }
   };
-
+                    
   return (
     <View style={{ flex: 1, backgroundColor: '#0A1929' }}>
       {/* Back Button */}
@@ -14845,13 +14845,13 @@ function PostDetailScreen({ route, navigation }: any) {
       >
         <Text style={{ color: 'white', fontSize: 16 }}>← Back</Text>
       </Pressable>
-
+                    
       {/* Post Content */}
       {renderPostContent()}
     </View>
   );
 }
-
+                    
 /* ----------------------- Root Navigator ----------------------- */
 function AuthStack() {
   // Show the sign-in screen first so returning users arrive on it immediately
@@ -14865,7 +14865,7 @@ function AuthStack() {
     </Stack.Navigator>
   );
 }
-
+                    
 function AppStack() {
   return (
     <Stack.Navigator
@@ -14882,13 +14882,13 @@ function AppStack() {
     </Stack.Navigator>
   );
 }
-
+                    
 // Install global guards to stop first-launch crashes from uncaught errors
 function installGlobalErrorGuards(onError: (err: Error) => void) {
   const globalObj: any = (typeof global !== 'undefined' ? global : globalThis) as any;
   const errorUtils = globalObj?.ErrorUtils;
   let previousHandler: any = null;
-
+                    
   try {
     previousHandler = errorUtils?.getGlobalHandler?.() || null;
     errorUtils?.setGlobalHandler?.((err: any, isFatal?: boolean) => {
@@ -14905,7 +14905,7 @@ function installGlobalErrorGuards(onError: (err: Error) => void) {
   } catch (installErr) {
     console.warn('Failed to install global error handler', installErr);
   }
-
+                    
   let cleanupUnhandled: (() => void) | null = null;
   try {
     const rejectionHandler = (event: any) => {
@@ -14914,7 +14914,7 @@ function installGlobalErrorGuards(onError: (err: Error) => void) {
       onError(safeErr);
       return true;
     };
-
+                    
     if (globalObj?.addEventListener) {
       globalObj.addEventListener('unhandledrejection', rejectionHandler);
       cleanupUnhandled = () => {
@@ -14934,7 +14934,7 @@ function installGlobalErrorGuards(onError: (err: Error) => void) {
   } catch (installErr) {
     console.warn('Failed to install unhandled rejection handler', installErr);
   }
-
+                    
   return () => {
     try {
       cleanupUnhandled?.();
@@ -14946,35 +14946,35 @@ function installGlobalErrorGuards(onError: (err: Error) => void) {
     } catch {}
   };
 }
-
+                    
 // ======================== ROOT (Provider Wrapper) ========================
 // Defensive error boundary for app resilience
 class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Error | null }> {
   cleanup: (() => void) | null = null;
   state = { error: null as Error | null };
-
+                    
   componentDidMount() {
     this.cleanup = installGlobalErrorGuards((err: Error) => {
       console.error('Global error captured:', err);
       this.setState({ error: err });
     });
   }
-
+                    
   componentWillUnmount() {
     try {
       this.cleanup?.();
     } catch {}
   }
-
+                    
   componentDidCatch(error: Error) {
     console.error('Render error boundary caught:', error);
     this.setState({ error });
   }
-
+                    
   handleRetry = () => {
     this.setState({ error: null });
   };
-
+                    
   render() {
     if (this.state.error) {
       return (
@@ -15014,7 +15014,7 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
         </View>
       );
     }
-
+                    
     return (
       <React.Suspense
         fallback={
@@ -15035,19 +15035,19 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
     );
   }
 }
-
+                    
 const App: React.FC = () => {
   // The splash animation is now part of the navigation flow,
   // so we no longer need state to control its visibility here.
   // const [showSplash, setShowSplash] = React.useState(true);
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
-
-
+                    
+                    
   // Defensive: wrap all native module init in try/catch and show fallback UI if any fail
   const [nativeInitError, setNativeInitError] = useState<string | null>(null);
   const [appResumeTick, setAppResumeTick] = useState(0);
-
+                    
   // Global safety net so fatal JS errors show the retry screen instead of closing the app on first open
   useEffect(() => {
     const eu: any = (global as any)?.ErrorUtils;
@@ -15073,7 +15073,7 @@ const App: React.FC = () => {
       } catch {}
     };
   }, []);
-
+                    
   useEffect(() => {
     try {
       if (FORCE_SIGN_OUT_ON_START) {
@@ -15085,7 +15085,7 @@ const App: React.FC = () => {
       setNativeInitError('Native module error: ' + (e && e.message ? e.message : String(e)));
     }
   }, []);
-
+                    
   useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
@@ -15099,7 +15099,7 @@ const App: React.FC = () => {
       } catch {}
     };
   }, []);
-
+                    
   useEffect(() => {
     let unsub: any = null;
     try {
@@ -15112,7 +15112,7 @@ const App: React.FC = () => {
     }
     return unsub;
   }, [initializing, appResumeTick]);
-
+                    
   const getRelativeTime = (date: Date) => {
     const now = new Date();
     const diff = now.getTime() - date.getTime();
@@ -15129,7 +15129,7 @@ const App: React.FC = () => {
     const years = Math.floor(months / 12);
     return years === 1 ? '1 year ago' : `${years} years ago`;
   };
-
+                    
   // Defensive: check for native module errors and show fallback UI
   if (nativeInitError) {
     return (
@@ -15149,7 +15149,7 @@ const App: React.FC = () => {
       </View>
     );
   }
-
+                    
   return (
     <View style={{ flex: 1, backgroundColor: 'black' }}>
       <GestureHandlerRootView style={{ flex: 1 }}>
@@ -15193,16 +15193,16 @@ const App: React.FC = () => {
     </View>
   );
 };
-
+                    
 // Top-level error boundary wrapper for the app
 const AppWithErrorBoundary: React.FC = () => (
   <ErrorBoundary>
     <App />
   </ErrorBoundary>
 );
-
+                    
 export default AppWithErrorBoundary;
-
+                    
 /* --------------------------- Styles --------------------------- */
 const authStyles = StyleSheet.create({
   screen: {
@@ -15256,3 +15256,5 @@ const authStyles = StyleSheet.create({
     textShadowRadius: 2,
   },
 });
+                    
+                    
