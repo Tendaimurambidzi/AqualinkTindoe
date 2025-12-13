@@ -7234,28 +7234,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Text style={{ fontSize: 48, marginBottom: 16, opacity: 0.5 }}>
                 🧭
               </Text>
-              <Text
-                style={[
-                  styles.videoHint,
-                  {
-                    fontSize: 16,
-                    fontWeight: '600',
-                    color: '#00C2FF',
-                    marginBottom: 8,
-                  },
-                ]}
-              >
-                Chart Your Course
-              </Text>
-              <Text
-                style={[
-                  styles.videoHint,
-                  { textAlign: 'center', lineHeight: 20 },
-                ]}
-              >
-                No vibes yet.
-                {'\n'}Tap + to share your first vibe.
-              </Text>
             </View>
           ) : (
             <Animated.ScrollView
@@ -14751,16 +14729,6 @@ function WelcomeAnimationScreen({ navigation }: any) {
           />
         )}
       </Animated.View>
-      <Text
-        style={{
-          color: 'rgba(255,255,255,0.7)',
-          fontSize: 16,
-          marginTop: 20,
-          textAlign: 'center',
-        }}
-      >
-        Tap to continue
-      </Text>
     </Pressable>
   );
 }
