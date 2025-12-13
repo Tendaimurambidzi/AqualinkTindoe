@@ -335,7 +335,7 @@ const waveOptionMenu = [
 ];
                     
 // ======================== STYLES ========================
-const NAVY_BLUE = '#00BFFF';
+const NAVY_BLUE = 'black';
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: 'white' },
   topStrip: {
