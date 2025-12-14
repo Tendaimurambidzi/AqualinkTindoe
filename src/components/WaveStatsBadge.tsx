@@ -11,7 +11,6 @@ export default function WaveStatsBadge({
   compact?: boolean;
 }) {
   const [splashes, setSplashes] = useState<number>(0);
-  const [echoes, setEchoes] = useState<number>(0);
 
   useEffect(() => {
     let firestoreMod: any = null;
@@ -24,7 +23,6 @@ export default function WaveStatsBadge({
         const d = snap?.data?.() || snap?.data || {};
         const counts = d?.counts || {};
         setSplashes(Math.max(0, Number(counts?.splashes || 0)));
-        setEchoes(Math.max(0, Number(counts?.echoes || 0)));
       } catch {}
     }, () => {});
 
@@ -42,7 +40,6 @@ export default function WaveStatsBadge({
       gap: 8,
     }, style]}> 
       <Text style={{ color: 'white', fontWeight: '700' }}>💧 {formatCount(splashes)}</Text>
-      <Text style={{ color: 'white', fontWeight: '700' }}>📣 {formatCount(echoes)}</Text>
     </View>
   );
 }

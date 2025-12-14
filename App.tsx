@@ -1671,8 +1671,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         feedRef.current?.scrollTo({ y: 0, animated: true });
       } catch {}
+      // Show success message for posting a vibe
+      notifySuccess('You dropped a vibe!');
     },
-    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed],
+    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
   );
                     
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
@@ -1855,7 +1857,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch (callbackErr) {
         console.warn('Text story callback failed', callbackErr);
       }
-      notifySuccess('Story sent!');
       setShowTextComposer(false);
       setTextComposerText('');
     } catch (e) {
@@ -3305,63 +3306,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setShowProfile(false);
     setShowMyWaves(true);
   }, [setShowMyWaves, setShowProfile]);
-  const handleHugsPress = useCallback(() => {
-    const totalHugs = userStats.hugsMade;
-    const withdrawable = Math.floor(totalHugs / 10000) * 10000;
-    if (withdrawable > 0) {
-      Alert.alert(
-        'Withdraw Hugs',
-        `You have ${formatCount(totalHugs)} hugs.\n\nWithdrawable: ${formatCount(
-          withdrawable,
-        )} hugs = $${withdrawable / 100}\n\nWithdraw now?`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Withdraw',
-            style: 'default',
-            onPress: async () => {
-              try {
-                const user = auth?.()?.currentUser;
-                if (!user) return;
-                const userRef = firestore().collection('users').doc(user.uid);
-                const remaining = totalHugs % 10000;
-                await userRef.update({
-                  octopusWallet: firestore.FieldValue.increment(
-                    withdrawable / 100,
-                  ),
-                  'stats.hugsWithdrawn': firestore.FieldValue.increment(
-                    withdrawable,
-                  ),
-                  'stats.hugsMade': remaining,
-                });
-                setUserStats(prev => ({
-                  ...prev,
-                  hugsMade: remaining,
-                }));
-                notifySuccess(
-                  `$${withdrawable / 100} added to your Octopus Wallet!`,
-                );
-              } catch (e) {
-                notifyError('Withdrawal failed');
-              }
-            },
-          },
-        ],
-      );
-    } else {
-      Alert.alert(
-        'Octopus Hugs',
-        `You have ${formatCount(totalHugs)} hugs.\n\nNeed 10,000 hugs to withdraw ($100).`,
-      );
-    }
-  }, [notifyError, notifySuccess, userStats.hugsMade]);
-  const handleEchoesPress = useCallback(() => {
-    const totalEchoes = totalEchoesOnMyWaves;
-    Alert.alert(
-      'Echoes',
-      `You have ${formatCount(totalEchoes)} echoes across the ocean.`,
-    );
-  }, [totalEchoesOnMyWaves]);
+
   type StatEntry = {
     key: string;
     label: string;
@@ -3377,17 +3322,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         onPress: openMyWavesFromStats,
       },
       { key: 'crew', label: 'Crew', value: myCrewCount },
-      { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves, onPress: handleHugsPress },
-      { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves, onPress: handleEchoesPress },
     ],
     [
       wavesCountDisplay,
       openMyWavesFromStats,
       myCrewCount,
-      totalHugsOnMyWaves,
-      handleHugsPress,
-      totalEchoesOnMyWaves,
-      handleEchoesPress,
     ],
   );
                     
@@ -4581,10 +4520,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             text: '💧 Regular Splash',
             onPress: () => onSplash('regular'),
           },
-          {
-            text: '🐙 Octopus Hug',
-            onPress: () => onSplash('octopus_hug'),
-          },
           { text: 'Cancel', style: 'cancel' },
         ]
       );
@@ -5288,6 +5223,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }));
                     
       // Update feed arrays for immediate UI feedback
+      console.log('Updating hug count for wave:', wave.id, 'new count:', (wave.counts?.hugs || 0) + 1);
       setVibesFeed(prev => prev.map(vibe =>
         vibe.id === wave.id
           ? { ...vibe, counts: {
@@ -5298,6 +5234,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           : vibe
       ));
       setPublicFeed(prev => prev.map(vibe =>
+        vibe.id === wave.id
+          ? { ...vibe, counts: {
+              splashes: vibe.counts?.splashes || 0,
+              echoes: vibe.counts?.echoes || 0,
+              hugs: (vibe.counts?.hugs || 0) + 1
+            }}
+          : vibe
+      ));
+      setPostFeed(prev => prev.map(vibe =>
         vibe.id === wave.id
           ? { ...vibe, counts: {
               splashes: vibe.counts?.splashes || 0,
@@ -5449,13 +5394,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Close the echo input immediately after sending
       setExpandedEchoPost(null);
                     
-      // Update local echo count for immediate UI feedback and reset hug count
+      // Update local echo count for immediate UI feedback
       setVibesFeed(prev => prev.map(vibe => 
         vibe.id === waveId 
           ? { ...vibe, counts: { 
               ...vibe.counts,
               echoes: (vibe.counts?.echoes || 0) + 1,
-              hugs: 0, // Reset hug count when echoing
             }}
           : vibe
       ));
@@ -5464,10 +5408,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? { ...vibe, counts: { 
               ...vibe.counts,
               echoes: (vibe.counts?.echoes || 0) + 1,
-              hugs: 0, // Reset hug count when echoing
             }}
           : vibe
       ));
+      setPostFeed(prev => prev.map(vibe => 
+        vibe.id === waveId 
+          ? { ...vibe, counts: { 
+              ...vibe.counts,
+              echoes: (vibe.counts?.echoes || 0) + 1,
+            }}
+          : vibe
+      ));
+                    
+      // Update waves state
+      setWaves(prev => prev.map(w => w.id === waveId ? { ...w, counts: { ...w.counts, echoes: (w.counts?.echoes || 0) + 1 } } : w));
                     
       // Refresh echo list for this post
       loadPostEchoes(waveId);
@@ -7030,7 +6984,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           } catch {}
         }
         // Use custom notification for better UX
-        notifySuccess('Your wave is now live... drifting across the ocean');
+        notifySuccess('You dropped a vibe!');
       } else {
         Alert.alert(
           'Backend not ready',
@@ -7447,7 +7401,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </View>
                     <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%' }} />
                     <View style={{ backgroundColor: 'white' }}>
-                    {/* Post Footer - Splashes, Echoes, Anchor vibe, Cast vibe, Placeholder */}
+                    {/* Post Footer - Hugs, Echoes, Anchor vibe, Cast vibe, Placeholder */}
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
@@ -7455,15 +7409,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={{ marginTop: 10 }}
                     >
                       <TouchableOpacity
-                        onPress={() => handlePostHug(item)}
                         style={{ alignItems: 'center', marginRight: 20 }}
                       >
-                        <Text style={{ marginBottom: 2 }}>🐙</Text>
+                        <Text style={{ marginBottom: 2 }}>🫂</Text>
                         <Text style={{ fontSize: 12 }}>Hugs</Text>
                         <Text style={{ fontSize: 10, color: '#00C2FF' }}>0</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => handlePostEcho(item)}
                         style={{ alignItems: 'center', marginRight: 20 }}
                       >
                         <Text style={{ marginBottom: 2 }}>📣</Text>
@@ -8347,15 +8299,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             fontSize: 12,
                           }}
                         >
-                          Splashes:{' '}
-                          <Text style={{ fontWeight: '700', color: 'white' }}>
-                            {Math.max(0, waveStats[w.id]?.splashes ?? 0)}
-                          </Text>
-                          {'  '}Echoes:{' '}
-                          <Text style={{ fontWeight: '700', color: 'white' }}>
-                            {Math.max(0, waveStats[w.id]?.echoes ?? 0)}
-                          </Text>
-                          {'  '}Views:{' '}
+                          Views:{' '}
                           <Text style={{ fontWeight: '700', color: 'white' }}>
                             {Math.max(0, waveStats[w.id]?.views ?? 0)}
                           </Text>

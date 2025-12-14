@@ -144,6 +144,13 @@ exports.onSplashDelete = onDocumentDeleted('waves/{waveId}/splashes/{uid}', asyn
 exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async (event) => {
   const snap = event.data;
   const waveId = event.params.waveId;
+  // --- COUNT --- //
+  const waveRef = db.doc(`waves/${waveId}`);
+  await db.runTransaction(async (tx) => {
+    const waveSnap = await tx.get(waveRef);
+    if (!waveSnap.exists) return;
+    tx.set(waveRef, { counts: { echoes: admin.firestore.FieldValue.increment(1) } }, { merge: true });
+  });
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
@@ -336,7 +343,6 @@ exports.createEcho = onCall({ region: 'us-central1' }, async (req) => {
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });
-    tx.update(waveRef, { 'counts.echoes': FieldValue.increment(1) });
   });
 
   return { echoId: echoRef.id };

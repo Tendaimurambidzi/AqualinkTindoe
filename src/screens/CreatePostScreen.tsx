@@ -104,7 +104,6 @@ const CreatePostScreen = ({ navigation, route }: any) => {
       setUploading(false);
       setCaption('');
       setSelectedMedia(null);
-      Alert.alert('Success', 'Your post was uploaded.');
 
       if (navigation?.goBack) {
         navigation.goBack();

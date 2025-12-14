@@ -36,16 +36,17 @@ service cloud.firestore {
       let newCounts = request.resource.data.counts;
       let safeOldCounts = oldCounts == null ? {} : oldCounts;
 
-      // If counts exists in request, only echoes/splashes may change
+      // If counts exists in request, only echoes/splashes/hugs may change
       let countsKeysOk =
         (newCounts == null) ||
-        newCounts.diff(safeOldCounts).changedKeys().hasOnly(['echoes','splashes']);
+        newCounts.diff(safeOldCounts).changedKeys().hasOnly(['echoes','splashes','hugs']);
 
       let countsTypesOk =
         (newCounts == null) ||
         (
           (!('echoes' in newCounts) || newCounts.echoes is number) &&
-          (!('splashes' in newCounts) || newCounts.splashes is number)
+          (!('splashes' in newCounts) || newCounts.splashes is number) &&
+          (!('hugs' in newCounts) || newCounts.hugs is number)
         );
 
       // ---- legacy counter mode checks ----
