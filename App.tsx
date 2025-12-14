@@ -1529,6 +1529,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [splashes, setSplashes] = useState<number>(0);
   const [echoes, setEchoes] = useState<number>(0);
   const [hasSplashed, setHasSplashed] = useState<boolean>(false);
+  const [hasHugged, setHasHugged] = useState<boolean>(false);
+  const [hugBusy, setHugBusy] = useState<boolean>(false);
   // Splash state is managed by Firestore listeners below (see effect after currentWave changes)
   const splashDisplayCount = splashes;
   const [myEcho, setMyEcho] = useState<{ text: string; id?: string } | null>(
@@ -4678,6 +4680,143 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setSplashBusy(false);
     }
   };
+
+  const onHug = async () => {
+    if (hugBusy || !currentWave || !user?.uid) return;
+
+    setHugBusy(true);
+
+    try {
+      const waveId = currentWave.id;
+      const userId = user.uid;
+
+      // Check if user has already hugged this wave
+      const hugDoc = await firestore()
+        .collection('waves')
+        .doc(waveId)
+        .collection('splashes')
+        .doc(userId)
+        .get();
+
+      const hasHuggedThisWave = hugDoc.exists && hugDoc.data()?.splashType === 'octopus_hug';
+      const isUnhugging = hasHuggedThisWave;
+
+      // Get current count for optimistic update
+      const currentCount = waveStats[waveId]?.hugs || 0;
+      const newCount = isUnhugging ? Math.max(0, currentCount - 1) : currentCount + 1;
+
+      // Optimistic UI update
+      setHasHugged(!isUnhugging);
+      setWaveStats(prev => ({
+        ...prev,
+        [waveId]: {
+          ...prev[waveId],
+          hugs: newCount,
+        },
+      }));
+
+      if (isUnhugging) {
+        // Remove hug
+        await firestore()
+          .collection('waves')
+          .doc(waveId)
+          .collection('splashes')
+          .doc(userId)
+          .delete();
+
+        // Update user stats
+        await firestore()
+          .collection('users')
+          .doc(userId)
+          .set(
+            {
+              stats: {
+                hugsMade: firestore.FieldValue.increment(-1),
+              },
+            },
+            { merge: true }
+          );
+
+        // Update local state
+        setUserStats(prev => ({
+          ...prev,
+          hugsMade: Math.max(0, prev.hugsMade - 1),
+        }));
+      } else {
+        // Add hug
+        await firestore()
+          .collection('waves')
+          .doc(waveId)
+          .collection('splashes')
+          .doc(userId)
+          .set(
+            {
+              userUid: userId,
+              waveId,
+              userName: user.displayName || 'Anonymous',
+              userPhoto: user.photoURL || null,
+              splashType: 'octopus_hug',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+
+        // Update user stats
+        await firestore()
+          .collection('users')
+          .doc(userId)
+          .set(
+            {
+              stats: {
+                hugsMade: firestore.FieldValue.increment(1),
+              },
+            },
+            { merge: true }
+          );
+
+        // Update local state
+        setUserStats(prev => ({
+          ...prev,
+          hugsMade: prev.hugsMade + 1,
+        }));
+
+        // Send ping notification to wave owner (if not self)
+        if (currentWave.ownerUid && currentWave.ownerUid !== userId) {
+          const userName = profileName || user.displayName || 'Someone';
+          await firestore()
+            .collection('users')
+            .doc(currentWave.ownerUid)
+            .collection('pings')
+            .add({
+              type: 'splash',
+              message: `🫂 ${userName} hugged your wave`,
+              fromUid: userId,
+              fromName: userName,
+              fromPhoto: user.photoURL || null,
+              waveId: currentWave.id,
+              waveTitle: currentWave.title || 'Untitled Wave',
+              splashType: 'octopus_hug',
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
+        }
+
+        notifySuccess('You hugged this vibe! 🫂');
+      }
+
+      try {
+        recordPingEvent('splash', waveId, { splashType: 'octopus_hug' });
+      } catch {}
+    } catch (e) {
+      console.error('Hug action failed:', e);
+      // Revert optimistic updates
+      setHasHugged(hasHugged);
+      notifyError('Could not update hug right now.');
+    } finally {
+      setHugBusy(false);
+    }
+  };
+
   const onSendEcho = async () => {
     const rawText = echoTextRef.current || '';
     const text = rawText.trim();
@@ -4909,19 +5048,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
                     
-  // Keep hasSplashed and counters in sync when the current wave changes
+// Keep hasSplashed and hasHugged and counters in sync when the current wave changes
   useEffect(() => {
     if (!currentWave?.id) {
       setHasSplashed(false);
+      setHasHugged(false);
       setSplashes(0);
       setEchoes(0);
       setMyEcho(null);
       setEchoList([]);
       return;
     }
-                    
-    // Reset splash state immediately when switching waves
+
+    // Reset splash and hug state immediately when switching waves
     setHasSplashed(false);
+    setHasHugged(false);
     setSplashes(0);
                     
     let unsubSplash: any = null;
@@ -5006,6 +5147,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             (error: any) => {
               console.error('Splash listener error:', error);
               setHasSplashed(false);
+            },
+          );
+
+        // Check if current user has hugged this wave
+        const unsubHug = firestoreMod()
+          .collection('waves')
+          .doc(currentWave.id)
+          .collection('splashes')
+          .doc(uid)
+          .onSnapshot(
+            { includeMetadataChanges: true },
+            (doc: any) => {
+              // Check if this is a hug (octopus_hug type)
+              const data = doc?.data?.() || {};
+              const isHug = doc && doc.exists && data.splashType === 'octopus_hug';
+              setHasHugged(isHug);
+            },
+            (error: any) => {
+              console.error('Hug listener error:', error);
+              setHasHugged(false);
             },
           );
                     
@@ -5106,6 +5267,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => {
       try {
         unsubSplash && unsubSplash();
+      } catch {}
+      try {
+        unsubHug && unsubHug();
       } catch {}
       try {
         unsubMyEcho && unsubMyEcho();
@@ -7410,10 +7574,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     >
                       <TouchableOpacity
                         style={{ alignItems: 'center', marginRight: 20 }}
+                        onPress={onHug}
+                        disabled={hugBusy}
                       >
-                        <Text style={{ marginBottom: 2 }}>🫂</Text>
+                        <Text style={{ marginBottom: 2, opacity: hasHugged ? 0.7 : 1 }}>🫂</Text>
                         <Text style={{ fontSize: 12 }}>Hugs</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>0</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>
+                          {waveStats[currentWave?.id || '']?.hugs || 0}
+                        </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={{ alignItems: 'center', marginRight: 20 }}
@@ -8088,10 +8256,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
                   {/* Vertical stats list: label left, count right, no icons/dots */}
                   {[
-                    { key: 'waves', label: 'Vibes', value: 0 },
-                    { key: 'crew', label: 'Crew', value: 0 },
-                    { key: 'hugs', label: 'Hugs', value: 0 },
-                    { key: 'echoes', label: 'Echoes', value: 0 },
+                    { key: 'waves', label: 'Vibes', value: wavesCountDisplay },
+                    { key: 'crew', label: 'Crew', value: myCrewCount },
+                    { key: 'hugs', label: 'Hugs', value: totalHugsOnMyWaves },
+                    { key: 'echoes', label: 'Echoes', value: totalEchoesOnMyWaves },
                   ].map((entry) => (
                     <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
                       <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
