@@ -3591,9 +3591,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isTopBarExpanded, setIsTopBarExpanded] = useState(false);
   const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
+  const [isTopBarVisible, setIsTopBarVisible] = useState(true);
+  const hibernationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dragStartYRef = useRef(0);
   const dragStartTimeRef = useRef(0);
   const touchStartRef = useRef(0);
+                    
+  // Hibernation logic for top bar
+  const showTopBar = useCallback(() => {
+    setIsTopBarVisible(true);
+    if (hibernationTimerRef.current) {
+      clearTimeout(hibernationTimerRef.current);
+    }
+    hibernationTimerRef.current = setTimeout(() => {
+      setIsTopBarVisible(false);
+    }, 7000);
+  }, []);
+                    
+  // Initial visibility on app open
+  useEffect(() => {
+    showTopBar();
+  }, [showTopBar]);
+                    
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (hibernationTimerRef.current) {
+        clearTimeout(hibernationTimerRef.current);
+      }
+    };
+  }, []);
                     
   const deleteWave = (waveId: string) => {
     // Only update UI after confirmed deletion
@@ -7257,6 +7284,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
+                showTopBar(); // Reset top bar hibernation timer
               }}
             >
               {displayFeed.map((item, index) => {
@@ -7568,7 +7596,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       </Pressable>
                     
       {/* Top function bar with toggle */}
-      <View
+      <Pressable
         style={[
           styles.topStrip,
           {
@@ -7577,27 +7605,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             backgroundColor: NAVY_BLUE,
           },
         ]}
+        onPress={withUi(() => showTopBar())}
       >
-          <View style={styles.topBarWrapper}>
+        <View style={styles.topBarWrapper}>
+          {isTopBarVisible && (
             <Pressable
               style={styles.toggleButton}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              onPress={withUi(() => setIsTopBarExpanded(p => !p))}
+              onPress={withUi(() => {
+                setIsTopBarExpanded(p => !p);
+                showTopBar();
+              })}
             >
               <Text style={styles.toggleButtonText}>
                 {isTopBarExpanded ? '<' : '>'}
               </Text>
             </Pressable>
-            {isTopBarExpanded && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.scrollRow}
-              >
+          )}
+          {isTopBarVisible && isTopBarExpanded && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.scrollRow}
+            >
                 {/* VIBES */}
                 <Pressable
                   style={styles.topItem}
                   onPress={withUi(() => {
+                    showTopBar();
                     setCurrentIndex(0);
                     try {
                       feedRef.current?.scrollTo({ x: 0, animated: false });
@@ -7614,7 +7649,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* MAKE WAVES */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => setShowMakeWaves(true))}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    setShowMakeWaves(true);
+                  })}
                 >
                   <Text style={styles.dolphinIcon}>✨</Text>
                   <Text style={styles.topLabel}>DROP A VIBE</Text>
@@ -7623,6 +7661,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={withUi(() => {
+                    showTopBar();
                     setShowPings(true);
                     markPingsAsRead();
                   })}
@@ -7642,7 +7681,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* DEEP DIVE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => setShowDeepSearch(true))}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    setShowDeepSearch(true);
+                  })}
                 >
                   <Text style={styles.dolphinIcon}>🔎</Text>
                   <Text style={styles.topLabel}>VIBE HUNT</Text>
@@ -7652,6 +7694,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={withUi(() => {
+                    showTopBar();
                     setShowProfile(true);
                   })}
                 >
@@ -7661,7 +7704,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* SET SAIL */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => setShowExplore(true))}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    setShowExplore(true);
+                  })}
                 >
                   <Text style={styles.boatIcon}>⛵</Text>
                   <Text style={styles.topLabel}>VIBE OUT</Text>
@@ -7669,7 +7715,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* SCHOOL MODE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => setShowSchoolMode(true))}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    setShowSchoolMode(true);
+                  })}
                 >
                   <Text style={styles.schoolIcon}>🏫</Text>
                   <Text style={styles.topLabel}>VIBE MODE</Text>
@@ -7677,7 +7726,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* NOTICE BOARD */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => setShowNotice(true))}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    setShowNotice(true);
+                  })}
                 >
                   <Text style={styles.noticeIcon}>📋</Text>
                   <Text style={styles.topLabel}>VIBE BOARD</Text>
@@ -7685,7 +7737,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* THE BRIDGE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => setShowBridge(true))}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    setShowBridge(true);
+                  })}
                 >
                   <Text style={styles.gearIcon}>⚙️</Text>
                   <Text style={styles.topLabel}>VIBE BRIDGE</Text>
@@ -7693,9 +7748,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* PLACE HOLDER */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() =>
-                    Alert.alert('Placeholder', 'Reserved for future feature.'),
-                  )}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    Alert.alert('Placeholder', 'Reserved for future feature.');
+                  })}
                 >
                   <Text style={styles.placeholderIcon}>🔮</Text>
                   <Text style={styles.topLabel}>PLACE HOLDER</Text>
@@ -7703,7 +7759,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </ScrollView>
             )}
           </View>
-        </View>
+        </Pressable>
                     
       {/* Media title + timer overlay (at bottom above interactions) */}
       {currentWave && !isUiVisible && (
