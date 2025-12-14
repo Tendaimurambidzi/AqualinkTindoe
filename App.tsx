@@ -5314,10 +5314,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const handleSendPostEcho = async (waveId: string) => {
     const text = postEchoTexts[waveId]?.trim();
-    if (!text) return;
-                    
+    if (!text || text.length === 0) {
+      Alert.alert('Empty Echo', 'Please write something before sending.');
+      return;
+    }
+
+    if (text.length > 500) {
+      Alert.alert('Echo Too Long', 'Please keep your echo under 500 characters.');
+      return;
+    }
+
     // Prevent double-sending
     if (echoSending[waveId]) return;
+
+    // Check if user is authenticated
+    const currentUser = firestore().app.auth().currentUser;
+    if (!currentUser) {
+      Alert.alert('Not Signed In', 'Please sign in to send echoes.');
+      return;
+    }
                     
     setEchoSending(prev => ({ ...prev, [waveId]: true }));
                     
@@ -5396,7 +5411,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
     } catch (e) {
       console.warn('Send post echo failed', e);
-      Alert.alert('Error', 'Could not send echo right now.');
+      const errorMessage = e instanceof Error ? e.message : 'Unknown error occurred';
+      Alert.alert('Error', `Could not send echo right now: ${errorMessage}`);
     } finally {
       setEchoSending(prev => ({ ...prev, [waveId]: false }));
     }
@@ -7379,6 +7395,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.hugs || 0}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
+                        onPress={() => {
+                          const newExpanded = expandedEchoPost === item.id ? null : item.id;
+                          setExpandedEchoPost(newExpanded);
+                          if (newExpanded) {
+                            loadPostEchoes(item.id);
+                          }
+                        }}
                         style={{ alignItems: 'center', marginRight: 20 }}
                       >
                         <Text style={{ marginBottom: 2 }}>📣</Text>
@@ -7427,7 +7450,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           <TextInput
                             placeholder="Write an echo..."
                             value={postEchoTexts[item.id] || ''}
-                            onChangeText={(text) => setPostEchoTexts(prev => ({ ...prev, [item.id]: text }))}
+                            onChangeText={(text) => {
+                              // Limit text length to prevent crashes
+                              if (text.length <= 500) {
+                                setPostEchoTexts(prev => ({ ...prev, [item.id]: text }));
+                              }
+                            }}
                             style={{
                               flex: 1,
                               color: 'black',
@@ -7437,12 +7465,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             placeholderTextColor="rgba(0,0,0,0.5)"
                             multiline
+                            maxLength={500}
                           />
+                          <Text style={{
+                            fontSize: 10,
+                            color: (postEchoTexts[item.id]?.length || 0) > 450 ? 'red' : 'rgba(0,0,0,0.5)',
+                            marginRight: 8,
+                          }}>
+                            {(postEchoTexts[item.id]?.length || 0)}/500
+                          </Text>
                           <TouchableOpacity
                             onPress={() => handleSendPostEcho(item.id)}
                             disabled={!postEchoTexts[item.id]?.trim() || echoSending[item.id]}
                             style={{
-                              marginLeft: 10,
                               paddingHorizontal: 15,
                               paddingVertical: 8,
                               backgroundColor: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? '#00C2FF' : 'rgba(255,255,255,0.2)',
