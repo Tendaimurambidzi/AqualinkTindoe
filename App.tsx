@@ -1,42 +1,3 @@
-// Correct "Send Echo" (comment) transaction
-import firestore from '@react-native-firebase/firestore';
-                    
-async function sendEcho(waveId: string, text: string) {
-  const uid = firestore().app.auth().currentUser?.uid; // or however you get uid
-  if (!uid) throw new Error('Not signed in');
-                    
-  const trimmed = text.trim();
-  if (!trimmed) return;
-                    
-  // Get user profile data for the echo
-  let fromName = null;
-  let fromPhoto = null;
-  try {
-    const userDoc = await firestore().collection('users').doc(uid).get();
-    if (userDoc.exists) {
-      const userData = userDoc.data();
-      fromName = userData?.displayName || userData?.name || null;
-      fromPhoto = userData?.photoURL || null;
-    }
-  } catch (e) {
-    // Continue without profile data
-  }
-                    
-  // Use Firebase callable function instead of direct Firestore
-  let functionsMod: any = null;
-  try {
-    functionsMod = require('@react-native-firebase/functions').default;
-  } catch {}
-  if (!functionsMod) throw new Error('Firebase Functions not available');
-                    
-  const createEchoFn = functionsMod().httpsCallable('createEcho');
-  await createEchoFn({
-    waveId,
-    text: trimmed,
-    fromName,
-    fromPhoto
-  });
-}
 import React, {
   useEffect,
   useMemo,
@@ -15020,6 +14981,60 @@ const App: React.FC = () => {
   const [nativeInitError, setNativeInitError] = useState<string | null>(null);
   const [appResumeTick, setAppResumeTick] = useState(0);
                     
+  const getRelativeTime = (date: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 30) return days === 1 ? '1 day ago' : `${days} days ago`;
+    const months = Math.floor(days / 30);
+    if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
+    const years = Math.floor(months / 12);
+    return years === 1 ? '1 year ago' : `${years} years ago`;
+  };
+                    
+  const sendEcho = async (waveId: string, text: string) => {
+    const uid = firestore().app.auth().currentUser?.uid; // or however you get uid
+    if (!uid) throw new Error('Not signed in');
+                    
+    const trimmed = text.trim();
+    if (!trimmed) return;
+                    
+    // Get user profile data for the echo
+    let fromName = null;
+    let fromPhoto = null;
+    try {
+      const userDoc = await firestore().collection('users').doc(uid).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        fromName = userData?.displayName || userData?.name || null;
+        fromPhoto = userData?.photoURL || null;
+      }
+    } catch (e) {
+      // Continue without profile data
+    }
+                    
+    // Use Firebase callable function instead of direct Firestore
+    let functionsMod: any = null;
+    try {
+      functionsMod = require('@react-native-firebase/functions').default;
+    } catch {}
+    if (!functionsMod) throw new Error('Firebase Functions not available');
+                    
+    const createEchoFn = functionsMod().httpsCallable('createEcho');
+    await createEchoFn({
+      waveId,
+      text: trimmed,
+      fromName,
+      fromPhoto
+    });
+  };
+                    
   // Global safety net so fatal JS errors show the retry screen instead of closing the app on first open
   useEffect(() => {
     const eu: any = (global as any)?.ErrorUtils;
@@ -15084,23 +15099,6 @@ const App: React.FC = () => {
     }
     return unsub;
   }, [initializing, appResumeTick]);
-                    
-  const getRelativeTime = (date: Date) => {
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const seconds = Math.floor(diff / 1000);
-    if (seconds < 60) return 'just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return hours === 1 ? '1 hour ago' : `${hours} hours ago`;
-    const days = Math.floor(hours / 24);
-    if (days < 30) return days === 1 ? '1 day ago' : `${days} days ago`;
-    const months = Math.floor(days / 30);
-    if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
-    const years = Math.floor(months / 12);
-    return years === 1 ? '1 year ago' : `${years} years ago`;
-  };
                     
   // Defensive: check for native module errors and show fallback UI
   if (nativeInitError) {
