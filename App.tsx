@@ -1671,6 +1671,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         feedRef.current?.scrollTo({ y: 0, animated: true });
       } catch {}
+      // Load echoes for the new wave
+      loadPostEchoes(wave.id);
       // Show success message for posting a vibe
       notifySuccess('You dropped a vibe!');
     },
@@ -2037,7 +2039,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [bridge.rainEffectsEnabled]);
   const [showPearls, setShowPearls] = useState<boolean>(false);
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
-  const [expandedEchoPost, setExpandedEchoPost] = useState<string | null>(null);
   const [postEchoTexts, setPostEchoTexts] = useState<{[postId: string]: string}>({});
   const [postEchoLists, setPostEchoLists] = useState<{[postId: string]: any[]}>({});
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -3978,6 +3979,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 };
               });
               setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
+
+              // Load echoes for all waves in the feed
+              out.forEach(wave => {
+                if (!postEchoLists[wave.id]) {
+                  loadPostEchoes(wave.id);
+                }
+              });
             }
           });
       } catch {}
@@ -5304,14 +5312,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
                     
-  const handlePostEcho = (wave: Vibe) => {
-    const newExpanded = expandedEchoPost === wave.id ? null : wave.id;
-    setExpandedEchoPost(newExpanded);
-    if (newExpanded && (!postEchoLists[newExpanded] || postEchoLists[newExpanded].length === 0)) {
-      loadPostEchoes(newExpanded);
-    }
-  };
-                    
   const handleSendPostEcho = async (waveId: string) => {
     const text = postEchoTexts[waveId]?.trim();
     if (!text || text.length === 0) {
@@ -5440,13 +5440,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.warn('Load post echoes failed', e);
     }
   };
-                    
-  // Load echoes when a post is expanded
-  useEffect(() => {
-    if (expandedEchoPost) {
-      loadPostEchoes(expandedEchoPost);
-    }
-  }, [expandedEchoPost]);
                     
   const getPaymentOptions = (country: string): string[] => {
     const countryCode = country.split(' ')[0];
@@ -7392,13 +7385,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.hugs || 0}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
-                        onPress={() => {
-                          const newExpanded = expandedEchoPost === item.id ? null : item.id;
-                          setExpandedEchoPost(newExpanded);
-                          if (newExpanded) {
-                            loadPostEchoes(item.id);
-                          }
-                        }}
                         style={{ alignItems: 'center', marginRight: 20 }}
                       >
                         <Text style={{ marginBottom: 2 }}>📣</Text>
@@ -7425,113 +7411,111 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </TouchableOpacity>
                     </ScrollView>
                     
-                    {/* Inline Echo Commenting UI - Facebook Style */}
-                    {expandedEchoPost === item.id && (
-                      <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
-                        {/* Comment Input */}
-                        <View style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          marginBottom: 10,
-                          padding: 12,
-                          backgroundColor: 'rgba(255,255,255,0.95)',
-                          borderRadius: 25,
-                          borderWidth: 2,
-                          borderColor: '#00C2FF',
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: 0.1,
-                          shadowRadius: 4,
-                          elevation: 3,
+                    {/* Permanent Echo Commenting UI - Always Visible */}
+                    <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
+                      {/* Comment Input */}
+                      <View style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        marginBottom: 10,
+                        padding: 12,
+                        backgroundColor: 'rgba(255,255,255,0.95)',
+                        borderRadius: 25,
+                        borderWidth: 2,
+                        borderColor: '#00C2FF',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 4,
+                        elevation: 3,
+                      }}>
+                        <TextInput
+                          placeholder="Send an echo..."
+                          value={postEchoTexts[item.id] || ''}
+                          onChangeText={(text) => {
+                            // Limit text length to prevent crashes
+                            if (text.length <= 500) {
+                              setPostEchoTexts(prev => ({ ...prev, [item.id]: text }));
+                            }
+                          }}
+                          style={{
+                            flex: 1,
+                            color: 'black',
+                            fontSize: 14,
+                            paddingVertical: 8,
+                            paddingHorizontal: 12,
+                          }}
+                          placeholderTextColor="rgba(0,0,0,0.5)"
+                          multiline
+                          maxLength={500}
+                        />
+                        <Text style={{
+                          fontSize: 10,
+                          color: (postEchoTexts[item.id]?.length || 0) > 450 ? 'red' : 'rgba(0,0,0,0.5)',
+                          marginRight: 8,
                         }}>
-                          <TextInput
-                            placeholder="Write an echo..."
-                            value={postEchoTexts[item.id] || ''}
-                            onChangeText={(text) => {
-                              // Limit text length to prevent crashes
-                              if (text.length <= 500) {
-                                setPostEchoTexts(prev => ({ ...prev, [item.id]: text }));
-                              }
-                            }}
-                            style={{
-                              flex: 1,
-                              color: 'black',
-                              fontSize: 14,
-                              paddingVertical: 8,
-                              paddingHorizontal: 12,
-                            }}
-                            placeholderTextColor="rgba(0,0,0,0.5)"
-                            multiline
-                            maxLength={500}
-                          />
+                          {(postEchoTexts[item.id]?.length || 0)}/500
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => handleSendPostEcho(item.id)}
+                          disabled={!postEchoTexts[item.id]?.trim() || echoSending[item.id]}
+                          style={{
+                            paddingHorizontal: 15,
+                            paddingVertical: 8,
+                            backgroundColor: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? '#00C2FF' : 'rgba(255,255,255,0.2)',
+                            borderRadius: 15,
+                          }}
+                        >
                           <Text style={{
-                            fontSize: 10,
-                            color: (postEchoTexts[item.id]?.length || 0) > 450 ? 'red' : 'rgba(0,0,0,0.5)',
-                            marginRight: 8,
-                          }}>
-                            {(postEchoTexts[item.id]?.length || 0)}/500
-                          </Text>
-                          <TouchableOpacity
-                            onPress={() => handleSendPostEcho(item.id)}
-                            disabled={!postEchoTexts[item.id]?.trim() || echoSending[item.id]}
-                            style={{
-                              paddingHorizontal: 15,
-                              paddingVertical: 8,
-                              backgroundColor: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? '#00C2FF' : 'rgba(255,255,255,0.2)',
-                              borderRadius: 15,
-                            }}
-                          >
-                            <Text style={{
-                              color: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? 'white' : 'rgba(255,255,255,0.5)',
-                              fontSize: 12,
-                              fontWeight: '600',
-                            }}>
-                              {echoSending[item.id] ? 'Sending...' : 'Send'}
-                            </Text>
-                          </TouchableOpacity>
-                        </View>
-                    
-                        {/* Echoes List */}
-                        {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
-                          <View style={{ marginTop: 10 }}>
-                            {postEchoLists[item.id].map((echo, idx) => (
-                              <View key={echo.id || idx} style={{
-                                flexDirection: 'row',
-                                marginBottom: 8,
-                                padding: 8,
-                                backgroundColor: 'rgba(255,255,255,0.8)',
-                                borderRadius: 8,
-                              }}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                    {displayHandle(echo.uid, echo.userName || echo.uid)}
-                                  </Text>
-                                  <Text style={{ color: 'black', fontSize: 14 }}>
-                                    {echo.text}
-                                  </Text>
-                                  <Text style={{ color: 'gray', fontSize: 10 }}>
-                                    {echo.createdAt?.toDate ? getRelativeTime(echo.createdAt.toDate()) : 'just now'}
-                                  </Text>
-                                </View>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-                    
-                        {/* No echoes message */}
-                        {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
-                          <Text style={{
-                            color: 'rgba(255,255,255,0.6)',
+                            color: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? 'white' : 'rgba(255,255,255,0.5)',
                             fontSize: 12,
-                            textAlign: 'center',
-                            marginTop: 10,
-                            fontStyle: 'italic'
+                            fontWeight: '600',
                           }}>
-                            No echoes yet. Be the first to comment!
+                            {echoSending[item.id] ? 'Sending...' : 'Send'}
                           </Text>
-                        )}
+                        </TouchableOpacity>
                       </View>
-                    )}
+
+                      {/* Echoes List */}
+                      {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
+                        <View style={{ marginTop: 10 }}>
+                          {postEchoLists[item.id].map((echo, idx) => (
+                            <View key={echo.id || idx} style={{
+                              flexDirection: 'row',
+                              marginBottom: 8,
+                              padding: 8,
+                              backgroundColor: 'rgba(255,255,255,0.8)',
+                              borderRadius: 8,
+                            }}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                  {displayHandle(echo.uid, echo.userName || echo.uid)}
+                                </Text>
+                                <Text style={{ color: 'black', fontSize: 14 }}>
+                                  {echo.text}
+                                </Text>
+                                <Text style={{ color: 'gray', fontSize: 10 }}>
+                                  {echo.createdAt?.toDate ? getRelativeTime(echo.createdAt.toDate()) : 'just now'}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* No echoes message */}
+                      {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
+                        <Text style={{
+                          color: 'rgba(255,255,255,0.6)',
+                          fontSize: 12,
+                          textAlign: 'center',
+                          marginTop: 10,
+                          fontStyle: 'italic'
+                        }}>
+                          No echoes yet. Be the first to comment!
+                        </Text>
+                      )}
+                    </View>
                     </View>
                   </View>
                   </Pressable>
