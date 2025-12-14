@@ -4667,22 +4667,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Send ping notification to wave owner (if not self)
       if (currentWave.ownerUid && currentWave.ownerUid !== (auth?.()?.currentUser?.uid)) {
         const userName = profileName || accountCreationHandle || 'Someone';
-        await firestore()
-          .collection('users')
-          .doc(currentWave.ownerUid)
-          .collection('pings')
-          .add({
-            type: 'echo',
-            message: `💬 ${userName} reverbed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
-            fromUid: auth?.()?.currentUser?.uid,
-            fromName: userName,
-            fromPhoto: profilePhoto || null,
-            waveId: currentWave.id,
-            waveTitle: currentWave.title || 'Untitled Wave',
-            echoText: text,
-            read: false,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          });
+        let firestoreMod: any = null;
+        try {
+          firestoreMod = require('@react-native-firebase/firestore').default;
+        } catch {}
+        if (firestoreMod) {
+          await firestoreMod()
+            .collection('users')
+            .doc(currentWave.ownerUid)
+            .collection('pings')
+            .add({
+              type: 'echo',
+              message: `💬 ${userName} reverbed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+              fromUid: auth?.()?.currentUser?.uid,
+              fromName: userName,
+              fromPhoto: profilePhoto || null,
+              waveId: currentWave.id,
+              waveTitle: currentWave.title || 'Untitled Wave',
+              echoText: text,
+              read: false,
+              createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            });
+        }
       }
                     
       // Clear input and hide echo UI before showing success
@@ -14999,7 +15005,14 @@ const App: React.FC = () => {
   };
                     
   const sendEcho = async (waveId: string, text: string) => {
-    const uid = firestore().app.auth().currentUser?.uid; // or however you get uid
+    // Get firestore instance
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) throw new Error('Firebase Firestore not available');
+    
+    const uid = firestoreMod().app.auth().currentUser?.uid; // or however you get uid
     if (!uid) throw new Error('Not signed in');
                     
     const trimmed = text.trim();
@@ -15009,7 +15022,7 @@ const App: React.FC = () => {
     let fromName = null;
     let fromPhoto = null;
     try {
-      const userDoc = await firestore().collection('users').doc(uid).get();
+      const userDoc = await firestoreMod().collection('users').doc(uid).get();
       if (userDoc.exists) {
         const userData = userDoc.data();
         fromName = userData?.displayName || userData?.name || null;
@@ -15026,7 +15039,7 @@ const App: React.FC = () => {
     } catch {}
     if (!functionsMod) throw new Error('Firebase Functions not available');
                     
-    const createEchoFn = functionsMod().httpsCallable('createEcho');
+    const createEchoFn = functionsMod().httpsCallable('createEcho', { region: 'us-central1' });
     await createEchoFn({
       waveId,
       text: trimmed,
