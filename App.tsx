@@ -7409,18 +7409,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={{ marginTop: 10 }}
                     >
                       <TouchableOpacity
+                        onPress={() => handlePostHug(item)}
                         style={{ alignItems: 'center', marginRight: 20 }}
                       >
                         <Text style={{ marginBottom: 2 }}>🫂</Text>
                         <Text style={{ fontSize: 12 }}>Hugs</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>0</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.hugs || 0}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={{ alignItems: 'center', marginRight: 20 }}
                       >
                         <Text style={{ marginBottom: 2 }}>📣</Text>
                         <Text style={{ fontSize: 12 }}>Echoes</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>0</Text>
+                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.echoes || 0}</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => anchorWave(item)}
