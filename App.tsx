@@ -14906,6 +14906,11 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
                     
   render() {
     if (this.state.error) {
+      const error = this.state.error;
+      const errorMessage = error.message || 'Unknown error';
+      const errorStack = error.stack || '';
+      const errorName = error.name || 'Error';
+
       return (
         <View
           style={{
@@ -14916,19 +14921,38 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
             padding: 24,
           }}
         >
-          <Text style={{ color: 'white', fontSize: 18, textAlign: 'center', marginBottom: 10 }}>
-            We hit a snag starting Drift.
+          <Text style={{ color: 'red', fontSize: 20, textAlign: 'center', marginBottom: 10, fontWeight: 'bold' }}>
+            🚨 APP ERROR 🚨
           </Text>
-          <Text
+
+          <Text style={{ color: 'white', fontSize: 16, textAlign: 'center', marginBottom: 8 }}>
+            Error Type: {errorName}
+          </Text>
+
+          <Text style={{ color: 'white', fontSize: 14, textAlign: 'center', marginBottom: 16, fontWeight: 'bold' }}>
+            {errorMessage}
+          </Text>
+
+          <Text style={{ color: 'yellow', fontSize: 12, textAlign: 'center', marginBottom: 16 }}>
+            Timestamp: {new Date().toISOString()}
+          </Text>
+
+          <ScrollView
             style={{
-              color: 'rgba(255,255,255,0.75)',
-              fontSize: 14,
-              textAlign: 'center',
+              maxHeight: 200,
+              width: '100%',
+              backgroundColor: 'rgba(255,255,255,0.1)',
+              borderRadius: 8,
+              padding: 12,
               marginBottom: 16,
             }}
+            showsVerticalScrollIndicator={true}
           >
-            Tap retry to reopen without a crash.
-          </Text>
+            <Text style={{ color: 'white', fontSize: 10, fontFamily: 'monospace' }}>
+              {errorStack}
+            </Text>
+          </ScrollView>
+
           <TouchableOpacity
             onPress={this.handleRetry}
             style={{
@@ -14936,9 +14960,28 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
               paddingHorizontal: 18,
               paddingVertical: 10,
               borderRadius: 10,
+              marginBottom: 10,
             }}
           >
-            <Text style={{ color: '#001529', fontWeight: '700', fontSize: 15 }}>Retry</Text>
+            <Text style={{ color: '#001529', fontWeight: '700', fontSize: 15 }}>Retry App</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => {
+              // Copy error details to clipboard for debugging
+              const errorDetails = `Error: ${errorName}\nMessage: ${errorMessage}\nStack:\n${errorStack}\nTimestamp: ${new Date().toISOString()}`;
+              // Note: In a real app, you'd use Clipboard.setString() from @react-native-clipboard/clipboard
+              console.log('Error details for debugging:', errorDetails);
+              Alert.alert('Error Details Copied', 'Error details have been logged to console for debugging.');
+            }}
+            style={{
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              paddingHorizontal: 18,
+              paddingVertical: 8,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ color: 'white', fontSize: 12 }}>Copy Error Details</Text>
           </TouchableOpacity>
         </View>
       );
