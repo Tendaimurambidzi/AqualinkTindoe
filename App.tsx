@@ -1928,70 +1928,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // ----- Profile photo handlers -----
   const onEditAvatar = async () => {
-    const uploadAndSave = async (localOrRemoteUri: string) => {
-      try {
-        let storageMod: any = null;
-        let firestoreMod: any = null;
-        let authMod: any = null;
-        try {
-          storageMod = require('@react-native-firebase/storage').default;
-        } catch {}
-        try {
-          firestoreMod = require('@react-native-firebase/firestore').default;
-        } catch {}
-        try {
-          authMod = require('@react-native-firebase/auth').default;
-        } catch {}
-        const uid = authMod?.().currentUser?.uid;
-        if (DEV_SKIP_STORAGE_UPLOAD) {
-          setProfilePhoto(String(localOrRemoteUri));
-          return;
-        }
-        if (storageMod && firestoreMod && uid) {
-          let localPath = String(localOrRemoteUri);
-          try {
-            localPath = decodeURI(localPath);
-          } catch {}
-          if (Platform.OS === 'android' && localPath.startsWith('file://'))
-            localPath = localPath.replace('file://', '');
-          if (!localPath) {
-            showOceanDialog(
-              'Upload Error',
-              'Could not resolve a local path for the selected photo.',
-            );
-            return;
-          }
-          const path = `users/${uid}/profile_${Date.now()}.jpg`;
-          await storageMod()
-            .ref(path)
-            .putFile(localPath, { contentType: 'image/jpeg' });
-          const url = await storageMod().ref(path).getDownloadURL();
-          setProfilePhoto(url);
-          try {
-            await firestoreMod()
-              .doc(`users/${uid}`)
-              .set({ userPhoto: url }, { merge: true });
-          } catch {}
-        } else {
-          setProfilePhoto(String(localOrRemoteUri));
-        }
-      } catch {}
-    };
-                    
     try {
       const actions: any[] = [];
       actions.push({
         text: 'Choose Photo',
         onPress: async () => {
           try {
+            console.log('Launching image library...');
             const res = await launchImageLibrary({
               mediaType: 'photo',
               selectionLimit: 1,
             });
+            console.log('Image library response:', res);
             const a = res?.assets?.[0];
-            if (!a?.uri) return;
+            if (!a?.uri) {
+              console.log('No asset selected');
+              return;
+            }
+            console.log('Selected asset:', a);
             await uploadAndSave(String(a.uri));
-          } catch {}
+          } catch (error) {
+            console.error('Error in launchImageLibrary:', error);
+            showOceanDialog(
+              'Photo Selection Error',
+              'Failed to select photo. Please try again.',
+            );
+          }
         },
       });
       // Optional removal
@@ -10453,6 +10415,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <Text> </Text>
                             <Text>{e.text}</Text>
                           </Text>
+                          {e.createdAt && (
+                            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
+                              {(() => {
+                                try {
+                                  const date = e.createdAt?.toDate ? e.createdAt.toDate() : new Date(e.createdAt);
+                                  const now = new Date();
+                                  const diffMs = now.getTime() - date.getTime();
+                                  const diffMins = Math.floor(diffMs / (1000 * 60));
+                                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                                  
+                                  if (diffMins < 1) return 'just now';
+                                  if (diffMins < 60) return `${diffMins}m ago`;
+                                  if (diffHours < 24) return `${diffHours}h ago`;
+                                  if (diffDays < 7) return `${diffDays}d ago`;
+                                  return date.toLocaleDateString();
+                                } catch {
+                                  return '';
+                                }
+                              })()}
+                            </Text>
+                          )}
                         </View>
                       </Pressable>
                     ))
