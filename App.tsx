@@ -5397,9 +5397,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           : vibe
       ));
                     
-      // Update waves state
-      setWaves(prev => prev.map(w => w.id === waveId ? { ...w, counts: { ...w.counts, echoes: (w.counts?.echoes || 0) + 1 } } : w));
-                    
       // Refresh echo list for this post
       loadPostEchoes(waveId);
                     
