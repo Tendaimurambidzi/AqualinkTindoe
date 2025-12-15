@@ -107,7 +107,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Splashes Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handleSplash} hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}>
         <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
-          🤗
+          🫂
         </Text>
         <Text style={styles.actionLabel}>Splashes</Text>
         <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
@@ -118,7 +118,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Echoes Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handleEcho}>
         <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
-          �
+          📣
         </Text>
         <Text style={styles.actionLabel}>Echoes</Text>
         <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
@@ -129,7 +129,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Pearls Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handlePearl}>
         <Text style={[styles.actionText, pearlsCount > 0 && styles.activeAction]}>
-          �
+          💎
         </Text>
         <Text style={styles.actionLabel}>Pearls</Text>
       </TouchableOpacity>
@@ -156,8 +156,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 // Styles
 const styles = StyleSheet.create({
   actionBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: 'column',
+    justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 10,
     paddingHorizontal: 20,
@@ -182,6 +182,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ccc',
     marginTop: 2,
+  },
+  iconRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 5,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 2,
+  },
+  countRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    width: '100%',
+    paddingVertical: 2,
   },
 });
 

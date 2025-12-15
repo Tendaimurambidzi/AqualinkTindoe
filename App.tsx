@@ -7284,8 +7284,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
                       {/* Right side - Menu button */}
                       <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <TouchableOpacity onPress={() => openWaveOptions(item)}>
-                          <Text style={{ fontSize: 18 }}>⋮</Text>
+                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}>
+                          <Text style={{ fontSize: 24 }}>⋮</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
