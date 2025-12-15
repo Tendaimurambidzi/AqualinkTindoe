@@ -7238,7 +7238,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const overlayPairReady =
                   !hasOverlayAudio ||
                   (overlayVideoReady && overlayState.audio === true);
-                const playSynced = shouldPlay && overlayPairReady;
+                const playSynced = shouldPlay && overlayPairReady && index === currentIndex;
                 const near = Math.abs(index - currentIndex) <= 1;
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
@@ -7311,7 +7311,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             source={{ uri: item.media.uri }}
                             style={videoStyleFor(item.id) as any}
                             resizeMode={'contain'}
-                            paused={true}
+                            paused={!playSynced}
                             playInBackground={false}
                           />
                         ) : (
