@@ -7395,7 +7395,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                       }}
                       onEcho={() => {
-                        setCurrentWave(item);
+                        setCurrentIndex(index);
                         setShowEchoes(true);
                       }}
                       onPearl={() => setShowPearls(true)}
