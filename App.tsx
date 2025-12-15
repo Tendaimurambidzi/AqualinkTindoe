@@ -4610,6 +4610,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setSplashBusy(false);
     }
   };
+  const sendEcho = async (waveId: string, text: string) => {
+    // Get firestore instance
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) throw new Error('Firebase Firestore not available');
+    
+    const uid = firestoreMod().app.auth().currentUser?.uid; // or however you get uid
+    if (!uid) throw new Error('Not signed in');
+                    
+    const trimmed = text.trim();
+    if (!trimmed) return;
+                    
+    // Get user profile data for the echo
+    let fromName = null;
+    let fromPhoto = null;
+    try {
+      const userDoc = await firestoreMod().collection('users').doc(uid).get();
+      if (userDoc.exists) {
+        const userData = userDoc.data();
+        fromName = userData?.displayName || userData?.name || null;
+        fromPhoto = userData?.photoURL || null;
+      }
+    } catch (e) {
+      // Continue without profile data
+    }
+                    
+    // Use Firebase callable function instead of direct Firestore
+    let functionsMod: any = null;
+    try {
+      functionsMod = require('@react-native-firebase/functions').default;
+    } catch {}
+    if (!functionsMod) throw new Error('Firebase Functions not available');
+                    
+    const createEchoFn = functionsMod().httpsCallable('createEcho', { region: 'us-central1' });
+    await createEchoFn({
+      waveId,
+      text: trimmed,
+      fromName,
+      fromPhoto
+    });
+  };
   const onSendEcho = async () => {
     const rawText = echoTextRef.current || '';
     const text = rawText.trim();
@@ -14924,50 +14967,6 @@ const App: React.FC = () => {
     if (months < 12) return months === 1 ? '1 month ago' : `${months} months ago`;
     const years = Math.floor(months / 12);
     return years === 1 ? '1 year ago' : `${years} years ago`;
-  };
-                    
-  const sendEcho = async (waveId: string, text: string) => {
-    // Get firestore instance
-    let firestoreMod: any = null;
-    try {
-      firestoreMod = require('@react-native-firebase/firestore').default;
-    } catch {}
-    if (!firestoreMod) throw new Error('Firebase Firestore not available');
-    
-    const uid = firestoreMod().app.auth().currentUser?.uid; // or however you get uid
-    if (!uid) throw new Error('Not signed in');
-                    
-    const trimmed = text.trim();
-    if (!trimmed) return;
-                    
-    // Get user profile data for the echo
-    let fromName = null;
-    let fromPhoto = null;
-    try {
-      const userDoc = await firestoreMod().collection('users').doc(uid).get();
-      if (userDoc.exists) {
-        const userData = userDoc.data();
-        fromName = userData?.displayName || userData?.name || null;
-        fromPhoto = userData?.photoURL || null;
-      }
-    } catch (e) {
-      // Continue without profile data
-    }
-                    
-    // Use Firebase callable function instead of direct Firestore
-    let functionsMod: any = null;
-    try {
-      functionsMod = require('@react-native-firebase/functions').default;
-    } catch {}
-    if (!functionsMod) throw new Error('Firebase Functions not available');
-                    
-    const createEchoFn = functionsMod().httpsCallable('createEcho', { region: 'us-central1' });
-    await createEchoFn({
-      waveId,
-      text: trimmed,
-      fromName,
-      fromPhoto
-    });
   };
                     
   // Global safety net so fatal JS errors show the retry screen instead of closing the app on first open
