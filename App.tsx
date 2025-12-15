@@ -975,12 +975,12 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(255, 0, 0, 0.8)',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
     marginHorizontal: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderWidth: 2,
+    borderColor: 'white',
   },
   toggleButtonText: {
     color: 'white',
@@ -7192,21 +7192,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ref={feedRef}
               style={{ flex: 1, backgroundColor: '#f0f2f5' }}
               pagingEnabled={false}
-              decelerationRate={0.85}
+              decelerationRate={0.1}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               onScroll={(event) => {
-                const scrollY = event.nativeEvent.contentOffset.y;
-                const averageItemHeight = 400; // approximate height per post
-                const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
-                if (newIndex !== currentIndex) {
-                  setCurrentIndex(newIndex);
-                }
+                // Removed currentIndex update to prevent multiple videos playing during scroll
               }}
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
                 showTopBar(); // Reset top bar hibernation timer
+              }}
+              onScrollEndDrag={() => setIsSwiping(false)}
+              onMomentumScrollEnd={(event) => {
+                setIsSwiping(false);
+                // Update currentIndex based on final scroll position
+                const scrollY = event.nativeEvent.contentOffset.y;
+                const averageItemHeight = 400; // approximate height per post
+                const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
+                setCurrentIndex(newIndex);
               }}
             >
               {displayFeed.map((item, index) => {
@@ -7238,7 +7242,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const overlayPairReady =
                   !hasOverlayAudio ||
                   (overlayVideoReady && overlayState.audio === true);
-                const playSynced = shouldPlay && overlayPairReady && index === currentIndex;
+                const playSynced = shouldPlay && overlayPairReady && index === currentIndex && !isSwiping;
                 const near = Math.abs(index - currentIndex) <= 1;
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
