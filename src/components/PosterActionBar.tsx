@@ -17,6 +17,7 @@ interface PosterActionBarProps {
   onPearl: () => void;
   onAnchor: () => void;
   onCast: () => void;
+  sendEcho: (waveId: string, text: string) => Promise<void>;
 }
 
 // Main component
@@ -33,6 +34,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   onPearl,
   onAnchor,
   onCast,
+  sendEcho,
 }) => {
   const [hasSplashed, setHasSplashed] = useState(false);
   const [hasEchoed, setHasEchoed] = useState(false);
@@ -86,8 +88,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     }
   };
 
-  const handleEcho = () => {
-    onEcho();
+  const handleEcho = async () => {
+    try {
+      await sendEcho(waveId, "Echo");
+      onEcho();
+    } catch (error) {
+      console.error('Error sending echo:', error);
+      Alert.alert('Error', `Could not send echo: ${error.message}`);
+    }
   };
 
   const handlePearl = () => {
@@ -123,7 +131,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Pearls Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handlePearl}>
         <Text style={styles.actionText}>
-          🐚 {pearlsCount}
+          🐚
         </Text>
         <Text style={styles.actionLabel}>Pearls</Text>
       </TouchableOpacity>

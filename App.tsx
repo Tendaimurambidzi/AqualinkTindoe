@@ -7351,75 +7351,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                         setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                       }}
-                      onEcho={() => setShowEchoes(true)}
+                      onEcho={() => {
+                        // Update local counts
+                        setWaves(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, echoes: (w.counts?.echoes || 0) + 1 } } : w));
+                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+                        // Reload echoes
+                        loadPostEchoes(item.id);
+                      }}
                       onPearl={() => setShowPearls(true)}
                       onAnchor={() => anchorWave(item)}
                       onCast={() => onShareWave(item)}
+                      sendEcho={sendEcho}
                     />
                     <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
-                      {/* Comment Input */}
-                      <View style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        marginBottom: 10,
-                        padding: 12,
-                        backgroundColor: 'rgba(255,255,255,0.95)',
-                        borderRadius: 25,
-                        borderWidth: 2,
-                        borderColor: '#00C2FF',
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 4,
-                        elevation: 3,
-                      }}>
-                        <TextInput
-                          placeholder="Send an echo..."
-                          value={postEchoTexts[item.id] || ''}
-                          onChangeText={(text) => {
-                            // Limit text length to prevent crashes
-                            if (text.length <= 500) {
-                              setPostEchoTexts(prev => ({ ...prev, [item.id]: text }));
-                            }
-                          }}
-                          style={{
-                            flex: 1,
-                            color: 'black',
-                            fontSize: 14,
-                            paddingVertical: 8,
-                            paddingHorizontal: 12,
-                          }}
-                          placeholderTextColor="rgba(0,0,0,0.5)"
-                          multiline
-                          maxLength={500}
-                        />
-                        <Text style={{
-                          fontSize: 10,
-                          color: (postEchoTexts[item.id]?.length || 0) > 450 ? 'red' : 'rgba(0,0,0,0.5)',
-                          marginRight: 8,
-                        }}>
-                          {(postEchoTexts[item.id]?.length || 0)}/500
-                        </Text>
-                        <TouchableOpacity
-                          onPress={() => handleSendPostEcho(item.id)}
-                          disabled={!postEchoTexts[item.id]?.trim() || echoSending[item.id]}
-                          style={{
-                            paddingHorizontal: 15,
-                            paddingVertical: 8,
-                            backgroundColor: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? '#00C2FF' : 'rgba(255,255,255,0.2)',
-                            borderRadius: 15,
-                          }}
-                        >
-                          <Text style={{
-                            color: (postEchoTexts[item.id]?.trim() && !echoSending[item.id]) ? 'white' : 'rgba(255,255,255,0.5)',
-                            fontSize: 12,
-                            fontWeight: '600',
-                          }}>
-                            {echoSending[item.id] ? 'Sending...' : 'Send'}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-
                       {/* Echoes List */}
                       {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
                         <View style={{ marginTop: 10 }}>
