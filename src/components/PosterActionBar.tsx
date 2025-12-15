@@ -109,7 +109,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
           🫂
         </Text>
-        <Text style={styles.actionLabel}>Splashes</Text>
+        <Text style={styles.actionLabel}>Hugs</Text>
         <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
           {splashesCount}
         </Text>
