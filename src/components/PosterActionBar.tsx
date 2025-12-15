@@ -214,9 +214,9 @@ const styles = StyleSheet.create({
   actionBar: {
     paddingVertical: 5,
     paddingHorizontal: 5,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 10,
-    marginHorizontal: 10,
+    backgroundColor: 'grey',
+    borderRadius: 0,
+    marginHorizontal: 0,
     marginBottom: 10,
   },
   actionButton: {
