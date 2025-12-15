@@ -152,14 +152,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Placeholder Button 1 */}
       <TouchableOpacity style={styles.actionButton}>
-        <Text style={styles.actionText}></Text>
-        <Text style={styles.actionLabel}></Text>
+        <Text style={styles.actionText}>🔱</Text>
+        <Text style={styles.actionLabel}>Placeholder 1</Text>
       </TouchableOpacity>
 
       {/* Placeholder Button 2 */}
       <TouchableOpacity style={styles.actionButton}>
-        <Text style={styles.actionText}></Text>
-        <Text style={styles.actionLabel}></Text>
+        <Text style={styles.actionText}>🐚</Text>
+        <Text style={styles.actionLabel}>Placeholder 2</Text>
       </TouchableOpacity>
 
       {/* Placeholder Button 3 */}
