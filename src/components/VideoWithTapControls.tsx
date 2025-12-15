@@ -78,6 +78,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
 
   useEffect(() => {
     setInternalPaused(paused);
@@ -135,13 +136,10 @@ const VideoWithTapControls: React.FC<Props> = ({
     showControls();
   }, [currentTime, seekStep, safeSeek, showControls]);
 
-  const onToggleOverlay = useCallback(() => {
-    if (controlsVisible) {
-      hideControls();
-    } else {
-      showControls();
-    }
-  }, [controlsVisible, hideControls, showControls]);
+  const onToggleMute = useCallback(() => {
+    setIsMuted(prev => !prev);
+    showControls();
+  }, [showControls]);
 
   const onRewind = useCallback(() => {
     safeSeek(currentTime - seekStep);
@@ -221,7 +219,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         playWhenInactive={playWhenInactive}
         ignoreSilentSwitch={ignoreSilentSwitch}
         controls={controls}
-        muted={muted}
+        muted={isMuted}
         onLoad={handleLoad}
         onProgress={handleProgress}
         onBuffer={onBuffer}
@@ -285,6 +283,14 @@ const VideoWithTapControls: React.FC<Props> = ({
           </TouchableOpacity>
         </View>
         <View style={styles.timeContainer}>
+          <TouchableOpacity
+            accessibilityLabel={isMuted ? "Unmute video" : "Mute video"}
+            onPress={onToggleMute}
+            style={styles.muteButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
+          </TouchableOpacity>
           <Text style={styles.timeText}>
             {formatTime(currentTime)} / {formatTime(duration)}
           </Text>
@@ -352,16 +358,21 @@ const styles = StyleSheet.create({
   timeContainer: {
     position: 'absolute',
     bottom: 10,
+    left: 10,
     right: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
   },
-  timeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '500',
+  muteButton: {
+    padding: 4,
+  },
+  muteSymbol: {
+    fontSize: 16,
   },
   replayContainer: {
     ...StyleSheet.absoluteFillObject,
