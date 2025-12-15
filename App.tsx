@@ -4740,13 +4740,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setEchoList(prev => prev.filter(e => e.id !== pendingId));
       setMyEcho({ text });
       setShowEchoes(false); // Hide echo UI first
-      setTimeout(() => {
-        showOceanDialog(
-          'Echo Cast',
-          'Your echo has been successfully casted.',
-        );
-        runEchoRippleAnimation('Your echo has been successfully casted.');
-      }, 200); // Small delay to ensure UI hides first
       try {
         recordPingEvent('echo', currentWave.id, { text });
       } catch {}
@@ -4755,10 +4748,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (e?.message && e.message.includes('permission-denied')) {
         // Silently ignore, since echo is likely created
         setShowEchoes(false);
-        setTimeout(() => {
-          showOceanDialog('Echo Cast', 'Your echo has been successfully casted.');
-          runEchoRippleAnimation('Your echo has been successfully casted.');
-        }, 200);
         return;
       }
       Alert.alert('Error', `Could not send echo: ${e?.message || e || 'Unknown error'}`);
