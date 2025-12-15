@@ -7209,7 +7209,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ref={feedRef}
               style={{ flex: 1, backgroundColor: '#f0f2f5' }}
               pagingEnabled={false}
-              decelerationRate={0.1}
+              decelerationRate={0.05}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {
