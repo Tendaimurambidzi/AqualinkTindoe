@@ -7395,18 +7395,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                       }}
                       onEcho={() => {
-                        // Update local counts
-                        setWaves(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, echoes: (w.counts?.echoes || 0) + 1 } } : w));
-                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-                        // Reload echoes
-                        loadPostEchoes(item.id);
+                        setCurrentWave(item);
+                        setShowEchoes(true);
                       }}
                       onPearl={() => setShowPearls(true)}
                       onAnchor={() => anchorWave(item)}
                       onCast={() => onShareWave(item)}
-                      sendEcho={sendEcho}
                     />
                     <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
                       {/* Echoes List */}
