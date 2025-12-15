@@ -254,7 +254,7 @@ async function addPingModular(userId, data) {
     
     const message = {
       notification: {
-        title: data.type === 'splash' ? 'New Splash! 🌊' : data.type === 'echo' ? 'New Echo 📣' : 'Notification',
+        title: data.type === 'splash' ? 'New Splash! 🌊' : data.type === 'echo' ? 'New Echo 📣' : data.type === 'hug' ? 'New Hug! 🫂' : 'Notification',
         body: data.text || 'You have a new notification',
       },
       data: {

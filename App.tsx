@@ -4319,11 +4319,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!text || !messageRecipient) return;
     let firestoreMod: any;
     let authMod: any;
+    let functionsMod: any;
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
     } catch {}
     try {
       authMod = require('@react-native-firebase/auth').default;
+    } catch {}
+    try {
+      functionsMod = require('@react-native-firebase/functions').default;
     } catch {}
     const user = authMod?.().currentUser;
     if (!firestoreMod || !user) {
@@ -4354,6 +4358,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           createdAt: firestoreMod.FieldValue.serverTimestamp(),
           type: 'message', // To distinguish from other mention types if needed
         });
+
+      // Send notification
+      if (functionsMod) {
+        try {
+          const addPingFn = functionsMod().httpsCallable('addPing');
+          await addPingFn({
+            recipientUid: messageRecipient.uid,
+            type: 'message',
+            text: text,
+            fromUid: user.uid,
+            fromName: user.displayName || 'Anonymous',
+            fromPhoto: user.photoURL || null,
+          });
+        } catch (error) {
+          console.error('Error sending message notification:', error);
+        }
+      }
                     
       setShowSendMessage(false);
       notifySuccess('Ping sent!');
@@ -4709,28 +4730,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       // Send ping notification to wave owner (if not self)
       if (currentWave.ownerUid && currentWave.ownerUid !== (auth?.()?.currentUser?.uid)) {
-        const userName = profileName || accountCreationHandle || 'Someone';
-        let firestoreMod: any = null;
         try {
-          firestoreMod = require('@react-native-firebase/firestore').default;
-        } catch {}
-        if (firestoreMod) {
-          await firestoreMod()
-            .collection('users')
-            .doc(currentWave.ownerUid)
-            .collection('pings')
-            .add({
+          let functionsMod: any = null;
+          try {
+            functionsMod = require('@react-native-firebase/functions').default;
+          } catch {}
+          if (functionsMod) {
+            const addPingFn = functionsMod().httpsCallable('addPing');
+            await addPingFn({
+              recipientUid: currentWave.ownerUid,
               type: 'echo',
-              message: `💬 ${userName} reverbed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+              waveId: currentWave.id,
+              text: `📣 ${userName} echoed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
               fromUid: auth?.()?.currentUser?.uid,
               fromName: userName,
               fromPhoto: profilePhoto || null,
-              waveId: currentWave.id,
-              waveTitle: currentWave.title || 'Untitled Wave',
-              echoText: text,
-              read: false,
-              createdAt: firestoreMod.FieldValue.serverTimestamp(),
             });
+          }
+        } catch (error) {
+          console.error('Error sending echo notification:', error);
         }
       }
                     
@@ -7376,6 +7394,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       pearlsCount={0}
                       isAnchored={false}
                       isCasted={false}
+                      creatorUserId={item.userId}
                       onSplash={() => {
                         // Update local counts
                         setWaves(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));

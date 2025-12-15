@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
+import functions from '@react-native-firebase/functions';
 
 // Types for the component props
 interface PosterActionBarProps {
@@ -17,6 +18,7 @@ interface PosterActionBarProps {
   onPearl: () => void;
   onAnchor: () => void;
   onCast: () => void;
+  creatorUserId: string;
 }
 
 // Main component
@@ -33,6 +35,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   onPearl,
   onAnchor,
   onCast,
+  creatorUserId,
 }) => {
   const [hasSplashed, setHasSplashed] = useState(false);
   const [hasEchoed, setHasEchoed] = useState(false);
@@ -79,6 +82,35 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             createdAt: firestore.FieldValue.serverTimestamp(),
           });
         setHasSplashed(true);
+        // Send notification if not self
+        if (currentUserId !== creatorUserId) {
+          try {
+            // Get user name
+            let fromName = 'Someone';
+            try {
+              const userDoc = await firestore()
+                .collection('users')
+                .doc(currentUserId)
+                .get();
+              if (userDoc.exists) {
+                const userData = userDoc.data();
+                fromName = userData?.displayName || userData?.name || 'Someone';
+              }
+            } catch (e) {
+              console.warn('Failed to get user name for notification:', e);
+            }
+            await functions().httpsCallable('addPing')({
+              recipientUid: creatorUserId,
+              type: 'hug',
+              waveId: waveId,
+              text: `${fromName} has hugged your vibe`,
+              fromUid: currentUserId,
+              fromName: fromName,
+            });
+          } catch (error) {
+            console.error('Error sending hug notification:', error);
+          }
+        }
       }
       onSplash();
     } catch (error) {
