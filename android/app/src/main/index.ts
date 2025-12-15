@@ -43,6 +43,7 @@ async function sendPing(toUid: string, data: {
   const titleMap: any = {
     splash: "New Splash",
     echo: "New Echo",
+    hug: "New Hug",
     follow: "New Crew Member",
     mention: "You were mentioned",
     message: `New message from ${data.fromName || "someone"}`,
@@ -52,6 +53,7 @@ async function sendPing(toUid: string, data: {
   const body =
     data.type === "splash" && data.fromName ? `${data.fromName} splashed your wave` : 
     data.type === "echo" && data.fromName ? `${data.fromName} echoed: ${data.text ?? ""}`.trim() :
+    data.type === "hug" && data.fromName ? `${data.fromName} hugged your vibe` :
     data.type === "message" ? data.text ?? "You have a new message" :
     data.type === "follow" && data.fromName ? `${data.fromName} joined your crew` :
     data.type === "mention" && data.fromName ? `${data.fromName} mentioned you` :
