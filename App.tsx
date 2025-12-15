@@ -7208,8 +7208,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Animated.ScrollView
               ref={feedRef}
               style={{ flex: 1, backgroundColor: '#f0f2f5' }}
-              pagingEnabled={false}
-              decelerationRate={0.05}
+              pagingEnabled={true}
+              decelerationRate={0.0}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {
@@ -7222,8 +7222,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 setIsSwiping(false);
                 // Update currentIndex based on final scroll position
                 const scrollY = event.nativeEvent.contentOffset.y;
-                const averageItemHeight = 400; // approximate height per post
-                const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
+                const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / SCREEN_HEIGHT)));
                 setCurrentIndex(newIndex);
               }}
             >
@@ -7331,6 +7330,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             resizeMode={'contain'}
                             paused={!playSynced}
                             playInBackground={false}
+                            isActive={index === currentIndex}
                           />
                         ) : (
                           <Image

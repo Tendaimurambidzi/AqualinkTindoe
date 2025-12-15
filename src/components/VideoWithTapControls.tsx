@@ -44,6 +44,7 @@ type Props = {
   onProgress?: (data: OnProgressData) => void;
   muted?: boolean;
   resizeMode?: string;
+  isActive?: boolean;
 };
 
 const VideoWithTapControls: React.FC<Props> = ({
@@ -69,6 +70,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   onProgress,
   muted,
   resizeMode = 'contain',
+  isActive = true,
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
@@ -83,6 +85,12 @@ const VideoWithTapControls: React.FC<Props> = ({
   useEffect(() => {
     setInternalPaused(paused);
   }, [paused]);
+
+  useEffect(() => {
+    if (!isActive) {
+      setIsMuted(true);
+    }
+  }, [isActive]);
 
   const showControls = useCallback(() => {
     if (hideTimer.current) {
