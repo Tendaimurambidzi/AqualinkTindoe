@@ -48,6 +48,7 @@ import CrabWalkBadge from './src/components/CrabWalkBadge';
 import { DataSaverProvider } from './src/dataSaver/DataSaverProvider';
 import OceanAmbienceToggle from './src/components/OceanAmbienceToggle';
 import InteractiveWavePhysics from './InteractiveWavePhysics';
+import PosterActionBar from './src/components/PosterActionBar';
 import ShakeForStorms from './ShakeForStorms';
 import OctopusHug from './OctopusHug';
 import FloatingWaterAnimation from './FloatingWaterAnimation';
@@ -7335,50 +7336,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     )}
                     </View>
                     <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%' }} />
-                    <View style={{ backgroundColor: 'white' }}>
-                    {/* Post Footer - Hugs, Echoes, Anchor vibe, Cast vibe, Placeholder */}
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={{ paddingHorizontal: 10, paddingVertical: 10 }}
-                      style={{ marginTop: 10 }}
-                    >
-                      <TouchableOpacity
-                        onPress={() => handlePostHug(item)}
-                        style={{ alignItems: 'center', marginRight: 20 }}
-                      >
-                        <Text style={{ marginBottom: 2 }}>🫂</Text>
-                        <Text style={{ fontSize: 12 }}>Hugs</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.hugs || 0}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={{ alignItems: 'center', marginRight: 20 }}
-                      >
-                        <Text style={{ marginBottom: 2 }}>📣</Text>
-                        <Text style={{ fontSize: 12 }}>Echoes</Text>
-                        <Text style={{ fontSize: 10, color: '#00C2FF' }}>{item.counts?.echoes || 0}</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => anchorWave(item)}
-                        style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}
-                      >
-                        <Text style={{ marginRight: 5 }}>⚓</Text>
-                        <Text>Anchor vibe</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => onShareWave(item)}
-                        style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}
-                      >
-                        <Text style={{ marginRight: 5 }}>📡</Text>
-                        <Text>Cast vibe</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', marginRight: 20 }}>
-                        <Text style={{ marginRight: 5 }}>🔮</Text>
-                        <Text>Placeholder</Text>
-                      </TouchableOpacity>
-                    </ScrollView>
-                    
-                    {/* Permanent Echo Commenting UI - Always Visible */}
+                    <PosterActionBar
+                      waveId={item.id}
+                      currentUserId={myUid || ''}
+                      splashesCount={item.counts?.splashes || 0}
+                      echoesCount={item.counts?.echoes || 0}
+                      pearlsCount={0}
+                      isAnchored={false}
+                      isCasted={false}
+                      onSplash={() => {
+                        // Update local counts
+                        setWaves(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
+                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                      }}
+                      onEcho={() => setShowEchoes(true)}
+                      onPearl={() => setShowPearls(true)}
+                      onAnchor={() => anchorWave(item)}
+                      onCast={() => onShareWave(item)}
+                    />
                     <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
                       {/* Comment Input */}
                       <View style={{
@@ -7482,7 +7459,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           No echoes yet. Be the first to comment!
                         </Text>
                       )}
-                    </View>
                     </View>
                   </View>
                   </Pressable>
