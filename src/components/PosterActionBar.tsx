@@ -1,6 +1,6 @@
 // Import necessary components and hooks
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 
 // Types for the component props
@@ -103,7 +103,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   };
 
   return (
-    <View style={styles.actionBar}>
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
       {/* Splashes Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handleSplash} hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}>
         <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
@@ -149,18 +149,27 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         </Text>
         <Text style={styles.actionLabel}>Cast</Text>
       </TouchableOpacity>
-    </View>
+
+      {/* Placeholder Button 1 */}
+      <TouchableOpacity style={styles.actionButton}>
+        <Text style={styles.actionText}></Text>
+        <Text style={styles.actionLabel}></Text>
+      </TouchableOpacity>
+
+      {/* Placeholder Button 2 */}
+      <TouchableOpacity style={styles.actionButton}>
+        <Text style={styles.actionText}></Text>
+        <Text style={styles.actionLabel}></Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 };
 
 // Styles
 const styles = StyleSheet.create({
   actionBar: {
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
+    paddingVertical: 5,
+    paddingHorizontal: 5,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     borderRadius: 10,
     marginHorizontal: 10,
@@ -182,27 +191,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ccc',
     marginTop: 2,
-  },
-  iconRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    width: '100%',
-    paddingVertical: 5,
-  },
-  labelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    width: '100%',
-    paddingVertical: 2,
-  },
-  countRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    width: '100%',
-    paddingVertical: 2,
   },
 });
 
