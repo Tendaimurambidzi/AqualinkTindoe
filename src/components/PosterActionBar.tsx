@@ -126,12 +126,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         </Text>
       </TouchableOpacity>
 
-      {/* Pearls Button */}
+      {/* Gems Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handlePearl}>
         <Text style={[styles.actionText, pearlsCount > 0 && styles.activeAction]}>
           💎
         </Text>
-        <Text style={styles.actionLabel}>Pearls</Text>
+        <Text style={styles.actionLabel}>Gems</Text>
       </TouchableOpacity>
 
       {/* Anchor Wave Button */}

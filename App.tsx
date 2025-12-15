@@ -289,7 +289,6 @@ const waveOptionMenu = [
     description: 'Download a copy of this vibe for offline viewing.',
   },
   { label: 'Share', description: 'Share the vibe link with friends.' },
-  { label: 'Gem', description: 'Send a gem to support this creator.' },
   {
     label: 'Report',
     description: 'Let us know if this vibe violates guidelines.',
@@ -1631,7 +1630,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCurrentIndex(0);
       setWaveKey(Date.now());
       try {
-        feedRef.current?.scrollTo({ y: 0, animated: true });
+        feedRef.current?.scrollToOffset({ offset: 0, animated: true });
       } catch {}
       // Load echoes for the new wave
       loadPostEchoes(wave.id);
@@ -1874,7 +1873,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         lastBackPressTime.current = now;
         setCurrentIndex(0);
         try {
-          feedRef.current?.scrollTo({ x: 0, animated: false });
+          feedRef.current?.scrollToOffset({ offset: 0, animated: false });
         } catch {}
         return true; // We've handled the back press
       }
@@ -7005,7 +7004,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
       requestAnimationFrame(() => {
         try {
-          feedRef.current?.scrollTo({ x: 0, animated: false });
+          feedRef.current?.scrollToOffset({ offset: 0, animated: false });
         } catch {}
       });
       // If we created a server doc, watch for mux completion updates
@@ -7195,9 +7194,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               decelerationRate={0.1}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
-              onScroll={(event) => {
-                // Removed currentIndex update to prevent multiple videos playing during scroll
-              }}
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
@@ -7485,7 +7481,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     showTopBar();
                     setCurrentIndex(0);
                     try {
-                      feedRef.current?.scrollTo({ x: 0, animated: false });
+                      feedRef.current?.scrollToOffset({ offset: 0, animated: false });
                     } catch {}
                   })}
                 >
@@ -8140,9 +8136,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             setCurrentIndex(idx);
                             setWaveKey(Date.now());
                             requestAnimationFrame(() => {
-                              const width = SCREEN_WIDTH;
-                              feedRef.current?.scrollTo?.({
-                                x: idx * width,
+                              feedRef.current?.scrollToIndex?.({
+                                index: idx,
                                 animated: false,
                               });
                             });
@@ -8169,9 +8164,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               setCurrentIndex(idx);
                               setWaveKey(Date.now());
                               requestAnimationFrame(() => {
-                                const width = SCREEN_WIDTH;
-                                feedRef.current?.scrollTo?.({
-                                  x: idx * width,
+                                feedRef.current?.scrollToIndex?.({
+                                  index: idx,
                                   animated: false,
                                 });
                               });
