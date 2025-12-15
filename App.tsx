@@ -23,6 +23,7 @@ import {
   BackHandler,
   Dimensions,
   Easing,
+  FlatList,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -7205,9 +7206,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               {/* Empty feed - no placeholder content */}
             </View>
           ) : (
-            <Animated.ScrollView
+            <FlatList
               ref={feedRef}
               style={{ flex: 1, backgroundColor: '#f0f2f5' }}
+              data={displayFeed}
+              keyExtractor={(item) => item.id}
               pagingEnabled={false}
               decelerationRate={0.01}
               scrollEventThrottle={16}
@@ -7226,8 +7229,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
                 setCurrentIndex(newIndex);
               }}
-            >
-              {displayFeed.map((item, index) => {
+              renderItem={({ item, index }) => {
                 // Only pause for modals that interfere with video/audio
                 const isAnyModalOpen =
                   showMakeWaves ||
@@ -7261,7 +7263,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
                 return (
-                  <Pressable key={item.id}>
+                  <Pressable>
                     <View
                       style={[
                         { margin: 10, borderRadius: 10, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
@@ -7455,8 +7457,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                   </Pressable>
                 );
-              })}
-            </Animated.ScrollView>
+              }}
+            />
           )}
         </View>
       </Pressable>
