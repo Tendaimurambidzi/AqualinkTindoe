@@ -105,25 +105,31 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   return (
     <View style={styles.actionBar}>
       {/* Splashes Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleSplash}>
+      <TouchableOpacity style={styles.actionButton} onPress={handleSplash} hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}>
         <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
-          🌊 {splashesCount}
+          🤗
         </Text>
         <Text style={styles.actionLabel}>Splashes</Text>
+        <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
+          {splashesCount}
+        </Text>
       </TouchableOpacity>
 
       {/* Echoes Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handleEcho}>
         <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
-          💬 {echoesCount}
+          �
         </Text>
         <Text style={styles.actionLabel}>Echoes</Text>
+        <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
+          {echoesCount}
+        </Text>
       </TouchableOpacity>
 
       {/* Pearls Button */}
       <TouchableOpacity style={styles.actionButton} onPress={handlePearl}>
         <Text style={[styles.actionText, pearlsCount > 0 && styles.activeAction]}>
-          🐚
+          �
         </Text>
         <Text style={styles.actionLabel}>Pearls</Text>
       </TouchableOpacity>
