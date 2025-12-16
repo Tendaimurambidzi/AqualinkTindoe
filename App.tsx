@@ -5134,10 +5134,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const onShareWave = async (wave: Vibe) => {
     try {
       const waveId = wave.id;
-      const deep = `drift://wave/${encodeURIComponent(waveId)}`;
-      const web = `https://drift.link/w/${encodeURIComponent(waveId)}`;
+      const link = `https://aqualinktindoe.page.link/w/${encodeURIComponent(waveId)}`;
       const caption = wave.captionText ? `“${wave.captionText}”` : 'my vibe';
-      const msg = `Cast Vibe — Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
+      const msg = `Cast Vibe — Check out ${caption}\n\n${link}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       showOceanDialog(
