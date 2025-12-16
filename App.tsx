@@ -7413,6 +7413,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       onAnchor={() => anchorWave(item)}
                       onCast={() => onShareWave(item)}
                     />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
+                      <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>➕ Connect Vibe</Text>
+                      <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>👁️ Reach: 0</Text>
+                      <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>💾 2.3MB</Text>
+                      <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>
+                    </ScrollView>
                     <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
                       {/* Echoes List */}
                       {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
@@ -7444,13 +7450,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       {/* No echoes message */}
                       {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
                         <Text style={{
-                          color: 'rgba(255,255,255,0.6)',
+                          color: 'navy',
                           fontSize: 12,
                           textAlign: 'center',
                           marginTop: 10,
                           fontStyle: 'italic'
                         }}>
-                          No echoes yet. Be the first to comment!
+                          SPL@2026
                         </Text>
                       )}
                     </View>
