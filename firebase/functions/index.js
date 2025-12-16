@@ -216,6 +216,30 @@ exports.onCrewLeave = onDocumentDeleted('users/{targetUid}/crew/{followerUid}', 
   });
 });
 
+exports.onFollowCreate = onDocumentCreated('users/{targetUid}/followers/{followerUid}', async (event) => {
+  const snap = event.data;
+  const followData = snap?.data() || {};
+  const followerName = followData.followerName || 'Drifter';
+  
+  await addPing(event.params.targetUid, {
+    type: 'follow',
+    text: `${followerName} connected with you on Aqualink! 🤝`,
+    fromUid: event.params.followerUid,
+    userName: followerName,
+  });
+});
+
+exports.onFollowDelete = onDocumentDeleted('users/{targetUid}/followers/{followerUid}', async (event) => {
+  const followData = event.data?.data() || {};
+  const followerName = followData.followerName || 'Drifter';
+  await addPing(event.params.targetUid, {
+    type: 'unfollow',
+    text: `${followerName} disconnected from you`,
+    fromUid: event.params.followerUid,
+    userName: followerName,
+  });
+});
+
 /**
  * Callable HTTP functions (v2) for toggling a splash and managing echoes via HTTPS
  * These complement the Firestore triggers above and use the same `counts.*` fields.

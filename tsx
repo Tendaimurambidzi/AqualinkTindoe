@@ -3889,8 +3889,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         const message =
           splashType === 'octopus_hug'
-            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
-            : 'You splashed this vibe!';
+            ? 'You hugged this SplashLine - the SplashLine is embraced with 8 arms!'
+            : 'You splashed this SplashLine!';
         
         // Update splash count and show success message immediately
         setSplashes(prev => prev + 1);

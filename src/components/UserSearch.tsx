@@ -123,7 +123,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
                 onJoinCrew(item);
               }}
             >
-              <Text style={styles.userActionText}>Connect Vibe</Text>
+              <Text style={styles.userActionText}>Connect SplashLine</Text>
             </Pressable>
           )}
           {onInviteToDrift && (
@@ -148,7 +148,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search Vibers..."
+          placeholder="Search SplashLiners..."
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={searchQuery}
           onChangeText={handleSearch}

@@ -95,7 +95,7 @@ const myLogo = (() => {
 })();
                     
 // Debug safety switch: keep false unless intentionally force-signing users out on cold start
-const FORCE_SIGN_OUT_ON_START = true;
+const FORCE_SIGN_OUT_ON_START = false;
                     
 // Default dimensions for overlay UI; used in live stats panels
 const STATS_OVERLAY_HEIGHT = 220;
@@ -283,17 +283,17 @@ function useAppVersionInfo() {
                     
 const waveOptionMenu = [
   {
-    label: 'Connect Vibe',
-    description: 'Connect with this user to see their vibes in your feed.',
+    label: 'Connect SplashLine',
+    description: 'Connect with this user to see their splashlines in your feed.',
   },
   {
     label: 'Save to device',
-    description: 'Download a copy of this vibe for offline viewing.',
+    description: 'Download a copy of this splashline for offline viewing.',
   },
-  { label: 'Share', description: 'Share the vibe link with friends.' },
+  { label: 'Share', description: 'Share the splashline link with friends.' },
   {
     label: 'Report',
-    description: 'Let us know if this vibe violates guidelines.',
+    description: 'Let us know if this splashline violates guidelines.',
   },
 ];
                     
@@ -1528,6 +1528,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     useState<string>('');
   const myUid = auth?.()?.currentUser?.uid || null;
                     
+  // Clear user-specific state when user changes
+  useEffect(() => {
+    if (!myUid) {
+      // User signed out - clear all user data
+      setProfileName('');
+      setProfileBio('');
+      setProfilePhoto(null);
+      setAccountCreationHandle('');
+    }
+  }, [myUid]);
+                    
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
@@ -1595,18 +1606,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .then((doc: any) => {
         if (cancelled) return;
         const data = doc?.data() || {};
+        console.log('User data loaded:', data); // Debug log
         const derivedHandle =
           normalizeUserHandle(data.userName) ||
           normalizeUserHandle(data.username) ||
           normalizeUserHandle(authMod?.().currentUser?.displayName);
+        console.log('Derived handle:', derivedHandle); // Debug log
         if (derivedHandle) {
           setAccountCreationHandle(derivedHandle);
           setProfileName(prev =>
             prev && prev !== '@your_handle' ? prev : derivedHandle,
           );
+        } else {
+          // If no handle found, try to use displayName as fallback
+          const displayName = authMod?.().currentUser?.displayName;
+          if (displayName) {
+            const normalized = normalizeUserHandle(displayName);
+            setAccountCreationHandle(normalized);
+            setProfileName(normalized);
+          }
         }
       })
-      .catch(() => {});
+      .catch((error: any) => {
+        console.error('Error loading user data:', error); // Debug log
+      });
     return () => {
       cancelled = true;
     };
@@ -1636,8 +1659,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
       // Load echoes for the new wave
       loadPostEchoes(wave.id);
-      // Show success message for posting a vibe
-      notifySuccess('You dropped a vibe!');
+      // Show success message for posting a splashline
+      notifySuccess('You dropped a splashline!');
     },
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
   );
@@ -2089,7 +2112,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       results.push({
         kind: 'user',
         id: uid,
-        label: String(data.displayName || data.userName || data.username || '@viber'),
+        label: String(data.displayName || data.userName || data.username || '@splashliner'),
         extra: {
           bio: typeof data.bio === 'string' ? data.bio : '',
           photoURL: data.userPhoto || data.photoURL || null,
@@ -2152,7 +2175,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         results.push({
           kind: 'vibe',
           id,
-          label: String(data.captionText || data.caption || data.authorName || 'Vibe'),
+          label: String(data.captionText || data.caption || data.authorName || 'SplashLine'),
           extra: {
             caption: data.captionText || data.caption || '',
             authorName: data.authorName || data.ownerName || '',
@@ -2212,7 +2235,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             results.push({
               kind: 'user',
               id: uid,
-              label: String(user.displayName || user.userName || user.username || '@viber'),
+              label: String(user.displayName || user.userName || user.username || '@splashliner'),
               extra: { ...user },
             });
           });
@@ -3265,7 +3288,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Handle Connect/Disconnect Vibe
       if (label === 'Connect Vibe') {
         if (!waveOptionsTarget.ownerUid || waveOptionsTarget.ownerUid === myUid) {
-          Alert.alert('Info', "You can't connect to your own vibe");
+          Alert.alert('Info', "You can't connect to your own SplashLine");
           return;
         }
         const targetUid = waveOptionsTarget.ownerUid;
@@ -3856,101 +3879,105 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const run = async () => {
                     
       try {
-        unsub = firestoreMod()
+        // Temporarily disabled real-time listener for testing - using one-time fetch instead
+        const snap = await firestoreMod()
           .collection('waves')
           .orderBy('createdAt', 'desc')
           .limit(50)
-          .onSnapshot(async (snap: any) => {
-            const docs = (snap?.docs || []).slice();
-            const out: Vibe[] = [];
-            for (const d of docs) {
-              const data = d.data() || {};
-              const id = d.id;
-              const caption = data?.text || '';
-              const cap = data?.caption || { x: 0, y: 0 };
-              const authorName = data?.authorName || null;
-              let playbackUrl: string | null =
-                data?.playbackUrl || data?.mediaUrl || null;
-              let mediaUri: string | null = null;
-              if (!playbackUrl && storageMod && data?.mediaPath) {
-                try {
-                  mediaUri = await storageMod()
-                    .ref(String(data.mediaPath))
-                    .getDownloadURL();
-                } catch {}
-              }
-              // Show all vibes in public feed (my vibes and other users' vibes)
-              const finalUri = playbackUrl || mediaUri;
-              if (!finalUri) continue;
-              out.push({
-                id: id,
-                media: { uri: finalUri } as any,
-                audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-                captionText: caption,
-                link: data.link || null,
-                captionPosition: {
-                  x: Number(cap?.x) || 0,
-                  y: Number(cap?.y) || 0,
-                },
-                playbackUrl: playbackUrl,
-                muxStatus: (data?.muxStatus || null) as any,
-                authorName,
-                ownerUid: (data?.ownerUid || data?.authorId || null) as any,
-                counts: {
-                  splashes: Number(data?.counts?.splashes || 0),
-                  echoes: Number(data?.counts?.echoes || 0),
-                },
-              });
+          .get();
+          
+        // Process the snapshot data (same logic as before)
+        (async () => {
+          const docs = (snap?.docs || []).slice();
+          const out: Vibe[] = [];
+          for (const d of docs) {
+            const data = d.data() || {};
+            const id = d.id;
+            const caption = data?.text || '';
+            const cap = data?.caption || { x: 0, y: 0 };
+            const authorName = data?.authorName || null;
+            let playbackUrl: string | null =
+              data?.playbackUrl || data?.mediaUrl || null;
+            let mediaUri: string | null = null;
+            if (!playbackUrl && storageMod && data?.mediaPath) {
+              try {
+                mediaUri = await storageMod()
+                  .ref(String(data.mediaPath))
+                  .getDownloadURL();
+              } catch {}
             }
-            if (!cancelled) {
-              const myUid = auth?.()?.currentUser?.uid;
-              const myWavesInPublic = out.filter(w => w.ownerUid === myUid);
-              setVibesFeed(prev => {
-                const existingMyWaveIds = new Set(prev.map(w => w.id));
-                const newMyWaves = myWavesInPublic.filter(
-                  w => !existingMyWaveIds.has(w.id),
-                );
-                // Update counts for existing waves with latest data from Firestore
-                const updatedExistingWaves = prev.map(existingWave => {
-                  const firestoreWave = myWavesInPublic.find(w => w.id === existingWave.id);
-                  if (firestoreWave) {
-                    return {
-                      ...existingWave,
-                      counts: {
-                        splashes: Number(firestoreWave.counts?.splashes || 0),
-                        echoes: Number(firestoreWave.counts?.echoes || 0),
-                      },
-                    };
-                  }
-                  return existingWave;
-                });
-                return [...newMyWaves, ...updatedExistingWaves];
-              });
-              // Filter out my own waves from public feed on my device
-              const publicWaves = out.filter(w => w.ownerUid !== myUid);
-              setPublicFeed(publicWaves);
-                    
-              // Initialize waveStats for loaded waves
-              const waveStatsUpdate: Record<string, any> = {};
-              out.forEach(wave => {
-                waveStatsUpdate[wave.id] = {
-                  splashes: Number(wave.counts?.splashes || 0),
-                  hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
-                  echoes: Number(wave.counts?.echoes || 0),
-                  views: Number(wave.counts?.views || 0),
-                  createdAt: wave.createdAt,
-                };
-              });
-              setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
-
-              // Load echoes for all waves in the feed
-              out.forEach(wave => {
-                if (!postEchoLists[wave.id]) {
-                  loadPostEchoes(wave.id);
+            // Show all vibes in public feed (my vibes and other users' vibes)
+            const finalUri = playbackUrl || mediaUri;
+            if (!finalUri) continue;
+            out.push({
+              id: id,
+              media: { uri: finalUri } as any,
+              audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
+              captionText: caption,
+              link: data.link || null,
+              captionPosition: {
+                x: Number(cap?.x) || 0,
+                y: Number(cap?.y) || 0,
+              },
+              playbackUrl: playbackUrl,
+              muxStatus: (data?.muxStatus || null) as any,
+              authorName,
+              ownerUid: (data?.ownerUid || data?.authorId || null) as any,
+              counts: {
+                splashes: Number(data?.counts?.splashes || 0),
+                echoes: Number(data?.counts?.echoes || 0),
+              },
+            });
+          }
+          if (!cancelled) {
+            const myUid = auth?.()?.currentUser?.uid;
+            const myWavesInPublic = out.filter(w => w.ownerUid === myUid);
+            setVibesFeed(prev => {
+              const existingMyWaveIds = new Set(prev.map(w => w.id));
+              const newMyWaves = myWavesInPublic.filter(
+                w => !existingMyWaveIds.has(w.id),
+              );
+              // Update counts for existing waves with latest data from Firestore
+              const updatedExistingWaves = prev.map(existingWave => {
+                const firestoreWave = myWavesInPublic.find(w => w.id === existingWave.id);
+                if (firestoreWave) {
+                  return {
+                    ...existingWave,
+                    counts: {
+                      splashes: Number(firestoreWave.counts?.splashes || 0),
+                      echoes: Number(firestoreWave.counts?.echoes || 0),
+                    },
+                  };
                 }
+                return existingWave;
               });
-            }
-          });
+              return [...newMyWaves, ...updatedExistingWaves];
+            });
+            // Filter out my own waves from public feed on my device
+            const publicWaves = out.filter(w => w.ownerUid !== myUid);
+            setPublicFeed(publicWaves);
+                  
+            // Initialize waveStats for loaded waves
+            const waveStatsUpdate: Record<string, any> = {};
+            out.forEach(wave => {
+              waveStatsUpdate[wave.id] = {
+                splashes: Number(wave.counts?.splashes || 0),
+                hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
+                echoes: Number(wave.counts?.echoes || 0),
+                views: Number(wave.counts?.views || 0),
+                createdAt: wave.createdAt,
+              };
+            });
+            setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
+
+            // Load echoes for all waves in the feed
+            out.forEach(wave => {
+              if (!postEchoLists[wave.id]) {
+                loadPostEchoes(wave.id);
+              }
+            });
+          }
+        })();
       } catch {}
     };
     run();
@@ -4424,10 +4451,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     () => [
       {
         title: 'Tidal Trends',
-        desc: 'User-voted "rising vibes" of social hacks, viral trends, or fun memes.',
+        desc: 'User-voted "rising SplashLines" of social hacks, viral trends, or fun memes.',
       },
       {
-        title: 'Vibe Radar',
+        title: 'SplashLine Radar',
         desc: 'Real-time global alerts and user-submitted spots with an AR overlay.',
       },
       {
@@ -5027,69 +5054,112 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .limit(1);
                     
         let altSubscribed = false;
-        unsubMyEcho = myEchoQuery.onSnapshot(
-          handleMyEchoSnapshot,
-          (error: any) => {
-            // Common on-device error when composite index is missing
-            try {
-              console.warn('myEcho onSnapshot error:', error?.code || error);
-            } catch {}
-            if (altSubscribed) return;
-            try {
-              // Fallback: drop orderBy (no composite index needed)
-              const altQuery = firestoreMod()
-                .collection('waves')
-                .doc(currentWave.id)
-                .collection('echoes')
-                .where('userUid', '==', uid)
-                .limit(1);
-              const altUnsub = altQuery.onSnapshot(handleMyEchoSnapshot, () =>
-                setMyEcho(null),
-              );
-              // Keep for cleanup
-              unsubMyEcho = () => {
-                try {
-                  altUnsub && altUnsub();
-                } catch {}
-              };
-              altSubscribed = true;
-            } catch {
-              setMyEcho(null);
-            }
-          },
-        );
+        // Temporarily disabled real-time echo listeners for testing
+        // unsubMyEcho = myEchoQuery.onSnapshot(
+        //   handleMyEchoSnapshot,
+        //   (error: any) => {
+        //     // Common on-device error when composite index is missing
+        //     try {
+        //       console.warn('myEcho onSnapshot error:', error?.code || error);
+        //     } catch {}
+        //     if (altSubscribed) return;
+        //     try {
+        //       // Fallback: drop orderBy (no composite index needed)
+        //       const altQuery = firestoreMod()
+        //         .collection('waves')
+        //         .doc(currentWave.id)
+        //         .collection('echoes')
+        //         .where('userUid', '==', uid)
+        //         .limit(1);
+        //       const altUnsub = altQuery.onSnapshot(handleMyEchoSnapshot, () =>
+        //         setMyEcho(null),
+        //       );
+        //       // Keep for cleanup
+        //       unsubMyEcho = () => {
+        //         try {
+        //           altUnsub && altUnsub();
+        //         } catch {}
+        //       };
+        //       altSubscribed = true;
+        //     } catch {
+        //       setMyEcho(null);
+        //     }
+        //   },
+        // );
+        
+        // Load my echo once instead of real-time
+        try {
+          const myEchoSnap = await firestoreMod()
+            .collection('waves')
+            .doc(currentWave.id)
+            .collection('echoes')
+            .where('userUid', '==', uid)
+            .limit(1)
+            .get();
+          handleMyEchoSnapshot(myEchoSnap);
+        } catch (error) {
+          console.warn('myEcho get error:', error);
+          setMyEcho(null);
+        }
       }
                     
-      // Listen to all echoes for this wave
-      unsubEchoList = firestoreMod()
-        .collection('waves')
-        .doc(currentWave.id)
-        .collection('echoes')
-        .orderBy('createdAt', 'desc')
-        .limit(20)
-        .onSnapshot((querySnapshot: any) => {
-          try {
-            if (!querySnapshot || typeof querySnapshot.forEach !== 'function') {
-              setEchoList([]);
-              return;
-            }
-            const echoes: any[] = [];
-            querySnapshot.forEach((doc: any) => {
-              const data = doc.data();
-              echoes.push({
-                id: doc.id,
-                uid: data?.userUid,
-                text: data?.text,
-                userName: data?.userName,
-                userPhoto: data?.userPhoto,
-                createdAt: data?.createdAt,
-              });
-            });
-            setEchoList(echoes);
-          } catch {
-            setEchoList([]);
-          }
+      // Temporarily disabled real-time echo list listener for testing
+      // unsubEchoList = firestoreMod()
+      //   .collection('waves')
+      //   .doc(currentWave.id)
+      //   .collection('echoes')
+      //   .orderBy('createdAt', 'desc')
+      //   .limit(20)
+      //   .onSnapshot((querySnapshot: any) => {
+      //     try {
+      //       if (!querySnapshot || typeof querySnapshot.forEach !== 'function') {
+      //         setEchoList([]);
+      //         return;
+      //       }
+      //       const echoes: any[] = [];
+      //       querySnapshot.forEach((doc: any) => {
+      //         const data = doc.data();
+      //         echoes.push({
+      //           id: doc.id,
+      //           uid: data?.userUid,
+      //           text: data?.text,
+      //           userName: data?.userName,
+      //           userPhoto: data?.userPhoto,
+      //           createdAt: data?.createdAt,
+      //         });
+      //       });
+      //       setEchoList(echoes);
+      //     } catch {
+      //       setEchoList([]);
+      //     }
+      //   });
+      
+      // Load echo list once instead of real-time
+      try {
+        const echoListSnap = await firestoreMod()
+          .collection('waves')
+          .doc(currentWave.id)
+          .collection('echoes')
+          .orderBy('createdAt', 'desc')
+          .limit(20)
+          .get();
+          
+        const echoes: any[] = [];
+        echoListSnap.forEach((doc: any) => {
+          const data = doc.data();
+          echoes.push({
+            id: doc.id,
+            uid: data?.userUid,
+            text: data?.text,
+            userName: data?.userName,
+            userPhoto: data?.userPhoto,
+            createdAt: data?.createdAt,
+          });
         });
+        setEchoList(echoes);
+      } catch {
+        setEchoList([]);
+      }
     })();
                     
     return () => {
@@ -5135,10 +5205,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const onShareWave = async (wave: Vibe) => {
     try {
       const waveId = wave.id;
-      const link = `https://aqualinktindoe.page.link/w/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `“${wave.captionText}”` : 'my vibe';
-      const msg = `Cast Vibe — Check out ${caption}\n\n${link}`;
-      await Share.share({ title: 'Cast Vibe', message: msg });
+      const link = `aqualink://wave/${encodeURIComponent(waveId)}`;
+      const caption = wave.captionText ? `“${wave.captionText}”` : 'my splashline';
+      const msg = `Cast SplashLine — Check out ${caption}\n\n${link}`;
+      await Share.share({ title: 'Cast SplashLine', message: msg });
     } catch {
       showOceanDialog(
         'Share Failed',
@@ -7212,7 +7282,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               data={displayFeed}
               keyExtractor={(item) => item.id}
               pagingEnabled={false}
-              decelerationRate={0.01}
+              decelerationRate={0.95}
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {
@@ -7415,7 +7485,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     />
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
                       <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>➕ Connect Vibe</Text>
-                      <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>👁️ Reach: 0</Text>
+                      <View style={{ flexDirection: 'row', marginRight: 20 }}>
+                       <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
+                       <Text style={{ fontSize: 14, color: 'black' }}>0</Text>
+                       </View>
                       <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>💾 2.3MB</Text>
                       <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>
                     </ScrollView>
@@ -7975,7 +8048,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     onChangeText={t =>
                       setProfileName('/' + String(t || '').replace(/^\/+/, ''))
                     }
-                    placeholder="Viber"
+                    placeholder="SplashLiner"
                     placeholderTextColor="rgba(255,255,255,0.5)"
                     style={[
                       styles.profileName as any,
@@ -14341,6 +14414,7 @@ function SignUpScreen({ navigation }: any) {
           email: trimmedEmail,
           createdAt: firestore.FieldValue.serverTimestamp(),
         });
+        console.log('User document created:', userCredential.user.uid, { username: usernameWithSlash }); // Debug log
                     
         // Sign the user out immediately after creation
         await auth().signOut();
@@ -14353,7 +14427,14 @@ function SignUpScreen({ navigation }: any) {
       }
     } catch (e: any) {
       if (e.code === 'auth/email-already-in-use') {
-        Alert.alert('Sign Up Failed', 'This email address is already in use.');
+        Alert.alert(
+          'Email Already in Use',
+          'This email is already registered. If you created an account before, please sign in instead. If you\'re sure this email hasn\'t been used, try clearing app data or use a different email.',
+          [
+            { text: 'Try Sign In', onPress: () => navigation.replace('SignIn') },
+            { text: 'Use Different Email', style: 'cancel' }
+          ]
+        );
       } else {
         Alert.alert(
           'Sign Up Failed',
@@ -14626,6 +14707,128 @@ function PostDetailScreen({ route, navigation }: any) {
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const isFocused = useIsFocused();
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [reach, setReach] = useState(0);
+  
+  // Get current user
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      try {
+        const authMod = require('@react-native-firebase/auth').default;
+        const user = authMod().currentUser;
+        if (user) {
+          setCurrentUserId(user.uid);
+          // Check if already following
+          const firestoreMod = require('@react-native-firebase/firestore').default;
+          const followDoc = await firestoreMod()
+            .collection('users')
+            .doc(user.uid)
+            .collection('following')
+            .doc(post.userId)
+            .get();
+          setIsFollowing(followDoc.exists);
+        }
+      } catch (error) {
+        console.log('Error getting current user:', error);
+      }
+    };
+    getCurrentUser();
+  }, [post.userId]);
+  
+  // Listen to reach count changes (temporarily disabled for testing)
+  useEffect(() => {
+    const getReachCount = async () => {
+      try {
+        const firestoreMod = require('@react-native-firebase/firestore').default;
+        const doc = await firestoreMod()
+          .collection('waves')
+          .doc(post.id)
+          .get();
+        if (doc.exists) {
+          const data = doc.data();
+          setReach(data?.reach || 0);
+        }
+      } catch (error) {
+        console.log('Error getting reach count:', error);
+      }
+    };
+    getReachCount();
+  }, [post.id]);
+  
+  // Increment views for video posts when video loads (only if not the author)
+  const incrementViews = async () => {
+    if (currentUserId && currentUserId !== post.userId) {
+      try {
+        const firestoreMod = require('@react-native-firebase/firestore').default;
+        await firestoreMod()
+          .collection('waves')
+          .doc(post.id)
+          .update({
+            reach: firestoreMod.FieldValue.increment(1)
+          });
+      } catch (error) {
+        console.log('Error incrementing views:', error);
+      }
+    }
+  };
+  
+  const handleFollow = async () => {
+    if (!currentUserId || !post.userId || currentUserId === post.userId) return;
+    
+    try {
+      const firestoreMod = require('@react-native-firebase/firestore').default;
+      const authMod = require('@react-native-firebase/auth').default;
+      const messagingMod = require('@react-native-firebase/messaging').default;
+      
+      if (isFollowing) {
+        // Unfollow
+        await firestoreMod()
+          .collection('users')
+          .doc(currentUserId)
+          .collection('following')
+          .doc(post.userId)
+          .delete();
+        await firestoreMod()
+          .collection('users')
+          .doc(post.userId)
+          .collection('followers')
+          .doc(currentUserId)
+          .delete();
+        setIsFollowing(false);
+      } else {
+        // Follow
+        const followData = {
+          userId: post.userId,
+          followedAt: firestoreMod.Timestamp.now()
+        };
+        const followerData = {
+          userId: currentUserId,
+          followedAt: firestoreMod.Timestamp.now(),
+          followerName: authMod().currentUser?.displayName || 'Anonymous Drifter'
+        };
+        
+        await firestoreMod()
+          .collection('users')
+          .doc(currentUserId)
+          .collection('following')
+          .doc(post.userId)
+          .set(followData);
+        await firestoreMod()
+          .collection('users')
+          .doc(post.userId)
+          .collection('followers')
+          .doc(currentUserId)
+          .set(followerData);
+        
+        setIsFollowing(true);
+        
+        // Notification will be sent by Firebase Functions
+      }
+    } catch (error) {
+      console.log('Error following/unfollowing:', error);
+    }
+  };
                     
   // Simplified rendering for post detail
   const renderPostContent = () => {
@@ -14660,6 +14863,7 @@ function PostDetailScreen({ route, navigation }: any) {
               ignoreSilentSwitch="ignore"
               onLoad={(e: any) => {
                 setPlaybackDuration(e?.duration || 0);
+                incrementViews();
               }}
               onProgress={(e: any) => {
                 setPlaybackTime(e?.currentTime || 0);
@@ -14700,6 +14904,21 @@ function PostDetailScreen({ route, navigation }: any) {
                     
   return (
     <View style={{ flex: 1, backgroundColor: '#0A1929' }}>
+      {/* Reach Count */}
+      <View style={{
+        position: 'absolute',
+        top: 50,
+        left: 100,
+        zIndex: 10,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        padding: 10,
+        borderRadius: 20,
+      }}>
+        <Text style={{ color: reach === 0 ? 'black' : 'green', fontSize: 14 }}>
+          Reach Count: {reach}
+        </Text>
+      </View>
+      
       {/* Back Button */}
       <Pressable
         onPress={() => navigation.goBack()}
@@ -14715,7 +14934,30 @@ function PostDetailScreen({ route, navigation }: any) {
       >
         <Text style={{ color: 'white', fontSize: 16 }}>← Back</Text>
       </Pressable>
-                    
+      
+      {/* Follow Button */}
+      {currentUserId && post.userId && currentUserId !== post.userId && (
+        <Pressable
+          onPress={() => {
+            console.log('Follow button pressed');
+            handleFollow();
+          }}
+          style={{
+            position: 'absolute',
+            top: 50,
+            right: 20,
+            zIndex: 10,
+            backgroundColor: isFollowing ? 'rgba(0,194,255,0.8)' : 'rgba(0,0,0,0.5)',
+            padding: 10,
+            borderRadius: 20,
+          }}
+        >
+          <Text style={{ color: 'white', fontSize: 16 }}>
+            {isFollowing ? '✓ Connected' : '+ Connect SplashLine'}
+          </Text>
+        </Pressable>
+      )}
+      
       {/* Post Content */}
       {renderPostContent()}
     </View>
@@ -15008,18 +15250,6 @@ const App: React.FC = () => {
   }, []);
                     
   useEffect(() => {
-    try {
-      if (FORCE_SIGN_OUT_ON_START) {
-        auth()
-          .signOut()
-          .catch(() => {});
-      }
-    } catch (e) {
-      setNativeInitError('Native module error: ' + (e && e.message ? e.message : String(e)));
-    }
-  }, []);
-                    
-  useEffect(() => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
         setNativeInitError(null);
@@ -15036,7 +15266,18 @@ const App: React.FC = () => {
   useEffect(() => {
     let unsub: any = null;
     try {
-      unsub = auth().onAuthStateChanged(u => {
+      unsub = auth().onAuthStateChanged(async (u) => {
+        // If FORCE_SIGN_OUT_ON_START is enabled and user is signed in, sign them out
+        if (FORCE_SIGN_OUT_ON_START && u) {
+          try {
+            await auth().signOut();
+          } catch (e) {
+            // Ignore sign out errors
+          }
+          setUser(null);
+          if (initializing) setInitializing(false);
+          return;
+        }
         setUser(u);
         if (initializing) setInitializing(false);
       });
@@ -15052,9 +15293,11 @@ const App: React.FC = () => {
       if (!url) return;
       
       try {
+        // Parse the URL for wave ID
         const parsedUrl = new URL(url);
-        if (parsedUrl.hostname === 'aqualinktindoe.page.link' && parsedUrl.pathname.startsWith('/w/')) {
-          const waveId = parsedUrl.pathname.split('/w/')[1];
+        if ((parsedUrl.protocol === 'https:' && parsedUrl.hostname === 'aqualink.app' && parsedUrl.pathname.startsWith('/wave/')) ||
+            (parsedUrl.protocol === 'aqualink:' && parsedUrl.pathname.startsWith('/wave/'))) {
+          const waveId = parsedUrl.pathname.split('/wave/')[1];
           if (waveId && navigationRef.isReady()) {
             // Fetch the wave data from Firestore
             try {

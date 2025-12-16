@@ -243,7 +243,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             accessibilityLabel="Replay video"
             onPress={onPlayPause}
             style={styles.replayButton}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
           >
             <Text style={styles.replaySymbol}>↺</Text>
           </TouchableOpacity>
@@ -258,7 +258,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             accessibilityLabel="Rewind ten seconds"
             onPress={onRewind}
             style={styles.seekButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -270,7 +270,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             accessibilityLabel={videoCompleted ? "Replay video" : internalPaused ? "Play" : "Pause"}
             onPress={onPlayPause}
             style={styles.playButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           >
             <View style={styles.playCircle}>
               <Text style={styles.playSymbol}>
@@ -283,7 +283,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             accessibilityLabel="Fast forward ten seconds"
             onPress={onFastForward}
             style={styles.seekButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -295,7 +295,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             accessibilityLabel={isMuted ? "Unmute video" : "Mute video"}
             onPress={onToggleMute}
             style={styles.muteButton}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
           </TouchableOpacity>

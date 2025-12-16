@@ -3,44 +3,29 @@ rules_version = '2';
 // Firebase Storage Security Rules for Drift App
 service firebase.storage {
   match /b/{bucket}/o {
-    
+
     // Helper function to check if user is authenticated
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    // Helper function to check if user owns the resource
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
-    }
-    
-    // Posts (waves) - users can upload their own media
-    match /posts/{userId}/{fileName} {
-      // Allow authenticated users to upload to their own folder
-      allow create: if isOwner(userId);
-      
-      // Allow anyone to read (public waves)
+
+    // Allow authenticated users to upload to posts/ directory
+    match /posts/{allPaths=**} {
+      allow create: if isAuthenticated();
       allow read: if true;
-      
-      // Allow owner to update or delete
-      allow update, delete: if isOwner(userId);
+      allow update, delete: if isAuthenticated();
     }
-    
+
     // Profile pictures
     match /profiles/{userId}/{fileName} {
-      // Allow authenticated users to upload/update their own profile picture
-      allow create, update: if isOwner(userId);
-      
-      // Allow anyone to read profile pictures
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
       allow read: if true;
-      
-      // Allow owner to delete
-      allow delete: if isOwner(userId);
+      allow delete: if isAuthenticated() && request.auth.uid == userId;
     }
-    
-    // TEMPORARY: Allow public read/write for all paths (debug only!)
+
+    // Default deny for other paths
     match /{allPaths=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }

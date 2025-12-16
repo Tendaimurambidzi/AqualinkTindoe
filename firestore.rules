@@ -128,7 +128,8 @@ service cloud.firestore {
     // users/{uid}
     match /users/{uid} {
       allow read: if isAuthed();
-      allow create, update, delete: if isOwner(uid);
+      allow create: if isAuthed() && request.auth.uid == uid;
+      allow update, delete: if isOwner(uid);
 
       match /pings/{pingId} {
         allow read, create, update, delete: if isAuthed();
