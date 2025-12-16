@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
+import { createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
 import { Suspense, lazy } from 'react';
@@ -14955,6 +14956,9 @@ const App: React.FC = () => {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
                     
+  // Navigation ref for deep linking
+  const navigationRef = createNavigationContainerRef();
+                    
                     
   // Defensive: wrap all native module init in try/catch and show fallback UI if any fail
   const [nativeInitError, setNativeInitError] = useState<string | null>(null);
@@ -15042,6 +15046,48 @@ const App: React.FC = () => {
     return unsub;
   }, [initializing, appResumeTick]);
                     
+  // Handle deep links for shared waves
+  useEffect(() => {
+    const handleDeepLink = async (url: string | null) => {
+      if (!url) return;
+      
+      try {
+        const parsedUrl = new URL(url);
+        if (parsedUrl.hostname === 'aqualinktindoe.page.link' && parsedUrl.pathname.startsWith('/w/')) {
+          const waveId = parsedUrl.pathname.split('/w/')[1];
+          if (waveId && navigationRef.isReady()) {
+            // Fetch the wave data from Firestore
+            try {
+              const firestoreMod = require('@react-native-firebase/firestore').default;
+              const waveDoc = await firestoreMod().collection('waves').doc(waveId).get();
+              if (waveDoc.exists) {
+                const waveData = { id: waveDoc.id, ...waveDoc.data() };
+                // Navigate to the PostDetail screen with the full wave data
+                navigationRef.navigate('PostDetail', { post: waveData });
+              }
+            } catch (error) {
+              console.log('Error fetching wave data:', error);
+            }
+          }
+        }
+      } catch (error) {
+        console.log('Error parsing deep link:', error);
+      }
+    };
+                    
+    // Handle initial URL when app is opened from a link
+    Linking.getInitialURL().then(handleDeepLink).catch(console.log);
+                    
+    // Listen for URL events when app is already open
+    const subscription = Linking.addEventListener('url', (event) => {
+      handleDeepLink(event.url);
+    });
+                    
+    return () => {
+      subscription?.remove?.();
+    };
+  }, []);
+                    
   // Defensive: check for native module errors and show fallback UI
   if (nativeInitError) {
     return (
@@ -15069,7 +15115,7 @@ const App: React.FC = () => {
           <SafeApp>
             <DataSaverProvider>
               <Suspense fallback={<ActivityIndicator size="large" color="#00C2FF" style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }} />}>
-                <NavigationContainer>
+                <NavigationContainer ref={navigationRef}>
                   {initializing ? (
                     <View
                       style={{
