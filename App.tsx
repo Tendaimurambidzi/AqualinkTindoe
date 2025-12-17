@@ -7525,11 +7525,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       isAnchored={false}
                       isCasted={false}
                       creatorUserId={item.userId}
-                      onSplash={(delta) => {
-                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) + delta) } } : w));
-                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) + delta) } } : v));
-                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) + delta) } } : v));
-                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) + delta) } } : v));
+                      onAdd={() => {
+                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
+                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                      }}
+                      onRemove={() => {
+                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
+                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                       }}
                       onEcho={() => {
                         setCurrentIndex(index);

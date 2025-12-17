@@ -1,6 +1,6 @@
 // Import necessary components and hooks
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 
@@ -13,7 +13,8 @@ interface PosterActionBarProps {
   pearlsCount: number;
   isAnchored: boolean;
   isCasted: boolean;
-  onSplash: (delta: number) => void;
+  onAdd: () => void;
+  onRemove: () => void;
   onEcho: () => void;
   onPearl: () => void;
   onAnchor: () => void;
@@ -25,12 +26,13 @@ interface PosterActionBarProps {
 const PosterActionBar: React.FC<PosterActionBarProps> = ({
   waveId,
   currentUserId,
-  splashesCount,
+  splashesCount: initialSplashesCount,
   echoesCount,
   pearlsCount,
   isAnchored,
   isCasted,
-  onSplash,
+  onAdd,
+  onRemove,
   onEcho,
   onPearl,
   onAnchor,
@@ -39,6 +41,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 }) => {
   const [hasSplashed, setHasSplashed] = useState(false);
   const [hasEchoed, setHasEchoed] = useState(false);
+  const [localSplashesCount, setLocalSplashesCount] = useState(initialSplashesCount);
+
+  // Sync local count with props
+  useEffect(() => {
+    setLocalSplashesCount(initialSplashesCount);
+  }, [initialSplashesCount]);
 
   // Check if user has already interacted
   useEffect(() => {
@@ -66,14 +74,19 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const handleSplash = async () => {
     try {
       if (hasSplashed) {
-        // Remove splash
+        // Immediately update local count for instant feedback
+        setLocalSplashesCount(prev => Math.max(0, prev - 1));
+        // Remove splash from backend
         await firestore()
           .collection(`waves/${waveId}/splashes`)
           .doc(currentUserId)
           .delete();
         setHasSplashed(false);
+        onRemove();
       } else {
-        // Add splash
+        // Immediately update local count for instant feedback
+        setLocalSplashesCount(prev => prev + 1);
+        // Add splash to backend
         await firestore()
           .collection(`waves/${waveId}/splashes`)
           .doc(currentUserId)
@@ -111,10 +124,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             console.error('Error sending hug notification:', error);
           }
         }
+        onAdd();
       }
-      onSplash(hasSplashed ? -1 : 1);
     } catch (error) {
       console.error('Error handling splash:', error);
+      // Revert local count on error
+      if (hasSplashed) {
+        setLocalSplashesCount(prev => prev + 1);
+      } else {
+        setLocalSplashesCount(prev => Math.max(0, prev - 1));
+      }
     }
   };
 
@@ -137,18 +156,18 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
       {/* Splashes Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleSplash} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-        <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
+      <Pressable style={styles.actionButton} onPress={handleSplash} hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}>
+        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
           🫂
         </Text>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
-          {splashesCount}
+        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
+          {localSplashesCount}
         </Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Echoes Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleEcho} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handleEcho} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
           📣
         </Text>
@@ -156,55 +175,55 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
           {echoesCount}
         </Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Gems Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handlePearl} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handlePearl} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, pearlsCount > 0 && styles.activeAction]}>
           💎
         </Text>
         <Text style={styles.actionLabel}>Gems</Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Anchor Wave Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleAnchor} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handleAnchor} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, isAnchored && styles.activeAction]}>
           ⚓
         </Text>
         <Text style={styles.actionLabel}>Anchor</Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Cast Wave Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleCast} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handleCast} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, isCasted && styles.activeAction]}>
           📡
         </Text>
         <Text style={styles.actionLabel}>Cast</Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Placeholder Button 1 */}
-      <TouchableOpacity style={styles.actionButton}>
+      <Pressable style={styles.actionButton}>
         <Text style={styles.actionText}>🔱</Text>
         <Text style={styles.actionLabel}>Placeholder 1</Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Placeholder Button 2 */}
-      <TouchableOpacity style={styles.actionButton}>
+      <Pressable style={styles.actionButton}>
         <Text style={styles.actionText}>🐚</Text>
         <Text style={styles.actionLabel}>Placeholder 2</Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Placeholder Button 3 */}
-      <TouchableOpacity style={styles.actionButton}>
+      <Pressable style={styles.actionButton}>
         <Text style={styles.actionText}></Text>
         <Text style={styles.actionLabel}></Text>
-      </TouchableOpacity>
+      </Pressable>
 
       {/* Placeholder Button 4 */}
-      <TouchableOpacity style={styles.actionButton}>
+      <Pressable style={styles.actionButton}>
         <Text style={styles.actionText}></Text>
         <Text style={styles.actionLabel}></Text>
-      </TouchableOpacity>
+      </Pressable>
     </ScrollView>
   );
 };
