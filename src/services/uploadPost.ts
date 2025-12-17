@@ -1,6 +1,7 @@
 // src/services/uploadPost.ts
 import storage from '@react-native-firebase/storage';
 import firestore from '@react-native-firebase/firestore';
+import functions from '@react-native-firebase/functions';
 import auth from '@react-native-firebase/auth';
 import { Platform } from 'react-native';
 
@@ -130,5 +131,76 @@ export async function uploadPost({ media, caption, link, authorName }: UploadPos
     caption: { x: 0, y: 0 },
   });
 
+  // Process mentions in caption
+  if (caption) {
+    await processMentionsInText(caption, uid, docRef.id, authorName || a.currentUser?.displayName || 'Someone');
+  }
+
   return { id: docRef.id, mediaUrl };
+}
+
+// Helper function to process mentions in text
+async function processMentionsInText(text: string, authorUid: string, waveId: string, authorName: string) {
+  try {
+    // Extract @mentions from text (e.g., @username, @user_name, @user-name)
+    const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.push(match[1]); // Extract username without @
+    }
+
+    if (mentions.length === 0) return;
+
+    // Remove duplicates
+    const uniqueMentions = [...new Set(mentions)];
+
+    // Look up users by username/handle
+    for (const username of uniqueMentions) {
+      try {
+        // Search for user by username (this is a simple lookup - you might need to adjust based on your user schema)
+        const userQuery = await firestore()
+          .collection('users')
+          .where('username', '==', username)
+          .limit(1)
+          .get();
+
+        if (!userQuery.empty) {
+          const userDoc = userQuery.docs[0];
+          const mentionedUserId = userDoc.id;
+          const mentionedUserData = userDoc.data();
+
+          // Don't send notification to self
+          if (mentionedUserId === authorUid) continue;
+
+          // Send mention notification
+          const addPingFn = functions().httpsCallable('addPing');
+          await addPingFn({
+            recipientUid: mentionedUserId,
+            type: 'mention',
+            waveId: waveId,
+            text: `${authorName} mentioned you in a post`,
+            fromUid: authorUid,
+            fromName: authorName,
+          });
+
+          // Also add to mentions collection for the mentioned user
+          await firestore()
+            .collection(`users/${mentionedUserId}/mentions`)
+            .add({
+              text: `${authorName} mentioned you in a post`,
+              fromUid: authorUid,
+              fromName: authorName,
+              waveId: waveId,
+              type: 'post_mention',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
+        }
+      } catch (error) {
+        console.warn(`Failed to process mention for @${username}:`, error);
+      }
+    }
+  } catch (error) {
+    console.warn('Error processing mentions:', error);
+  }
 }

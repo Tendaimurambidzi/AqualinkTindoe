@@ -78,6 +78,72 @@ async function ensureCounts(tx, waveRef) {
   if (!data.counts) tx.update(waveRef, { counts });
 }
 
+// Utility: process mentions in text and send notifications
+async function processMentionsInText(text, authorUid, waveId, authorName, echoId = null) {
+  try {
+    // Extract @mentions from text (e.g., @username, @user_name, @user-name)
+    const mentionRegex = /@([a-zA-Z0-9_-]+)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      mentions.push(match[1]); // Extract username without @
+    }
+
+    if (mentions.length === 0) return;
+
+    // Remove duplicates
+    const uniqueMentions = [...new Set(mentions)];
+
+    // Look up users by username/handle
+    for (const username of uniqueMentions) {
+      try {
+        // Search for user by username
+        const userQuery = await db.collection('users')
+          .where('username', '==', username)
+          .limit(1)
+          .get();
+
+        if (!userQuery.empty) {
+          const userDoc = userQuery.docs[0];
+          const mentionedUserId = userDoc.id;
+
+          // Don't send notification to self
+          if (mentionedUserId === authorUid) continue;
+
+          const mentionType = echoId ? 'echo_mention' : 'post_mention';
+          const mentionText = echoId 
+            ? `${authorName} mentioned you in an echo`
+            : `${authorName} mentioned you in a post`;
+
+          // Send mention notification
+          await addPing(mentionedUserId, {
+            type: 'mention',
+            text: mentionText,
+            waveId: waveId,
+            fromUid: authorUid,
+            fromName: authorName,
+          });
+
+          // Also add to mentions collection for the mentioned user
+          await db.collection('users').doc(mentionedUserId).collection('mentions').add({
+            text: mentionText,
+            fromUid: authorUid,
+            fromName: authorName,
+            waveId: waveId,
+            echoId: echoId,
+            type: mentionType,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+      } catch (error) {
+        console.warn(`Failed to process mention for @${username}:`, error);
+      }
+    }
+  } catch (error) {
+    console.warn('Error processing mentions:', error);
+  }
+}
+
 exports.onSplashCreate = onDocumentCreated('waves/{waveId}/splashes/{uid}', async (event) => {
   const snap = event.data; // DocumentSnapshot
   const waveId = event.params.waveId;
@@ -368,6 +434,9 @@ exports.createEcho = onCall({ region: 'us-central1' }, async (req) => {
       updatedAt: Timestamp.now(),
     });
   });
+
+  // Process mentions in echo text
+  await processMentionsInText(body, uid, waveId, fromName || 'Someone', echoRef.id);
 
   return { echoId: echoRef.id };
 });

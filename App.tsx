@@ -3922,13 +3922,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const run = async () => {
                     
       try {
-        // Temporarily disabled real-time listener for testing - using one-time fetch instead
-        const snap = await firestoreMod()
+        // Enable real-time listener for live updates of public waves
+        unsub = firestoreMod()
           .collection('waves')
           .orderBy('createdAt', 'desc')
           .limit(50)
-          .get();
-          
+  .onSnapshot(
+    async (snap: any) => {
         // Process the snapshot data (same logic as before)
         (async () => {
           const docs = (snap?.docs || []).slice();
@@ -4072,6 +4072,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             });
           }
         })();
+      }, (error: any) => {
+        console.warn('Error in public feed listener:', error);
+      });
       } catch {}
     };
     run();
