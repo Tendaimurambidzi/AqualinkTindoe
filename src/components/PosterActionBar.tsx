@@ -58,7 +58,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   onCast,
   creatorUserId,
 }) => {
-  const [hasSplashed, setHasSplashed] = useState(false);
+  const [hugState, setHugState] = useState<'hugged' | 'unhugged'>('unhugged');
   const [hasEchoed, setHasEchoed] = useState(false);
   const [localSplashesCount, setLocalSplashesCount] = useState(initialSplashesCount);
 
@@ -100,7 +100,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           .collection(`waves/${waveId}/splashes`)
           .doc(currentUserId)
           .get();
-        setHasSplashed(splashDoc.exists);
+        setHugState(splashDoc.exists ? 'hugged' : 'unhugged');
 
         const echoQuery = await firestore()
           .collection(`waves/${waveId}/echoes`)
@@ -115,26 +115,29 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     checkInteractions();
   }, [waveId, currentUserId, splashActionInProgress]);
 
-  const handleSplash = async () => {
+  const handleHug = async () => {
     // Prevent multiple clicks while action is in progress
     if (splashActionInProgress) return;
     
     setSplashActionInProgress(true);
     
     try {
-      if (hasSplashed) {
-        // Immediately update local count for instant feedback
+      if (hugState === 'hugged') {
+        // User is unhugging - decrement the count
         setLocalSplashesCount(prev => Math.max(0, prev - 1));
+        setHugState('unhugged');
+        
         // Remove splash from backend
         await firestore()
           .collection(`waves/${waveId}/splashes`)
           .doc(currentUserId)
           .delete();
-        setHasSplashed(false);
         onRemove();
       } else {
-        // Immediately update local count for instant feedback
+        // User is hugging - increment the count
         setLocalSplashesCount(prev => prev + 1);
+        setHugState('hugged');
+        
         // Add splash to backend
         await firestore()
           .collection(`waves/${waveId}/splashes`)
@@ -143,7 +146,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             userUid: currentUserId,
             createdAt: firestore.FieldValue.serverTimestamp(),
           });
-        setHasSplashed(true);
+        
         // Send notification if not self
         if (currentUserId !== creatorUserId) {
           try {
@@ -176,12 +179,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         onAdd();
       }
     } catch (error) {
-      console.error('Error handling splash:', error);
-      // Revert local count on error
-      if (hasSplashed) {
+      console.error('Error handling hug:', error);
+      // Revert local count and state on error
+      if (hugState === 'hugged') {
         setLocalSplashesCount(prev => prev + 1);
+        setHugState('unhugged');
       } else {
         setLocalSplashesCount(prev => Math.max(0, prev - 1));
+        setHugState('hugged');
       }
     } finally {
       // Always clear the action in progress flag
@@ -213,15 +218,15 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Splashes Button */}
       <Pressable 
         style={styles.actionButton} 
-        onPress={handleSplash} 
+        onPress={handleHug} 
         hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}
         disabled={splashActionInProgress}
       >
-        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionText, hugState === 'hugged' && styles.activeAction]}>
           🫂
         </Text>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionText, hugState === 'hugged' && styles.activeAction]}>
           {localSplashesCount}
         </Text>
       </Pressable>
