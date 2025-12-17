@@ -7455,6 +7455,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             let picUri = null;
                             const isCurrentUserPost = item.ownerUid === myUid;
                             
+                            console.log('Profile pic debug for post', item.id, ':', {
+                              ownerUid: item.ownerUid,
+                              myUid: myUid,
+                              isCurrentUserPost,
+                              profilePhoto: profilePhoto,
+                              itemUser: item.user,
+                              itemUserAvatar: item.user?.avatar
+                            });
+                            
                             if (isCurrentUserPost) {
                               // For current user's posts, use MY AURA profile picture
                               picUri = profilePhoto;
@@ -7494,6 +7503,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 console.log('User avatar not available for', item.ownerUid, 'user data:', item.user);
                               }
                             }
+                            
+                            console.log('Rendering avatar for post', item.id, ':', {
+                              isCurrentUserPost,
+                              avatarUri,
+                              finalUri: avatarUri
+                            });
                             
                             // Only show image if we have a valid URI
                             if (avatarUri) {

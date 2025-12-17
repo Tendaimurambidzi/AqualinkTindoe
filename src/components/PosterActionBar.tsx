@@ -65,6 +65,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
 
+  // Track if a splash action is currently in progress
+  const [splashActionInProgress, setSplashActionInProgress] = useState(false);
+
   // Sync local count with props
   useEffect(() => {
     setLocalSplashesCount(initialSplashesCount);
@@ -85,6 +88,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // Check if user has already interacted
   useEffect(() => {
     const checkInteractions = async () => {
+      // Don't check Firestore if a splash action is currently in progress
+      if (splashActionInProgress) return;
+      
       try {
         const splashDoc = await firestore()
           .collection(`waves/${waveId}/splashes`)
@@ -103,9 +109,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       }
     };
     checkInteractions();
-  }, [waveId, currentUserId]);
+  }, [waveId, currentUserId, splashActionInProgress]);
 
   const handleSplash = async () => {
+    // Prevent multiple clicks while action is in progress
+    if (splashActionInProgress) return;
+    
+    setSplashActionInProgress(true);
+    
     try {
       if (hasSplashed) {
         // Immediately update local count for instant feedback
@@ -168,6 +179,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       } else {
         setLocalSplashesCount(prev => Math.max(0, prev - 1));
       }
+    } finally {
+      // Always clear the action in progress flag
+      setSplashActionInProgress(false);
     }
   };
 
@@ -193,7 +207,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
       {/* Splashes Button */}
-      <Pressable style={styles.actionButton} onPress={handleSplash} hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}>
+      <Pressable 
+        style={styles.actionButton} 
+        onPress={handleSplash} 
+        hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}
+        disabled={splashActionInProgress}
+      >
         <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
           🫂
         </Text>
