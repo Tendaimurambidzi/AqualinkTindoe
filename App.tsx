@@ -7737,18 +7737,39 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       >
         <View style={styles.topBarWrapper}>
           {isTopBarVisible && (
-            <Pressable
-              style={styles.toggleButton}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              onPress={withUi(() => {
-                setIsTopBarExpanded(p => !p);
-                showTopBar();
-              })}
-            >
-              <Text style={styles.toggleButtonText}>
-                {isTopBarExpanded ? '<' : '>'}
-              </Text>
-            </Pressable>
+            <>
+              {/* VIBES - always visible */}
+              <Pressable
+                style={styles.topItem}
+                onPress={withUi(() => {
+                  showTopBar();
+                  setCurrentIndex(0);
+                  try {
+                    feedRef.current?.scrollToOffset({ offset: 0, animated: false });
+                  } catch {}
+                })}
+              >
+                <Text style={[styles.compassIcon, { color: 'red' }]}>
+                  🐬
+                </Text>
+                <Text style={styles.topLabel}>
+                  VIBES
+                </Text>
+              </Pressable>
+              {/* Toggle Button */}
+              <Pressable
+                style={styles.toggleButton}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                onPress={withUi(() => {
+                  setIsTopBarExpanded(p => !p);
+                  showTopBar();
+                })}
+              >
+                <Text style={styles.toggleButtonText}>
+                  {isTopBarExpanded ? '<' : '>'}
+                </Text>
+              </Pressable>
+            </>
           )}
           {isTopBarVisible && isTopBarExpanded && (
             <ScrollView
@@ -7756,24 +7777,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.scrollRow}
             >
-                {/* VIBES */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setCurrentIndex(0);
-                    try {
-                      feedRef.current?.scrollToOffset({ offset: 0, animated: false });
-                    } catch {}
-                  })}
-                >
-                  <Text style={[styles.compassIcon, { color: 'red' }]}>
-                    🐬
-                  </Text>
-                  <Text style={styles.topLabel}>
-                    VIBES
-                  </Text>
-                </Pressable>
                 {/* MAKE WAVES */}
                 <Pressable
                   style={styles.topItem}
