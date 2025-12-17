@@ -7633,7 +7633,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </View>
                     <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%' }} />
                     <PosterActionBar
-                      key={`${item.id}-${item.counts?.splashes || 0}-${item.counts?.echoes || 0}`}
                       waveId={item.id}
                       currentUserId={myUid || ''}
                       splashesCount={item.counts?.splashes || 0}

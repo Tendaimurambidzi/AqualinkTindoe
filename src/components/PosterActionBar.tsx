@@ -68,10 +68,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // Track if a splash action is currently in progress
   const [splashActionInProgress, setSplashActionInProgress] = useState(false);
 
-  // Sync local count with props
+  // Initialize local count with props only once
+  const [isInitialized, setIsInitialized] = useState(false);
   useEffect(() => {
-    setLocalSplashesCount(initialSplashesCount);
-  }, [initialSplashesCount]);
+    if (!isInitialized) {
+      setLocalSplashesCount(initialSplashesCount);
+      setIsInitialized(true);
+    }
+  }, [initialSplashesCount, isInitialized]);
 
   // Fetch user data for the creator of the post
   useEffect(() => {
