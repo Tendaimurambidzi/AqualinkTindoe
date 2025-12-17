@@ -1530,8 +1530,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // Clear user-specific state when user changes
   useEffect(() => {
+    console.log('User change detected, myUid:', myUid);
     if (!myUid) {
       // User signed out - clear all user data
+      console.log('Clearing user data');
+      setProfileName('');
+      setProfileBio('');
+      setProfilePhoto(null);
+      setAccountCreationHandle('');
+    } else {
+      // User switched to a different account - clear profile data to prevent showing old user's info
+      console.log('Clearing profile data for user switch');
       setProfileName('');
       setProfileBio('');
       setProfilePhoto(null);
@@ -1589,7 +1598,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return trimmed ? `/${trimmed}` : '';
   }, []);
   useEffect(() => {
-    if (!myUid) return;
+    if (!myUid) {
+      console.log('No user UID, skipping data load');
+      return;
+    }
+    console.log('Loading user data for UID:', myUid);
     let cancelled = false;
     let firestoreMod: any = null;
     let authMod: any = null;
@@ -1599,36 +1612,59 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       authMod = require('@react-native-firebase/auth').default;
     } catch {}
-    if (!firestoreMod) return;
+    if (!firestoreMod) {
+      console.error('Firestore module not available');
+      return;
+    }
+    
+    const currentUser = authMod?.().currentUser;
+    console.log('Current Firebase user:', currentUser?.uid, currentUser?.displayName);
+    
     firestoreMod()
       .doc(`users/${myUid}`)
       .get()
       .then((doc: any) => {
         if (cancelled) return;
+        const exists = doc?.exists;
         const data = doc?.data() || {};
-        console.log('User data loaded:', data); // Debug log
+        console.log('User document exists:', exists);
+        console.log('User data loaded:', data);
+        
         const derivedHandle =
           normalizeUserHandle(data.userName) ||
           normalizeUserHandle(data.username) ||
-          normalizeUserHandle(authMod?.().currentUser?.displayName);
-        console.log('Derived handle:', derivedHandle); // Debug log
+          normalizeUserHandle(currentUser?.displayName);
+        console.log('Derived handle:', derivedHandle);
+        
         if (derivedHandle) {
+          console.log('Setting profile data:', derivedHandle);
           setAccountCreationHandle(derivedHandle);
           setProfileName(prev =>
             prev && prev !== '@your_handle' ? prev : derivedHandle,
           );
         } else {
           // If no handle found, try to use displayName as fallback
-          const displayName = authMod?.().currentUser?.displayName;
+          const displayName = currentUser?.displayName;
+          console.log('No derived handle, trying displayName fallback:', displayName);
           if (displayName) {
             const normalized = normalizeUserHandle(displayName);
             setAccountCreationHandle(normalized);
             setProfileName(normalized);
+          } else {
+            console.log('No displayName available either');
           }
         }
       })
       .catch((error: any) => {
-        console.error('Error loading user data:', error); // Debug log
+        console.error('Error loading user data:', error);
+        // Try fallback to Firebase Auth displayName
+        const displayName = currentUser?.displayName;
+        console.log('Trying fallback to displayName:', displayName);
+        if (displayName) {
+          const normalized = normalizeUserHandle(displayName);
+          setAccountCreationHandle(normalized);
+          setProfileName(normalized);
+        }
       });
     return () => {
       cancelled = true;
@@ -1819,7 +1855,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     setIsTextStorySending(true);
     try {
-      const result = await uploadPost({ caption: trimmed });
+      const result = await uploadPost({ 
+        caption: trimmed,
+        authorName: profileName || accountCreationHandle || auth?.()?.currentUser?.displayName || null
+      });
       try {
         const ownerUid = auth?.()?.currentUser?.uid || null;
         const author =
@@ -4680,7 +4719,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const userDoc = await firestoreMod().collection('users').doc(uid).get();
       if (userDoc.exists) {
         const userData = userDoc.data();
-        fromName = userData?.displayName || userData?.name || null;
+        fromName = userData?.username || userData?.displayName || userData?.name || null;
         fromPhoto = userData?.photoURL || null;
       }
     } catch (e) {
@@ -4756,6 +4795,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       // Use the new sendEcho transaction
       await sendEcho(currentWave.id, text);
+      
+      // Update local echo counts
+      setWaves(prev => prev.map(w => w.id === currentWave.id ? { ...w, counts: { ...w.counts, echoes: (w.counts?.echoes || 0) + 1 } } : w));
+      setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      
+      // Reload echoes list
+      loadPostEchoes(currentWave.id);
                     
       // Send ping notification to wave owner (if not self)
       if (currentWave.ownerUid && currentWave.ownerUid !== (auth?.()?.currentUser?.uid)) {
@@ -7365,7 +7413,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           />
                         </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
-                          {item.user?.name || profileName || 'User'}
+                          {(() => {
+                            const displayName = item.user?.name || item.authorName || 'User';
+                            console.log('Post display name for item', item.id, ':', {
+                              itemUserName: item.user?.name,
+                              itemAuthorName: item.authorName,
+                              finalDisplay: displayName
+                            });
+                            return displayName;
+                          })()}
                         </Text>
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
                           {item.createdAt?.toDate ? getRelativeTime(item.createdAt.toDate()) : 'just now'}
@@ -7460,6 +7516,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </View>
                     <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%' }} />
                     <PosterActionBar
+                      key={`${item.id}-${item.counts?.splashes || 0}-${item.counts?.echoes || 0}`}
                       waveId={item.id}
                       currentUserId={myUid || ''}
                       splashesCount={item.counts?.splashes || 0}
@@ -7468,12 +7525,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       isAnchored={false}
                       isCasted={false}
                       creatorUserId={item.userId}
-                      onSplash={() => {
-                        // Update local counts
-                        setWaves(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
-                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                      onSplash={(delta) => {
+                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) + delta) } } : w));
+                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) + delta) } } : v));
+                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) + delta) } } : v));
+                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) + delta) } } : v));
                       }}
                       onEcho={() => {
                         setCurrentIndex(index);
@@ -14416,14 +14472,11 @@ function SignUpScreen({ navigation }: any) {
         });
         console.log('User document created:', userCredential.user.uid, { username: usernameWithSlash }); // Debug log
                     
-        // Sign the user out immediately after creation
-        await auth().signOut();
-                    
-        Alert.alert(
-          'Account Created!',
-          'Your account has been successfully created. Please sign in to continue.',
-          [{ text: 'OK', onPress: () => navigation.replace('SignIn') }],
-        );
+        // Also update Firebase Auth profile with display name
+        await userCredential.user.updateProfile({
+          displayName: usernameWithSlash,
+        });
+        console.log('Firebase Auth profile updated with displayName:', usernameWithSlash); // Debug log
       }
     } catch (e: any) {
       if (e.code === 'auth/email-already-in-use') {

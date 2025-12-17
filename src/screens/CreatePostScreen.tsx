@@ -75,6 +75,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
         media: selected ?? undefined,
         caption: trimmedCaption,
         link: link.trim() || undefined,
+        authorName: auth().currentUser?.displayName || null,
       });
 
       const waveUri = result.mediaUrl || selected?.uri;

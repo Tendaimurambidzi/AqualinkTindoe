@@ -13,7 +13,7 @@ interface PosterActionBarProps {
   pearlsCount: number;
   isAnchored: boolean;
   isCasted: boolean;
-  onSplash: () => void;
+  onSplash: (delta: number) => void;
   onEcho: () => void;
   onPearl: () => void;
   onAnchor: () => void;
@@ -112,7 +112,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           }
         }
       }
-      onSplash();
+      onSplash(hasSplashed ? -1 : 1);
     } catch (error) {
       console.error('Error handling splash:', error);
     }
@@ -137,7 +137,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
       {/* Splashes Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleSplash} hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}>
+      <TouchableOpacity style={styles.actionButton} onPress={handleSplash} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, splashesCount > 0 && styles.activeAction]}>
           🫂
         </Text>
@@ -148,7 +148,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </TouchableOpacity>
 
       {/* Echoes Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleEcho}>
+      <TouchableOpacity style={styles.actionButton} onPress={handleEcho} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
           📣
         </Text>
@@ -159,7 +159,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </TouchableOpacity>
 
       {/* Gems Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handlePearl}>
+      <TouchableOpacity style={styles.actionButton} onPress={handlePearl} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, pearlsCount > 0 && styles.activeAction]}>
           💎
         </Text>
@@ -167,7 +167,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </TouchableOpacity>
 
       {/* Anchor Wave Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleAnchor}>
+      <TouchableOpacity style={styles.actionButton} onPress={handleAnchor} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, isAnchored && styles.activeAction]}>
           ⚓
         </Text>
@@ -175,7 +175,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </TouchableOpacity>
 
       {/* Cast Wave Button */}
-      <TouchableOpacity style={styles.actionButton} onPress={handleCast}>
+      <TouchableOpacity style={styles.actionButton} onPress={handleCast} activeOpacity={0.7} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
         <Text style={[styles.actionText, isCasted && styles.activeAction]}>
           📡
         </Text>
@@ -221,7 +221,8 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: 'center',
-    padding: 5,
+    padding: 10,
+    marginHorizontal: 2,
   },
   actionText: {
     fontSize: 16,
