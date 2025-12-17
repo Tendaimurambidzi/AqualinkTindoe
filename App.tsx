@@ -7441,8 +7441,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               // For current user's posts, use MY AURA profile picture
                               picUri = profilePhoto;
                             } else {
-                              // For other users, use their Firestore avatar
-                              picUri = item.user?.avatar;
+                              // For other users, use their Firestore avatar (only if it's a remote URL)
+                              const avatar = item.user?.avatar;
+                              if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://'))) {
+                                picUri = avatar;
+                              }
                             }
                             
                             if (picUri) setZoomedProfilePic(picUri);
@@ -7463,8 +7466,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               // For current user's posts, use MY AURA profile picture
                               avatarUri = profilePhoto;
                             } else {
-                              // For other users, use their Firestore avatar
-                              avatarUri = item.user?.avatar;
+                              // For other users, use their Firestore avatar (only if it's a remote URL)
+                              const avatar = item.user?.avatar;
+                              if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://'))) {
+                                avatarUri = avatar;
+                              }
                             }
                             
                             // Only show image if we have a URI
