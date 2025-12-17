@@ -4,6 +4,25 @@ import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-nati
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 
+// Function to fetch user data by ID
+const fetchUserData = async (userId: string) => {
+  try {
+    const userDoc = await firestore()
+      .collection('users')
+      .doc(userId)
+      .get();
+
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      return userData;
+    }
+  } catch (error) {
+    console.error('Error fetching user data:', error);
+    return null;
+  }
+  return null;
+};
+
 // Types for the component props
 interface PosterActionBarProps {
   waveId: string;
@@ -43,10 +62,25 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const [hasEchoed, setHasEchoed] = useState(false);
   const [localSplashesCount, setLocalSplashesCount] = useState(initialSplashesCount);
 
+  // State for creator user data
+  const [creatorUserData, setCreatorUserData] = useState(null);
+
   // Sync local count with props
   useEffect(() => {
     setLocalSplashesCount(initialSplashesCount);
   }, [initialSplashesCount]);
+
+  // Fetch user data for the creator of the post
+  useEffect(() => {
+    const fetchCreatorUserData = async () => {
+      const userData = await fetchUserData(creatorUserId);
+      setCreatorUserData(userData);
+    };
+
+    if (creatorUserId) {
+      fetchCreatorUserData();
+    }
+  }, [creatorUserId]);
 
   // Check if user has already interacted
   useEffect(() => {
@@ -152,6 +186,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const handleCast = () => {
     onCast();
   };
+
+  // Get creator profile picture URL, with fallback to default
+  const creatorProfilePicture = creatorUserData?.userPhoto || creatorUserData?.photoURL || 'https://via.placeholder.com/100x100.png?text=No+Photo';
 
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>

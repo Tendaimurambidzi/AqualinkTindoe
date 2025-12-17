@@ -3989,14 +3989,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   if (doc.exists) {
                     const data = doc.data();
                     const uid = uniqueOwnerUids[index];
+                    // Prioritize userPhoto (app-set pictures) over photoURL (Firebase Auth)
+                    const avatarUrl = data?.userPhoto || data?.photoURL || data?.avatar || data?.profilePicture || null;
                     userDataMap[uid] = {
                       name: data?.displayName || data?.name || data?.username || 'User',
-                      avatar: data?.photoURL || data?.userPhoto || data?.avatar || data?.profilePicture || null,
+                      avatar: avatarUrl,
                     };
+                    console.log('User data loaded for', uid, ':', { name: userDataMap[uid].name, avatar: userDataMap[uid].avatar });
+                  } else {
+                    // User document doesn't exist, create default data
+                    const uid = uniqueOwnerUids[index];
+                    userDataMap[uid] = {
+                      name: 'User',
+                      avatar: null,
+                    };
+                    console.log('User document not found for', uid);
                   }
                 });
               } catch (error) {
                 console.warn('Error fetching user data for waves:', error);
+                // Create default data for all users if fetch fails
+                uniqueOwnerUids.forEach(uid => {
+                  userDataMap[uid] = {
+                    name: 'User',
+                    avatar: null,
+                  };
+                });
               }
             }
             
@@ -7441,10 +7459,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               // For current user's posts, use MY AURA profile picture
                               picUri = profilePhoto;
                             } else {
-                              // For other users, use their Firestore avatar (only if it's a remote URL)
-                              const avatar = item.user?.avatar;
-                              if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://'))) {
-                                picUri = avatar;
+                              // For other users, use their Firestore avatar
+                              const userAvatar = item.user?.avatar;
+                              if (userAvatar && typeof userAvatar === 'string' && userAvatar.trim()) {
+                                picUri = userAvatar;
                               }
                             }
                             
@@ -7460,29 +7478,40 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           {(() => {
                             // Determine which avatar to show
                             let avatarUri = null;
+                            let avatarSource = null;
                             const isCurrentUserPost = item.ownerUid === myUid;
                             
                             if (isCurrentUserPost) {
                               // For current user's posts, use MY AURA profile picture
                               avatarUri = profilePhoto;
                             } else {
-                              // For other users, use their Firestore avatar (only if it's a remote URL)
-                              const avatar = item.user?.avatar;
-                              if (avatar && (avatar.startsWith('http://') || avatar.startsWith('https://'))) {
-                                avatarUri = avatar;
+                              // For other users, use their Firestore avatar
+                              const userAvatar = item.user?.avatar;
+                              if (userAvatar && typeof userAvatar === 'string' && userAvatar.trim()) {
+                                avatarUri = userAvatar;
+                              } else {
+                                // If user data not loaded yet, try to fetch it on demand
+                                console.log('User avatar not available for', item.ownerUid, 'user data:', item.user);
                               }
                             }
                             
-                            // Only show image if we have a URI
-                            return avatarUri ? (
-                              <Image 
-                                source={{ uri: avatarUri }} 
-                                style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
-                              />
-                            ) : (
+                            // Only show image if we have a valid URI
+                            if (avatarUri) {
+                              return (
+                                <Image 
+                                  source={{ uri: avatarUri }} 
+                                  style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
+                                  onError={() => console.log('Failed to load avatar for user:', item.ownerUid)}
+                                />
+                              );
+                            } else {
                               // Empty view for users without profile pictures
-                              <View style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF', backgroundColor: 'transparent' }} />
-                            );
+                              return (
+                                <View style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF', backgroundColor: 'rgba(0, 194, 255, 0.1)', justifyContent: 'center', alignItems: 'center' }}>
+                                  <Text style={{ fontSize: 20, color: '#00C2FF' }}>👤</Text>
+                                </View>
+                              );
+                            }
                           })()}
                         </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
