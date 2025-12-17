@@ -8263,6 +8263,59 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     },
                   ]}
                 />
+                <TouchableOpacity
+                  style={{
+                    backgroundColor: '#00C2FF',
+                    paddingVertical: 10,
+                    paddingHorizontal: 20,
+                    borderRadius: 10,
+                    marginTop: 16,
+                    alignSelf: 'center',
+                  }}
+                  onPress={async () => {
+                    if (!profileName.trim()) {
+                      Alert.alert('Error', 'Username cannot be empty.');
+                      return;
+                    }
+                    const trimmedName = profileName.trim();
+                    if (trimmedName.length < 3) {
+                      Alert.alert('Error', 'Username must be at least 3 characters.');
+                      return;
+                    }
+                    // Check if username is unique (optional, but for demo)
+                    try {
+                      const firestore = require('@react-native-firebase/firestore').default;
+                      const query = await firestore()
+                        .collection('users')
+                        .where('username', '==', trimmedName)
+                        .get();
+                      if (!query.empty) {
+                        const existing = query.docs.find(doc => doc.id !== myUid);
+                        if (existing) {
+                          Alert.alert('Error', 'Username already taken.');
+                          return;
+                        }
+                      }
+                      // Save to Firestore
+                      await firestore().collection('users').doc(myUid).update({
+                        username: trimmedName,
+                        displayName: trimmedName,
+                        username_lc: trimmedName.replace(/^[\/]+/, '').toLowerCase(),
+                        bio: profileBio.trim(),
+                      });
+                      // Update Firebase Auth
+                      const auth = require('@react-native-firebase/auth').default;
+                      await auth().currentUser?.updateProfile({
+                        displayName: trimmedName,
+                      });
+                      Alert.alert('Success', 'Profile updated!');
+                    } catch (e) {
+                      Alert.alert('Error', 'Failed to save profile.');
+                    }
+                  }}
+                >
+                  <Text style={{ color: '#001529', fontWeight: 'bold' }}>Save Profile</Text>
+                </TouchableOpacity>
               </View>
               {/* Stats tab - moved up for better professional layout */}
               <View style={{ marginBottom: 16 }}>
@@ -14529,7 +14582,6 @@ const enhancedLiveStyles = StyleSheet.create({
                     
 /* ----------------------- Auth Screens ------------------------- */
 function SignUpScreen({ navigation }: any) {
-  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -14548,9 +14600,8 @@ function SignUpScreen({ navigation }: any) {
                     
   const signUp = async () => {
     const trimmedEmail = email.trim();
-    const trimmedUsername = username.trim();
                     
-    if (!trimmedEmail || !password || !confirmPassword || !trimmedUsername) {
+    if (!trimmedEmail || !password || !confirmPassword) {
       Alert.alert('Missing Info', 'Please fill out all fields.');
       return;
     }
@@ -14586,27 +14637,19 @@ function SignUpScreen({ navigation }: any) {
         password,
       );
       if (userCredential.user) {
-        // Store username and other details in Firestore
+        // Store details in Firestore without username
         const firestore = require('@react-native-firebase/firestore').default;
-        // Ensure username starts with /
-        const usernameWithSlash = trimmedUsername.startsWith('/') ? trimmedUsername : '/' + trimmedUsername;
-        // Store username_lc without / for search
-        const usernameLc = trimmedUsername.replace(/^[\/]+/, '').toLowerCase();
-                    
         await firestore().collection('users').doc(userCredential.user.uid).set({
-          username: usernameWithSlash,
-          displayName: usernameWithSlash,
-          username_lc: usernameLc,
           email: trimmedEmail,
           createdAt: firestore.FieldValue.serverTimestamp(),
         });
-        console.log('User document created:', userCredential.user.uid, { username: usernameWithSlash }); // Debug log
+        console.log('User document created:', userCredential.user.uid);
                     
-        // Also update Firebase Auth profile with display name
+        // Update Firebase Auth profile with display name as email for now
         await userCredential.user.updateProfile({
-          displayName: usernameWithSlash,
+          displayName: trimmedEmail,
         });
-        console.log('Firebase Auth profile updated with displayName:', usernameWithSlash); // Debug log
+        console.log('Firebase Auth profile updated with displayName:', trimmedEmail);
       }
     } catch (e: any) {
       if (e.code === 'auth/email-already-in-use') {
@@ -14636,13 +14679,6 @@ function SignUpScreen({ navigation }: any) {
       >
         <ScrollView showsVerticalScrollIndicator={false}>
           <Text style={authStyles.title}>Create your account</Text>
-                    
-          <Field
-            label="Username"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-          />
                     
           <Field
             label="Email"
