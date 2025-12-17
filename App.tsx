@@ -4797,7 +4797,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       await sendEcho(currentWave.id, text);
       
       // Update local echo counts
-      setWaves(prev => prev.map(w => w.id === currentWave.id ? { ...w, counts: { ...w.counts, echoes: (w.counts?.echoes || 0) + 1 } } : w));
       setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
