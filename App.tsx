@@ -7667,13 +7667,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       onCast={() => onShareWave(item)}
                     />
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
-                      {item.userId !== myUid && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>➕ Connect Vibe</Text>}
+                      {item.ownerUid !== myUid && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>➕ Connect Vibe</Text>}
                       <View style={{ flexDirection: 'row', marginRight: 20 }}>
                        <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
                        <Text style={{ fontSize: 14, color: 'black' }}>0</Text>
                        </View>
                       <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>💾 2.3MB</Text>
-                      {item.userId !== myUid && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
+                      {item.ownerUid !== myUid && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
                     </ScrollView>
                     <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
                       {/* Echoes List */}
