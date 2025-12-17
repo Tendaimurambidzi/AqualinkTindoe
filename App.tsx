@@ -3991,7 +3991,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     const uid = uniqueOwnerUids[index];
                     userDataMap[uid] = {
                       name: data?.displayName || data?.name || data?.username || 'User',
-                      avatar: data?.photoURL || data?.userPhoto || null,
+                      avatar: data?.photoURL || data?.userPhoto || data?.avatar || data?.profilePicture || null,
                     };
                   }
                 });
