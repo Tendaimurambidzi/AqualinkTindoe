@@ -222,11 +222,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}
         disabled={splashActionInProgress}
       >
-        <Text style={[styles.actionText, hugState === 'hugged' && styles.activeAction]}>
+        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
           🫂
         </Text>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionText, hugState === 'hugged' && styles.activeAction]}>
+        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
           {localSplashesCount}
         </Text>
       </Pressable>
