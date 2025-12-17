@@ -126,6 +126,10 @@ type Vibe = {
   muxStatus?: 'pending' | 'ready' | 'failed';
   authorName?: string | null; // display handle (e.g., "/Tindoe")
   ownerUid?: string | null; // creator uid (for self-display as /You)
+  user?: {
+    name: string;
+    avatar: string | null;
+  } | null; // author user data
   image?: string | null;
   counts?: {
     splashes: number;
@@ -3969,8 +3973,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             });
           }
           if (!cancelled) {
+            // Fetch user data for all wave authors
+            const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
+            const userDataMap: Record<string, { name: string; avatar: string | null }> = {};
+            
+            if (uniqueOwnerUids.length > 0) {
+              try {
+                const userDocs = await Promise.all(
+                  uniqueOwnerUids.map(uid => 
+                    firestoreMod().collection('users').doc(uid).get()
+                  )
+                );
+                
+                userDocs.forEach((doc, index) => {
+                  if (doc.exists) {
+                    const data = doc.data();
+                    const uid = uniqueOwnerUids[index];
+                    userDataMap[uid] = {
+                      name: data?.displayName || data?.name || data?.username || 'User',
+                      avatar: data?.photoURL || data?.userPhoto || null,
+                    };
+                  }
+                });
+              } catch (error) {
+                console.warn('Error fetching user data for waves:', error);
+              }
+            }
+            
+            // Attach user data to waves
+            const wavesWithUserData = out.map(wave => ({
+              ...wave,
+              user: wave.ownerUid ? userDataMap[wave.ownerUid] || null : null,
+            }));
+
             const myUid = auth?.()?.currentUser?.uid;
-            const myWavesInPublic = out.filter(w => w.ownerUid === myUid);
+            const myWavesInPublic = wavesWithUserData.filter(w => w.ownerUid === myUid);
             setVibesFeed(prev => {
               const existingMyWaveIds = new Set(prev.map(w => w.id));
               const newMyWaves = myWavesInPublic.filter(
@@ -3993,12 +4030,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               return [...newMyWaves, ...updatedExistingWaves];
             });
             // Filter out my own waves from public feed on my device
-            const publicWaves = out.filter(w => w.ownerUid !== myUid);
+            const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
             setPublicFeed(publicWaves);
                   
             // Initialize waveStats for loaded waves
             const waveStatsUpdate: Record<string, any> = {};
-            out.forEach(wave => {
+            wavesWithUserData.forEach(wave => {
               waveStatsUpdate[wave.id] = {
                 splashes: Number(wave.counts?.splashes || 0),
                 hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
@@ -4010,7 +4047,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
 
             // Load echoes for all waves in the feed
-            out.forEach(wave => {
+            wavesWithUserData.forEach(wave => {
               if (!postEchoLists[wave.id]) {
                 loadPostEchoes(wave.id);
               }
@@ -7396,7 +7433,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={{ alignItems: 'center', flex: 2 }}>
                         <TouchableOpacity 
                           onPress={() => {
-                            const picUri = item.user?.avatar || profilePhoto;
+                            // Determine which avatar to show
+                            let picUri = null;
+                            const isCurrentUserPost = item.ownerUid === myUid;
+                            
+                            if (isCurrentUserPost) {
+                              // For current user's posts, use MY AURA profile picture
+                              picUri = profilePhoto;
+                            } else {
+                              // For other users, use their Firestore avatar
+                              picUri = item.user?.avatar;
+                            }
+                            
                             if (picUri) setZoomedProfilePic(picUri);
                           }}
                           style={{ 
@@ -7406,10 +7454,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             overflow: 'hidden',
                           }}
                         >
-                          <Image 
-                            source={{ uri: item.user?.avatar || profilePhoto || 'https://via.placeholder.com/40' }} 
-                            style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
-                          />
+                          {(() => {
+                            // Determine which avatar to show
+                            let avatarUri = null;
+                            const isCurrentUserPost = item.ownerUid === myUid;
+                            
+                            if (isCurrentUserPost) {
+                              // For current user's posts, use MY AURA profile picture
+                              avatarUri = profilePhoto;
+                            } else {
+                              // For other users, use their Firestore avatar
+                              avatarUri = item.user?.avatar;
+                            }
+                            
+                            // Only show image if we have a URI
+                            return avatarUri ? (
+                              <Image 
+                                source={{ uri: avatarUri }} 
+                                style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
+                              />
+                            ) : (
+                              // Empty view for users without profile pictures
+                              <View style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF', backgroundColor: 'transparent' }} />
+                            );
+                          })()}
                         </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
                           {(() => {
