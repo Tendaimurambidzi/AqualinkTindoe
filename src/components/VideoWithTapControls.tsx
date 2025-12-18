@@ -47,6 +47,7 @@ type Props = {
   resizeMode?: string;
   isActive?: boolean;
   onTap?: () => void;
+  onMaximize?: () => void; // New prop for maximizing video
 };
 
 const VideoWithTapControls: React.FC<Props> = ({
@@ -75,6 +76,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   resizeMode = 'contain',
   isActive = true,
   onTap,
+  onMaximize, // New prop
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
@@ -174,10 +176,17 @@ const VideoWithTapControls: React.FC<Props> = ({
       setVideoCompleted(false);
       setInternalPaused(false);
     } else {
+      const willStartPlaying = internalPaused;
       setInternalPaused(prev => !prev);
+      
+      // If starting playback (pressing play), maximize and unmute
+      if (willStartPlaying) {
+        onMaximize?.();
+        setIsMuted(false); // Unmute when maximizing
+      }
     }
     showControls();
-  }, [videoCompleted, safeSeek, showControls]);
+  }, [videoCompleted, safeSeek, showControls, internalPaused, onMaximize]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);

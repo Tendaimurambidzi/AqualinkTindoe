@@ -7694,8 +7694,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 console.log('Reach recording failed:', error.message);
                               });
                             }}
-                            onTap={() => {
-                              // Navigate to full screen post detail
+                            onMaximize={() => {
+                              // Navigate to full screen post detail and unmute
                               navigation.navigate('PostDetail', { post: item });
                             }}
                           />
@@ -15287,7 +15287,7 @@ function PostDetailScreen({ route, navigation }: any) {
         borderRadius: 20,
       }}>
         <Text style={{ color: reach === 0 ? 'black' : 'green', fontSize: 14 }}>
-          Reach Count: {reach}
+          👁️: {reach}
         </Text>
       </View>
       
