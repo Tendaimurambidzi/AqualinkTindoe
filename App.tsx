@@ -2421,14 +2421,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setDeepSearchError(null);
         const currentUser = auth?.()?.currentUser;
         if (currentUser) {
+          // Always start with all search results showing "Connect Vibe" (not followed)
           const crewStatus: Record<string, boolean> = {};
           for (const result of aggregatedResults) {
-            try {
-              const inCrew = await isInCrew(result.id);
-              crewStatus[result.id] = inCrew;
-            } catch {
-              crewStatus[result.id] = false;
-            }
+            crewStatus[result.id] = false;
           }
           setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
         }
@@ -4052,25 +4048,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
             setPublicFeed(publicWaves);
                   
-            // Load crew status for all users in the feed
+            // Load crew status for all users in the feed (always start fresh - no persistence between sessions)
             const currentUser = auth?.()?.currentUser;
             if (currentUser) {
               const uniqueUserIds = [...new Set(wavesWithUserData.map(w => w.ownerUid).filter(uid => uid && uid !== currentUser.uid))];
+              
+              // Always start with all users showing "Connect Vibe" (not followed)
               const crewStatus: Record<string, boolean> = {};
-              
-              // Load crew status for each unique user in parallel
-              const crewPromises = uniqueUserIds.map(async (userId) => {
-                try {
-                  const inCrew = await isInCrew(userId);
-                  crewStatus[userId] = inCrew;
-                } catch (error) {
-                  console.warn(`Failed to load crew status for user ${userId}:`, error);
-                  crewStatus[userId] = false;
-                }
+              uniqueUserIds.forEach(userId => {
+                crewStatus[userId] = false;
               });
-              
-              // Wait for all crew status checks to complete
-              await Promise.all(crewPromises);
               
               // Update the global crew status state
               setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
