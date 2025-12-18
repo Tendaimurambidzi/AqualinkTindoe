@@ -15063,6 +15063,20 @@ function PostDetailScreen({ route, navigation }: any) {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [reach, setReach] = useState(0);
   
+  // Record video reach function
+  const recordVideoReach = async (postId: string) => {
+    try {
+      const functionsMod = require('@react-native-firebase/functions').default;
+      const recordReachFn = functionsMod().httpsCallable('recordVideoReach');
+      const result = await recordReachFn({ postId });
+      return result.data;
+    } catch (error) {
+      console.error('Record Video Reach function error:', error);
+      // Don't crash - just return a safe response
+      return { success: false, error: 'Function not available' };
+    }
+  };
+  
   // Get current user
   useEffect(() => {
     const getCurrentUser = async () => {
