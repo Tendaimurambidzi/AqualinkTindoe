@@ -117,6 +117,20 @@ service cloud.firestore {
         allow create: if isAuthed();
       }
     }
+
+    // Connections (followers) - new collection for follow system
+    match /connections/{connectionId} {
+      allow create, delete: if request.auth != null
+        && request.resource.data.followerId == request.auth.uid;
+      allow read: if request.auth != null;
+    }
+
+    // Notifications - new collection for follow notifications
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null
+        && resource.data.toUserId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
   }
 }
 

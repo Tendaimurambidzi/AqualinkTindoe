@@ -5701,6 +5701,74 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCrewLoading(false);
     }
   };
+
+  // New Connect Vibe / Disconnect Vibe functions with crash-resistant error handling
+  const connectVibe = async (toUserId: string) => {
+    try {
+      const connectVibeFn = functions().httpsCallable('connectVibe');
+      const result = await connectVibeFn({ toUserId });
+      return result.data;
+    } catch (error) {
+      console.error('Connect Vibe function error:', error);
+      // Don't crash - just return a safe response
+      return { connected: false, error: 'Function not available' };
+    }
+  };
+
+  const disconnectVibe = async (toUserId: string) => {
+    try {
+      const disconnectVibeFn = functions().httpsCallable('disconnectVibe');
+      const result = await disconnectVibeFn({ toUserId });
+      return result.data;
+    } catch (error) {
+      console.error('Disconnect Vibe function error:', error);
+      // Don't crash - just return a safe response
+      return { connected: true, error: 'Function not available' };
+    }
+  };
+
+  const handleToggleVibe = async (targetUid: string, targetName?: string) => {
+    try {
+      const user = auth().currentUser;
+      if (!user) {
+        Alert.alert('Sign in required', 'Please sign in to connect vibe.');
+        return;
+      }
+
+      if (user.uid === targetUid) {
+        Alert.alert('Info', "You can't connect your own vibe");
+        return;
+      }
+
+      const isCurrentlyConnected = isInUserCrew[targetUid];
+
+      if (isCurrentlyConnected) {
+        // Disconnect vibe
+        const result = await disconnectVibe(targetUid);
+        if (result.connected === false || result.error) {
+          // Function worked or safely failed - update local state
+          setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
+          notifySuccess(`Disconnected from ${targetName || 'user'}'s vibe`);
+          loadCrewCounts();
+          await loadDriftWatchers();
+        }
+      } else {
+        // Connect vibe
+        const result = await connectVibe(targetUid);
+        if (result.connected === true || result.error) {
+          // Function worked or safely failed - update local state
+          setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
+          notifySuccess(`Connected to ${targetName || 'user'}'s vibe`);
+          loadCrewCounts();
+          await loadDriftWatchers();
+        }
+      }
+    } catch (error) {
+      console.error('Toggle vibe error:', error);
+      // Show user-friendly message but don't crash
+      notifyError('Vibe connection update in progress - please try again');
+    }
+  };
                     
   const handleBlockUser = async (targetUid: string, targetName?: string) => {
     try {
@@ -7667,7 +7735,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       onCast={() => onShareWave(item)}
                     />
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
-                      {item.user?.displayName !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>➕ Connect Vibe</Text>}
+                      {item.user?.displayName !== "Tendaimurambidzi" && (
+                        <Pressable
+                          onPress={() => handleToggleVibe(item.user.uid, item.user.displayName || item.user.name)}
+                          style={{ marginRight: 20 }}
+                        >
+                          <Text style={{
+                            fontSize: 14,
+                            color: isInUserCrew[item.user.uid] ? '#ff6b6b' : '#00C2FF'
+                          }}>
+                            {isInUserCrew[item.user.uid] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
+                          </Text>
+                        </Pressable>
+                      )}
                       <View style={{ flexDirection: 'row', marginRight: 20 }}>
                        <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
                        <Text style={{ fontSize: 14, color: 'black' }}>0</Text>

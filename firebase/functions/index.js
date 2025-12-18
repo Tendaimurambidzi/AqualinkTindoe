@@ -866,3 +866,67 @@ exports.migrateUsernames = onRequest({ region: 'us-central1' }, async (req, res)
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+// Connect Vibe Cloud Function
+exports.connectVibe = functions.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError("unauthenticated");
+    }
+
+    const fromUserId = context.auth.uid;
+    const toUserId = data.toUserId;
+
+    if (fromUserId === toUserId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Cannot connect your own vibe"
+      );
+    }
+
+    const connectionId = `${fromUserId}_${toUserId}`;
+
+    const connectionRef = admin.firestore()
+      .collection("connections")
+      .doc(connectionId);
+
+    await connectionRef.set({
+      followerId: fromUserId,
+      followingId: toUserId,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Create notification
+    await admin.firestore().collection("notifications").add({
+      toUserId: toUserId,
+      fromUserId: fromUserId,
+      type: "CONNECT_VIBE",
+      message: "Someone has connected your vibe",
+      read: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return { connected: true };
+  }
+);
+
+// Disconnect Vibe Cloud Function
+exports.disconnectVibe = functions.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError("unauthenticated");
+    }
+
+    const fromUserId = context.auth.uid;
+    const toUserId = data.toUserId;
+
+    const connectionId = `${fromUserId}_${toUserId}`;
+
+    await admin.firestore()
+      .collection("connections")
+      .doc(connectionId)
+      .delete();
+
+    return { connected: false };
+  }
+);
