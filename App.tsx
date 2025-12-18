@@ -1678,6 +1678,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
+  const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
   // Public feed toggle and data
                     
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
@@ -1708,6 +1709,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
       // Load echoes for the new wave
       loadPostEchoes(wave.id);
+      // Load reach count for the new wave
+      loadReachCounts([wave.id]);
       // Show success message for posting a splashline
       notifySuccess('You dropped a splashline!');
     },
@@ -4090,6 +4093,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 loadPostEchoes(wave.id);
               }
             });
+
+            // Load reach counts for all waves in the feed
+            const waveIds = wavesWithUserData.map(wave => wave.id);
+            loadReachCounts(waveIds);
           }
         })();
       }, (error: any) => {
@@ -5651,6 +5658,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setPostEchoLists(prev => ({ ...prev, [waveId]: echoes }));
     } catch (e) {
       console.warn('Load post echoes failed', e);
+    }
+  };
+
+  const loadReachCounts = async (waveIds: string[]) => {
+    try {
+      const reachPromises = waveIds.map(async (waveId) => {
+        const doc = await firestore()
+          .collection('waves')
+          .doc(waveId)
+          .get();
+        if (doc.exists) {
+          const data = doc.data();
+          return { waveId, reach: data?.reach || 0 };
+        }
+        return { waveId, reach: 0 };
+      });
+
+      const reachResults = await Promise.all(reachPromises);
+      const reachMap: Record<string, number> = {};
+      reachResults.forEach(({ waveId, reach }) => {
+        reachMap[waveId] = reach;
+      });
+
+      setReachCounts(prev => ({ ...prev, ...reachMap }));
+    } catch (e) {
+      console.warn('Load reach counts failed', e);
     }
   };
                     
@@ -7809,7 +7842,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         style={{ flexDirection: 'row', marginRight: 20 }}
                       >
                        <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
-                       <Text style={{ fontSize: 14, color: 'black' }}>0</Text>
+                       <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
                        </Pressable>
                       <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>💾 2.3MB</Text>
                       {item.user?.displayName !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
@@ -15283,20 +15316,6 @@ function PostDetailScreen({ route, navigation }: any) {
                     
   return (
     <View style={{ flex: 1, backgroundColor: '#0A1929' }}>
-      {/* Reach Count */}
-      <View style={{
-        position: 'absolute',
-        top: 50,
-        left: 100,
-        zIndex: 10,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        padding: 10,
-        borderRadius: 20,
-      }}>
-        <Text style={{ color: reach === 0 ? 'black' : 'green', fontSize: 14 }}>
-          👁️: {reach}
-        </Text>
-      </View>
       
       {/* Minimize/Zoom Out Button */}
       <Pressable
