@@ -15212,6 +15212,7 @@ function PostDetailScreen({ route, navigation }: any) {
               style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
               resizeMode="contain"
               paused={!isFocused}
+              muted={true} // Start muted in full screen, unmute when play is pressed
               maxBitRate={1500000}
               bufferConfig={{
                 minBufferMs: 20000,
@@ -15296,8 +15297,8 @@ function PostDetailScreen({ route, navigation }: any) {
         onPress={() => navigation.goBack()}
         style={{
           position: 'absolute',
-          top: 50,
-          left: 20,
+          top: SCREEN_HEIGHT / 2 - 50, // Position vertically centered, above time counter
+          right: 20,
           zIndex: 10,
           backgroundColor: 'rgba(0,0,0,0.5)',
           padding: 10,
