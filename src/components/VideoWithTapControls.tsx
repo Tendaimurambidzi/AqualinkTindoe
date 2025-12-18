@@ -42,6 +42,7 @@ type Props = {
   onBuffer?: (data: any) => void;
   onError?: (error: any) => void;
   onProgress?: (data: OnProgressData) => void;
+  onPlay?: () => void;
   muted?: boolean;
   resizeMode?: string;
   isActive?: boolean;
@@ -68,6 +69,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   onBuffer,
   onError,
   onProgress,
+  onPlay,
   muted,
   resizeMode = 'contain',
   isActive = true,
@@ -81,6 +83,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
+  const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
 
   useEffect(() => {
     setInternalPaused(paused);
@@ -207,7 +210,13 @@ const VideoWithTapControls: React.FC<Props> = ({
       });
     }
   }, [controlsVisible, internalPaused, videoCompleted]);
-
+  // Detect when video starts playing and call onPlay callback
+  useEffect(() => {
+    if (currentTime > 0 && !internalPaused && !hasCalledOnPlay.current) {
+      hasCalledOnPlay.current = true;
+      onPlay?.();
+    }
+  }, [currentTime, internalPaused, onPlay]);
   return (
     <View style={[styles.container, style]}>
       <Video

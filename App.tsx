@@ -5738,6 +5738,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
+  // Record Video Reach function with crash-resistant error handling
+  const recordVideoReach = async (postId: string) => {
+    try {
+      const recordReachFn = functions().httpsCallable('recordVideoReach');
+      const result = await recordReachFn({ postId });
+      return result.data;
+    } catch (error) {
+      console.error('Record Video Reach function error:', error);
+      // Don't crash - just return a safe response
+      return { success: false, error: 'Function not available' };
+    }
+  };
+
   const handleToggleVibe = async (targetUid: string, targetName?: string) => {
     try {
       const user = auth().currentUser;
@@ -7661,6 +7674,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             paused={!playSynced}
                             playInBackground={false}
                             isActive={index === currentIndex}
+                            onPlay={() => {
+                              // Record video reach when video starts playing
+                              recordVideoReach(item.id).catch(error => {
+                                console.log('Reach recording failed:', error.message);
+                              });
+                            }}
                           />
                         ) : (
                           <Image
@@ -15177,6 +15196,12 @@ function PostDetailScreen({ route, navigation }: any) {
               }}
               onProgress={(e: any) => {
                 setPlaybackTime(e?.currentTime || 0);
+              }}
+              onPlay={() => {
+                // Record video reach when video starts playing
+                recordVideoReach(post.id).catch(error => {
+                  console.log('Reach recording failed:', error.message);
+                });
               }}
             />
           ) : hasImage ? (
