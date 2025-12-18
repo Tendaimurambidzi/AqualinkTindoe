@@ -4052,6 +4052,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
             setPublicFeed(publicWaves);
                   
+            // Load crew status for all users in the feed
+            const currentUser = auth?.()?.currentUser;
+            if (currentUser) {
+              const uniqueUserIds = [...new Set(wavesWithUserData.map(w => w.ownerUid).filter(uid => uid && uid !== currentUser.uid))];
+              const crewStatus: Record<string, boolean> = {};
+              
+              // Load crew status for each unique user in parallel
+              const crewPromises = uniqueUserIds.map(async (userId) => {
+                try {
+                  const inCrew = await isInCrew(userId);
+                  crewStatus[userId] = inCrew;
+                } catch (error) {
+                  console.warn(`Failed to load crew status for user ${userId}:`, error);
+                  crewStatus[userId] = false;
+                }
+              });
+              
+              // Wait for all crew status checks to complete
+              await Promise.all(crewPromises);
+              
+              // Update the global crew status state
+              setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
+            }
+                  
             // Initialize waveStats for loaded waves
             const waveStatsUpdate: Record<string, any> = {};
             wavesWithUserData.forEach(wave => {
@@ -7737,14 +7761,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
                       {item.user?.displayName !== "Tendaimurambidzi" && (
                         <Pressable
-                          onPress={() => handleToggleVibe(item.user.uid, item.user.displayName || item.user.name)}
+                          onPress={() => handleToggleVibe(item.ownerUid, item.user?.displayName || item.user?.name)}
                           style={{ marginRight: 20 }}
                         >
                           <Text style={{
                             fontSize: 14,
-                            color: isInUserCrew[item.user.uid] ? '#ff6b6b' : '#00C2FF'
+                            color: isInUserCrew[item.ownerUid] ? '#ff6b6b' : '#00C2FF'
                           }}>
-                            {isInUserCrew[item.user.uid] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
+                            {isInUserCrew[item.ownerUid] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
                           </Text>
                         </Pressable>
                       )}
