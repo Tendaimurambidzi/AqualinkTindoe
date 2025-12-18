@@ -1683,6 +1683,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
   const handlePostPublished = useCallback(
     (wave: Vibe) => {
       setPostFeed(prev => {
@@ -7480,8 +7481,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               style={{ flex: 1, backgroundColor: '#f0f2f5' }}
               data={displayFeed}
               keyExtractor={(item) => item.id}
-              pagingEnabled={false}
-              decelerationRate={0.95}
+              pagingEnabled={true}
+              snapToInterval={SCREEN_HEIGHT * 0.8} // Snap to full video height
+              decelerationRate="fast"
               scrollEventThrottle={16}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {
@@ -7498,6 +7500,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
                 setCurrentIndex(newIndex);
               }}
+              // TikTok-style viewability tracking
+              viewabilityConfig={{
+                itemVisiblePercentThreshold: 80, // video must be mostly visible
+              }}
+              onViewableItemsChanged={useRef(({ viewableItems }) => {
+                if (viewableItems.length > 0) {
+                  setActiveVideoId(viewableItems[0].item.id);
+                } else {
+                  setActiveVideoId(null);
+                }
+              }).current}
               renderItem={({ item, index }) => {
                 // Only pause for modals that interfere with video/audio
                 const isAnyModalOpen =
@@ -7527,7 +7540,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const overlayPairReady =
                   !hasOverlayAudio ||
                   (overlayVideoReady && overlayState.audio === true);
-                const playSynced = shouldPlay && overlayPairReady && index === currentIndex && !isSwiping;
+                const playSynced = shouldPlay && overlayPairReady && item.id === activeVideoId;
                 const near = Math.abs(index - currentIndex) <= 1;
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
@@ -7673,7 +7686,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             resizeMode={'contain'}
                             paused={!playSynced}
                             playInBackground={false}
-                            isActive={index === currentIndex}
+                            isActive={item.id === activeVideoId}
                             onPlay={() => {
                               // Record video reach when video starts playing
                               recordVideoReach(item.id).catch(error => {
