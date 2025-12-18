@@ -80,8 +80,8 @@ const VideoWithTapControls: React.FC<Props> = ({
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
-  const [controlsVisible, setControlsVisible] = useState<boolean>(false); // Start with controls hidden
-  const controlsOpacity = useRef(new Animated.Value(0)).current; // Start with opacity 0
+  const [controlsVisible, setControlsVisible] = useState<boolean>(true); // Start with controls visible
+  const controlsOpacity = useRef(new Animated.Value(1)).current; // Start with opacity 1
   const hideTimer = useRef<NodeJS.Timeout | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -179,10 +179,10 @@ const VideoWithTapControls: React.FC<Props> = ({
       const willStartPlaying = internalPaused;
       setInternalPaused(prev => !prev);
       
-      // If starting playback (pressing play), maximize and unmute
+      // If starting playback (pressing play), maximize (if available) and unmute
       if (willStartPlaying) {
         onMaximize?.();
-        setIsMuted(false); // Unmute when maximizing
+        setIsMuted(false); // Unmute when starting playback
       }
     }
     showControls();
@@ -257,9 +257,11 @@ const VideoWithTapControls: React.FC<Props> = ({
         onError={onError}
         onEnd={handleEnd}
       />
-      <TouchableWithoutFeedback onPressIn={onVideoTap}>
-        <View style={StyleSheet.absoluteFill} />
-      </TouchableWithoutFeedback>
+      {onTap && (
+        <TouchableWithoutFeedback onPressIn={onVideoTap}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+      )}
       {videoCompleted && (
         <View style={styles.replayContainer}>
           <TouchableOpacity

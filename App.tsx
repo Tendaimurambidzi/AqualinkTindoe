@@ -7689,10 +7689,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             playInBackground={false}
                             isActive={item.id === activeVideoId}
                             onPlay={() => {
-                              // Record video reach when video starts playing
-                              recordVideoReach(item.id).catch(error => {
-                                console.log('Reach recording failed:', error.message);
-                              });
+                              // Video started playing - no longer recording reach here
                             }}
                             onMaximize={() => {
                               // Navigate to full screen post detail and unmute
@@ -7801,10 +7798,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           </Text>
                         </Pressable>
                       )}
-                      <View style={{ flexDirection: 'row', marginRight: 20 }}>
+                      <Pressable
+                        onPress={() => {
+                          recordVideoReach(item.id).catch(error => {
+                            console.log('Reach recording failed:', error.message);
+                          });
+                        }}
+                        style={{ flexDirection: 'row', marginRight: 20 }}
+                      >
                        <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
                        <Text style={{ fontSize: 14, color: 'black' }}>0</Text>
-                       </View>
+                       </Pressable>
                       <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>💾 2.3MB</Text>
                       {item.user?.displayName !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
                     </ScrollView>
@@ -15297,7 +15301,7 @@ function PostDetailScreen({ route, navigation }: any) {
         onPress={() => navigation.goBack()}
         style={{
           position: 'absolute',
-          top: SCREEN_HEIGHT / 2 - 50, // Position vertically centered, above time counter
+          bottom: 80, // Position just above the video time counter
           right: 20,
           zIndex: 10,
           backgroundColor: 'rgba(0,0,0,0.5)',
