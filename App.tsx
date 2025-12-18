@@ -7490,9 +7490,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               keyExtractor={(item) => item.id}
               pagingEnabled={false}
               snapToInterval={undefined}
-              decelerationRate={0.75}
-              scrollEventThrottle={8}
+              decelerationRate={0.85}
+              scrollEventThrottle={4}
+              bounces={false}
               showsVerticalScrollIndicator={false}
+              overScrollMode="never"
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe

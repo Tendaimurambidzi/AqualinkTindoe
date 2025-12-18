@@ -80,8 +80,8 @@ const VideoWithTapControls: React.FC<Props> = ({
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
-  const [controlsVisible, setControlsVisible] = useState<boolean>(false); // Start with controls hidden
-  const controlsOpacity = useRef(new Animated.Value(0)).current; // Start with opacity 0
+  const [controlsVisible, setControlsVisible] = useState<boolean>(true); // Start with controls visible
+  const controlsOpacity = useRef(new Animated.Value(1)).current; // Start with opacity 1
   const hideTimer = useRef<NodeJS.Timeout | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
@@ -110,11 +110,8 @@ const VideoWithTapControls: React.FC<Props> = ({
       duration: 180,
       useNativeDriver: true,
     }).start();
-    // Keep controls visible longer when tapped (10 seconds instead of 3)
-    hideTimer.current = setTimeout(() => {
-      hideControls();
-    }, 10000);
-  }, [controlsOpacity]);
+    // Keep controls visible indefinitely (no auto-hide)
+  }, []);
 
   const hideControls = useCallback(() => {
     if (hideTimer.current) {
