@@ -7488,10 +7488,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               style={{ flex: 1, backgroundColor: '#f0f2f5' }}
               data={displayFeed}
               keyExtractor={(item) => item.id}
-              pagingEnabled={true}
-              snapToInterval={SCREEN_HEIGHT * 0.8} // Snap to full video height
-              decelerationRate="fast"
-              scrollEventThrottle={16}
+              pagingEnabled={false}
+              snapToInterval={undefined}
+              decelerationRate={0.9}
+              scrollEventThrottle={8}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {
                 setIsSwiping(true);

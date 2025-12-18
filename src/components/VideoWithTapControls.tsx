@@ -258,7 +258,11 @@ const VideoWithTapControls: React.FC<Props> = ({
         onEnd={handleEnd}
       />
       {onTap && (
-        <TouchableWithoutFeedback onPressIn={onVideoTap}>
+        <TouchableWithoutFeedback 
+          onPress={onVideoTap}
+          delayPressIn={100}
+          delayPressOut={100}
+        >
           <View style={StyleSheet.absoluteFill} />
         </TouchableWithoutFeedback>
       )}
