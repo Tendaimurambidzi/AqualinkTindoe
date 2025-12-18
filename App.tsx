@@ -1684,6 +1684,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    if (viewableItems.length > 0) {
+      setActiveVideoId(viewableItems[0].item.id);
+    } else {
+      setActiveVideoId(null);
+    }
+  });
   const handlePostPublished = useCallback(
     (wave: Vibe) => {
       setPostFeed(prev => {
@@ -7504,13 +7511,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               viewabilityConfig={{
                 itemVisiblePercentThreshold: 80, // video must be mostly visible
               }}
-              onViewableItemsChanged={useRef(({ viewableItems }) => {
-                if (viewableItems.length > 0) {
-                  setActiveVideoId(viewableItems[0].item.id);
-                } else {
-                  setActiveVideoId(null);
-                }
-              }).current}
+              onViewableItemsChanged={onViewableItemsChanged.current}
               renderItem={({ item, index }) => {
                 // Only pause for modals that interfere with video/audio
                 const isAnyModalOpen =
