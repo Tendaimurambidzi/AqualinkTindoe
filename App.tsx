@@ -7490,7 +7490,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               keyExtractor={(item) => item.id}
               pagingEnabled={false}
               snapToInterval={undefined}
-              decelerationRate={0.9}
+              decelerationRate={0.75}
               scrollEventThrottle={8}
               showsVerticalScrollIndicator={false}
               onScrollBeginDrag={() => {

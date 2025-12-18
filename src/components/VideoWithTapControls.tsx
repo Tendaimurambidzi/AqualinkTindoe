@@ -155,9 +155,16 @@ const VideoWithTapControls: React.FC<Props> = ({
   }, [currentTime, seekStep, safeSeek, showControls, onTap]);
 
   const onToggleMute = useCallback(() => {
+    const willUnmute = isMuted; // If currently muted, this action will unmute
     setIsMuted(prev => !prev);
+    
+    // If unmuting, also maximize the video
+    if (willUnmute) {
+      onMaximize?.();
+    }
+    
     showControls();
-  }, [showControls]);
+  }, [isMuted, showControls, onMaximize]);
 
   const onRewind = useCallback(() => {
     safeSeek(currentTime - seekStep);
