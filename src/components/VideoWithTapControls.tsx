@@ -46,6 +46,7 @@ type Props = {
   muted?: boolean;
   resizeMode?: string;
   isActive?: boolean;
+  onTap?: () => void;
 };
 
 const VideoWithTapControls: React.FC<Props> = ({
@@ -73,6 +74,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   muted,
   resizeMode = 'contain',
   isActive = true,
+  onTap,
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
@@ -142,10 +144,13 @@ const VideoWithTapControls: React.FC<Props> = ({
       safeSeek(currentTime - seekStep);
     } else if (locationX > rightThird) {
       safeSeek(currentTime + seekStep);
+    } else {
+      // Center tap - navigate to full screen detail view
+      onTap?.();
     }
     // Always show controls when tapping anywhere on video
     showControls();
-  }, [currentTime, seekStep, safeSeek, showControls]);
+  }, [currentTime, seekStep, safeSeek, showControls, onTap]);
 
   const onToggleMute = useCallback(() => {
     setIsMuted(prev => !prev);

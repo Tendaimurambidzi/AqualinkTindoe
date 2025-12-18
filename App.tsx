@@ -7694,21 +7694,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 console.log('Reach recording failed:', error.message);
                               });
                             }}
+                            onTap={() => {
+                              // Navigate to full screen post detail
+                              navigation.navigate('PostDetail', { post: item });
+                            }}
                           />
                         ) : (
-                          <Image
-                            source={{ uri: item.media.uri }}
-                            style={videoStyleFor(item.id) as any}
-                            resizeMode="cover"
-                          />
+                          <Pressable onPress={() => navigation.navigate('PostDetail', { post: item })}>
+                            <Image
+                              source={{ uri: item.media.uri }}
+                              style={videoStyleFor(item.id) as any}
+                              resizeMode="cover"
+                            />
+                          </Pressable>
                         )}
                       </>
                     ) : (
                       /* Text-only posts - use same height as media, or expand when needed */
-                      <View style={[
-                        expandedPosts[item.id] ? { minHeight: (SCREEN_WIDTH - 40) / (9/16) } : videoStyleFor(item.id),
-                        expandedPosts[item.id] ? {} : { overflow: 'hidden' }
-                      ] as any}>
+                      <Pressable 
+                        onPress={() => navigation.navigate('PostDetail', { post: item })}
+                        style={[
+                          expandedPosts[item.id] ? { minHeight: (SCREEN_WIDTH - 40) / (9/16) } : videoStyleFor(item.id),
+                          expandedPosts[item.id] ? {} : { overflow: 'hidden' }
+                        ] as any}
+                      >
                         <Text style={{ fontSize: 16, lineHeight: 20, flex: expandedPosts[item.id] ? 0 : 1 }}>
                           {expandedPosts[item.id]
                             ? item.captionText
@@ -7724,7 +7733,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             </Text>
                           )}
                         </Text>
-                      </View>
+                      </Pressable>
                     )}
                     {bufferingMap[item.id] && shouldPlay && (
                       <View
@@ -15186,7 +15195,7 @@ function PostDetailScreen({ route, navigation }: any) {
           {hasVideo && RNVideo ? (
             <VideoWithTapControls
               source={{ uri: String(post.playbackUrl || post.media.uri) }}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.6 }}
+              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
               resizeMode="contain"
               paused={!isFocused}
               maxBitRate={1500000}
@@ -15221,7 +15230,7 @@ function PostDetailScreen({ route, navigation }: any) {
           ) : hasImage ? (
             <Image
               source={{ uri: post.media.uri }}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.6, resizeMode: 'cover' }}
+              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'cover' }}
             />
           ) : null}
                     
@@ -15268,7 +15277,7 @@ function PostDetailScreen({ route, navigation }: any) {
         </Text>
       </View>
       
-      {/* Back Button */}
+      {/* Minimize/Zoom Out Button */}
       <Pressable
         onPress={() => navigation.goBack()}
         style={{
@@ -15281,7 +15290,7 @@ function PostDetailScreen({ route, navigation }: any) {
           borderRadius: 20,
         }}
       >
-        <Text style={{ color: 'white', fontSize: 16 }}>← Back</Text>
+        <Text style={{ color: 'white', fontSize: 18 }}>⤡</Text>
       </Pressable>
       
       {/* Follow Button */}
