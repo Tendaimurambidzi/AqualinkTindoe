@@ -111,8 +111,13 @@ const VideoWithTapControls: React.FC<Props> = ({
       useNativeDriver: true,
     }).start();
 
-    // Keep controls visible - don't auto-hide
-  }, [controlsOpacity]);
+    // Auto-hide controls after timeout if video is playing
+    if (!internalPaused) {
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, hideTimeout);
+    }
+  }, [internalPaused, hideTimeout, controlsOpacity]);
 
   const hideControls = useCallback(() => {
     if (hideTimer.current) {
@@ -243,9 +248,15 @@ const VideoWithTapControls: React.FC<Props> = ({
     if (currentTime > 0 && !internalPaused && !hasCalledOnPlay.current) {
       hasCalledOnPlay.current = true;
       onPlay?.();
-      // Don't auto-hide controls when video starts playing - let them stay visible if user tapped
+      // Hide controls when video starts playing
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+      }
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, hideTimeout);
     }
-  }, [currentTime, internalPaused, onPlay]);
+  }, [currentTime, internalPaused, onPlay, hideTimeout, hideControls]);
   return (
     <View style={[styles.container, style]}>
       <Video
