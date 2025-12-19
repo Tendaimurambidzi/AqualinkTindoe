@@ -65,9 +65,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
 
-  // Track if a splash action is currently in progress
-  const [splashActionInProgress, setSplashActionInProgress] = useState(false);
-
   // Initialize and update local count with props
   useEffect(() => {
     setLocalSplashesCount(initialSplashesCount);
@@ -109,84 +106,78 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       }
     };
     checkInteractions();
-  }, [waveId, currentUserId, splashActionInProgress]);
+  }, [waveId, currentUserId]);
 
-  const handleHug = async () => {
-    // Prevent multiple clicks while action is in progress
-    if (splashActionInProgress) return;
-    
-    setSplashActionInProgress(true);
-    
-    try {
-      if (hugState === 'hugged') {
-        // User is unhugging - decrement the count
-        setLocalSplashesCount(prev => Math.max(0, prev - 1));
-        setHugState('unhugged');
-        
-        // Remove splash from backend
-        await firestore()
-          .collection(`waves/${waveId}/splashes`)
-          .doc(currentUserId)
-          .delete();
-        onRemove();
-      } else {
-        // User is hugging - increment the count
-        setLocalSplashesCount(prev => prev + 1);
-        setHugState('hugged');
-        
-        // Add splash to backend
-        await firestore()
-          .collection(`waves/${waveId}/splashes`)
-          .doc(currentUserId)
-          .set({
-            userUid: currentUserId,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          });
-        
-        // Send notification if not self
-        if (currentUserId !== creatorUserId) {
-          try {
-            // Get user name
+  const handleHug = () => {
+    // Immediate UI response - no blocking
+    if (hugState === 'hugged') {
+      // User is unhugging - decrement the count
+      setLocalSplashesCount(prev => Math.max(0, prev - 1));
+      setHugState('unhugged');
+
+      // Handle backend removal asynchronously
+      firestore()
+        .collection(`waves/${waveId}/splashes`)
+        .doc(currentUserId)
+        .delete()
+        .then(() => {
+          onRemove();
+        })
+        .catch((error) => {
+          console.error('Error removing hug:', error);
+          // Revert on error
+          setLocalSplashesCount(prev => prev + 1);
+          setHugState('hugged');
+        });
+    } else {
+      // User is hugging - increment the count
+      setLocalSplashesCount(prev => prev + 1);
+      setHugState('hugged');
+
+      // Handle backend addition and notification asynchronously
+      firestore()
+        .collection(`waves/${waveId}/splashes`)
+        .doc(currentUserId)
+        .set({
+          userUid: currentUserId,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        })
+        .then(() => {
+          onAdd();
+
+          // Send notification if not self
+          if (currentUserId !== creatorUserId) {
+            // Get user name and send notification
             let fromName = 'Someone';
-            try {
-              const userDoc = await firestore()
-                .collection('users')
-                .doc(currentUserId)
-                .get();
-              if (userDoc.exists) {
-                const userData = userDoc.data();
-                fromName = userData?.displayName || userData?.name || 'Someone';
-              }
-            } catch (e) {
-              console.warn('Failed to get user name for notification:', e);
-            }
-            await functions().httpsCallable('addPing')({
-              recipientUid: creatorUserId,
-              type: 'hug',
-              waveId: waveId,
-              text: `${fromName} has hugged your SplashLine`,
-              fromUid: currentUserId,
-              fromName: fromName,
-            });
-          } catch (error) {
-            console.error('Error sending hug notification:', error);
+            firestore()
+              .collection('users')
+              .doc(currentUserId)
+              .get()
+              .then((userDoc) => {
+                if (userDoc.exists) {
+                  const userData = userDoc.data();
+                  fromName = userData?.displayName || userData?.name || 'Someone';
+                }
+                return functions().httpsCallable('addPing')({
+                  recipientUid: creatorUserId,
+                  type: 'hug',
+                  waveId: waveId,
+                  text: `${fromName} has hugged your SplashLine`,
+                  fromUid: currentUserId,
+                  fromName: fromName,
+                });
+              })
+              .catch((error) => {
+                console.error('Error sending hug notification:', error);
+              });
           }
-        }
-        onAdd();
-      }
-    } catch (error) {
-      console.error('Error handling hug:', error);
-      // Revert local count and state on error
-      if (hugState === 'hugged') {
-        setLocalSplashesCount(prev => prev + 1);
-        setHugState('unhugged');
-      } else {
-        setLocalSplashesCount(prev => Math.max(0, prev - 1));
-        setHugState('hugged');
-      }
-    } finally {
-      // Always clear the action in progress flag
-      setSplashActionInProgress(false);
+        })
+        .catch((error) => {
+          console.error('Error adding hug:', error);
+          // Revert on error
+          setLocalSplashesCount(prev => Math.max(0, prev - 1));
+          setHugState('unhugged');
+        });
     }
   };
 
@@ -216,7 +207,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         style={styles.actionButton} 
         onPress={handleHug} 
         hitSlop={{top: 50, bottom: 50, left: 50, right: 50}}
-        disabled={splashActionInProgress}
       >
         <Text style={[styles.actionIcon, localSplashesCount > 0 && styles.activeAction]}>
           🫂
