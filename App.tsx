@@ -1695,6 +1695,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
+  const [preservedScrollPosition, setPreservedScrollPosition] = useState<number | null>(null); // Preserve scroll position when navigating to PostDetail
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
@@ -1727,6 +1728,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
   );
+
+  // Restore scroll position when returning from PostDetail
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('focus', () => {
+      if (preservedScrollPosition !== null) {
+        // Small delay to ensure the FlatList has rendered
+        setTimeout(() => {
+          if (feedRef.current && preservedScrollPosition >= 0 && displayFeed && displayFeed.length > preservedScrollPosition) {
+            // Scroll to the preserved index position
+            feedRef.current.scrollToIndex({ 
+              index: preservedScrollPosition, 
+              animated: false,
+              viewPosition: 0 // Align to top of screen
+            });
+            setCurrentIndex(preservedScrollPosition);
+          }
+          // Clear the preserved position
+          setPreservedScrollPosition(null);
+        }, 100);
+      }
+    });
+
+    return unsubscribe;
+  }, [navigation, preservedScrollPosition, displayFeed?.length]);
                     
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
@@ -7767,6 +7792,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
+                getItemLayout={(data, index) => ({
+                  length: 450, // Estimated average height per post
+                  offset: 450 * index,
+                  index,
+                })}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={0.85}
@@ -7798,6 +7828,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   loadMoreFeedItems();
                 }}
                 onEndReachedThreshold={0.5} // Trigger when 50% from the end
+                scrollToIndexFailed={(info) => {
+                  // Fallback when scrollToIndex fails - try to scroll to a nearby index
+                  const { index, highestMeasuredFrameIndex } = info;
+                  if (highestMeasuredFrameIndex >= 0 && feedRef.current) {
+                    // Try scrolling to the highest measured index instead
+                    feedRef.current.scrollToIndex({
+                      index: Math.min(index, highestMeasuredFrameIndex),
+                      animated: false,
+                      viewPosition: 0
+                    });
+                  }
+                }}
                 renderItem={({ item, index }) => {
                 // Only pause for modals that interfere with video/audio
                 const isAnyModalOpen =
@@ -7983,12 +8025,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               // Video started playing - no longer recording reach here
                             }}
                             onMaximize={() => {
+                              // Save current scroll position before navigating to full screen
+                              setPreservedScrollPosition(currentIndex);
                               // Navigate to full screen post detail and unmute
                               navigation.navigate('PostDetail', { post: item });
                             }}
                           />
                         ) : (
-                          <Pressable onPress={() => navigation.navigate('PostDetail', { post: item })}>
+                          <Pressable onPress={() => {
+                            // Save current scroll position before navigating to full screen
+                            setPreservedScrollPosition(currentIndex);
+                            navigation.navigate('PostDetail', { post: item });
+                          }}>
                             <Image
                               source={{ uri: item.media.uri }}
                               style={videoStyleFor(item.id) as any}
@@ -8000,7 +8048,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     ) : (
                       /* Text-only posts - use same height as media, or expand when needed */
                       <Pressable 
-                        onPress={() => navigation.navigate('PostDetail', { post: item })}
+                        onPress={() => {
+                          // Save current scroll position before navigating to full screen
+                          setPreservedScrollPosition(currentIndex);
+                          navigation.navigate('PostDetail', { post: item });
+                        }}
                         style={[
                           expandedPosts[item.id] ? { minHeight: (SCREEN_WIDTH - 40) / (9/16) } : videoStyleFor(item.id),
                           expandedPosts[item.id] ? {} : { overflow: 'hidden' }
