@@ -1681,8 +1681,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [myUid, normalizeUserHandle]);
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
-  const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
+  const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
   const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
   // Public feed toggle and data
                     
@@ -7723,7 +7723,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
                       {/* Right side - Menu button */}
                       <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 15, bottom: 15, left: 15, right: 15}}>
+                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
                           <Text style={{ fontSize: 24 }}>⋮</Text>
                         </TouchableOpacity>
                       </View>
@@ -7883,28 +7883,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <View style={{ marginTop: 10 }}>
                           {/* Show echoes based on expansion state */}
                           {expandedEchoes[item.id] ? (
-                            /* Expanded view - show all echoes */
-                            postEchoLists[item.id].map((echo, idx) => (
-                              <View key={echo.id || idx} style={{
-                                flexDirection: 'row',
-                                marginBottom: 8,
-                                padding: 8,
-                                backgroundColor: 'rgba(255,255,255,0.8)',
-                                borderRadius: 8,
-                              }}>
-                                <View style={{ flex: 1 }}>
-                                  <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                    {displayHandle(echo.uid, echo.userName || echo.uid)}
-                                  </Text>
-                                  <Text style={{ color: 'black', fontSize: 14 }}>
-                                    {echo.text}
-                                  </Text>
-                                  <Text style={{ color: 'gray', fontSize: 10 }}>
-                                    {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
-                                  </Text>
-                                </View>
-                              </View>
-                            ))
+                            /* Expanded view - show echoes with lazy loading */
+                            (() => {
+                              const allEchoes = postEchoLists[item.id];
+                              const pageSize = echoesPageSize[item.id] || 5; // Default to 5 echoes
+                              const visibleEchoes = allEchoes.slice(0, pageSize);
+                              const hasMoreEchoes = allEchoes.length > pageSize;
+
+                              return (
+                                <>
+                                  {visibleEchoes.map((echo, idx) => (
+                                    <View key={echo.id || idx} style={{
+                                      flexDirection: 'row',
+                                      marginBottom: 8,
+                                      padding: 8,
+                                      backgroundColor: 'rgba(255,255,255,0.8)',
+                                      borderRadius: 8,
+                                    }}>
+                                      <View style={{ flex: 1 }}>
+                                        <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                          {displayHandle(echo.uid, echo.userName || echo.uid)}
+                                        </Text>
+                                        <Text style={{ color: 'black', fontSize: 14 }}>
+                                          {echo.text}
+                                        </Text>
+                                        <Text style={{ color: 'gray', fontSize: 10 }}>
+                                          {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
+                                        </Text>
+                                      </View>
+                                    </View>
+                                  ))}
+
+                                  {/* Load more button if there are more echoes */}
+                                  {hasMoreEchoes && (
+                                    <Pressable
+                                      onPress={() => setEchoesPageSize(prev => ({ ...prev, [item.id]: (prev[item.id] || 5) + 5 }))}
+                                      style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}
+                                      hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}
+                                    >
+                                      <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
+                                        Load {Math.min(5, allEchoes.length - pageSize)} more echoes
+                                      </Text>
+                                    </Pressable>
+                                  )}
+                                </>
+                              );
+                            })()
                           ) : (
                             /* Collapsed view - show only most recent echo */
                             (() => {
@@ -7938,6 +7962,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <Pressable
                               onPress={() => setExpandedEchoes(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
                               style={{ marginTop: 5, alignSelf: 'flex-start' }}
+                              hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
                             >
                               <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
                                 {expandedEchoes[item.id] ? 'View less' : `View all ${postEchoLists[item.id].length} echoes`}
@@ -8005,7 +8030,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               {/* Toggle Button */}
               <Pressable
                 style={styles.toggleButton}
-                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
                 onPress={withUi(() => {
                   setIsTopBarExpanded(p => !p);
                   showTopBar();
@@ -8804,7 +8829,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         >
                           <Pressable
                             onPress={() => deleteWave(w.id)}
-                            hitSlop={12}
+                            hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
                             style={[
                               styles.closeBtn,
                               {

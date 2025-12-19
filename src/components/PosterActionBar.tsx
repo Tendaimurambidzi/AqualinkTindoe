@@ -215,7 +215,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       <Pressable 
         style={styles.actionButton} 
         onPress={handleHug} 
-        hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}
+        hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
         disabled={splashActionInProgress}
       >
         <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
@@ -228,7 +228,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </Pressable>
 
       {/* Echoes Button */}
-      <Pressable style={styles.actionButton} onPress={handleEcho} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handleEcho} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
         <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
           📣
         </Text>
@@ -239,7 +239,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </Pressable>
 
       {/* Gems Button */}
-      <Pressable style={styles.actionButton} onPress={handlePearl} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handlePearl} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
         <Text style={[styles.actionText, pearlsCount > 0 && styles.activeAction]}>
           💎
         </Text>
@@ -247,7 +247,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </Pressable>
 
       {/* Anchor Wave Button */}
-      <Pressable style={styles.actionButton} onPress={handleAnchor} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handleAnchor} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
         <Text style={[styles.actionText, isAnchored && styles.activeAction]}>
           ⚓
         </Text>
@@ -255,7 +255,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       </Pressable>
 
       {/* Cast Wave Button */}
-      <Pressable style={styles.actionButton} onPress={handleCast} hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+      <Pressable style={styles.actionButton} onPress={handleCast} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
         <Text style={[styles.actionText, isCasted && styles.activeAction]}>
           📡
         </Text>
