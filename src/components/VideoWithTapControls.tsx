@@ -283,13 +283,11 @@ const VideoWithTapControls: React.FC<Props> = ({
         onError={onError}
         onEnd={handleEnd}
       />
-      {onTap && (
-        <TouchableWithoutFeedback 
-          onPress={onVideoTap}
-        >
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-      )}
+      <TouchableWithoutFeedback 
+        onPress={onVideoTap}
+      >
+        <View style={StyleSheet.absoluteFill} />
+      </TouchableWithoutFeedback>
       {videoCompleted && (
         <View style={styles.replayContainer}>
           <TouchableOpacity
