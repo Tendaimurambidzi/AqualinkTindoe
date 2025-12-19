@@ -7739,7 +7739,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <Image
                               source={{ uri: item.media.uri }}
                               style={videoStyleFor(item.id) as any}
-                              resizeMode="cover"
+                              resizeMode="contain"
                             />
                           </Pressable>
                         )}
@@ -15283,11 +15283,14 @@ function PostDetailScreen({ route, navigation }: any) {
                   console.log('Reach recording failed:', error.message);
                 });
               }}
+              onMaximize={() => {
+                // Already in full screen, no further maximization needed
+              }}
             />
           ) : hasImage ? (
             <Image
               source={{ uri: post.media.uri }}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'cover' }}
+              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'contain' }}
             />
           ) : null}
                     
