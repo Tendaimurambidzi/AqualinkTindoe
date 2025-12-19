@@ -73,7 +73,7 @@ import {
 } from './src/services/crewService';
 import { uploadPost } from './src/services/uploadPost';
 import { removeSplash } from './src/services/splashService';
-import { timeAgo } from './src/services/timeUtils';
+import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
                     
@@ -7717,7 +7717,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </Text>
                         {(waveStats[item.id]?.createdAt || item.createdAt) && (
                           <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
-                            {timeAgo(waveStats[item.id]?.createdAt || item.createdAt)}
+                            {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt)}
                           </Text>
                         )}
                       </View>
@@ -7898,7 +7898,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   {echo.text}
                                 </Text>
                                 <Text style={{ color: 'gray', fontSize: 10 }}>
-                                  {echo.createdAt?.toDate ? getRelativeTime(echo.createdAt.toDate()) : 'just now'}
+                                  {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
                                 </Text>
                               </View>
                             </View>
