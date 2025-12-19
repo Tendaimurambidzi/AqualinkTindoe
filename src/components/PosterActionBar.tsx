@@ -215,7 +215,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       <Pressable 
         style={styles.actionButton} 
         onPress={handleHug} 
-        hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
+        hitSlop={{top: 50, bottom: 50, left: 50, right: 50}}
         disabled={splashActionInProgress}
       >
         <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
   actionButton: {
     alignItems: 'center',
     padding: 10,
-    marginHorizontal: 2,
+    marginHorizontal: 5, // Increased spacing between buttons
   },
   actionText: {
     fontSize: 16,

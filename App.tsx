@@ -1683,6 +1683,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
   const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
+  const [echoExpansionInProgress, setEchoExpansionInProgress] = useState<Record<string, boolean>>({});
   const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
   // Public feed toggle and data
                     
@@ -7885,84 +7886,136 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           {expandedEchoes[item.id] ? (
                             /* Expanded view - show echoes with lazy loading */
                             (() => {
-                              const allEchoes = postEchoLists[item.id];
-                              const pageSize = echoesPageSize[item.id] || 5; // Default to 5 echoes
-                              const visibleEchoes = allEchoes.slice(0, pageSize);
-                              const hasMoreEchoes = allEchoes.length > pageSize;
+                              try {
+                                const allEchoes = postEchoLists[item.id];
+                                const pageSize = echoesPageSize[item.id] || 5; // Default to 5 echoes
+                                const visibleEchoes = allEchoes.slice(0, pageSize);
+                                const hasMoreEchoes = allEchoes.length > pageSize;
 
-                              return (
-                                <>
-                                  {visibleEchoes.map((echo, idx) => (
-                                    <View key={echo.id || idx} style={{
-                                      flexDirection: 'row',
-                                      marginBottom: 8,
-                                      padding: 8,
-                                      backgroundColor: 'rgba(255,255,255,0.8)',
-                                      borderRadius: 8,
-                                    }}>
-                                      <View style={{ flex: 1 }}>
-                                        <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                          {displayHandle(echo.uid, echo.userName || echo.uid)}
-                                        </Text>
-                                        <Text style={{ color: 'black', fontSize: 14 }}>
-                                          {echo.text}
-                                        </Text>
-                                        <Text style={{ color: 'gray', fontSize: 10 }}>
-                                          {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
-                                        </Text>
+                                return (
+                                  <>
+                                    {visibleEchoes.map((echo, idx) => (
+                                      <View key={echo.id || idx} style={{
+                                        flexDirection: 'row',
+                                        marginBottom: 8,
+                                        padding: 8,
+                                        backgroundColor: 'rgba(255,255,255,0.8)',
+                                        borderRadius: 8,
+                                      }}>
+                                        <View style={{ flex: 1 }}>
+                                          <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                            {displayHandle(echo.uid, echo.userName || echo.uid)}
+                                          </Text>
+                                          <Text style={{ color: 'black', fontSize: 14 }}>
+                                            {echo.text}
+                                          </Text>
+                                          <Text style={{ color: 'gray', fontSize: 10 }}>
+                                            {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
+                                          </Text>
+                                        </View>
                                       </View>
-                                    </View>
-                                  ))}
+                                    ))}
 
-                                  {/* Load more button if there are more echoes */}
-                                  {hasMoreEchoes && (
-                                    <Pressable
-                                      onPress={() => setEchoesPageSize(prev => ({ ...prev, [item.id]: (prev[item.id] || 5) + 5 }))}
-                                      style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}
-                                      hitSlop={{top: 20, bottom: 20, left: 20, right: 20}}
-                                    >
-                                      <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
-                                        Load {Math.min(5, allEchoes.length - pageSize)} more echoes
-                                      </Text>
-                                    </Pressable>
-                                  )}
-                                </>
-                              );
+                                    {/* Load more button if there are more echoes */}
+                                    {hasMoreEchoes && (
+                                      <Pressable
+                                        onPress={() => {
+                                          // Prevent multiple rapid clicks
+                                          if (echoExpansionInProgress[item.id]) return;
+                                          
+                                          try {
+                                            setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: true }));
+                                            setEchoesPageSize(prev => ({ ...prev, [item.id]: (prev[item.id] || 5) + 5 }));
+                                            
+                                            // Reset expansion progress after a short delay
+                                            setTimeout(() => {
+                                              setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
+                                            }, 200);
+                                          } catch (error) {
+                                            console.error('Error loading more echoes:', error);
+                                            setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
+                                          }
+                                        }}
+                                        style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}
+                                        hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
+                                        disabled={echoExpansionInProgress[item.id]}
+                                      >
+                                        <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
+                                          Load {Math.min(5, allEchoes.length - pageSize)} more echoes
+                                        </Text>
+                                      </Pressable>
+                                    )}
+                                  </>
+                                );
+                              } catch (error) {
+                                console.error('Error rendering expanded echoes:', error);
+                                return (
+                                  <View style={{ padding: 10, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 8, marginBottom: 10 }}>
+                                    <Text style={{ color: 'red', fontSize: 12 }}>Error loading echoes</Text>
+                                  </View>
+                                );
+                              }
                             })()
                           ) : (
                             /* Collapsed view - show only most recent echo */
                             (() => {
-                              const mostRecentEcho = postEchoLists[item.id][0];
-                              return (
-                                <View style={{
-                                  flexDirection: 'row',
-                                  marginBottom: 8,
-                                  padding: 8,
-                                  backgroundColor: 'rgba(255,255,255,0.8)',
-                                  borderRadius: 8,
-                                }}>
-                                  <View style={{ flex: 1 }}>
-                                    <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                      {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
-                                    </Text>
-                                    <Text style={{ color: 'black', fontSize: 14 }}>
-                                      {mostRecentEcho.text}
-                                    </Text>
-                                    <Text style={{ color: 'gray', fontSize: 10 }}>
-                                      {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
-                                    </Text>
+                              try {
+                                const mostRecentEcho = postEchoLists[item.id][0];
+                                return (
+                                  <View style={{
+                                    flexDirection: 'row',
+                                    marginBottom: 8,
+                                    padding: 8,
+                                    backgroundColor: 'rgba(255,255,255,0.8)',
+                                    borderRadius: 8,
+                                  }}>
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                        {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
+                                      </Text>
+                                      <Text style={{ color: 'black', fontSize: 14 }}>
+                                        {mostRecentEcho.text}
+                                      </Text>
+                                      <Text style={{ color: 'gray', fontSize: 10 }}>
+                                        {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
+                                      </Text>
+                                    </View>
                                   </View>
-                                </View>
-                              );
+                                );
+                              } catch (error) {
+                                console.error('Error rendering collapsed echo:', error);
+                                return (
+                                  <View style={{ padding: 8, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 8, marginBottom: 8 }}>
+                                    <Text style={{ color: 'red', fontSize: 12 }}>Error loading echo preview</Text>
+                                  </View>
+                                );
+                              }
                             })()
                           )}
 
                           {/* Toggle button - only show if there are more than 1 echo */}
                           {postEchoLists[item.id].length > 1 && (
                             <Pressable
-                              onPress={() => setExpandedEchoes(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
+                              onPress={() => {
+                                // Prevent multiple rapid clicks
+                                if (echoExpansionInProgress[item.id]) return;
+                                
+                                try {
+                                  setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: true }));
+                                  setExpandedEchoes(prev => ({ ...prev, [item.id]: !prev[item.id] }));
+                                  
+                                  // Reset expansion progress after a short delay
+                                  setTimeout(() => {
+                                    setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
+                                  }, 300);
+                                } catch (error) {
+                                  console.error('Error toggling echo expansion:', error);
+                                  setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
+                                }
+                              }}
                               style={{ marginTop: 5, alignSelf: 'flex-start' }}
-                              hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
+                              hitSlop={{top: 40, bottom: 40, left: 40, right: 40}}
+                              disabled={echoExpansionInProgress[item.id]}
                             >
                               <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
                                 {expandedEchoes[item.id] ? 'View less' : `View all ${postEchoLists[item.id].length} echoes`}
