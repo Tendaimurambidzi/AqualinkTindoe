@@ -60,6 +60,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary, CameraOptions, Asset, ImagePickerResponse } from 'react-native-image-picker';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
                     
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
@@ -70,6 +72,7 @@ import {
   leaveCrew,
 } from './src/services/crewService';
 import { uploadPost } from './src/services/uploadPost';
+import { removeSplash } from './src/services/splashService';
 import { timeAgo } from './src/services/timeUtils';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
@@ -1971,6 +1974,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [isFocused]);
                     
   // ----- Profile photo handlers -----
+  const uploadAndSave = async (uri: string) => {
+    try {
+      const uid = auth().currentUser?.uid;
+      if (!uid) {
+        throw new Error('Please sign in to upload a profile photo.');
+      }
+
+      // Upload to Firebase Storage
+      const storageRef = storage().ref(`users/${uid}/profile.jpg`);
+      await storageRef.putFile(uri);
+      const downloadURL = await storageRef.getDownloadURL();
+
+      // Update Firestore
+      await firestore()
+        .doc(`users/${uid}`)
+        .set({ userPhoto: downloadURL }, { merge: true });
+
+      // Update local state
+      setProfilePhoto(downloadURL);
+    } catch (error) {
+      console.error('Error uploading profile photo:', error);
+      throw error;
+    }
+  };
+
   const onEditAvatar = async () => {
     try {
       const actions: any[] = [];
