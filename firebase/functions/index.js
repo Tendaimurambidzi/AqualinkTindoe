@@ -226,12 +226,37 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
   const echoSenderUid = echo.userUid;
   if (!echoSenderUid) return;
   
-  // Don't send notification if the echo sender is the wave owner
-  if (String(waveOwnerUid) === String(echoSenderUid)) return;
+  // Check if this is a reply to another echo
+  let notificationTargetUid = waveOwnerUid;
+  let notificationType = 'echo';
+  let notificationText = `📣 ${echo.userName || 'Someone'} echoed: ${echo.text?.slice(0, 60) || ''}`;
   
-  await addPing(waveOwnerUid, {
-    type: 'echo',
-    text: `📣 ${echo.userName || 'Someone'} echoed: ${echo.text?.slice(0, 60) || ''}`,
+  if (echo.replyToEchoId) {
+    // This is a reply to another echo - notify the original echo author
+    try {
+      const originalEchoSnap = await db.collection('waves').doc(waveId).collection('echoes').doc(echo.replyToEchoId).get();
+      if (originalEchoSnap.exists) {
+        const originalEcho = originalEchoSnap.data() || {};
+        const originalEchoAuthorUid = originalEcho.userUid;
+        if (originalEchoAuthorUid && String(originalEchoAuthorUid) !== String(echoSenderUid)) {
+          // Notify the original echo author
+          notificationTargetUid = originalEchoAuthorUid;
+          notificationType = 'echo_reply';
+          notificationText = `💬 ${echo.userName || 'Someone'} replied to your echo: ${echo.text?.slice(0, 60) || ''}`;
+        }
+      }
+    } catch (error) {
+      console.warn('Error checking original echo for reply:', error);
+      // Fall back to notifying wave owner
+    }
+  }
+  
+  // Don't send notification if the echo sender is the notification target
+  if (String(notificationTargetUid) === String(echoSenderUid)) return;
+  
+  await addPing(notificationTargetUid, {
+    type: notificationType,
+    text: notificationText,
     waveId,
     fromUid: echoSenderUid,
   });
@@ -445,7 +470,7 @@ exports.createEcho = onCall({ region: 'us-central1' }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in required');
 
-  const { waveId, text, fromName, fromPhoto } = req.data || {};
+  const { waveId, text, fromName, fromPhoto, replyToEchoId } = req.data || {};
   if (!waveId || typeof waveId !== 'string') throw new HttpsError('invalid-argument', 'waveId is required');
   const body = (text ?? '').toString().trim();
   if (!body) throw new HttpsError('invalid-argument', 'Echo text is empty');
@@ -462,6 +487,7 @@ exports.createEcho = onCall({ region: 'us-central1' }, async (req) => {
       userName: fromName ?? null,
       userPhoto: fromPhoto ?? null,
       text: body,
+      replyToEchoId: replyToEchoId || null, // Add reply support
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
     });

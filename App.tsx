@@ -2512,6 +2512,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     id: string;
     text: string;
   } | null>(null);
+  const [replyingToEcho, setReplyingToEcho] = useState<{
+    id: string;
+    text: string;
+    userName?: string;
+    uid: string;
+  } | null>(null);
   const [showSendMessage, setShowSendMessage] = useState<boolean>(false);
   const [messageText, setMessageText] = useState<string>('');
   const [messageRecipient, setMessageRecipient] = useState<{
@@ -4822,7 +4828,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setSplashBusy(false);
     }
   };
-  const sendEcho = async (waveId: string, text: string) => {
+  const sendEcho = async (waveId: string, text: string, replyToEchoId?: string) => {
     // Get firestore instance
     let firestoreMod: any = null;
     try {
@@ -4862,7 +4868,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       waveId,
       text: trimmed,
       fromName,
-      fromPhoto
+      fromPhoto,
+      replyToEchoId
     });
   };
   const onSendEcho = async () => {
@@ -4918,7 +4925,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       ]);
                     
       // Use the new sendEcho transaction
-      await sendEcho(currentWave.id, text);
+      await sendEcho(currentWave.id, text, replyingToEcho?.id);
       
       // Update local echo counts
       setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
@@ -4955,6 +4962,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       // Clear input and hide echo UI before showing success
       updateEchoText('');
+      setReplyingToEcho(null);
       setEchoList(prev => prev.filter(e => e.id !== pendingId));
       setMyEcho({ text });
       setShowEchoes(false); // Hide echo UI first
@@ -10923,6 +10931,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <ScrollView>
                 <TextInput
                   placeholder={
+                    replyingToEcho ? `Reply to @${replyingToEcho.userName}...` : 
                     editingEcho ? 'Edit your echo...' : 'Cast your echo...'
                   }
                   value={echoText}
@@ -10936,7 +10945,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={editingEcho ? onSaveEditedEcho : onSendEcho}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {editingEcho ? 'Save Echo' : 'Send Echo'}
+                    {replyingToEcho ? 'Send Reply' : editingEcho ? 'Save Echo' : 'Send Echo'}
                   </Text>
                 </Pressable>
                 {editingEcho && (
@@ -11006,6 +11015,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 text: 'Delete',
                                 style: 'destructive',
                                 onPress: () => onDeleteEchoById(e.id as any),
+                              },
+                              { text: 'Cancel', style: 'cancel' },
+                            ]);
+                          } else {
+                            // Reply to other users' echoes
+                            Alert.alert('Echo Reply', `"${e.text}"`, [
+                              {
+                                text: 'Reply',
+                                onPress: () => {
+                                  setReplyingToEcho(e as any);
+                                  updateEchoText(`@${e.userName || 'user'} `);
+                                },
                               },
                               { text: 'Cancel', style: 'cancel' },
                             ]);
