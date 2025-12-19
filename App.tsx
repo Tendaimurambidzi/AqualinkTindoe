@@ -1682,6 +1682,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
+  const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
   const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
   // Public feed toggle and data
                     
@@ -7877,14 +7878,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       {item.user?.displayName !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
                     </ScrollView>
                     <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
-                      {/* Echoes Preview - Show only most recent echo */}
+                      {/* Echoes Section - Collapsible/Expandable */}
                       {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
                         <View style={{ marginTop: 10 }}>
-                          {/* Show only the most recent echo */}
-                          {(() => {
-                            const mostRecentEcho = postEchoLists[item.id][0]; // Assuming echoes are sorted by newest first
-                            return (
-                              <View style={{
+                          {/* Show echoes based on expansion state */}
+                          {expandedEchoes[item.id] ? (
+                            /* Expanded view - show all echoes */
+                            postEchoLists[item.id].map((echo, idx) => (
+                              <View key={echo.id || idx} style={{
                                 flexDirection: 'row',
                                 marginBottom: 8,
                                 padding: 8,
@@ -7893,30 +7894,53 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               }}>
                                 <View style={{ flex: 1 }}>
                                   <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                    {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
+                                    {displayHandle(echo.uid, echo.userName || echo.uid)}
                                   </Text>
                                   <Text style={{ color: 'black', fontSize: 14 }}>
-                                    {mostRecentEcho.text}
+                                    {echo.text}
                                   </Text>
                                   <Text style={{ color: 'gray', fontSize: 10 }}>
-                                    {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
+                                    {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
                                   </Text>
                                 </View>
                               </View>
-                            );
-                          })()}
+                            ))
+                          ) : (
+                            /* Collapsed view - show only most recent echo */
+                            (() => {
+                              const mostRecentEcho = postEchoLists[item.id][0];
+                              return (
+                                <View style={{
+                                  flexDirection: 'row',
+                                  marginBottom: 8,
+                                  padding: 8,
+                                  backgroundColor: 'rgba(255,255,255,0.8)',
+                                  borderRadius: 8,
+                                }}>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                      {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
+                                    </Text>
+                                    <Text style={{ color: 'black', fontSize: 14 }}>
+                                      {mostRecentEcho.text}
+                                    </Text>
+                                    <Text style={{ color: 'gray', fontSize: 10 }}>
+                                      {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
+                                    </Text>
+                                  </View>
+                                </View>
+                              );
+                            })()
+                          )}
 
-                          {/* Show "View all echoes" button if there are more than 1 echo */}
+                          {/* Toggle button - only show if there are more than 1 echo */}
                           {postEchoLists[item.id].length > 1 && (
                             <Pressable
-                              onPress={() => {
-                                setCurrentIndex(index);
-                                setShowEchoes(true);
-                              }}
+                              onPress={() => setExpandedEchoes(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
                               style={{ marginTop: 5, alignSelf: 'flex-start' }}
                             >
                               <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
-                                View all {postEchoLists[item.id].length} echoes
+                                {expandedEchoes[item.id] ? 'View less' : `View all ${postEchoLists[item.id].length} echoes`}
                               </Text>
                             </Pressable>
                           )}
