@@ -110,8 +110,14 @@ const VideoWithTapControls: React.FC<Props> = ({
       duration: 180,
       useNativeDriver: true,
     }).start();
-    // Keep controls visible indefinitely (no auto-hide)
-  }, []);
+
+    // Auto-hide controls after timeout if video is playing
+    if (!internalPaused) {
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, hideTimeout);
+    }
+  }, [internalPaused, hideTimeout, controlsOpacity]);
 
   const hideControls = useCallback(() => {
     if (hideTimer.current) {
@@ -219,23 +225,38 @@ const VideoWithTapControls: React.FC<Props> = ({
 
   useEffect(() => {
     if (controlsVisible) {
-      const announce = videoCompleted 
-        ? "Video completed. Replay available." 
-        : internalPaused 
-          ? "Player paused. Controls visible." 
+      const announce = videoCompleted
+        ? "Video completed. Replay available."
+        : internalPaused
+          ? "Player paused. Controls visible."
           : "Controls visible.";
       AccessibilityInfo.isScreenReaderEnabled().then(enabled => {
         if (enabled) AccessibilityInfo.announceForAccessibility(announce);
       });
     }
   }, [controlsVisible, internalPaused, videoCompleted]);
+
+  // Clear auto-hide timer when video is paused to keep controls visible
+  useEffect(() => {
+    if (internalPaused && hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+  }, [internalPaused]);
   // Detect when video starts playing and call onPlay callback
   useEffect(() => {
     if (currentTime > 0 && !internalPaused && !hasCalledOnPlay.current) {
       hasCalledOnPlay.current = true;
       onPlay?.();
+      // Hide controls when video starts playing
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+      }
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, hideTimeout);
     }
-  }, [currentTime, internalPaused, onPlay]);
+  }, [currentTime, internalPaused, onPlay, hideTimeout, hideControls]);
   return (
     <View style={[styles.container, style]}>
       <Video
