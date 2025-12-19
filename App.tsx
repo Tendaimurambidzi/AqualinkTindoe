@@ -70,6 +70,7 @@ import {
   leaveCrew,
 } from './src/services/crewService';
 import { uploadPost } from './src/services/uploadPost';
+import { timeAgo } from './src/services/timeUtils';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
                     
@@ -7686,9 +7687,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             return displayName;
                           })()}
                         </Text>
-                        <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
-                          {item.createdAt?.toDate ? getRelativeTime(item.createdAt.toDate()) : 'just now'}
-                        </Text>
+                        {waveStats[item.id]?.createdAt && (
+                          <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
+                            {timeAgo(waveStats[item.id].createdAt)}
+                          </Text>
+                        )}
                       </View>
                     
                       {/* Right side - Menu button */}
