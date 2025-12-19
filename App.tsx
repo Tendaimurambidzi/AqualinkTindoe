@@ -4412,7 +4412,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           if (snap?.exists) {
             if (typeof d?.userPhoto !== 'undefined')
               setProfilePhoto(d.userPhoto || null);
-            if (typeof d?.bio !== 'undefined') setProfileBio(d.bio || '');
+            if (typeof d?.bio !== 'undefined') {
+              console.log('Loading bio from Firestore:', d.bio);
+              setProfileBio(d.bio || '');
+            }
           }
         } catch {}
       });
@@ -6501,6 +6504,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             : '@your_handle',
         );
         setProfileBio(d.bio || '');
+        console.log('Loading bio from Firestore on init:', d.bio);
         // Do not default to auth photo; show only saved userPhoto or none
         setProfilePhoto(d.userPhoto || null);
       })
@@ -8920,6 +8924,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         }
                       }
                       // Save to Firestore
+                      console.log('Saving profile:', { trimmedName, bio: profileBio.trim() });
                       await firestore().collection('users').doc(myUid).set({
                         username: trimmedName,
                         displayName: trimmedName,
