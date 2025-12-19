@@ -7970,6 +7970,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
                           {(() => {
+                            const isCurrentUserPost = item.ownerUid === myUid;
+                            if (isCurrentUserPost) {
+                              return profileName || 'User';
+                            }
                             const displayName = item.user?.name || item.authorName || 'User';
                             console.log('Post display name for item', item.id, ':', {
                               itemUserName: item.user?.name,
@@ -7979,11 +7983,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             return displayName;
                           })()}
                         </Text>
-                        {item.user?.bio && (
-                          <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', marginTop: 2, fontStyle: 'italic' }}>
-                            {item.user.bio}
-                          </Text>
-                        )}
+                        {(() => {
+                          const isCurrentUserPost = item.ownerUid === myUid;
+                          const bioToShow = isCurrentUserPost ? profileBio : item.user?.bio;
+                          return bioToShow ? (
+                            <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', marginTop: 2, fontStyle: 'italic' }}>
+                              {bioToShow}
+                            </Text>
+                          ) : null;
+                        })()}
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
                           {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || new Date())}
                         </Text>
