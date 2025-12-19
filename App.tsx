@@ -7715,11 +7715,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             return displayName;
                           })()}
                         </Text>
-                        {(waveStats[item.id]?.createdAt || item.createdAt) && (
-                          <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
-                            {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt)}
-                          </Text>
-                        )}
+                        <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
+                          {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || new Date())}
+                        </Text>
                       </View>
                     
                       {/* Right side - Menu button */}
