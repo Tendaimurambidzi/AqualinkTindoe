@@ -244,7 +244,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           💎
         </Text>
         <Text style={styles.actionLabel}>Gems</Text>
-        <Text style={styles.actionCount}>0</Text>
       </Pressable>
 
       {/* Anchor Wave Button */}
