@@ -1696,6 +1696,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
+  const [preloadedItems, setPreloadedItems] = useState<Set<string>>(new Set()); // Track preloaded media items
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
       setActiveVideoId(viewableItems[0].item.id);
@@ -1705,13 +1706,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   });
   const handlePostPublished = useCallback(
     (wave: Vibe) => {
+      // Attach current user's data to the newly published wave
+      const waveWithUserData = {
+        ...wave,
+        user: {
+          name: profileName || accountCreationHandle || 'User',
+          avatar: profilePhoto,
+          bio: profileBio || null,
+        },
+      };
       setPostFeed(prev => {
         if (prev.some(w => w.id === wave.id)) return prev;
-        return [wave, ...prev];
+        return [waveWithUserData, ...prev];
       });
       setVibesFeed(prev => {
         if (prev.some(w => w.id === wave.id)) return prev;
-        return [wave, ...prev];
+        return [waveWithUserData, ...prev];
       });
       setCurrentIndex(0);
       setWaveKey(Date.now());
@@ -1725,7 +1735,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Show success message for posting a splashline
       notifySuccess('You dropped a splashline!');
     },
-    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
+    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess, profileName, profilePhoto, profileBio, accountCreationHandle],
   );
                     
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
@@ -3287,6 +3297,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     removedUsers,
     postFeed,
   ]);
+
+  // Clean up preloaded items that are too far from current index to save memory
+  useEffect(() => {
+    if (currentIndex >= 0 && displayFeed.length > 0) {
+      setPreloadedItems(prev => {
+        const newPreloaded = new Set<string>();
+        // Keep items within 5 positions of current index
+        displayFeed.forEach((item, index) => {
+          if (Math.abs(index - currentIndex) <= 5 || prev.has(item.id)) {
+            newPreloaded.add(item.id);
+          }
+        });
+        return newPreloaded;
+      });
+    }
+  }, [currentIndex, displayFeed]);
   // Deduplicate my vibes to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -4100,6 +4126,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               });
               return [...newMyWaves, ...updatedExistingWaves];
             });
+            // Also set postFeed with user's waves that have user data attached
+            setPostFeed(myWavesInPublic);
             // Filter out my own waves from public feed on my device
             const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
             setPublicFeed(publicWaves);
@@ -7626,6 +7654,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   (overlayVideoReady && overlayState.audio === true);
                 const playSynced = shouldPlay && overlayPairReady && item.id === activeVideoId;
                 const near = Math.abs(index - currentIndex) <= 1;
+                const preloadRange = Math.abs(index - currentIndex) <= 3; // Preload videos within 3 items
+                const shouldRenderVideo = preloadRange || preloadedItems.has(item.id); // Render video if in range or preloaded
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
                 return (
@@ -7769,29 +7799,73 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         )}
                         {/* Post Media */}
                         {isVideoAsset(item.media) ? (
-                          <VideoWithTapControls
-                            source={{ uri: item.media.uri }}
-                            style={videoStyleFor(item.id) as any}
-                            resizeMode={'contain'}
-                            paused={!playSynced}
-                            playInBackground={false}
-                            isActive={item.id === activeVideoId}
-                            onPlay={() => {
-                              // Video started playing - no longer recording reach here
-                            }}
-                            onMaximize={() => {
-                              // Navigate to full screen post detail and unmute
-                              navigation.navigate('PostDetail', { post: item });
-                            }}
-                          />
-                        ) : (
-                          <Pressable onPress={() => navigation.navigate('PostDetail', { post: item })}>
-                            <Image
+                          shouldRenderVideo ? (
+                            <VideoWithTapControls
                               source={{ uri: item.media.uri }}
                               style={videoStyleFor(item.id) as any}
-                              resizeMode="contain"
+                              resizeMode={'contain'}
+                              paused={!playSynced}
+                              playInBackground={false}
+                              isActive={item.id === activeVideoId}
+                              onPlay={() => {
+                                // Video started playing - no longer recording reach here
+                              }}
+                              onMaximize={() => {
+                                // Navigate to full screen post detail and unmute
+                                navigation.navigate('PostDetail', { post: item });
+                              }}
                             />
-                          </Pressable>
+                          ) : (
+                            // Lazy loading placeholder - tap to load
+                            <Pressable 
+                              onPress={() => {
+                                // Load this item by adding it to preloaded items
+                                setPreloadedItems(prev => new Set([...prev, item.id]));
+                              }}
+                              style={[videoStyleFor(item.id), { 
+                                backgroundColor: '#f0f0f0',
+                                justifyContent: 'center',
+                                alignItems: 'center'
+                              }] as any}
+                            >
+                              <View style={{ alignItems: 'center' }}>
+                                <Text style={{ fontSize: 48, color: '#ccc' }}>🎥</Text>
+                                <Text style={{ fontSize: 14, color: '#666', marginTop: 8 }}>
+                                  Tap to load video
+                                </Text>
+                              </View>
+                            </Pressable>
+                          )
+                        ) : (
+                          shouldRenderVideo ? (
+                            <Pressable onPress={() => navigation.navigate('PostDetail', { post: item })}>
+                              <Image
+                                source={{ uri: item.media.uri }}
+                                style={videoStyleFor(item.id) as any}
+                                resizeMode="contain"
+                              />
+                            </Pressable>
+                          ) : (
+                            // Lazy loading placeholder for images - tap to load
+                            <Pressable 
+                              onPress={() => {
+                                // Load this item by adding it to preloaded items
+                                setPreloadedItems(prev => new Set([...prev, item.id]));
+                              }}
+                              style={[videoStyleFor(item.id), { 
+                                backgroundColor: '#f0f0f0',
+                                justifyContent: 'center',
+                                alignItems: 'center'
+                              }] as any}
+                            >
+                              <View style={{ alignItems: 'center' }}>
+                                <Text style={{ fontSize: 48, color: '#ccc' }}>🖼️</Text>
+                                <Text style={{ fontSize: 14, color: '#666', marginTop: 8 }}>
+                                  Tap to load image
+                                </Text>
+                              </View>
+                            </Pressable>
+                          )
                         )}
                       </>
                     ) : (
