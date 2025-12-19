@@ -220,14 +220,20 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
-  if (!wave.authorId) return;
+  const waveOwnerUid = wave.ownerUid || wave.authorId;
+  if (!waveOwnerUid) return;
   const echo = snap.data() || {};
-  if (wave.authorId === echo.userUid) return; // Don't ping self
-  await addPing(wave.authorId, {
+  const echoSenderUid = echo.userUid;
+  if (!echoSenderUid) return;
+  
+  // Don't send notification if the echo sender is the wave owner
+  if (String(waveOwnerUid) === String(echoSenderUid)) return;
+  
+  await addPing(waveOwnerUid, {
     type: 'echo',
     text: `📣 ${echo.userName || 'Someone'} echoed: ${echo.text?.slice(0, 60) || ''}`,
     waveId,
-    fromUid: echo.userUid,
+    fromUid: echoSenderUid,
   });
 });
 
@@ -406,6 +412,32 @@ exports.toggleSplash = onCall({ region: 'us-central1' }, async (req) => {
 
   // Optional: Ping owner if needed
   return { status: result };
+});
+
+// addPing: Send a notification ping to a user (callable from client)
+exports.addPing = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in required');
+
+  const { recipientUid, type, waveId, text, fromUid, fromName, fromPhoto } = req.data || {};
+  if (!recipientUid || typeof recipientUid !== 'string') {
+    throw new HttpsError('invalid-argument', 'recipientUid is required');
+  }
+  if (!type || typeof type !== 'string') {
+    throw new HttpsError('invalid-argument', 'type is required');
+  }
+
+  // Send the ping notification
+  await addPingModular(recipientUid, {
+    type,
+    waveId,
+    text,
+    fromUid,
+    fromName,
+    fromPhoto,
+  });
+
+  return { status: 'sent' };
 });
 
 // createEcho: adds comment and increments counts.echoes

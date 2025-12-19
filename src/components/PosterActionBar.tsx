@@ -218,72 +218,79 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         hitSlop={{top: 50, bottom: 50, left: 50, right: 50}}
         disabled={splashActionInProgress}
       >
-        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionIcon, localSplashesCount > 0 && styles.activeAction]}>
           🫂
         </Text>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionText, localSplashesCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionCount, localSplashesCount > 0 && styles.activeAction]}>
           {localSplashesCount}
         </Text>
       </Pressable>
 
       {/* Echoes Button */}
       <Pressable style={styles.actionButton} onPress={handleEcho} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionIcon, echoesCount > 0 && styles.activeAction]}>
           📣
         </Text>
         <Text style={styles.actionLabel}>Echoes</Text>
-        <Text style={[styles.actionText, echoesCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionCount, echoesCount > 0 && styles.activeAction]}>
           {echoesCount}
         </Text>
       </Pressable>
 
       {/* Gems Button */}
       <Pressable style={styles.actionButton} onPress={handlePearl} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionText, pearlsCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionIcon, pearlsCount > 0 && styles.activeAction]}>
           💎
         </Text>
         <Text style={styles.actionLabel}>Gems</Text>
+        <Text style={styles.actionCount}>0</Text>
       </Pressable>
 
       {/* Anchor Wave Button */}
       <Pressable style={styles.actionButton} onPress={handleAnchor} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionText, isAnchored && styles.activeAction]}>
+        <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
           ⚓
         </Text>
         <Text style={styles.actionLabel}>Anchor</Text>
+        <Text style={styles.actionCount}></Text>
       </Pressable>
 
       {/* Cast Wave Button */}
       <Pressable style={styles.actionButton} onPress={handleCast} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionText, isCasted && styles.activeAction]}>
+        <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
           📡
         </Text>
         <Text style={styles.actionLabel}>Cast</Text>
+        <Text style={styles.actionCount}></Text>
       </Pressable>
 
       {/* Placeholder Button 1 */}
       <Pressable style={styles.actionButton}>
-        <Text style={styles.actionText}>🔱</Text>
+        <Text style={styles.actionIcon}>🔱</Text>
         <Text style={styles.actionLabel}>Placeholder 1</Text>
+        <Text style={styles.actionCount}></Text>
       </Pressable>
 
       {/* Placeholder Button 2 */}
       <Pressable style={styles.actionButton}>
-        <Text style={styles.actionText}>🐚</Text>
+        <Text style={styles.actionIcon}>🐚</Text>
         <Text style={styles.actionLabel}>Placeholder 2</Text>
+        <Text style={styles.actionCount}></Text>
       </Pressable>
 
       {/* Placeholder Button 3 */}
       <Pressable style={styles.actionButton}>
-        <Text style={styles.actionText}></Text>
+        <Text style={styles.actionIcon}></Text>
         <Text style={styles.actionLabel}></Text>
+        <Text style={styles.actionCount}></Text>
       </Pressable>
 
       {/* Placeholder Button 4 */}
       <Pressable style={styles.actionButton}>
-        <Text style={styles.actionText}></Text>
+        <Text style={styles.actionIcon}></Text>
         <Text style={styles.actionLabel}></Text>
+        <Text style={styles.actionCount}></Text>
       </Pressable>
     </ScrollView>
   );
@@ -301,11 +308,11 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     alignItems: 'center',
-    padding: 10,
-    marginHorizontal: 5, // Increased spacing between buttons
+    padding: 8,
+    marginHorizontal: 15, // Increased spacing between buttons to prevent accidental clicks
   },
-  actionText: {
-    fontSize: 16,
+  actionIcon: {
+    fontSize: 24, // Enlarged icons
     color: '#fff',
     fontWeight: 'bold',
   },
@@ -315,6 +322,13 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontSize: 12,
     color: '#ccc',
+    marginTop: 2,
+    marginBottom: 2,
+  },
+  actionCount: {
+    fontSize: 12,
+    color: '#fff',
+    fontWeight: 'bold',
     marginTop: 2,
   },
 });

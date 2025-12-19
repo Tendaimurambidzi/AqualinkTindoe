@@ -61,6 +61,7 @@ import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-
 import { launchCamera, launchImageLibrary, CameraOptions, Asset, ImagePickerResponse } from 'react-native-image-picker';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import functions from '@react-native-firebase/functions';
 import storage from '@react-native-firebase/storage';
                     
 import Sound from 'react-native-sound';
@@ -134,11 +135,12 @@ type Vibe = {
   user?: {
     name: string;
     avatar: string | null;
+    bio?: string | null;
   } | null; // author user data
   image?: string | null;
   counts?: {
-    splashes: number;
-    echoes: number;
+    splashes?: number;
+    echoes?: number;
   };
 };
                     
@@ -1682,6 +1684,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [myUid, normalizeUserHandle]);
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
+  const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
+  const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
   const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
   const [echoExpansionInProgress, setEchoExpansionInProgress] = useState<Record<string, boolean>>({});
@@ -4015,7 +4019,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           if (!cancelled) {
             // Fetch user data for all wave authors
             const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
-            const userDataMap: Record<string, { name: string; avatar: string | null }> = {};
+            const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
             
             if (uniqueOwnerUids.length > 0) {
               try {
@@ -4034,14 +4038,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     userDataMap[uid] = {
                       name: data?.displayName || data?.name || data?.username || 'User',
                       avatar: avatarUrl,
+                      bio: data?.bio || null,
                     };
-                    console.log('User data loaded for', uid, ':', { name: userDataMap[uid].name, avatar: userDataMap[uid].avatar });
+                    console.log('User data loaded for', uid, ':', { name: userDataMap[uid].name, avatar: userDataMap[uid].avatar, bio: userDataMap[uid].bio });
                   } else {
                     // User document doesn't exist, create default data
                     const uid = uniqueOwnerUids[index];
                     userDataMap[uid] = {
                       name: 'User',
                       avatar: null,
+                      bio: null,
                     };
                     console.log('User document not found for', uid);
                   }
@@ -4053,6 +4059,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   userDataMap[uid] = {
                     name: 'User',
                     avatar: null,
+                    bio: null,
                   };
                 });
               }
@@ -4922,7 +4929,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       loadPostEchoes(currentWave.id);
                     
       // Send ping notification to wave owner (if not self)
-      if (currentWave.ownerUid && currentWave.ownerUid !== (auth?.()?.currentUser?.uid)) {
+      const currentUserUid = auth?.()?.currentUser?.uid;
+      if (currentWave.ownerUid && currentUserUid && String(currentWave.ownerUid) !== String(currentUserUid)) {
         try {
           let functionsMod: any = null;
           try {
@@ -4935,7 +4943,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               type: 'echo',
               waveId: currentWave.id,
               text: `📣 ${userName} echoed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
-              fromUid: auth?.()?.currentUser?.uid,
+              fromUid: currentUserUid,
               fromName: userName,
               fromPhoto: profilePhoto || null,
             });
@@ -7718,6 +7726,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             return displayName;
                           })()}
                         </Text>
+                        {item.user?.bio && (
+                          <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', marginTop: 2, fontStyle: 'italic' }}>
+                            {item.user.bio}
+                          </Text>
+                        )}
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
                           {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || new Date())}
                         </Text>
@@ -8620,12 +8633,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         }
                       }
                       // Save to Firestore
-                      await firestore().collection('users').doc(myUid).update({
+                      await firestore().collection('users').doc(myUid).set({
                         username: trimmedName,
                         displayName: trimmedName,
                         username_lc: trimmedName.replace(/^[\/]+/, '').toLowerCase(),
                         bio: profileBio.trim(),
-                      });
+                      }, { merge: true });
                       // Update Firebase Auth
                       const auth = require('@react-native-firebase/auth').default;
                       await auth().currentUser?.updateProfile({
