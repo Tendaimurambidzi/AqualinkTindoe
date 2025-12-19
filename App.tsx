@@ -1459,6 +1459,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const navigation = useNavigation();
   // Get current user for ocean features
   const [user, setUser] = useState<any>(null);
+  const [authCompleted, setAuthCompleted] = useState<boolean>(false);
                     
   // Belt-and-suspenders: even if the user somehow gets to this screen
   // without being logged in, reset them to the sign-up flow.
@@ -3369,7 +3370,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       // Handle Connect/Disconnect Vibe
       if (label === 'Connect Vibe') {
-        if (!waveOptionsTarget.ownerUid || waveOptionsTarget.ownerUid === myUid) {
+        if (!waveOptionsTarget || !waveOptionsTarget.ownerUid || waveOptionsTarget.ownerUid === myUid) {
           Alert.alert('Info', "You can't connect to your own SplashLine");
           return;
         }
@@ -11509,9 +11510,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ))}
             
             {/* Block User and Ping for other users' waves */}
+            {waveOptionsTarget &&
+              waveOptionsTarget.ownerUid &&
               waveOptionsTarget.ownerUid !== myUid && (
-                <>
-                  <Pressable
+              <>
+                <Pressable
                     style={styles.waveOptionsItem}
                     onPress={() => {
                       const targetUid = waveOptionsTarget.ownerUid!;
@@ -14927,10 +14930,16 @@ function SignUpScreen({ navigation }: any) {
       Alert.alert('Missing Info', 'Please fill out all fields.');
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      Alert.alert('Invalid Email', 'Please enter a valid email address.');
+    
+    // Check if it's an email or phone number
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
+    const isPhone = /^[\+]?[1-9][\d]{0,15}$/.test(trimmedEmail.replace(/[\s\-\(\)]/g, ''));
+    
+    if (!isEmail && !isPhone) {
+      Alert.alert('Invalid Input', 'Please enter a valid email address or phone number.');
       return;
     }
+    
     if (!validatePassword(password)) {
       Alert.alert(
         'Weak Password',
@@ -14953,25 +14962,132 @@ function SignUpScreen({ navigation }: any) {
       return;
     }
     try {
-      // Create user but don't auto-sign in
-      const userCredential = await auth().createUserWithEmailAndPassword(
-        trimmedEmail,
-        password,
-      );
+      let userCredential;
+      
+      if (isEmail) {
+        // Create user with email
+        userCredential = await auth().createUserWithEmailAndPassword(
+          trimmedEmail,
+          password,
+        );
+      } else {
+        // Create user with phone number - proper implementation
+        // Ensure phone number has country code
+        let formattedPhone = trimmedEmail;
+        if (!formattedPhone.startsWith('+')) {
+          // If no country code, assume US (+1) - you may want to make this configurable
+          formattedPhone = '+1' + formattedPhone.replace(/\D/g, '');
+        }
+        
+        console.log('Attempting phone auth with:', formattedPhone);
+        
+        try {
+          const confirmation = await auth().signInWithPhoneNumber(formattedPhone);
+          
+          // Show verification code input dialog
+          Alert.prompt(
+            'Phone Verification',
+            `Enter the 6-digit verification code sent to ${formattedPhone}:`,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+              },
+              {
+                text: 'Verify',
+                onPress: async (code) => {
+                  if (!code || code.length !== 6) {
+                    Alert.alert('Invalid Code', 'Please enter a valid 6-digit verification code.');
+                    return;
+                  }
+                  
+                  try {
+                    const result = await confirmation.confirm(code);
+                    
+                    if (result.user) {
+                      // Store details in Firestore
+                      const firestore = require('@react-native-firebase/firestore').default;
+                      await firestore().collection('users').doc(result.user.uid).set({
+                        phoneNumber: formattedPhone,
+                        createdAt: firestore.FieldValue.serverTimestamp(),
+                      });
+                      console.log('User document created:', result.user.uid);
+                      
+                      // Update Firebase Auth profile with display name
+                      await result.user.updateProfile({
+                        displayName: formattedPhone,
+                      });
+                      console.log('Firebase Auth profile updated with displayName:', formattedPhone);
+                      
+                      // Mark authentication as completed so user stays signed in
+                      await AsyncStorage.setItem('auth_completed', 'true');
+                      
+                      Alert.alert('Success', 'Account created successfully!');
+                    }
+                  } catch (verifyError: any) {
+                    console.error('Verification error:', verifyError);
+                    Alert.alert(
+                      'Verification Failed',
+                      verifyError?.message || 'Invalid verification code. Please try again.'
+                    );
+                  }
+                },
+              },
+            ],
+            'plain-text'
+          );
+        } catch (phoneError: any) {
+          console.error('Phone auth error:', phoneError);
+          
+          // Handle specific Firebase Auth errors
+          if (phoneError.code === 'auth/invalid-phone-number') {
+            Alert.alert('Invalid Phone Number', 'Please enter a valid phone number with country code (e.g., +1234567890).');
+          } else if (phoneError.code === 'auth/missing-phone-number') {
+            Alert.alert('Missing Phone Number', 'Please enter your phone number.');
+          } else if (phoneError.code === 'auth/too-many-requests') {
+            Alert.alert('Too Many Requests', 'Too many verification attempts. Please try again later.');
+          } else if (phoneError.code === 'auth/operation-not-allowed') {
+            Alert.alert(
+              'Phone Authentication Disabled',
+              'Phone authentication is not enabled for this project. Please enable it in the Firebase console under Authentication > Sign-in method.'
+            );
+          } else if (phoneError.code === 'auth/missing-client-identifier') {
+            Alert.alert(
+              'Configuration Required',
+              'Phone authentication requires additional setup. Please configure SHA certificates in Firebase console: Project Settings > General > Your apps > Android app > Add fingerprint.'
+            );
+          } else if (phoneError.code === 'auth/invalid-verification-code') {
+            Alert.alert('Invalid Code', 'The verification code is invalid. Please try again.');
+          } else if (phoneError.code === 'auth/code-expired') {
+            Alert.alert('Code Expired', 'The verification code has expired. Please request a new one.');
+          } else {
+            Alert.alert(
+              'Phone Verification Failed',
+              `Error: ${phoneError?.message || 'Unable to send verification code. Please check your phone number and try again.'}`
+            );
+          }
+        }
+        return; // Don't proceed with the rest of the signup flow
+      }
+      
       if (userCredential.user) {
-        // Store details in Firestore without username
+        // Store details in Firestore
         const firestore = require('@react-native-firebase/firestore').default;
         await firestore().collection('users').doc(userCredential.user.uid).set({
-          email: trimmedEmail,
+          email: isEmail ? trimmedEmail : null,
+          phoneNumber: isPhone ? trimmedEmail : null,
           createdAt: firestore.FieldValue.serverTimestamp(),
         });
         console.log('User document created:', userCredential.user.uid);
-                    
-        // Update Firebase Auth profile with display name as email for now
+        
+        // Update Firebase Auth profile with display name
         await userCredential.user.updateProfile({
-          displayName: trimmedEmail,
+          displayName: isEmail ? trimmedEmail : trimmedEmail,
         });
         console.log('Firebase Auth profile updated with displayName:', trimmedEmail);
+        
+        // Mark authentication as completed so user stays signed in
+        await AsyncStorage.setItem('auth_completed', 'true');
       }
     } catch (e: any) {
       if (e.code === 'auth/email-already-in-use') {
@@ -15103,15 +15219,63 @@ function SignInScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
                     
   const signIn = async () => {
-    if (!email || !password) {
-      Alert.alert('Missing info', 'Enter email and password.');
+    const trimmedEmail = email.trim();
+    
+    if (!trimmedEmail || !password) {
+      Alert.alert('Missing Info', 'Please fill out all fields.');
       return;
     }
+    
+    // Check if it's an email or phone number
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
+    const isPhone = /^[\+]?[1-9][\d]{0,15}$/.test(trimmedEmail.replace(/[\s\-\(\)]/g, ''));
+    
+    if (!isEmail && !isPhone) {
+      Alert.alert('Invalid Input', 'Please enter a valid email address or phone number.');
+      return;
+    }
+    
     try {
-      await auth().signInWithEmailAndPassword(email.trim(), password);
-      // onAuthStateChanged will route to Home automatically
+      let userCredential;
+      
+      if (isEmail) {
+        // Sign in with email
+        userCredential = await auth().signInWithEmailAndPassword(
+          trimmedEmail,
+          password,
+        );
+      } else {
+        // Sign in with phone number - this would require phone auth flow
+        Alert.alert('Phone Sign In', 'Phone authentication requires verification code. Please use email for now.');
+        return;
+      }
+      
+      if (userCredential.user) {
+        // Mark authentication as completed so user stays signed in
+        await AsyncStorage.setItem('auth_completed', 'true');
+        console.log('User signed in successfully:', userCredential.user.uid);
+      }
     } catch (e: any) {
-      Alert.alert('Sign in failed', e?.message ?? 'Try again.');
+      if (e.code === 'auth/user-not-found') {
+        Alert.alert(
+          'Account Not Found',
+          'No account found with this email. Please sign up first.',
+          [
+            { text: 'Sign Up', onPress: () => navigation.replace('SignUp') },
+            { text: 'Try Again', style: 'cancel' }
+          ]
+        );
+      } else if (e.code === 'auth/wrong-password') {
+        Alert.alert(
+          'Incorrect Password',
+          'The password you entered is incorrect. Please try again.',
+        );
+      } else {
+        Alert.alert(
+          'Sign In Failed',
+          e?.message ?? 'An unknown error occurred. Please try again.',
+        );
+      }
     }
   };
                     
@@ -15143,7 +15307,7 @@ function SignInScreen({ navigation }: any) {
         <Text style={authStyles.title}>Welcome back</Text>
                     
         <Field
-          label="Email"
+          label="Email/Phone Number/Phone Number"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -15814,20 +15978,41 @@ const App: React.FC = () => {
     };
   }, []);
                     
+  // Load authentication completion status from AsyncStorage
+  useEffect(() => {
+    const loadAuthStatus = async () => {
+      try {
+        const completed = await AsyncStorage.getItem('auth_completed');
+        setAuthCompleted(completed === 'true');
+      } catch (e) {
+        // If we can't load it, assume not completed
+        setAuthCompleted(false);
+      }
+    };
+    loadAuthStatus();
+  }, []);
+                    
   useEffect(() => {
     let unsub: any = null;
     try {
       unsub = auth().onAuthStateChanged(async (u) => {
-        // If FORCE_SIGN_OUT_ON_START is enabled and user is signed in, sign them out
+        // If FORCE_SIGN_OUT_ON_START is enabled, user is signed in, but auth hasn't been completed yet, sign them out
         if (FORCE_SIGN_OUT_ON_START && u) {
           try {
-            await auth().signOut();
+            const completed = await AsyncStorage.getItem('auth_completed');
+            if (completed !== 'true') {
+              await auth().signOut();
+              setUser(null);
+              if (initializing) setInitializing(false);
+              return;
+            }
           } catch (e) {
-            // Ignore sign out errors
+            // If we can't check, assume not completed and sign out
+            await auth().signOut();
+            setUser(null);
+            if (initializing) setInitializing(false);
+            return;
           }
-          setUser(null);
-          if (initializing) setInitializing(false);
-          return;
         }
         setUser(u);
         if (initializing) setInitializing(false);
