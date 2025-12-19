@@ -99,8 +99,8 @@ const myLogo = (() => {
   }
 })();
                     
-// Debug safety switch: keep false unless intentionally force-signing users out on cold start
-const FORCE_SIGN_OUT_ON_START = false;
+// Debug safety switch: force sign out on cold start to ensure new users go through signup flow
+const FORCE_SIGN_OUT_ON_START = true;
                     
 // Default dimensions for overlay UI; used in live stats panels
 const STATS_OVERLAY_HEIGHT = 220;
@@ -15517,11 +15517,11 @@ function PostDetailScreen({ route, navigation }: any) {
                     
 /* ----------------------- Root Navigator ----------------------- */
 function AuthStack() {
-  // Show the sign-in screen first so returning users arrive on it immediately
+  // Show the sign-up screen first so new users are guided to create an account
   return (
     <Stack.Navigator
       screenOptions={{ headerShown: false }}
-      initialRouteName="SignIn"
+      initialRouteName="SignUp"
     >
       <Stack.Screen name="SignUp" component={SignUpScreen} />
       <Stack.Screen name="SignIn" component={SignInScreen} />
