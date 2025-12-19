@@ -7877,30 +7877,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       {item.user?.displayName !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
                     </ScrollView>
                     <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
-                      {/* Echoes List */}
+                      {/* Echoes Preview - Show only most recent echo */}
                       {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
                         <View style={{ marginTop: 10 }}>
-                          {postEchoLists[item.id].map((echo, idx) => (
-                            <View key={echo.id || idx} style={{
-                              flexDirection: 'row',
-                              marginBottom: 8,
-                              padding: 8,
-                              backgroundColor: 'rgba(255,255,255,0.8)',
-                              borderRadius: 8,
-                            }}>
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                  {displayHandle(echo.uid, echo.userName || echo.uid)}
-                                </Text>
-                                <Text style={{ color: 'black', fontSize: 14 }}>
-                                  {echo.text}
-                                </Text>
-                                <Text style={{ color: 'gray', fontSize: 10 }}>
-                                  {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
-                                </Text>
+                          {/* Show only the most recent echo */}
+                          {(() => {
+                            const mostRecentEcho = postEchoLists[item.id][0]; // Assuming echoes are sorted by newest first
+                            return (
+                              <View style={{
+                                flexDirection: 'row',
+                                marginBottom: 8,
+                                padding: 8,
+                                backgroundColor: 'rgba(255,255,255,0.8)',
+                                borderRadius: 8,
+                              }}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+                                    {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
+                                  </Text>
+                                  <Text style={{ color: 'black', fontSize: 14 }}>
+                                    {mostRecentEcho.text}
+                                  </Text>
+                                  <Text style={{ color: 'gray', fontSize: 10 }}>
+                                    {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
+                                  </Text>
+                                </View>
                               </View>
-                            </View>
-                          ))}
+                            );
+                          })()}
+
+                          {/* Show "View all echoes" button if there are more than 1 echo */}
+                          {postEchoLists[item.id].length > 1 && (
+                            <Pressable
+                              onPress={() => {
+                                setCurrentIndex(index);
+                                setShowEchoes(true);
+                              }}
+                              style={{ marginTop: 5, alignSelf: 'flex-start' }}
+                            >
+                              <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
+                                View all {postEchoLists[item.id].length} echoes
+                              </Text>
+                            </Pressable>
+                          )}
                         </View>
                       )}
 
