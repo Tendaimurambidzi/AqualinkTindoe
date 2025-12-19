@@ -1699,7 +1699,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [preloadedItems, setPreloadedItems] = useState<Set<string>>(new Set()); // Track preloaded media items
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
-      setActiveVideoId(viewableItems[0].item.id);
+      const visibleItem = viewableItems[0];
+      setActiveVideoId(visibleItem.item.id);
+      
+      // Lazy load echoes and reach counts for visible items
+      const waveId = visibleItem.item.id;
+      if (!postEchoLists[waveId]) {
+        debouncedOperation(() => loadPostEchoes(waveId), 200);
+      }
+      
+      // Load reach count for current item
+      debouncedOperation(() => loadReachCounts([waveId]), 200);
     } else {
       setActiveVideoId(null);
     }
@@ -3303,9 +3313,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (currentIndex >= 0 && displayFeed.length > 0) {
       setPreloadedItems(prev => {
         const newPreloaded = new Set<string>();
-        // Keep items within 5 positions of current index
+        // Keep items within 3 positions of current index (reduced from 5)
         displayFeed.forEach((item, index) => {
-          if (Math.abs(index - currentIndex) <= 5 || prev.has(item.id)) {
+          if (Math.abs(index - currentIndex) <= 3) {
             newPreloaded.add(item.id);
           }
         });
@@ -3313,6 +3323,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
     }
   }, [currentIndex, displayFeed]);
+  
+  // Clean up user data for users not in the current feed to save memory
+  useEffect(() => {
+    if (displayFeed.length > 0) {
+      const activeUserIds = new Set(displayFeed.map(item => item.ownerUid).filter(Boolean));
+      setLoadedUserData(prev => {
+        const cleaned: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
+        Object.keys(prev).forEach(uid => {
+          if (activeUserIds.has(uid)) {
+            cleaned[uid] = prev[uid];
+          }
+        });
+        return cleaned;
+      });
+    }
+  }, [displayFeed]);
   // Deduplicate my vibes to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -3976,215 +4002,231 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     didAuthorNameMigration.current = true;
   }, [profileName, vibesFeed]);
                     
-  // Always load Public Vibes (best-effort if Firebase exists)
-  useEffect(() => {
-    let firestoreMod: any = null;
-    let storageMod: any = null;
-    let functionsMod: any = null;
-    try {
-      firestoreMod = require('@react-native-firebase/firestore').default;
-    } catch {}
-    try {
-      storageMod = require('@react-native-firebase/storage').default;
-    } catch {}
-    try {
-      functionsMod = require('@react-native-firebase/functions').default;
-    } catch {}
-    if (!firestoreMod) return;
-                    
-    let unsub: any = null;
-    let cancelled = false;
-                    
-    const run = async () => {
-                    
+  // Strong lazy loading state
+  const [feedPageSize, setFeedPageSize] = useState(12); // Start with smaller batch
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMoreItems, setHasMoreItems] = useState(true);
+  const [lastLoadedDoc, setLastLoadedDoc] = useState<any>(null);
+  const [debounceTimer, setDebounceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [activeUserDataRequests, setActiveUserDataRequests] = useState<Set<string>>(new Set());
+  const [loadedUserData, setLoadedUserData] = useState<Record<string, { name: string; avatar: string | null; bio?: string | null }>>({});
+  
+  // Debounced function to prevent rapid successive calls
+  const debouncedOperation = useCallback((fn: () => void, delay: number = 300) => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    const timer = setTimeout(fn, delay);
+    setDebounceTimer(timer);
+  }, [debounceTimer]);
+  
+  // Load user data with concurrency limits and caching
+  const loadUserDataBatch = useCallback(async (uids: string[]) => {
+    if (!uids.length) return {};
+    
+    // Filter out already loaded UIDs and currently loading ones
+    const newUids = uids.filter(uid => !loadedUserData[uid] && !activeUserDataRequests.has(uid));
+    if (!newUids.length) return {};
+    
+    // Limit concurrent requests to prevent overload
+    const batchSize = 5;
+    const batches = [];
+    for (let i = 0; i < newUids.length; i += batchSize) {
+      batches.push(newUids.slice(i, i + batchSize));
+    }
+    
+    const results: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
+    
+    for (const batch of batches) {
+      // Mark as loading
+      setActiveUserDataRequests(prev => new Set([...prev, ...batch]));
+      
       try {
-        // Enable real-time listener for live updates of public waves
-        unsub = firestoreMod()
-          .collection('waves')
-          .orderBy('createdAt', 'desc')
-          .limit(50)
-  .onSnapshot(
-    async (snap: any) => {
-        // Process the snapshot data (same logic as before)
-        (async () => {
-          const docs = (snap?.docs || []).slice();
-          const out: Vibe[] = [];
-          for (const d of docs) {
-            const data = d.data() || {};
-            const id = d.id;
-            const caption = data?.text || '';
-            const cap = data?.caption || { x: 0, y: 0 };
-            const authorName = data?.authorName || null;
-            let playbackUrl: string | null =
-              data?.playbackUrl || data?.mediaUrl || null;
-            let mediaUri: string | null = null;
-            if (!playbackUrl && storageMod && data?.mediaPath) {
-              try {
-                mediaUri = await storageMod()
-                  .ref(String(data.mediaPath))
-                  .getDownloadURL();
-              } catch {}
-            }
-            // Show all vibes in public feed (my vibes and other users' vibes)
-            const finalUri = playbackUrl || mediaUri;
-            if (!finalUri) continue;
-            out.push({
-              id: id,
-              media: { uri: finalUri } as any,
-              audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-              captionText: caption,
-              link: data.link || null,
-              captionPosition: {
-                x: Number(cap?.x) || 0,
-                y: Number(cap?.y) || 0,
-              },
-              playbackUrl: playbackUrl,
-              muxStatus: (data?.muxStatus || null) as any,
-              authorName,
-              ownerUid: (data?.ownerUid || data?.authorId || null) as any,
-              counts: {
-                splashes: Number(data?.counts?.splashes || 0),
-                echoes: Number(data?.counts?.echoes || 0),
-              },
-            });
+        let firestoreMod: any = null;
+        try {
+          firestoreMod = require('@react-native-firebase/firestore').default;
+        } catch {}
+        
+        if (!firestoreMod) break;
+        
+        const userDocs = await Promise.all(
+          batch.map(uid => firestoreMod().collection('users').doc(uid).get())
+        );
+        
+        userDocs.forEach((doc, index) => {
+          const uid = batch[index];
+          if (doc.exists) {
+            const data = doc.data();
+            const avatarUrl = data?.userPhoto || data?.photoURL || data?.avatar || data?.profilePicture || null;
+            results[uid] = {
+              name: data?.displayName || data?.name || data?.username || 'User',
+              avatar: avatarUrl,
+              bio: data?.bio || null,
+            };
+          } else {
+            results[uid] = {
+              name: 'User',
+              avatar: null,
+              bio: null,
+            };
           }
-          if (!cancelled) {
-            // Fetch user data for all wave authors
-            const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
-            const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
-            
-            if (uniqueOwnerUids.length > 0) {
-              try {
-                const userDocs = await Promise.all(
-                  uniqueOwnerUids.map(uid => 
-                    firestoreMod().collection('users').doc(uid).get()
-                  )
-                );
-                
-                userDocs.forEach((doc, index) => {
-                  if (doc.exists) {
-                    const data = doc.data();
-                    const uid = uniqueOwnerUids[index];
-                    // Prioritize userPhoto (app-set pictures) over photoURL (Firebase Auth)
-                    const avatarUrl = data?.userPhoto || data?.photoURL || data?.avatar || data?.profilePicture || null;
-                    userDataMap[uid] = {
-                      name: data?.displayName || data?.name || data?.username || 'User',
-                      avatar: avatarUrl,
-                      bio: data?.bio || null,
-                    };
-                    console.log('User data loaded for', uid, ':', { name: userDataMap[uid].name, avatar: userDataMap[uid].avatar, bio: userDataMap[uid].bio });
-                  } else {
-                    // User document doesn't exist, create default data
-                    const uid = uniqueOwnerUids[index];
-                    userDataMap[uid] = {
-                      name: 'User',
-                      avatar: null,
-                      bio: null,
-                    };
-                    console.log('User document not found for', uid);
-                  }
-                });
-              } catch (error) {
-                console.warn('Error fetching user data for waves:', error);
-                // Create default data for all users if fetch fails
-                uniqueOwnerUids.forEach(uid => {
-                  userDataMap[uid] = {
-                    name: 'User',
-                    avatar: null,
-                    bio: null,
-                  };
-                });
-              }
-            }
-            
-            // Attach user data to waves
-            const wavesWithUserData = out.map(wave => ({
-              ...wave,
-              user: wave.ownerUid ? userDataMap[wave.ownerUid] || null : null,
-            }));
-
-            const myUid = auth?.()?.currentUser?.uid;
-            const myWavesInPublic = wavesWithUserData.filter(w => w.ownerUid === myUid);
-            setVibesFeed(prev => {
-              const existingMyWaveIds = new Set(prev.map(w => w.id));
-              const newMyWaves = myWavesInPublic.filter(
-                w => !existingMyWaveIds.has(w.id),
-              );
-              // Update counts for existing waves with latest data from Firestore
-              const updatedExistingWaves = prev.map(existingWave => {
-                const firestoreWave = myWavesInPublic.find(w => w.id === existingWave.id);
-                if (firestoreWave) {
-                  return {
-                    ...existingWave,
-                    counts: {
-                      splashes: Number(firestoreWave.counts?.splashes || 0),
-                      echoes: Number(firestoreWave.counts?.echoes || 0),
-                    },
-                  };
-                }
-                return existingWave;
-              });
-              return [...newMyWaves, ...updatedExistingWaves];
-            });
-            // Also set postFeed with user's waves that have user data attached
-            setPostFeed(myWavesInPublic);
-            // Filter out my own waves from public feed on my device
-            const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
-            setPublicFeed(publicWaves);
-                  
-            // Load crew status for all users in the feed (always start fresh - no persistence between sessions)
-            const currentUser = auth?.()?.currentUser;
-            if (currentUser) {
-              const uniqueUserIds = [...new Set(wavesWithUserData.map(w => w.ownerUid).filter(uid => uid && uid !== currentUser.uid))];
-              
-              // Always start with all users showing "Connect Vibe" (not followed)
-              const crewStatus: Record<string, boolean> = {};
-              uniqueUserIds.forEach(userId => {
-                crewStatus[userId] = false;
-              });
-              
-              // Update the global crew status state
-              setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
-            }
-                  
-            // Initialize waveStats for loaded waves
-            const waveStatsUpdate: Record<string, any> = {};
-            wavesWithUserData.forEach(wave => {
-              waveStatsUpdate[wave.id] = {
-                splashes: Number(wave.counts?.splashes || 0),
-                hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
-                echoes: Number(wave.counts?.echoes || 0),
-                views: Number(wave.counts?.views || 0),
-                createdAt: wave.createdAt,
-              };
-            });
-            setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
-
-            // Load echoes for all waves in the feed
-            wavesWithUserData.forEach(wave => {
-              if (!postEchoLists[wave.id]) {
-                loadPostEchoes(wave.id);
-              }
-            });
-
-            // Load reach counts for all waves in the feed
-            const waveIds = wavesWithUserData.map(wave => wave.id);
-            loadReachCounts(waveIds);
-          }
-        })();
-      }, (error: any) => {
-        console.warn('Error in public feed listener:', error);
+        });
+        
+        // Update loaded data
+        setLoadedUserData(prev => ({ ...prev, ...results }));
+        
+      } catch (error) {
+        console.warn('Error loading user data batch:', error);
+        // Set default data for failed requests
+        batch.forEach(uid => {
+          results[uid] = { name: 'User', avatar: null, bio: null };
+        });
+      }
+      
+      // Remove from active requests
+      setActiveUserDataRequests(prev => {
+        const newSet = new Set(prev);
+        batch.forEach(uid => newSet.delete(uid));
+        return newSet;
       });
-      } catch {}
-    };
-    run();
-    return () => {
-      cancelled = true;
+      
+      // Small delay between batches to prevent overwhelming
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    return results;
+  }, [loadedUserData, activeUserDataRequests]);
+  
+  // Load more feed items with pagination
+  const loadMoreFeedItems = useCallback(async () => {
+    if (isLoadingMore || !hasMoreItems) return;
+    
+    setIsLoadingMore(true);
+    
+    try {
+      let firestoreMod: any = null;
+      let storageMod: any = null;
       try {
-        unsub && unsub();
+        firestoreMod = require('@react-native-firebase/firestore').default;
       } catch {}
+      try {
+        storageMod = require('@react-native-firebase/storage').default;
+      } catch {}
+      
+      if (!firestoreMod) return;
+      
+      let query = firestoreMod()
+        .collection('waves')
+        .orderBy('createdAt', 'desc')
+        .limit(feedPageSize);
+      
+      if (lastLoadedDoc) {
+        query = query.startAfter(lastLoadedDoc);
+      }
+      
+      const snap = await query.get();
+      const docs = snap.docs;
+      
+      if (docs.length === 0) {
+        setHasMoreItems(false);
+        return;
+      }
+      
+      const out: Vibe[] = [];
+      for (const d of docs) {
+        const data = d.data() || {};
+        const id = d.id;
+        const caption = data?.text || '';
+        const cap = data?.caption || { x: 0, y: 0 };
+        const authorName = data?.authorName || null;
+        let playbackUrl: string | null =
+          data?.playbackUrl || data?.mediaUrl || null;
+        let mediaUri: string | null = null;
+        if (!playbackUrl && storageMod && data?.mediaPath) {
+          try {
+            mediaUri = await storageMod()
+              .ref(String(data.mediaPath))
+              .getDownloadURL();
+          } catch {}
+        }
+        
+        const finalUri = playbackUrl || mediaUri;
+        if (!finalUri) continue;
+        
+        out.push({
+          id: id,
+          media: { uri: finalUri } as any,
+          audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
+          captionText: caption,
+          link: data.link || null,
+          captionPosition: {
+            x: Number(cap?.x) || 0,
+            y: Number(cap?.y) || 0,
+          },
+          playbackUrl: playbackUrl,
+          muxStatus: (data?.muxStatus || null) as any,
+          authorName,
+          ownerUid: (data?.ownerUid || data?.authorId || null) as any,
+          counts: {
+            splashes: Number(data?.counts?.splashes || 0),
+            echoes: Number(data?.counts?.echoes || 0),
+          },
+        });
+      }
+      
+      // Load user data for new items only
+      const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
+      await loadUserDataBatch(uniqueOwnerUids);
+      
+      // Attach user data to waves
+      const wavesWithUserData = out.map(wave => ({
+        ...wave,
+        user: wave.ownerUid ? loadedUserData[wave.ownerUid] || null : null,
+      }));
+      
+      const myUid = (() => {
+        try {
+          const a = require('@react-native-firebase/auth').default;
+          return a?.()?.currentUser?.uid;
+        } catch {
+          return null;
+        }
+      })();
+      
+      // Separate my waves and public waves
+      const myWavesInBatch = wavesWithUserData.filter(w => w.ownerUid === myUid);
+      const publicWavesInBatch = wavesWithUserData.filter(w => w.ownerUid !== myUid);
+      
+      // Update feeds
+      setVibesFeed(prev => {
+        const existingIds = new Set(prev.map(w => w.id));
+        const newWaves = myWavesInBatch.filter(w => !existingIds.has(w.id));
+        return [...prev, ...newWaves];
+      });
+      
+      setPublicFeed(prev => [...prev, ...publicWavesInBatch]);
+      
+      // Update pagination state
+      setLastLoadedDoc(docs[docs.length - 1]);
+      setHasMoreItems(docs.length === feedPageSize);
+      
+      // Note: Echoes and reach counts are loaded lazily when items become visible
+      
+    } catch (error) {
+      console.warn('Error loading more feed items:', error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [isLoadingMore, hasMoreItems, lastLoadedDoc, feedPageSize, loadUserDataBatch, loadedUserData]);
+  
+  // Initial feed load
+  useEffect(() => {
+    const loadInitialFeed = async () => {
+      setIsFeedLoaded(false);
+      await loadMoreFeedItems();
+      setIsFeedLoaded(true);
     };
-  }, []);
+    
+    loadInitialFeed();
+  }, []); // Only run once on mount
                     
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
@@ -7604,6 +7646,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               bounces={false}
               showsVerticalScrollIndicator={false}
               overScrollMode="never"
+              onEndReached={() => {
+                debouncedOperation(() => loadMoreFeedItems(), 500);
+              }}
+              onEndReachedThreshold={0.5}
+              ListFooterComponent={isLoadingMore ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#007AFF" />
+                  <Text style={{ marginTop: 10, color: '#666' }}>Loading more waves...</Text>
+                </View>
+              ) : null}
               onScrollBeginDrag={() => {
                 setIsSwiping(true);
                 showUiTemporarily(); // Show toggles on swipe
@@ -7612,11 +7664,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               onScrollEndDrag={() => setIsSwiping(false)}
               onMomentumScrollEnd={(event) => {
                 setIsSwiping(false);
-                // Update currentIndex based on final scroll position
-                const scrollY = event.nativeEvent.contentOffset.y;
-                const averageItemHeight = 400; // approximate height per post
-                const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
-                setCurrentIndex(newIndex);
+                // Update currentIndex based on final scroll position with debouncing
+                debouncedOperation(() => {
+                  const scrollY = event.nativeEvent.contentOffset.y;
+                  const averageItemHeight = 400; // approximate height per post
+                  const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
+                  setCurrentIndex(newIndex);
+                }, 100);
               }}
               // TikTok-style viewability tracking
               viewabilityConfig={{
@@ -7755,20 +7809,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
                           {(() => {
+                            const isLoadingUserData = item.ownerUid && !loadedUserData[item.ownerUid] && activeUserDataRequests.has(item.ownerUid);
                             const displayName = item.user?.name || item.authorName || 'User';
                             console.log('Post display name for item', item.id, ':', {
                               itemUserName: item.user?.name,
                               itemAuthorName: item.authorName,
-                              finalDisplay: displayName
+                              finalDisplay: displayName,
+                              isLoadingUserData
                             });
-                            return displayName;
+                            return isLoadingUserData ? 'Loading...' : displayName;
                           })()}
                         </Text>
-                        {item.user?.bio && (
-                          <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', marginTop: 2, fontStyle: 'italic' }}>
-                            {item.user.bio}
-                          </Text>
-                        )}
+                        {(() => {
+                          const isLoadingUserData = item.ownerUid && !loadedUserData[item.ownerUid] && activeUserDataRequests.has(item.ownerUid);
+                          if (isLoadingUserData) {
+                            return (
+                              <View style={{ height: 12, justifyContent: 'center', alignItems: 'center', marginTop: 2 }}>
+                                <ActivityIndicator size="small" color="#00C2FF" />
+                              </View>
+                            );
+                          }
+                          return item.user?.bio ? (
+                            <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', marginTop: 2, fontStyle: 'italic' }}>
+                              {item.user.bio}
+                            </Text>
+                          ) : null;
+                        })()}
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
                           {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || new Date())}
                         </Text>
