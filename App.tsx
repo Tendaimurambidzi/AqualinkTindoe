@@ -8874,6 +8874,61 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     ]}
                   />
                 </View>
+                {/* Green tick for username */}
+                <Pressable
+                  style={{
+                    alignSelf: 'center',
+                    marginTop: 8,
+                    width: 30,
+                    height: 30,
+                    borderRadius: 15,
+                    backgroundColor: '#00C2FF',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                  }}
+                  onPress={async () => {
+                    if (!profileName.trim()) {
+                      Alert.alert('Error', 'Username cannot be empty.');
+                      return;
+                    }
+                    const trimmedName = profileName.trim();
+                    if (trimmedName.length < 3) {
+                      Alert.alert('Error', 'Username must be at least 3 characters.');
+                      return;
+                    }
+                    // Check if username is unique (optional, but for demo)
+                    try {
+                      const firestore = require('@react-native-firebase/firestore').default;
+                      const query = await firestore()
+                        .collection('users')
+                        .where('username', '==', trimmedName)
+                        .get();
+                      if (!query.empty) {
+                        const existing = query.docs.find(doc => doc.id !== myUid);
+                        if (existing) {
+                          Alert.alert('Error', 'Username already taken.');
+                          return;
+                        }
+                      }
+                      // Save username to Firestore
+                      await firestore().collection('users').doc(myUid).set({
+                        username: trimmedName,
+                        displayName: trimmedName,
+                        username_lc: trimmedName.replace(/^[\/]+/, '').toLowerCase(),
+                      }, { merge: true });
+                      // Update Firebase Auth
+                      const auth = require('@react-native-firebase/auth').default;
+                      await auth().currentUser?.updateProfile({
+                        displayName: trimmedName,
+                      });
+                      Alert.alert('Success', 'Username updated!');
+                    } catch (e) {
+                      Alert.alert('Error', 'Failed to save username.');
+                    }
+                  }}
+                >
+                  <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>✓</Text>
+                </Pressable>
                 <TextInput
                   value={profileBio}
                   onChangeText={setProfileBio}
@@ -8890,14 +8945,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     },
                   ]}
                 />
-                <TouchableOpacity
+                {/* Green tick for profile (username + bio) */}
+                <Pressable
                   style={{
-                    backgroundColor: '#00C2FF',
-                    paddingVertical: 10,
-                    paddingHorizontal: 20,
-                    borderRadius: 10,
-                    marginTop: 16,
                     alignSelf: 'center',
+                    marginTop: 16,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: '#00C2FF',
+                    justifyContent: 'center',
+                    alignItems: 'center',
                   }}
                   onPress={async () => {
                     if (!profileName.trim()) {
@@ -8942,8 +9000,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     }
                   }}
                 >
-                  <Text style={{ color: '#001529', fontWeight: 'bold' }}>Save Profile</Text>
-                </TouchableOpacity>
+                  <Text style={{ color: 'white', fontSize: 20, fontWeight: 'bold' }}>✓</Text>
+                </Pressable>
               </View>
               {/* Stats tab - moved up for better professional layout */}
               <View style={{ marginBottom: 16 }}>
