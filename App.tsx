@@ -7687,9 +7687,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             return displayName;
                           })()}
                         </Text>
-                        {waveStats[item.id]?.createdAt && (
+                        {(waveStats[item.id]?.createdAt || item.createdAt) && (
                           <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
-                            {timeAgo(waveStats[item.id].createdAt)}
+                            {timeAgo(waveStats[item.id]?.createdAt || item.createdAt)}
                           </Text>
                         )}
                       </View>
