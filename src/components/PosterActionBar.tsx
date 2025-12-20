@@ -63,6 +63,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const [hugActionInProgress, setHugActionInProgress] = useState(false);
   const [echoActionInProgress, setEchoActionInProgress] = useState(false);
   const [pearlActionInProgress, setPearlActionInProgress] = useState(false);
+  const [hugInitialized, setHugInitialized] = useState(false);
 
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
@@ -89,6 +90,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           .get();
         
         setHasHugged(splashDoc.exists);
+        setHugInitialized(true);
 
         const echoQuery = await firestore()
           .collection(`waves/${waveId}/echoes`)
@@ -98,13 +100,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         setHasEchoed(!echoQuery.empty);
       } catch (error) {
         console.error('Error checking interactions:', error);
+        setHugInitialized(true); // Set to true even on error to allow interaction
       }
     };
     checkInteractions();
   }, [waveId, currentUserId]);
 
   const handleHug = () => {
-    if (hugActionInProgress) return; // Prevent concurrent actions
+    if (hugActionInProgress || !hugInitialized) return; // Prevent concurrent actions and wait for initialization
 
     setHugActionInProgress(true);
     
@@ -181,8 +184,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           </Text>
         </Pressable>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionCount, initialSplashesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
-          {initialSplashesCount}
+        <Text style={[styles.actionCount, Math.max(0, initialSplashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
+          {Math.max(0, initialSplashesCount)}
         </Text>
       </View>
 
