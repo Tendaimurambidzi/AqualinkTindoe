@@ -8561,7 +8561,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       onCast={() => onShareWave(item)}
                     />
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
-                      {item.user?.displayName !== "Tendaimurambidzi" && (
+                      {item.ownerUid !== myUid && item.user?.displayName !== "Tendaimurambidzi" && (
                         <Pressable
                           onPress={() => handleToggleVibe(item.ownerUid, item.user?.displayName || item.user?.name)}
                           style={{ marginRight: 20 }}
@@ -11103,6 +11103,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         flexWrap: 'wrap',
                       }}>
                         {/* Join/Leave Crew Button */}
+                        {result.id !== myUid && (
                         <Pressable
                           style={[
                             {
@@ -11146,6 +11147,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             {isInUserCrew[result.id] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
                           </Text>
                         </Pressable>
+                        )}
                     
                         {/* Send Message Button */}
                         <Pressable
@@ -14303,12 +14305,14 @@ const LiveStreamModal = ({
         { label: 'Restrict Chat', action: 'restrictChat', icon: '🚫' },
         { label: 'Timeout', action: 'timeout', icon: '⏱️' },
       ];
-      const crewActions = [
+      const crewActions = user.id !== myUid ? [
         {
           label: (isInUserCrew && isInUserCrew[user.id]) ? 'Disconnect Vibe' : 'Connect Vibe',
           action: (isInUserCrew && isInUserCrew[user.id]) ? 'removeFromCrew' : 'join',
           icon: 'dY?',
         },
+        { label: 'Block', action: 'block', icon: 'dYs?' },
+      ] : [
         { label: 'Block', action: 'block', icon: 'dYs?' },
       ];
       return [

@@ -107,7 +107,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   }, [waveId, currentUserId]);
 
   const handleHug = () => {
-    if (hugActionInProgress || !hugInitialized) return; // Prevent concurrent actions and wait for initialization
+    if (hugActionInProgress) return; // Only prevent concurrent actions, allow immediate interaction
 
     setHugActionInProgress(true);
     
