@@ -64,6 +64,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const [echoActionInProgress, setEchoActionInProgress] = useState(false);
   const [pearlActionInProgress, setPearlActionInProgress] = useState(false);
   const [hugInitialized, setHugInitialized] = useState(false);
+  const [splashesCount, setSplashesCount] = useState(initialSplashesCount);
 
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
@@ -97,7 +98,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           .where('userUid', '==', currentUserId)
           .limit(1)
           .get();
-        setHasEchoed(!echoQuery.empty);
+        
+        // Add null check for echoQuery
+        setHasEchoed(echoQuery && !echoQuery.empty);
       } catch (error) {
         console.error('Error checking interactions:', error);
         setHugInitialized(true); // Set to true even on error to allow interaction
@@ -112,7 +115,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     setHugActionInProgress(true);
     
     // Immediate visual feedback
-    setHasHugged(!hasHugged);
+    const newHasHugged = !hasHugged;
+    setHasHugged(newHasHugged);
+    
+    // Update count immediately
+    setSplashesCount(prev => newHasHugged ? prev + 1 : Math.max(0, prev - 1));
     
     // Call the parent callback
     if (hasHugged) {
@@ -184,8 +191,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           </Text>
         </Pressable>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionCount, Math.max(0, initialSplashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
-          {Math.max(0, initialSplashesCount)}
+        <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
+          {Math.max(0, splashesCount)}
         </Text>
       </View>
 

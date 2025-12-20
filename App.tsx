@@ -1483,6 +1483,50 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     });
     return sub;
   }, []);
+  
+  // Set up notifications listener
+  useEffect(() => {
+    if (!myUid) return;
+
+    const unsubscribe = firestore()
+      .collection('notifications')
+      .where('toUserId', '==', myUid)
+      .orderBy('createdAt', 'desc')
+      .onSnapshot((snapshot) => {
+        if (!snapshot) {
+          console.warn('Notifications snapshot is null');
+          return;
+        }
+        
+        const notificationsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Array<{
+          id: string;
+          type: string;
+          message: string;
+          fromUserHandle: string;
+          read: boolean;
+          createdAt: any;
+        }>;
+
+        setNotifications(notificationsData);
+        const unreadCount = notificationsData.filter(n => !n.read).length;
+        setUnreadNotificationsCount(unreadCount);
+
+        // Show toast for new unread notifications
+        const newUnreadNotifications = notificationsData.filter(n => !n.read);
+        if (newUnreadNotifications.length > 0) {
+          const latestNotification = newUnreadNotifications[0];
+          if (latestNotification.type === 'CONNECT_VIBE') {
+            notifySuccess(latestNotification.message);
+          }
+        }
+      });
+
+    return unsubscribe;
+  }, [myUid]);
+
   const insets = useSafeAreaInsets();
   // Development safeguard (disabled): if you need to skip uploads in debug Android,
   // temporarily set this to: (__DEV__ && Platform.OS === 'android')
@@ -1516,6 +1560,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const octopusHugOpacity = useRef(new Animated.Value(0)).current;
   const [showEditShore, setShowEditShore] = useState<boolean>(false);
   const [showTreasure, setShowTreasure] = useState<boolean>(false);
+  const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [treasureStats, setTreasureStats] = useState<{
     tipsTotal: number;
     withdrawable: number;
@@ -1983,6 +2028,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
   const [toastMessage, setToastMessage] = useState('');
   const toastTimerRef = useRef<any>(null);
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    type: string;
+    message: string;
+    fromUserHandle: string;
+    read: boolean;
+    createdAt: any;
+  }>>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
                     
   // Update timestamps every second
   useEffect(() => {
@@ -3422,6 +3478,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .orderBy('createdAt', 'desc')
           .get();
                     
+        if (!echoesSnap) {
+          console.warn('Echoes snapshot is null');
+          setEchoList([]);
+          return;
+        }
+        
         const echoes = echoesSnap.docs.map(doc => ({
           id: doc.id,
           uid: doc.data().userUid,
@@ -6607,6 +6669,80 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.error('Load crew counts error:', e);
     }
   };
+
+  const loadNotifications = async () => {
+    try {
+      const user = auth().currentUser;
+      if (!user) return;
+
+      const notificationsSnapshot = await firestore()
+        .collection('notifications')
+        .where('toUserId', '==', user.uid)
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get();
+
+      const notificationsData = notificationsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })) as Array<{
+        id: string;
+        type: string;
+        message: string;
+        fromUserHandle: string;
+        read: boolean;
+        createdAt: any;
+      }>;
+
+      setNotifications(notificationsData);
+      const unreadCount = notificationsData.filter(n => !n.read).length;
+      setUnreadNotificationsCount(unreadCount);
+    } catch (e) {
+      console.error('Load notifications error:', e);
+    }
+  };
+
+  const markNotificationAsRead = async (notificationId: string) => {
+    try {
+      await firestore()
+        .collection('notifications')
+        .doc(notificationId)
+        .update({ read: true });
+
+      setNotifications(prev =>
+        prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
+      );
+      setUnreadNotificationsCount(prev => Math.max(0, prev - 1));
+    } catch (e) {
+      console.error('Mark notification as read error:', e);
+    }
+  };
+
+  const markAllNotificationsAsRead = async () => {
+    try {
+      const user = auth().currentUser;
+      if (!user) return;
+
+      const batch = firestore().batch();
+      const unreadNotifications = notifications.filter(n => !n.read);
+
+      unreadNotifications.forEach(notification => {
+        const notificationRef = firestore()
+          .collection('notifications')
+          .doc(notification.id);
+        batch.update(notificationRef, { read: true });
+      });
+
+      await batch.commit();
+
+      setNotifications(prev =>
+        prev.map(n => ({ ...n, read: true }))
+      );
+      setUnreadNotificationsCount(0);
+    } catch (e) {
+      console.error('Mark all notifications as read error:', e);
+    }
+  };
                     
   const checkIfInCrew = async (targetUid: string) => {
     try {
@@ -6920,6 +7056,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .catch(() => {});
     // Load crew counts
     loadCrewCounts();
+    // Load notifications
+    loadNotifications();
     let countCancelled = false;
     setMyWaveCount(null);
     (async () => {
@@ -8212,8 +8350,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 })}
                 pagingEnabled={false}
                 snapToInterval={undefined}
-                decelerationRate={0.85}
-                scrollEventThrottle={4}
+                decelerationRate={'fast'}
+                scrollEventThrottle={16}
                 bounces={false}
                 showsVerticalScrollIndicator={false}
                 overScrollMode="never"
@@ -9394,10 +9532,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   ))}
                 </View>
               </View>
-              {/* My Vibes and My Collection - moved down below stats */}
-              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingHorizontal: 20, alignItems: 'center', gap: 16 }}>
+              {/* My Vibes, Notifications, and My Collection */}
+              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingHorizontal: 20, alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                 <Pressable
-                  style={[styles.logbookAction, { flex: 0, minWidth: 140 }]}
+                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
                   onPress={() => {
                     setShowProfile(false);
                     setShowMyWaves(true);
@@ -9418,7 +9556,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                 </Pressable>
                 <Pressable
-                  style={[styles.logbookAction, { flex: 0, minWidth: 140 }]}
+                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
+                  onPress={() => {
+                    setShowProfile(false);
+                    setShowNotifications(true);
+                  }}
+                >
+                  <View
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
+                  >
+                    <View
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: unreadNotificationsCount > 0 ? '#FF4444' : '#00C2FF',
+                      }}
+                    />
+                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>Notifications</Text>
+                    {unreadNotificationsCount > 0 && (
+                      <View style={{
+                        backgroundColor: '#FF4444',
+                        borderRadius: 10,
+                        minWidth: 20,
+                        height: 20,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        paddingHorizontal: 6,
+                      }}>
+                        <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>
+                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+                <Pressable
+                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
                   onPress={() => {
                     setShowProfile(false);
                     setShowTreasure(true);
@@ -9449,7 +9623,105 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-                    
+      
+      {/* NOTIFICATIONS MODAL */}
+      <Modal
+        visible={showNotifications}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNotifications(false)}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
+        >
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.8,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={{ flex: 1, padding: 16 }}>
+              <Text style={[styles.logbookTitle, { marginBottom: 16, textAlign: 'center' }]}>
+                Notifications
+              </Text>
+              
+              {notifications.length === 0 ? (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
+                    No notifications yet
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
+                    When someone connects with your vibe, you'll see it here!
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView style={{ flex: 1 }}>
+                  {notifications.map((notification) => (
+                    <Pressable
+                      key={notification.id}
+                      style={{
+                        backgroundColor: notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(0,194,255,0.1)',
+                        borderRadius: 8,
+                        padding: 12,
+                        marginBottom: 8,
+                        borderLeftWidth: notification.read ? 0 : 4,
+                        borderLeftColor: '#00C2FF',
+                      }}
+                      onPress={() => {
+                        if (!notification.read) {
+                          markNotificationAsRead(notification.id);
+                        }
+                      }}
+                    >
+                      <Text style={{
+                        color: 'white',
+                        fontSize: 16,
+                        fontWeight: notification.read ? 'normal' : 'bold',
+                        marginBottom: 4,
+                      }}>
+                        {notification.message}
+                      </Text>
+                      <Text style={{
+                        color: 'rgba(255,255,255,0.6)',
+                        fontSize: 12,
+                      }}>
+                        {notification.createdAt?.toDate ? 
+                          timeAgo(notification.createdAt.toDate()) : 
+                          'Just now'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              )}
+              
+              {notifications.length > 0 && (
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+                  <Pressable
+                    style={[styles.primaryBtn, { flex: 1 }]}
+                    onPress={markAllNotificationsAsRead}
+                  >
+                    <Text style={styles.primaryBtnText}>Mark All Read</Text>
+                  </Pressable>
+                </View>
+              )}
+            </View>
+          </View>
+          <Pressable
+            style={styles.dismissBtn}
+            onPress={() => setShowNotifications(false)}
+          >
+            <Text style={styles.dismissText}>Close</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
       {/* PROFILE PICTURE ZOOM MODAL */}
       <Modal
         visible={zoomedProfilePic !== null}

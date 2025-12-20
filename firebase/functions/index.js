@@ -943,6 +943,34 @@ exports.connectVibe = functions.https.onCall(
       );
     }
 
+    // Get the username/handle of the person connecting
+    const fromUserDoc = await admin.firestore().collection("users").doc(fromUserId).get();
+    const fromUserData = fromUserDoc.data();
+    const fromUserHandle = fromUserData?.handle || fromUserData?.displayName || fromUserData?.name || "Someone";
+
+    // Add to crew collection (follower)
+    await admin.firestore()
+      .collection("users")
+      .doc(toUserId)
+      .collection("crew")
+      .doc(fromUserId)
+      .set({
+        uid: fromUserId,
+        name: fromUserHandle,
+        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+    // Add to boarding collection (following)
+    await admin.firestore()
+      .collection("users")
+      .doc(fromUserId)
+      .collection("boarding")
+      .doc(toUserId)
+      .set({
+        uid: toUserId,
+        joinedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
     const connectionId = `${fromUserId}_${toUserId}`;
 
     const connectionRef = admin.firestore()
@@ -955,12 +983,13 @@ exports.connectVibe = functions.https.onCall(
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // Create notification
+    // Create notification with personalized message
     await admin.firestore().collection("notifications").add({
       toUserId: toUserId,
       fromUserId: fromUserId,
+      fromUserHandle: fromUserHandle,
       type: "CONNECT_VIBE",
-      message: "Someone has connected your vibe",
+      message: `/${fromUserHandle} connected your vibe!`,
       read: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
@@ -978,6 +1007,22 @@ exports.disconnectVibe = functions.https.onCall(
 
     const fromUserId = context.auth.uid;
     const toUserId = data.toUserId;
+
+    // Remove from crew collection (follower)
+    await admin.firestore()
+      .collection("users")
+      .doc(toUserId)
+      .collection("crew")
+      .doc(fromUserId)
+      .delete();
+
+    // Remove from boarding collection (following)
+    await admin.firestore()
+      .collection("users")
+      .doc(fromUserId)
+      .collection("boarding")
+      .doc(toUserId)
+      .delete();
 
     const connectionId = `${fromUserId}_${toUserId}`;
 
