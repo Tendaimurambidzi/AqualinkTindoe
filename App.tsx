@@ -16396,18 +16396,20 @@ const App: React.FC = () => {
     let unsub: any = null;
     try {
       unsub = auth().onAuthStateChanged(async (u) => {
-        // If FORCE_SIGN_OUT_ON_START is enabled, user is signed in, but auth hasn't been completed yet, sign them out
-        if (FORCE_SIGN_OUT_ON_START && u) {
+        // Force sign out on first install to ensure sign-up/sign-in is required
+        if (u) {
           try {
-            const completed = await AsyncStorage.getItem('auth_completed');
-            if (completed !== 'true') {
+            const installed = await AsyncStorage.getItem('app_installed');
+            if (!installed) {
+              await AsyncStorage.setItem('app_installed', 'true');
               await auth().signOut();
               setUser(null);
               if (initializing) setInitializing(false);
               return;
             }
           } catch (e) {
-            // If we can't check, assume not completed and sign out
+            // If we can't check, assume first install and sign out
+            await AsyncStorage.setItem('app_installed', 'true');
             await auth().signOut();
             setUser(null);
             if (initializing) setInitializing(false);
