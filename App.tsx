@@ -1538,6 +1538,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [profileName, setProfileName] = useState<string>('');
   const [profileBio, setProfileBio] = useState<string>('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+
+  // Load profilePhoto from AsyncStorage on app start
+  useEffect(() => {
+    const loadProfilePhoto = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('profilePhoto');
+        if (stored) {
+          setProfilePhoto(stored);
+        }
+      } catch (error) {
+        console.warn('Failed to load profilePhoto from AsyncStorage:', error);
+      }
+    };
+    loadProfilePhoto();
+  }, []);
+
+  // Persist profilePhoto to AsyncStorage whenever it changes
+  useEffect(() => {
+    const saveProfilePhoto = async () => {
+      try {
+        if (profilePhoto) {
+          await AsyncStorage.setItem('profilePhoto', profilePhoto);
+        } else {
+          await AsyncStorage.removeItem('profilePhoto');
+        }
+      } catch (error) {
+        console.warn('Failed to save profilePhoto to AsyncStorage:', error);
+      }
+    };
+    saveProfilePhoto();
+  }, [profilePhoto]);
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
   const myUid = auth?.()?.currentUser?.uid || null;
@@ -1689,6 +1720,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
   const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string }>>({});
 
+  // Load userData from AsyncStorage on app start
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('userData');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setUserData(parsed);
+        }
+      } catch (error) {
+        console.warn('Failed to load userData from AsyncStorage:', error);
+      }
+    };
+    loadUserData();
+  }, []);
+
+  // Persist userData to AsyncStorage whenever it changes
+  useEffect(() => {
+    const saveUserData = async () => {
+      try {
+        await AsyncStorage.setItem('userData', JSON.stringify(userData));
+      } catch (error) {
+        console.warn('Failed to save userData to AsyncStorage:', error);
+      }
+    };
+    if (Object.keys(userData).length > 0) {
+      saveUserData();
+    }
+  }, [userData]);
+
   // Fetch user data for posts in the feed
   useEffect(() => {
     const uids = [...new Set(wavesFeed.map(w => w.ownerUid).filter(Boolean))];
@@ -1720,7 +1781,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setUserData(prev => ({ ...prev, ...updates }));
     };
     fetchUsers();
-  }, [wavesFeed, userData]);
+  }, [wavesFeed]); // Removed userData from dependencies to prevent infinite loops
 
   // Load waves feed from Firestore
   useEffect(() => {
@@ -4382,6 +4443,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               }
             }
             
+            // Update global userData state with fetched user data
+            const globalUserDataUpdates: Record<string, { name: string; avatar: string; bio: string }> = {};
+            Object.entries(userDataMap).forEach(([uid, userInfo]) => {
+              if (userInfo) {
+                globalUserDataUpdates[uid] = {
+                  name: userInfo.name || 'User',
+                  avatar: userInfo.avatar || '',
+                  bio: userInfo.bio || '',
+                };
+              }
+            });
+            if (Object.keys(globalUserDataUpdates).length > 0) {
+              setUserData(prev => ({ ...prev, ...globalUserDataUpdates }));
+            }
+            
             // Attach user data to waves
             const wavesWithUserData = out.map(wave => ({
               ...wave,
@@ -4589,6 +4665,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 };
               });
             }
+          }
+          
+          // Update global userData state with fetched user data
+          const globalUserDataUpdates: Record<string, { name: string; avatar: string; bio: string }> = {};
+          Object.entries(userDataMap).forEach(([uid, userInfo]) => {
+            if (userInfo) {
+              globalUserDataUpdates[uid] = {
+                name: userInfo.name || 'User',
+                avatar: userInfo.avatar || '',
+                bio: userInfo.bio || '',
+              };
+            }
+          });
+          if (Object.keys(globalUserDataUpdates).length > 0) {
+            setUserData(prev => ({ ...prev, ...globalUserDataUpdates }));
           }
           
           // Attach user data to waves
