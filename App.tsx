@@ -1685,6 +1685,76 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
+  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string }>>({});
+
+  // Fetch user data for posts in the feed
+  useEffect(() => {
+    const uids = [...new Set(wavesFeed.map(w => w.ownerUid).filter(Boolean))];
+    const missingUids = uids.filter(uid => !userData[uid]);
+    if (missingUids.length === 0) return;
+
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) return;
+
+    const fetchUsers = async () => {
+      const updates: Record<string, { name: string; avatar: string; bio: string }> = {};
+      for (const uid of missingUids) {
+        try {
+          const doc = await firestoreMod().doc(`users/${uid}`).get();
+          const data = doc.data();
+          updates[uid] = {
+            name: data?.name || data?.displayName || 'User',
+            avatar: data?.avatar || '',
+            bio: data?.bio || '',
+          };
+        } catch (e) {
+          console.warn('Failed to fetch user data for', uid, e);
+          updates[uid] = { name: 'User', avatar: '', bio: '' };
+        }
+      }
+      setUserData(prev => ({ ...prev, ...updates }));
+    };
+    fetchUsers();
+  }, [wavesFeed, userData]);
+
+  // Load waves feed from Firestore
+  useEffect(() => {
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) return;
+
+    const unsub = firestoreMod()
+      .collection('waves')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .onSnapshot((snapshot: any) => {
+        const waves: Vibe[] = [];
+        snapshot?.forEach((doc: any) => {
+          const data = doc.data();
+          waves.push({
+            id: doc.id,
+            media: { uri: data.playbackUrl || data.mediaUrl },
+            audio: data.audioUrl ? { uri: data.audioUrl } : null,
+            captionText: data.captionText || data.caption || '',
+            captionPosition: { x: data.captionPosition?.x || 0, y: data.captionPosition?.y || 0 },
+            playbackUrl: data.playbackUrl,
+            muxStatus: data.muxStatus,
+            authorName: data.authorName,
+            ownerUid: data.ownerUid,
+            createdAt: data.createdAt,
+            counts: data.counts || {},
+          });
+        });
+        setWavesFeed(waves);
+      });
+
+    return () => unsub();
+  }, []);
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
   const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
@@ -7911,8 +7981,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               // For current user's posts, use MY AURA profile picture
                               picUri = profilePhoto;
                             } else {
-                              // For other users, use their Firestore avatar
-                              const userAvatar = item.user?.avatar;
+                              // For other users, use their Firestore avatar from userData
+                              const userInfo = userData[item.ownerUid];
+                              const userAvatar = userInfo?.avatar;
                               if (userAvatar && typeof userAvatar === 'string' && userAvatar.trim()) {
                                 picUri = userAvatar;
                               }
@@ -7937,13 +8008,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               // For current user's posts, use MY AURA profile picture
                               avatarUri = profilePhoto;
                             } else {
-                              // For other users, use their Firestore avatar
-                              const userAvatar = item.user?.avatar;
+                              // For other users, use their Firestore avatar from userData
+                              const userInfo = userData[item.ownerUid];
+                              const userAvatar = userInfo?.avatar;
                               if (userAvatar && typeof userAvatar === 'string' && userAvatar.trim()) {
                                 avatarUri = userAvatar;
                               } else {
-                                // If user data not loaded yet, try to fetch it on demand
-                                console.log('User avatar not available for', item.ownerUid, 'user data:', item.user);
+                                // If user data not loaded yet, show placeholder
+                                console.log('User avatar not available for', item.ownerUid, 'user data:', userInfo);
                               }
                             }
                             
@@ -7978,9 +8050,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             if (isCurrentUserPost) {
                               return profileName || 'User';
                             }
-                            const displayName = item.user?.name || item.authorName || 'User';
+                            const userInfo = userData[item.ownerUid];
+                            const displayName = userInfo?.name || item.authorName || 'User';
                             console.log('Post display name for item', item.id, ':', {
-                              itemUserName: item.user?.name,
+                              userDataName: userInfo?.name,
                               itemAuthorName: item.authorName,
                               finalDisplay: displayName
                             });
@@ -7989,7 +8062,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </Text>
                         {(() => {
                           const isCurrentUserPost = item.ownerUid === myUid;
-                          const bioToShow = isCurrentUserPost ? profileBio : item.user?.bio;
+                          const bioToShow = isCurrentUserPost ? profileBio : userData[item.ownerUid]?.bio;
                           return bioToShow ? (
                             <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', marginTop: 2, fontStyle: 'italic' }}>
                               {bioToShow}
