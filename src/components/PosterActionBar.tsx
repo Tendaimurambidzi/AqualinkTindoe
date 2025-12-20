@@ -132,37 +132,24 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     if (hugActionInProgress) return; // Prevent concurrent actions
 
     setHugActionInProgress(true);
-    
-    // Immediate UI response - update state and count instantly
-    if (hugState === 'hugged') {
-      // User is unhugging - only allow if count is > 0
-      if (realTimeSplashesCount <= 0) {
-        setHugActionInProgress(false);
-        return; // Prevent negative counts
-      }
 
-      setLocalSplashesCount(0);
-      setHugState('unhugged');
+    // Immediate visual feedback - toggle state instantly
+    const isCurrentlyHugged = hugState === 'hugged';
+    setHugState(isCurrentlyHugged ? 'unhugged' : 'hugged');
+    setLocalSplashesCount(isCurrentlyHugged ? 0 : 1);
 
-      // Handle backend removal asynchronously
+    // Handle backend operations asynchronously
+    if (isCurrentlyHugged) {
+      // User is unhugging
       firestore()
         .collection(`waves/${waveId}/splashes`)
         .doc(currentUserId)
         .delete()
         .then(async () => {
-          // Update the wave's count in Firestore with validation
+          // Update the wave's count in Firestore
           try {
-            const waveRef = firestore().doc(`waves/${waveId}`);
-            await firestore().runTransaction(async (transaction) => {
-              const waveDoc = await transaction.get(waveRef);
-              if (!waveDoc.exists) return;
-
-              const currentCount = waveDoc.data()?.counts?.splashes || 0;
-              if (currentCount > 0) {
-                transaction.update(waveRef, {
-                  'counts.splashes': firestore.FieldValue.increment(-1)
-                });
-              }
+            await firestore().doc(`waves/${waveId}`).update({
+              'counts.splashes': firestore.FieldValue.increment(-1)
             });
           } catch (error) {
             console.error('Error updating hug count:', error);
@@ -180,11 +167,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           setHugActionInProgress(false);
         });
     } else {
-      // User is hugging - immediate UI update
-      setLocalSplashesCount(1);
-      setHugState('hugged');
-
-      // Handle backend addition and notification asynchronously
+      // User is hugging
       firestore()
         .collection(`waves/${waveId}/splashes`)
         .doc(currentUserId)
@@ -288,7 +271,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
       {/* Splashes Button */}
       <View style={styles.actionButton}>
-        <Pressable onPress={handleHug} style={styles.iconTouchable}>
+        <Pressable
+          onPress={handleHug}
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={[styles.actionIcon, hugState === 'hugged' && styles.hugActive]}>
             🫂
           </Text>
@@ -301,7 +289,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Echoes Button */}
       <View style={styles.actionButton}>
-        <Pressable onPress={handleEcho} style={styles.iconTouchable}>
+        <Pressable
+          onPress={handleEcho}
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
             📣
           </Text>
@@ -314,7 +307,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Gems Button */}
       <View style={styles.actionButton}>
-        <Pressable onPress={handlePearl} style={styles.iconTouchable}>
+        <Pressable
+          onPress={handlePearl}
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
             💎
           </Text>
@@ -324,7 +322,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Anchor Wave Button */}
       <View style={styles.actionButton}>
-        <Pressable onPress={handleAnchor} style={styles.iconTouchable}>
+        <Pressable
+          onPress={handleAnchor}
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
             ⚓
           </Text>
@@ -335,7 +338,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Cast Wave Button */}
       <View style={styles.actionButton}>
-        <Pressable onPress={handleCast} style={styles.iconTouchable}>
+        <Pressable
+          onPress={handleCast}
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
             📡
           </Text>
@@ -346,7 +354,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Placeholder Button 1 */}
       <View style={styles.actionButton}>
-        <Pressable style={styles.iconTouchable}>
+        <Pressable
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={styles.actionIcon}>🔱</Text>
         </Pressable>
         <Text style={styles.actionLabel}>Placeholder 1</Text>
@@ -355,7 +367,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Placeholder Button 2 */}
       <View style={styles.actionButton}>
-        <Pressable style={styles.iconTouchable}>
+        <Pressable
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={styles.actionIcon}>🐚</Text>
         </Pressable>
         <Text style={styles.actionLabel}>Placeholder 2</Text>
@@ -364,7 +380,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Placeholder Button 3 */}
       <View style={styles.actionButton}>
-        <Pressable style={styles.iconTouchable}>
+        <Pressable
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={styles.actionIcon}></Text>
         </Pressable>
         <Text style={styles.actionLabel}></Text>
@@ -373,7 +393,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Placeholder Button 4 */}
       <View style={styles.actionButton}>
-        <Pressable style={styles.iconTouchable}>
+        <Pressable
+          style={styles.iconTouchable}
+          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+        >
           <Text style={styles.actionIcon}></Text>
         </Pressable>
         <Text style={styles.actionLabel}></Text>
@@ -399,7 +423,11 @@ const styles = StyleSheet.create({
     marginHorizontal: 15, // Increased spacing between buttons to prevent accidental clicks
   },
   iconTouchable: {
-    padding: 5, // Small padding around icon for touch area
+    padding: 8, // Increased padding for better touch area
+    minWidth: 40, // Minimum touch width
+    minHeight: 40, // Minimum touch height
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   actionIcon: {
     fontSize: 24, // Enlarged icons
