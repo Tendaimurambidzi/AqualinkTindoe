@@ -58,10 +58,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   onCast,
   creatorUserId,
 }) => {
-  const [hugState, setHugState] = useState<'hugged' | 'unhugged'>('unhugged');
+  const [hasHugged, setHasHugged] = useState(false);
   const [hasEchoed, setHasEchoed] = useState(false);
-  const [localSplashesCount, setLocalSplashesCount] = useState(0); // Start at 0, will be updated based on user state
-  const [realTimeSplashesCount, setRealTimeSplashesCount] = useState(initialSplashesCount); // Real-time total count
   const [hugActionInProgress, setHugActionInProgress] = useState(false);
   const [echoActionInProgress, setEchoActionInProgress] = useState(false);
   const [pearlActionInProgress, setPearlActionInProgress] = useState(false);
@@ -84,18 +82,13 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // Check if user has already interacted
   useEffect(() => {
     const checkInteractions = async () => {
-      // Don't check Firestore if a hug action is currently in progress
-      if (hugActionInProgress) return;
-      
       try {
         const splashDoc = await firestore()
           .collection(`waves/${waveId}/splashes`)
           .doc(currentUserId)
           .get();
         
-        const userHasHugged = splashDoc.exists;
-        setHugState(userHasHugged ? 'hugged' : 'unhugged');
-        setLocalSplashesCount(userHasHugged ? 1 : 0); // Set local count based on user's hug state
+        setHasHugged(splashDoc.exists);
 
         const echoQuery = await firestore()
           .collection(`waves/${waveId}/echoes`)
@@ -108,121 +101,27 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       }
     };
     checkInteractions();
-  }, [waveId, currentUserId]); // Removed hugActionInProgress from dependencies to avoid race conditions
-
-  // Real-time listener for the total splashes count
-  useEffect(() => {
-    const unsubscribe = firestore()
-      .doc(`waves/${waveId}`)
-      .onSnapshot((doc) => {
-        if (doc.exists) {
-          const data = doc.data();
-          const currentCount = data?.counts?.splashes || 0;
-          // Ensure count never goes below 0
-          setRealTimeSplashesCount(Math.max(0, currentCount));
-        }
-      }, (error) => {
-        console.error('Error listening to wave updates:', error);
-      });
-
-    return unsubscribe;
-  }, [waveId]);
+  }, [waveId, currentUserId]);
 
   const handleHug = () => {
     if (hugActionInProgress) return; // Prevent concurrent actions
 
     setHugActionInProgress(true);
-
-    // Immediate visual feedback - toggle state instantly
-    const isCurrentlyHugged = hugState === 'hugged';
-    setHugState(isCurrentlyHugged ? 'unhugged' : 'hugged');
-    setLocalSplashesCount(isCurrentlyHugged ? 0 : 1);
-
-    // Handle backend operations asynchronously
-    if (isCurrentlyHugged) {
-      // User is unhugging
-      firestore()
-        .collection(`waves/${waveId}/splashes`)
-        .doc(currentUserId)
-        .delete()
-        .then(async () => {
-          // Update the wave's count in Firestore
-          try {
-            await firestore().doc(`waves/${waveId}`).update({
-              'counts.splashes': firestore.FieldValue.increment(-1)
-            });
-          } catch (error) {
-            console.error('Error updating hug count:', error);
-          }
-
-          onRemove();
-        })
-        .catch((error) => {
-          console.error('Error removing hug:', error);
-          // Revert on error
-          setLocalSplashesCount(1);
-          setHugState('hugged');
-        })
-        .finally(() => {
-          setHugActionInProgress(false);
-        });
+    
+    // Immediate visual feedback
+    setHasHugged(!hasHugged);
+    
+    // Call the parent callback
+    if (hasHugged) {
+      onRemove();
     } else {
-      // User is hugging
-      firestore()
-        .collection(`waves/${waveId}/splashes`)
-        .doc(currentUserId)
-        .set({
-          userUid: currentUserId,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        })
-        .then(async () => {
-          // Update the wave's count in Firestore
-          try {
-            await firestore().doc(`waves/${waveId}`).update({
-              'counts.splashes': firestore.FieldValue.increment(1)
-            });
-          } catch (error) {
-            console.error('Error updating hug count:', error);
-          }
-
-          onAdd();
-
-          // Send notification if not self
-          if (currentUserId !== creatorUserId) {
-            // Get user name and send notification
-            firestore()
-              .collection('users')
-              .doc(currentUserId)
-              .get()
-              .then((userDoc) => {
-                if (userDoc.exists) {
-                  const userData = userDoc.data();
-                  const fromName = userData?.displayName || userData?.name || 'Someone';
-                  return functions().httpsCallable('addPing')({
-                    recipientUid: creatorUserId,
-                    type: 'hug',
-                    waveId: waveId,
-                    text: `/${fromName} hugged your wave!`,
-                    fromUid: currentUserId,
-                    fromName: fromName,
-                  });
-                }
-              })
-              .catch((error) => {
-                console.error('Error sending hug notification:', error);
-              });
-          }
-        })
-        .catch((error) => {
-          console.error('Error adding hug:', error);
-          // Revert on error
-          setLocalSplashesCount(0);
-          setHugState('unhugged');
-        })
-        .finally(() => {
-          setHugActionInProgress(false);
-        });
+      onAdd();
     }
+    
+    // Reset action in progress after a short delay
+    setTimeout(() => {
+      setHugActionInProgress(false);
+    }, 500);
   };
 
   const handleEcho = () => {
@@ -275,15 +174,15 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           onPress={handleHug}
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+          hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
         >
-          <Text style={[styles.actionIcon, hugState === 'hugged' && styles.hugActive]}>
+          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
             🫂
           </Text>
         </Pressable>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionCount, realTimeSplashesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
-          {realTimeSplashesCount}
+        <Text style={[styles.actionCount, initialSplashesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
+          {initialSplashesCount}
         </Text>
       </View>
 
