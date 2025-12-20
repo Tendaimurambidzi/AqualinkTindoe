@@ -75,7 +75,7 @@ import {
 import { uploadPost } from './src/services/uploadPost';
 import { removeSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
-import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion } from './src/services/aiService';
+import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
                     
@@ -373,6 +373,7 @@ const styles = StyleSheet.create({
   boatIcon: { fontSize: 18, marginBottom: 2 },
   noticeIcon: { fontSize: 18, marginBottom: 2 },
   schoolIcon: { fontSize: 18, marginBottom: 2 },
+  aiIcon: { fontSize: 18, marginBottom: 2 },
   gearIcon: { fontSize: 18, marginBottom: 2, color: 'white' },
   placeholderIcon: { fontSize: 18, marginBottom: 2 },
                     
@@ -1844,6 +1845,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showSchoolMode, setShowSchoolMode] = useState<boolean>(false);
   const [showBridge, setShowBridge] = useState<boolean>(false);
   const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
+  const [showAIModal, setShowAIModal] = useState<boolean>(false);
+  const [aiResponse, setAiResponse] = useState<string>('');
+  const [isAILoading, setIsAILoading] = useState<boolean>(false);
+  const [aiMode, setAiMode] = useState<'school' | 'explore' | 'creative' | 'analysis'>('school');
   const [selectedGemCountry, setSelectedGemCountry] = useState<string>('');
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
@@ -2038,6 +2043,153 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       notifyError('AI suggestion failed.');
     } finally {
       setIsAISuggesting(false);
+    }
+  }, [notifyError]);
+                    
+  // School Mode AI Handlers
+  const handleAISchoolFeedback = useCallback(async (postContent: string, postType: string = 'general') => {
+    setIsAILoading(true);
+    try {
+      const feedback = await generateSchoolFeedback(postContent, postType);
+      setAiResponse(feedback);
+      return feedback;
+    } catch (error) {
+      console.error('AI school feedback failed', error);
+      setAiResponse('AI feedback unavailable. Please try again later.');
+      notifyError('AI feedback unavailable.');
+      return 'Unable to generate feedback at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  const handleAIStudyTip = useCallback(async (subject?: string) => {
+    setIsAILoading(true);
+    try {
+      const tip = await generateStudyTip(subject);
+      setAiResponse(tip);
+      return tip;
+    } catch (error) {
+      console.error('AI study tip failed', error);
+      setAiResponse('AI study tip unavailable. Please try again later.');
+      notifyError('AI study tip unavailable.');
+      return 'Unable to generate study tip at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  const handleAIQuizQuestion = useCallback(async (topic: string) => {
+    setIsAILoading(true);
+    try {
+      const question = await generateQuizQuestion(topic);
+      setAiResponse(question);
+      return question;
+    } catch (error) {
+      console.error('AI quiz question failed', error);
+      setAiResponse('AI quiz unavailable. Please try again later.');
+      notifyError('AI quiz unavailable.');
+      return 'Unable to generate quiz question at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  // Explore Mode AI Handlers
+  const handleAIExploreContent = useCallback(async (theme: string, contentType: 'story' | 'fact' | 'activity' | 'question' = 'story') => {
+    setIsAILoading(true);
+    try {
+      const content = await generateExploreContent(theme, contentType);
+      setAiResponse(content);
+      return content;
+    } catch (error) {
+      console.error('AI explore content failed', error);
+      setAiResponse('AI exploration unavailable. Please try again later.');
+      notifyError('AI exploration unavailable.');
+      return 'Unable to generate exploration content at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  const handleAICuriosityQuestion = useCallback(async (topic: string) => {
+    setIsAILoading(true);
+    try {
+      const question = await generateCuriosityQuestion(topic);
+      setAiResponse(question);
+      return question;
+    } catch (error) {
+      console.error('AI curiosity question failed', error);
+      setAiResponse('AI question unavailable. Please try again later.');
+      notifyError('AI question unavailable.');
+      return 'Unable to generate question at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  const handleAIExplorationPath = useCallback(async (startingPoint: string) => {
+    setIsAILoading(true);
+    try {
+      const path = await generateExplorationPath(startingPoint);
+      setAiResponse(path);
+      return path;
+    } catch (error) {
+      console.error('AI exploration path failed', error);
+      setAiResponse('AI exploration path unavailable. Please try again later.');
+      notifyError('AI exploration path unavailable.');
+      return 'Unable to generate exploration path at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  // Advanced AI Handlers
+  const handleAIPersonalizedAdvice = useCallback(async (userContext: string, requestType: string) => {
+    setIsAILoading(true);
+    try {
+      const advice = await generatePersonalizedAdvice(userContext, requestType);
+      setAiResponse(advice);
+      return advice;
+    } catch (error) {
+      console.error('AI personalized advice failed', error);
+      setAiResponse('AI advice unavailable. Please try again later.');
+      notifyError('AI advice unavailable.');
+      return 'Unable to generate advice at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  const handleAICreativePrompt = useCallback(async (medium: string) => {
+    setIsAILoading(true);
+    try {
+      const prompt = await generateCreativePrompt(medium);
+      setAiResponse(prompt);
+      return prompt;
+    } catch (error) {
+      console.error('AI creative prompt failed', error);
+      setAiResponse('AI creative prompt unavailable. Please try again later.');
+      notifyError('AI creative prompt unavailable.');
+      return 'Unable to generate creative prompt at this time.';
+    } finally {
+      setIsAILoading(false);
+    }
+  }, [notifyError]);
+                    
+  const handleAIAnalyzeAndSuggest = useCallback(async (content: string, analysisType: 'improvement' | 'engagement' | 'educational' | 'creative' = 'improvement') => {
+    setIsAILoading(true);
+    try {
+      const analysis = await analyzeAndSuggest(content, analysisType);
+      setAiResponse(analysis);
+      return analysis;
+    } catch (error) {
+      console.error('AI analysis failed', error);
+      setAiResponse('AI analysis unavailable. Please try again later.');
+      notifyError('AI analysis unavailable.');
+      return 'Unable to analyze content at this time.';
+    } finally {
+      setIsAILoading(false);
     }
   }, [notifyError]);
                     
@@ -8608,6 +8760,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.schoolIcon}>🏫</Text>
                   <Text style={styles.topLabel}>VIBE MODE</Text>
                 </Pressable>
+                {/* AI ASSISTANT */}
+                <Pressable
+                  style={styles.topItem}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    setShowAIModal(true);
+                  })}
+                >
+                  <Text style={styles.aiIcon}>🤖</Text>
+                  <Text style={styles.topLabel}>AI ASSISTANT</Text>
+                </Pressable>
                 {/* NOTICE BOARD */}
                 <Pressable
                   style={styles.topItem}
@@ -10627,7 +10790,236 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </View>
       </Modal>
-                    
+      
+      {/* AI MODAL */}
+      <Modal
+        visible={showAIModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowAIModal(false)}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
+        >
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.8,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>AI ASSISTANT</Text>
+              <ScrollView>
+                {/* Mode Selection */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={{ color: 'white', fontSize: 16, fontWeight: '600', marginBottom: 8 }}>
+                    Select AI Mode:
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {[
+                      { key: 'school', label: 'School Mode', icon: '🎓' },
+                      { key: 'explore', label: 'Explore Mode', icon: '🗺️' },
+                      { key: 'creative', label: 'Creative Mode', icon: '🎨' },
+                      { key: 'analysis', label: 'Analysis Mode', icon: '📊' },
+                    ].map(mode => (
+                      <Pressable
+                        key={mode.key}
+                        style={[
+                          styles.logbookAction,
+                          {
+                            flex: 1,
+                            minWidth: '45%',
+                            backgroundColor: aiMode === mode.key ? 'rgba(0, 194, 255, 0.2)' : 'rgba(255,255,255,0.05)',
+                            borderColor: aiMode === mode.key ? '#00C2FF' : 'rgba(255,255,255,0.2)',
+                            borderWidth: 1,
+                          },
+                        ]}
+                        onPress={() => setAiMode(mode.key as any)}
+                      >
+                        <Text style={styles.logbookActionText}>
+                          {mode.icon} {mode.label}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                {/* AI Response Display */}
+                {aiResponse && (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600', marginBottom: 8 }}>
+                      AI Response:
+                    </Text>
+                    <View style={{
+                      backgroundColor: 'rgba(0,0,0,0.3)',
+                      borderRadius: 8,
+                      padding: 12,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.2)',
+                    }}>
+                      <ScrollView style={{ maxHeight: 200 }}>
+                        <Text style={{ color: 'white', fontSize: 14, lineHeight: 20 }}>
+                          {aiResponse}
+                        </Text>
+                      </ScrollView>
+                    </View>
+                  </View>
+                )}
+
+                {/* Loading Indicator */}
+                {isAILoading && (
+                  <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                    <ActivityIndicator size="large" color="#00C2FF" />
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', marginTop: 8 }}>
+                      AI is thinking...
+                    </Text>
+                  </View>
+                )}
+
+                {/* School Mode Actions */}
+                {aiMode === 'school' && (
+                  <View>
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600', marginBottom: 8 }}>
+                      School Mode Features:
+                    </Text>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAISchoolFeedback('general content', 'general')}
+                    >
+                      <Text style={styles.logbookActionText}>📝 Get Feedback</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Get AI feedback on your content
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAIStudyTip()}
+                    >
+                      <Text style={styles.logbookActionText}>📚 Study Tips</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Get personalized study advice
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAIQuizQuestion('general knowledge')}
+                    >
+                      <Text style={styles.logbookActionText}>❓ Quiz Question</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Generate a quiz question
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Explore Mode Actions */}
+                {aiMode === 'explore' && (
+                  <View>
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600', marginBottom: 8 }}>
+                      Explore Mode Features:
+                    </Text>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAIExploreContent('ocean', 'story')}
+                    >
+                      <Text style={styles.logbookActionText}>🌊 Ocean Story</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Generate an ocean-themed story
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAICuriosityQuestion('science')}
+                    >
+                      <Text style={styles.logbookActionText}>🔬 Curiosity Question</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Ask an interesting science question
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAIExplorationPath('ocean exploration')}
+                    >
+                      <Text style={styles.logbookActionText}>🗺️ Exploration Path</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Plan an exploration journey
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Creative Mode Actions */}
+                {aiMode === 'creative' && (
+                  <View>
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600', marginBottom: 8 }}>
+                      Creative Mode Features:
+                    </Text>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAICreativePrompt('writing')}
+                    >
+                      <Text style={styles.logbookActionText}>✍️ Writing Prompt</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Get creative writing inspiration
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAIPersonalizedAdvice('creative projects', 'brainstorming')}
+                    >
+                      <Text style={styles.logbookActionText}>💡 Creative Advice</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Get personalized creative guidance
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Analysis Mode Actions */}
+                {aiMode === 'analysis' && (
+                  <View>
+                    <Text style={{ color: 'white', fontSize: 16, fontWeight: '600', marginBottom: 8 }}>
+                      Analysis Mode Features:
+                    </Text>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAIAnalyzeAndSuggest('content analysis', 'improvement')}
+                    >
+                      <Text style={styles.logbookActionText}>📈 Content Analysis</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Analyze and improve your content
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.logbookAction}
+                      onPress={() => handleAIAnalyzeAndSuggest('engagement strategies', 'engagement')}
+                    >
+                      <Text style={styles.logbookActionText}>📊 Engagement Tips</Text>
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                        Get engagement improvement suggestions
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+          <Pressable
+            style={styles.dismissBtn}
+            onPress={() => setShowAIModal(false)}
+          >
+            <Text style={styles.dismissText}>Close</Text>
+          </Pressable>
+        </View>
+      </Modal>
+      
       {/* DEEP DIVE Modal */}
       <Modal
         visible={showDeepSearch}
