@@ -162,7 +162,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
                   recipientUid: creatorUserId,
                   type: 'hug',
                   waveId: waveId,
-                  text: `${fromName} has hugged your SplashLine`,
+                  text: `/${fromName} hugged your vibe!`,
                   fromUid: currentUserId,
                   fromName: fromName,
                 });

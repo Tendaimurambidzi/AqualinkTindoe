@@ -5533,7 +5533,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               recipientUid: currentWave.ownerUid,
               type: 'echo',
               waveId: currentWave.id,
-              text: `📣 ${userName} echoed: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`,
+              text: `/${userName} echoed your vibe!`,
               fromUid: currentUserUid,
               fromName: userName,
               fromPhoto: profilePhoto || null,
@@ -7353,13 +7353,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           // Always use the poster's name from the feed for notifications
           const posterName = ping.wavePosterName || ping.wavePosterDisplayName || ping.posterName || ping.ownerName || ping.ownerDisplayName || '';
           if (ping.splashType === 'octopus_hug') {
-            return `${actor} hugged ${posterName}'s wave`;
+            return `/${actor} hugged your vibe!`;
           }
           return `${actor} splashed ${posterName}'s wave`;
         }
         case 'echo': {
           const posterName = ping.wavePosterName || ping.wavePosterDisplayName || ping.posterName || ping.ownerName || ping.ownerDisplayName || '';
-          return `${actor} reverbed ${posterName}'s vibe`;
+          return `/${actor} echoed your vibe!`;
         }
         case 'follow':
           return `${actor} followed you`;
