@@ -177,7 +177,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           onPress={handleHug}
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
+          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
         >
           <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
             🫂
@@ -195,7 +195,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           onPress={handleEcho}
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
         >
           <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
             📣
@@ -213,7 +213,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           onPress={handlePearl}
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
         >
           <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
             💎
@@ -222,44 +222,48 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={styles.actionLabel}>Gems</Text>
       </View>
 
-      {/* Anchor Wave Button */}
-      <View style={styles.actionButton}>
-        <Pressable
-          onPress={handleAnchor}
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
-        >
-          <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
-            ⚓
-          </Text>
-        </Pressable>
-        <Text style={styles.actionLabel}>Anchor</Text>
-        <Text style={styles.actionCount}></Text>
-      </View>
+      {/* Anchor Wave Button - Only show for other users' posts */}
+      {currentUserId !== creatorUserId && (
+        <View style={styles.actionButton}>
+          <Pressable
+            onPress={handleAnchor}
+            style={styles.iconTouchable}
+            android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+            hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
+          >
+            <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
+              ⚓
+            </Text>
+          </Pressable>
+          <Text style={styles.actionLabel}>Anchor</Text>
+          <Text style={styles.actionCount}></Text>
+        </View>
+      )}
 
-      {/* Cast Wave Button */}
-      <View style={styles.actionButton}>
-        <Pressable
-          onPress={handleCast}
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
-        >
-          <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
-            📡
-          </Text>
-        </Pressable>
-        <Text style={styles.actionLabel}>Cast</Text>
-        <Text style={styles.actionCount}></Text>
-      </View>
+      {/* Cast Wave Button - Only show for other users' posts */}
+      {currentUserId !== creatorUserId && (
+        <View style={styles.actionButton}>
+          <Pressable
+            onPress={handleCast}
+            style={styles.iconTouchable}
+            android_ripple={{color: 'rgba(255,255,255,0.1)'}}
+            hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
+          >
+            <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
+              📡
+            </Text>
+          </Pressable>
+          <Text style={styles.actionLabel}>Cast</Text>
+          <Text style={styles.actionCount}></Text>
+        </View>
+      )}
 
       {/* Placeholder Button 1 */}
       <View style={styles.actionButton}>
         <Pressable
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
         >
           <Text style={styles.actionIcon}>🔱</Text>
         </Pressable>
@@ -272,7 +276,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Pressable
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
         >
           <Text style={styles.actionIcon}>🐚</Text>
         </Pressable>
@@ -285,7 +289,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Pressable
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
         >
           <Text style={styles.actionIcon}></Text>
         </Pressable>
@@ -298,7 +302,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Pressable
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 10, left: 10, bottom: 10, right: 10}}
+          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
         >
           <Text style={styles.actionIcon}></Text>
         </Pressable>
