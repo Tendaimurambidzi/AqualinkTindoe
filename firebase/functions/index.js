@@ -1,4 +1,5 @@
 const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https');
+const { VertexAI } = require('@google-cloud/vertexai');
 // ...existing code...
 
 // ...existing code...
@@ -1029,3 +1030,29 @@ exports.recordVideoReach = functions.https.onCall(
     return { success: true };
   }
 );
+
+exports.generateAIResponse = onCall(async (data, context) => {
+  // Check if user is authenticated
+  if (!context.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
+  }
+
+  const { prompt } = data;
+  if (!prompt || typeof prompt !== 'string') {
+    throw new HttpsError('invalid-argument', 'Prompt must be a non-empty string.');
+  }
+
+  try {
+    const vertexAI = new VertexAI({ project: 'aqualink-b5f7c', location: 'us-central1' });
+    const model = vertexAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    return { response: text };
+  } catch (error) {
+    console.error('AI generation error:', error);
+    throw new HttpsError('internal', 'Failed to generate AI response.');
+  }
+});
