@@ -1818,6 +1818,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
     return () => unsub();
   }, []);
+
+  // Real-time listener for wave counts updates
+  useEffect(() => {
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) return;
+
+    const unsub = firestoreMod()
+      .collection('waves')
+      .onSnapshot((snapshot: any) => {
+        snapshot?.docChanges().forEach((change: any) => {
+          if (change.type === 'modified') {
+            const waveId = change.doc.id;
+            const newData = change.doc.data();
+            const newCounts = newData.counts || {};
+
+            // Update counts in all feed arrays
+            setWavesFeed(prev => prev.map(wave =>
+              wave.id === waveId ? { ...wave, counts: newCounts } : wave
+            ));
+            setVibesFeed(prev => prev.map(wave =>
+              wave.id === waveId ? { ...wave, counts: newCounts } : wave
+            ));
+            setPublicFeed(prev => prev.map(wave =>
+              wave.id === waveId ? { ...wave, counts: newCounts } : wave
+            ));
+            setPostFeed(prev => prev.map(wave =>
+              wave.id === waveId ? { ...wave, counts: newCounts } : wave
+            ));
+          }
+        });
+      });
+
+    return () => unsub();
+  }, []);
   const [expandedPosts, setExpandedPosts] = useState<Record<string, boolean>>({});
   const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
   const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
@@ -8503,47 +8540,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       isAnchored={false}
                       isCasted={false}
                       creatorUserId={item.ownerUid}
-                      onAdd={async () => {
-                        // Update local state
+                      onAdd={() => {
                         setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
                         setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                         setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                         setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        
-                        // Update Firestore count
-                        try {
-                          await firestore().doc(`waves/${item.id}`).update({
-                            'counts.splashes': firestore.FieldValue.increment(1)
-                          });
-                        } catch (error) {
-                          console.error('Error updating hug count:', error);
-                          // Revert local state on error
-                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
-                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        }
                       }}
-                      onRemove={async () => {
-                        // Update local state
+                      onRemove={() => {
                         setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
                         setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                         setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                         setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        
-                        // Update Firestore count
-                        try {
-                          await firestore().doc(`waves/${item.id}`).update({
-                            'counts.splashes': firestore.FieldValue.increment(-1)
-                          });
-                        } catch (error) {
-                          console.error('Error updating hug count:', error);
-                          // Revert local state on error
-                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
-                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        }
                       }}
                       onEcho={() => {
                         setCurrentIndex(index);

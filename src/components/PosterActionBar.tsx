@@ -60,15 +60,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 }) => {
   const [hugState, setHugState] = useState<'hugged' | 'unhugged'>('unhugged');
   const [hasEchoed, setHasEchoed] = useState(false);
-  const [localSplashesCount, setLocalSplashesCount] = useState(initialSplashesCount);
+  const [localSplashesCount, setLocalSplashesCount] = useState(0); // Start at 0, will be updated based on user state
+  const [realTimeSplashesCount, setRealTimeSplashesCount] = useState(initialSplashesCount); // Real-time total count
+  const [hugActionInProgress, setHugActionInProgress] = useState(false);
+  const [echoActionInProgress, setEchoActionInProgress] = useState(false);
+  const [pearlActionInProgress, setPearlActionInProgress] = useState(false);
 
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
-
-  // Initialize and update local count with props
-  useEffect(() => {
-    setLocalSplashesCount(initialSplashesCount);
-  }, [initialSplashesCount]);
 
   // Fetch user data for the creator of the post
   useEffect(() => {
@@ -85,15 +84,18 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // Check if user has already interacted
   useEffect(() => {
     const checkInteractions = async () => {
-      // Don't check Firestore if a splash action is currently in progress
-      if (splashActionInProgress) return;
+      // Don't check Firestore if a hug action is currently in progress
+      if (hugActionInProgress) return;
       
       try {
         const splashDoc = await firestore()
           .collection(`waves/${waveId}/splashes`)
           .doc(currentUserId)
           .get();
-        setHugState(splashDoc.exists ? 'hugged' : 'unhugged');
+        
+        const userHasHugged = splashDoc.exists;
+        setHugState(userHasHugged ? 'hugged' : 'unhugged');
+        setLocalSplashesCount(userHasHugged ? 1 : 0); // Set local count based on user's hug state
 
         const echoQuery = await firestore()
           .collection(`waves/${waveId}/echoes`)
@@ -106,13 +108,40 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       }
     };
     checkInteractions();
-  }, [waveId, currentUserId]);
+  }, [waveId, currentUserId]); // Removed hugActionInProgress from dependencies to avoid race conditions
+
+  // Real-time listener for the total splashes count
+  useEffect(() => {
+    const unsubscribe = firestore()
+      .doc(`waves/${waveId}`)
+      .onSnapshot((doc) => {
+        if (doc.exists) {
+          const data = doc.data();
+          const currentCount = data?.counts?.splashes || 0;
+          // Ensure count never goes below 0
+          setRealTimeSplashesCount(Math.max(0, currentCount));
+        }
+      }, (error) => {
+        console.error('Error listening to wave updates:', error);
+      });
+
+    return unsubscribe;
+  }, [waveId]);
 
   const handleHug = () => {
-    // Immediate UI response - no blocking
+    if (hugActionInProgress) return; // Prevent concurrent actions
+
+    setHugActionInProgress(true);
+    
+    // Immediate UI response - update state and count instantly
     if (hugState === 'hugged') {
-      // User is unhugging - decrement the count
-      setLocalSplashesCount(prev => Math.max(0, prev - 1));
+      // User is unhugging - only allow if count is > 0
+      if (realTimeSplashesCount <= 0) {
+        setHugActionInProgress(false);
+        return; // Prevent negative counts
+      }
+
+      setLocalSplashesCount(0);
       setHugState('unhugged');
 
       // Handle backend removal asynchronously
@@ -120,18 +149,39 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         .collection(`waves/${waveId}/splashes`)
         .doc(currentUserId)
         .delete()
-        .then(() => {
+        .then(async () => {
+          // Update the wave's count in Firestore with validation
+          try {
+            const waveRef = firestore().doc(`waves/${waveId}`);
+            await firestore().runTransaction(async (transaction) => {
+              const waveDoc = await transaction.get(waveRef);
+              if (!waveDoc.exists) return;
+
+              const currentCount = waveDoc.data()?.counts?.splashes || 0;
+              if (currentCount > 0) {
+                transaction.update(waveRef, {
+                  'counts.splashes': firestore.FieldValue.increment(-1)
+                });
+              }
+            });
+          } catch (error) {
+            console.error('Error updating hug count:', error);
+          }
+
           onRemove();
         })
         .catch((error) => {
           console.error('Error removing hug:', error);
           // Revert on error
-          setLocalSplashesCount(prev => prev + 1);
+          setLocalSplashesCount(1);
           setHugState('hugged');
+        })
+        .finally(() => {
+          setHugActionInProgress(false);
         });
     } else {
-      // User is hugging - increment the count
-      setLocalSplashesCount(prev => prev + 1);
+      // User is hugging - immediate UI update
+      setLocalSplashesCount(1);
       setHugState('hugged');
 
       // Handle backend addition and notification asynchronously
@@ -142,13 +192,21 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           userUid: currentUserId,
           createdAt: firestore.FieldValue.serverTimestamp(),
         })
-        .then(() => {
+        .then(async () => {
+          // Update the wave's count in Firestore
+          try {
+            await firestore().doc(`waves/${waveId}`).update({
+              'counts.splashes': firestore.FieldValue.increment(1)
+            });
+          } catch (error) {
+            console.error('Error updating hug count:', error);
+          }
+
           onAdd();
 
           // Send notification if not self
           if (currentUserId !== creatorUserId) {
             // Get user name and send notification
-            let fromName = 'Someone';
             firestore()
               .collection('users')
               .doc(currentUserId)
@@ -156,16 +214,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               .then((userDoc) => {
                 if (userDoc.exists) {
                   const userData = userDoc.data();
-                  fromName = userData?.displayName || userData?.name || 'Someone';
+                  const fromName = userData?.displayName || userData?.name || 'Someone';
+                  return functions().httpsCallable('addPing')({
+                    recipientUid: creatorUserId,
+                    type: 'hug',
+                    waveId: waveId,
+                    text: `/${fromName} hugged your wave!`,
+                    fromUid: currentUserId,
+                    fromName: fromName,
+                  });
                 }
-                return functions().httpsCallable('addPing')({
-                  recipientUid: creatorUserId,
-                  type: 'hug',
-                  waveId: waveId,
-                  text: `/${fromName} hugged your vibe!`,
-                  fromUid: currentUserId,
-                  fromName: fromName,
-                });
               })
               .catch((error) => {
                 console.error('Error sending hug notification:', error);
@@ -175,18 +233,44 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         .catch((error) => {
           console.error('Error adding hug:', error);
           // Revert on error
-          setLocalSplashesCount(prev => Math.max(0, prev - 1));
+          setLocalSplashesCount(0);
           setHugState('unhugged');
+        })
+        .finally(() => {
+          setHugActionInProgress(false);
         });
     }
   };
 
   const handleEcho = () => {
+    if (echoActionInProgress) return; // Prevent concurrent actions
+
+    setEchoActionInProgress(true);
+    
+    // Immediate visual feedback
+    setHasEchoed(true);
+    
+    // Call the parent callback
     onEcho();
+    
+    // Reset action in progress after a short delay
+    setTimeout(() => {
+      setEchoActionInProgress(false);
+    }, 500);
   };
 
   const handlePearl = () => {
+    if (pearlActionInProgress) return; // Prevent concurrent actions
+
+    setPearlActionInProgress(true);
+    
+    // Call the parent callback
     onPearl();
+    
+    // Reset action in progress after a short delay
+    setTimeout(() => {
+      setPearlActionInProgress(false);
+    }, 500);
   };
 
   const handleAnchor = () => {
@@ -203,84 +287,98 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   return (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
       {/* Splashes Button */}
-      <Pressable 
-        style={styles.actionButton} 
-        onPress={handleHug} 
-        hitSlop={{top: 50, bottom: 50, left: 50, right: 50}}
-      >
-        <Text style={[styles.actionIcon, localSplashesCount > 0 && styles.activeAction]}>
-          🫂
-        </Text>
+      <View style={styles.actionButton}>
+        <Pressable onPress={handleHug} style={styles.iconTouchable}>
+          <Text style={[styles.actionIcon, hugState === 'hugged' && styles.hugActive]}>
+            🫂
+          </Text>
+        </Pressable>
         <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionCount, localSplashesCount > 0 && styles.activeAction]}>
-          {localSplashesCount}
+        <Text style={[styles.actionCount, realTimeSplashesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
+          {realTimeSplashesCount}
         </Text>
-      </Pressable>
+      </View>
 
       {/* Echoes Button */}
-      <Pressable style={styles.actionButton} onPress={handleEcho} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionIcon, echoesCount > 0 && styles.activeAction]}>
-          📣
-        </Text>
+      <View style={styles.actionButton}>
+        <Pressable onPress={handleEcho} style={styles.iconTouchable}>
+          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
+            📣
+          </Text>
+        </Pressable>
         <Text style={styles.actionLabel}>Echoes</Text>
-        <Text style={[styles.actionCount, echoesCount > 0 && styles.activeAction]}>
+        <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
           {echoesCount}
         </Text>
-      </Pressable>
+      </View>
 
       {/* Gems Button */}
-      <Pressable style={styles.actionButton} onPress={handlePearl} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionIcon, pearlsCount > 0 && styles.activeAction]}>
-          💎
-        </Text>
+      <View style={styles.actionButton}>
+        <Pressable onPress={handlePearl} style={styles.iconTouchable}>
+          <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
+            💎
+          </Text>
+        </Pressable>
         <Text style={styles.actionLabel}>Gems</Text>
-      </Pressable>
+      </View>
 
       {/* Anchor Wave Button */}
-      <Pressable style={styles.actionButton} onPress={handleAnchor} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
-          ⚓
-        </Text>
+      <View style={styles.actionButton}>
+        <Pressable onPress={handleAnchor} style={styles.iconTouchable}>
+          <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
+            ⚓
+          </Text>
+        </Pressable>
         <Text style={styles.actionLabel}>Anchor</Text>
         <Text style={styles.actionCount}></Text>
-      </Pressable>
+      </View>
 
       {/* Cast Wave Button */}
-      <Pressable style={styles.actionButton} onPress={handleCast} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
-        <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
-          📡
-        </Text>
+      <View style={styles.actionButton}>
+        <Pressable onPress={handleCast} style={styles.iconTouchable}>
+          <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
+            📡
+          </Text>
+        </Pressable>
         <Text style={styles.actionLabel}>Cast</Text>
         <Text style={styles.actionCount}></Text>
-      </Pressable>
+      </View>
 
       {/* Placeholder Button 1 */}
-      <Pressable style={styles.actionButton}>
-        <Text style={styles.actionIcon}>🔱</Text>
+      <View style={styles.actionButton}>
+        <Pressable style={styles.iconTouchable}>
+          <Text style={styles.actionIcon}>🔱</Text>
+        </Pressable>
         <Text style={styles.actionLabel}>Placeholder 1</Text>
         <Text style={styles.actionCount}></Text>
-      </Pressable>
+      </View>
 
       {/* Placeholder Button 2 */}
-      <Pressable style={styles.actionButton}>
-        <Text style={styles.actionIcon}>🐚</Text>
+      <View style={styles.actionButton}>
+        <Pressable style={styles.iconTouchable}>
+          <Text style={styles.actionIcon}>🐚</Text>
+        </Pressable>
         <Text style={styles.actionLabel}>Placeholder 2</Text>
         <Text style={styles.actionCount}></Text>
-      </Pressable>
+      </View>
 
       {/* Placeholder Button 3 */}
-      <Pressable style={styles.actionButton}>
-        <Text style={styles.actionIcon}></Text>
+      <View style={styles.actionButton}>
+        <Pressable style={styles.iconTouchable}>
+          <Text style={styles.actionIcon}></Text>
+        </Pressable>
         <Text style={styles.actionLabel}></Text>
         <Text style={styles.actionCount}></Text>
-      </Pressable>
+      </View>
 
       {/* Placeholder Button 4 */}
-      <Pressable style={styles.actionButton}>
-        <Text style={styles.actionIcon}></Text>
+      <View style={styles.actionButton}>
+        <Pressable style={styles.iconTouchable}>
+          <Text style={styles.actionIcon}></Text>
+        </Pressable>
         <Text style={styles.actionLabel}></Text>
         <Text style={styles.actionCount}></Text>
-      </Pressable>
+      </View>
     </ScrollView>
   );
 };
@@ -300,6 +398,9 @@ const styles = StyleSheet.create({
     padding: 8,
     marginHorizontal: 15, // Increased spacing between buttons to prevent accidental clicks
   },
+  iconTouchable: {
+    padding: 5, // Small padding around icon for touch area
+  },
   actionIcon: {
     fontSize: 24, // Enlarged icons
     color: '#fff',
@@ -307,6 +408,15 @@ const styles = StyleSheet.create({
   },
   activeAction: {
     color: '#00ff88', // Highlight active interactions
+  },
+  hugActive: {
+    color: '#0088ff', // Very blue for hugs
+  },
+  echoActive: {
+    color: '#ff4444', // Extra red for echoes
+  },
+  pearlActive: {
+    color: '#ff0088', // Red for pearls/gems
   },
   actionLabel: {
     fontSize: 12,
@@ -316,9 +426,14 @@ const styles = StyleSheet.create({
   },
   actionCount: {
     fontSize: 12,
-    color: '#fff',
     fontWeight: 'bold',
     marginTop: 2,
+  },
+  activeCount: {
+    color: '#00ff88', // Green for counts > 0
+  },
+  inactiveCount: {
+    color: '#fff', // White for count = 0
   },
 });
 
