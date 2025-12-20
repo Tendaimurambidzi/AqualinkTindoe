@@ -5516,6 +5516,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       
+      // Update Firestore echo count
+      try {
+        await firestore().doc(`waves/${currentWave.id}`).update({
+          'counts.echoes': firestore.FieldValue.increment(1)
+        });
+      } catch (error) {
+        console.error('Error updating echo count:', error);
+        // Revert local state on error
+        setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
+        setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
+        setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
+      }
+      
       // Reload echoes list
       loadPostEchoes(currentWave.id);
                     
@@ -8490,17 +8503,47 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       isAnchored={false}
                       isCasted={false}
                       creatorUserId={item.ownerUid}
-                      onAdd={() => {
+                      onAdd={async () => {
+                        // Update local state
                         setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
                         setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                         setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                         setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        
+                        // Update Firestore count
+                        try {
+                          await firestore().doc(`waves/${item.id}`).update({
+                            'counts.splashes': firestore.FieldValue.increment(1)
+                          });
+                        } catch (error) {
+                          console.error('Error updating hug count:', error);
+                          // Revert local state on error
+                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
+                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                        }
                       }}
-                      onRemove={() => {
+                      onRemove={async () => {
+                        // Update local state
                         setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
                         setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                         setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                         setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                        
+                        // Update Firestore count
+                        try {
+                          await firestore().doc(`waves/${item.id}`).update({
+                            'counts.splashes': firestore.FieldValue.increment(-1)
+                          });
+                        } catch (error) {
+                          console.error('Error updating hug count:', error);
+                          // Revert local state on error
+                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
+                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        }
                       }}
                       onEcho={() => {
                         setCurrentIndex(index);
