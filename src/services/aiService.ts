@@ -4,11 +4,25 @@ import functions from '@react-native-firebase/functions';
 
 export async function generateText(prompt: string): Promise<string> {
   try {
+    console.log('Calling Firebase function with prompt:', prompt.substring(0, 50) + '...');
     const result = await functions().httpsCallable('generateAIResponse')({ prompt });
+    console.log('Firebase function response received');
     return result.data.response;
-  } catch (error) {
+  } catch (error: any) {
     console.error('AI generation error:', error);
-    return 'AI unavailable - please try again later';
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+
+    // Provide more specific error messages
+    if (error.code === 'functions/unauthenticated') {
+      return 'AI unavailable - please sign in to use this feature';
+    } else if (error.code === 'functions/internal') {
+      return 'AI service temporarily unavailable - please try again later';
+    } else if (error.code === 'functions/cancelled') {
+      return 'AI request was cancelled - please try again';
+    } else {
+      return `AI unavailable: ${error.message || 'Unknown error'}`;
+    }
   }
 }
 
