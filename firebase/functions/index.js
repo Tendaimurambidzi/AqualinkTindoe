@@ -1037,8 +1037,22 @@ exports.generateAIResponse = onCall(async (data, context) => {
   //   throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
   // }
 
+  console.log('Received data:', data);
+  console.log('Data type:', typeof data);
+  console.log('Data keys:', Object.keys(data));
+
   const { prompt } = data;
+  console.log('Extracted prompt:', prompt);
+  console.log('Prompt type:', typeof prompt);
+  console.log('Prompt length:', prompt ? prompt.length : 'undefined');
+
   if (!prompt || typeof prompt !== 'string') {
+    console.error('Invalid prompt validation failed');
+    throw new HttpsError('invalid-argument', 'Prompt must be a non-empty string.');
+  }
+
+  if (prompt.trim() === '') {
+    console.error('Empty prompt after trim');
     throw new HttpsError('invalid-argument', 'Prompt must be a non-empty string.');
   }
 

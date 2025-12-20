@@ -4,7 +4,15 @@ import functions from '@react-native-firebase/functions';
 
 export async function generateText(prompt: string): Promise<string> {
   try {
-    console.log('Calling Firebase function with prompt:', prompt.substring(0, 50) + '...');
+    console.log('Calling Firebase function with prompt:', prompt);
+    console.log('Prompt length:', prompt.length);
+    console.log('Prompt type:', typeof prompt);
+
+    if (!prompt || prompt.trim() === '') {
+      console.error('Empty prompt detected!');
+      return 'AI unavailable - empty prompt';
+    }
+
     const result = await functions().httpsCallable('generateAIResponse')({ prompt });
     console.log('Firebase function response received');
     return result.data.response;
