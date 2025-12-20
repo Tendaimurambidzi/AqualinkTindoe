@@ -43,7 +43,6 @@ export async function generateEchoSuggestion(): Promise<string> {
   return await generateText(prompt);
 }
 
-<<<<<<< HEAD
 // School Mode AI Features
 export async function generateSchoolFeedback(postContent: string, postType: string): Promise<string> {
   const prompt = `As an educational AI assistant, provide constructive feedback on this ${postType} post for a school/educational context. Focus on learning value, clarity, and engagement: "${postContent}". Provide specific, actionable suggestions for improvement.`;

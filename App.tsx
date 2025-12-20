@@ -1709,7 +1709,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const data = doc.data();
           updates[uid] = {
             name: data?.name || data?.displayName || 'User',
-            avatar: data?.avatar || '',
+            avatar: data?.avatar || data?.userPhoto || '',
             bio: data?.bio || '',
           };
         } catch (e) {
@@ -2767,32 +2767,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       notifyError('AI search suggestion failed.');
     } finally {
       setIsAISearchSuggesting(false);
-    }
-  }, [notifyError]);
-                    
-  const handleAISchoolFeedback = useCallback(async (feature: string) => {
-    setIsAISchoolFeedback(true);
-    try {
-      const feedback = await generateSchoolFeedback(feature);
-      Alert.alert('AI Learning Feedback', feedback);
-    } catch (error) {
-      console.error('AI school feedback failed', error);
-      notifyError('AI feedback failed.');
-    } finally {
-      setIsAISchoolFeedback(false);
-    }
-  }, [notifyError]);
-                    
-  const handleAIExploreContent = useCallback(async (title: string, desc: string) => {
-    setIsAIExploreContent(true);
-    try {
-      const content = await generateExploreContent(title, desc);
-      Alert.alert(title, content);
-    } catch (error) {
-      console.error('AI explore content failed', error);
-      notifyError('AI content generation failed.');
-    } finally {
-      setIsAIExploreContent(false);
     }
   }, [notifyError]);
                     
