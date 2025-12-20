@@ -8064,9 +8064,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           const isCurrentUserPost = item.ownerUid === myUid;
                           const bioToShow = isCurrentUserPost ? profileBio : userData[item.ownerUid]?.bio;
                           return bioToShow ? (
-                            <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', marginTop: 2, fontStyle: 'italic' }}>
-                              {bioToShow}
-                            </Text>
+                            <TouchableOpacity
+                              onPress={() => {
+                                Share.share({
+                                  message: `Check out this bio: "${bioToShow}"`,
+                                }).catch(err => console.log('Share failed', err));
+                              }}
+                              style={{ marginTop: 2 }}
+                            >
+                              <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', fontStyle: 'italic' }}>
+                                {bioToShow}
+                              </Text>
+                            </TouchableOpacity>
                           ) : null;
                         })()}
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
