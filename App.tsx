@@ -2423,6 +2423,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showDeepSearch, setShowDeepSearch] = useState(false);
   const [deepQuery, setDeepQuery] = useState('');
   const [isAISearchSuggesting, setIsAISearchSuggesting] = useState(false);
+  const [isAISchoolFeedback, setIsAISchoolFeedback] = useState(false);
+  const [isAIExploreContent, setIsAIExploreContent] = useState(false);
   const [deepResults, setDeepResults] = useState<SearchResult[]>([]);
   const [deepSearchLoading, setDeepSearchLoading] = useState(false);
   const [deepSearchError, setDeepSearchError] = useState<string | null>(null);
@@ -2767,6 +2769,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setIsAISearchSuggesting(false);
     }
   }, [notifyError]);
+                    
+  const handleAISchoolFeedback = useCallback(async (feature: string) => {
+    setIsAISchoolFeedback(true);
+    try {
+      const feedback = await generateSchoolFeedback(feature);
+      Alert.alert('AI Learning Feedback', feedback);
+    } catch (error) {
+      console.error('AI school feedback failed', error);
+      notifyError('AI feedback failed.');
+    } finally {
+      setIsAISchoolFeedback(false);
+    }
+  }, [notifyError]);
+                    
+  const handleAIExploreContent = useCallback(async (title: string, desc: string) => {
+    setIsAIExploreContent(true);
+    try {
+      const content = await generateExploreContent(title, desc);
+      Alert.alert(title, content);
+    } catch (error) {
+      console.error('AI explore content failed', error);
+      notifyError('AI content generation failed.');
+    } finally {
+      setIsAIExploreContent(false);
+    }
+  }, [notifyError]);
+                    
   const [showCountryPicker, setShowCountryPicker] = useState<boolean>(false);
   const [echoText, setEchoText] = useState<string>('');
   const [isAIEchoSuggesting, setIsAIEchoSuggesting] = useState(false);
@@ -9861,9 +9890,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Pressable
                     key={t.title}
                     style={styles.logbookAction}
-                    onPress={() =>
-                      Alert.alert(t.title, 'This ocean is not yet charted.')
-                    }
+                    onPress={() => handleAIExploreContent(t.title, t.desc)}
                   >
                     <Text style={styles.logbookActionText}>{t.title}</Text>
                     <Text
@@ -10007,77 +10034,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     icon: '🎥',
                     title: 'Sea of Lessons',
                     desc: 'Browse educational videos',
-                    action: () => {
-                      Alert.alert(
-                        'Sea of Lessons',
-                        'What would you like to learn today?',
-                        [
-                          {
-                            text: 'Math & Science',
-                            onPress: () =>
-                              Alert.alert(
-                                'Coming Soon',
-                                'Math & Science courses will be available soon!',
-                              ),
-                          },
-                          {
-                            text: 'Languages',
-                            onPress: () =>
-                              Alert.alert(
-                                'Coming Soon',
-                                'Language learning courses coming soon!',
-                              ),
-                          },
-                          {
-                            text: 'Creative Arts',
-                            onPress: () =>
-                              Alert.alert(
-                                'Coming Soon',
-                                'Creative arts tutorials on the way!',
-                              ),
-                          },
-                          { text: 'Cancel', style: 'cancel' },
-                        ],
-                      );
-                    },
+                    action: () => handleAISchoolFeedback('Sea of Lessons - Educational Videos'),
                   },
                   {
                     icon: '❓',
                     title: 'Deep Dive',
                     desc: 'Take a quiz challenge',
-                    action: () => {
-                      Alert.alert(
-                        'Deep Dive Challenge',
-                        'Choose your subject:',
-                        [
-                          {
-                            text: 'General Knowledge',
-                            onPress: () =>
-                              Alert.alert(
-                                'Quiz Started',
-                                'Answer 5 questions to test your knowledge!',
-                              ),
-                          },
-                          {
-                            text: 'Current Events',
-                            onPress: () =>
-                              Alert.alert(
-                                'Quiz Started',
-                                'How well do you know current events?',
-                              ),
-                          },
-                          {
-                            text: 'Subject Mastery',
-                            onPress: () =>
-                              Alert.alert(
-                                'Coming Soon',
-                                'Advanced subject tests coming soon!',
-                              ),
-                          },
-                          { text: 'Cancel', style: 'cancel' },
-                        ],
-                      );
-                    },
+                    action: () => handleAISchoolFeedback('Deep Dive - Quiz Challenges'),
                   },
                   {
                     icon: '🏝️',
@@ -10091,27 +10054,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   {
                     icon: '🌊',
                     title: 'Ask the Tide',
-                    desc: 'Post questions to community',
-                    action: () => {
-                      Alert.prompt(
-                        'Ask the Tide',
-                        'What would you like to ask the community?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Post',
-                            onPress: (question: any) => {
-                              if (question) {
-                                Alert.alert(
-                                  'Question Posted!',
-                                  `"${question}"\n\nOur community will help you soon!`,
-                                );
-                              }
-                            },
-                          },
-                        ],
-                      );
-                    },
+                    desc: 'Get AI-powered answers',
+                    action: () => handleAISchoolFeedback('Ask the Tide - AI Answers'),
                   },
                   {
                     icon: '🪸',
@@ -10126,149 +10070,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     icon: '🐋',
                     title: 'Join a Crew',
                     desc: 'Find study groups',
-                    action: () => {
-                      Alert.alert('Join a Crew', 'Available Study Groups:', [
-                        {
-                          text: 'Math Wizards (12 members)',
-                          onPress: () =>
-                            Alert.alert(
-                              'Joined!',
-                              'Welcome to Math Wizards study group!',
-                            ),
-                        },
-                        {
-                          text: 'Science Explorers (8 members)',
-                          onPress: () =>
-                            Alert.alert(
-                              'Joined!',
-                              'Welcome to Science Explorers!',
-                            ),
-                        },
-                        {
-                          text: 'Language Learners (15 members)',
-                          onPress: () =>
-                            Alert.alert(
-                              'Joined!',
-                              'Welcome to Language Learners!',
-                            ),
-                        },
-                        {
-                          text: 'Create New Group',
-                          onPress: () =>
-                            Alert.alert(
-                              'Coming Soon',
-                              'Group creation feature coming soon!',
-                            ),
-                        },
-                        { text: 'Cancel', style: 'cancel' },
-                      ]);
-                    },
+                    action: () => handleAISchoolFeedback('Join a Crew - Study Groups'),
                   },
                   {
                     icon: '🧭',
                     title: 'School Currents',
                     desc: 'Structured curriculum',
-                    action: () => {
-                      Alert.alert(
-                        'School Currents',
-                        'Choose your learning path:',
-                        [
-                          {
-                            text: 'Beginner Track',
-                            onPress: () =>
-                              Alert.alert(
-                                'Enrolled!',
-                                "You've joined the Beginner learning track!",
-                              ),
-                          },
-                          {
-                            text: 'Intermediate Track',
-                            onPress: () =>
-                              Alert.alert(
-                                'Enrolled!',
-                                "You've joined the Intermediate track!",
-                              ),
-                          },
-                          {
-                            text: 'Advanced Track',
-                            onPress: () =>
-                              Alert.alert(
-                                'Enrolled!',
-                                "You've joined the Advanced learning track!",
-                              ),
-                          },
-                          { text: 'Cancel', style: 'cancel' },
-                        ],
-                      );
-                    },
+                    action: () => handleAISchoolFeedback('School Currents - Curriculum'),
                   },
                   {
                     icon: '⚓',
                     title: "Teacher's Dock",
                     desc: 'Educator resources',
-                    action: () => {
-                      Alert.alert("Teacher's Dock", 'Educator Features:', [
-                        {
-                          text: 'Upload Lesson',
-                          onPress: () =>
-                            Alert.alert(
-                              'Coming Soon',
-                              'Lesson upload feature coming soon!',
-                            ),
-                        },
-                        {
-                          text: 'Create Assignment',
-                          onPress: () =>
-                            Alert.alert(
-                              'Coming Soon',
-                              'Assignment creation tools on the way!',
-                            ),
-                        },
-                        {
-                          text: 'View Analytics',
-                          onPress: () =>
-                            Alert.alert(
-                              'Coming Soon',
-                              'Student analytics dashboard coming soon!',
-                            ),
-                        },
-                        { text: 'Cancel', style: 'cancel' },
-                      ]);
-                    },
+                    action: () => handleAISchoolFeedback("Teacher's Dock - Educator Resources"),
                   },
                   {
                     icon: '🪙',
                     title: 'Ocean Library',
                     desc: 'Download resources',
-                    action: () => {
-                      Alert.alert('Ocean Library', 'Available Resources:', [
-                        {
-                          text: 'E-books',
-                          onPress: () =>
-                            Alert.alert(
-                              'Downloading...',
-                              'E-book library opening soon!',
-                            ),
-                        },
-                        {
-                          text: 'Study Guides',
-                          onPress: () =>
-                            Alert.alert(
-                              'Downloading...',
-                              'Study guides available soon!',
-                            ),
-                        },
-                        {
-                          text: 'Video Lessons',
-                          onPress: () =>
-                            Alert.alert(
-                              'Downloading...',
-                              'Offline videos coming soon!',
-                            ),
-                        },
-                        { text: 'Cancel', style: 'cancel' },
-                      ]);
-                    },
+                    action: () => handleAISchoolFeedback('Ocean Library - Resources'),
                   },
                   {
                     icon: '🌅',

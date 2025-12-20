@@ -14,7 +14,7 @@ export async function generateText(prompt: string): Promise<string> {
     // Use us-central1 region explicitly
     const result = await functions().httpsCallable('generateAIResponse', { region: 'us-central1' })({ prompt });
     return result.data.response;
-  } catch (error) {
+  } catch (error: any) {
     console.error('AI generation error:', error);
     if (error.message?.includes('unauthenticated')) {
       return 'Please sign in to use AI features';
@@ -43,6 +43,7 @@ export async function generateEchoSuggestion(): Promise<string> {
   return await generateText(prompt);
 }
 
+<<<<<<< HEAD
 // School Mode AI Features
 export async function generateSchoolFeedback(postContent: string, postType: string): Promise<string> {
   const prompt = `As an educational AI assistant, provide constructive feedback on this ${postType} post for a school/educational context. Focus on learning value, clarity, and engagement: "${postContent}". Provide specific, actionable suggestions for improvement.`;

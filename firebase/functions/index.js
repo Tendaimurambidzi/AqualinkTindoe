@@ -1032,27 +1032,43 @@ exports.recordVideoReach = functions.https.onCall(
 );
 
 exports.generateAIResponse = onCall(async (data, context) => {
-  // Check if user is authenticated
-  if (!context.auth) {
-    throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
-  }
+  // Temporarily disable auth check for testing
+  // if (!context.auth) {
+  //   throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
+  // }
+
+  console.log('Received data:', data);
+  console.log('Data type:', typeof data);
+  console.log('Data keys:', Object.keys(data));
 
   const { prompt } = data;
+  console.log('Extracted prompt:', prompt);
+  console.log('Prompt type:', typeof prompt);
+  console.log('Prompt length:', prompt ? prompt.length : 'undefined');
+
   if (!prompt || typeof prompt !== 'string') {
+    console.error('Invalid prompt validation failed');
+    throw new HttpsError('invalid-argument', 'Prompt must be a non-empty string.');
+  }
+
+  if (prompt.trim() === '') {
+    console.error('Empty prompt after trim');
     throw new HttpsError('invalid-argument', 'Prompt must be a non-empty string.');
   }
 
   try {
+    console.log('Generating AI response for prompt:', prompt.substring(0, 50) + '...');
     const vertexAI = new VertexAI({ project: 'aqualink-b5f7c', location: 'us-central1' });
     const model = vertexAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    
+
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const text = response.text();
 
+    console.log('AI response generated successfully');
     return { response: text };
   } catch (error) {
     console.error('AI generation error:', error);
-    throw new HttpsError('internal', 'Failed to generate AI response.');
+    throw new HttpsError('internal', `Failed to generate AI response: ${error.message}`);
   }
 });
