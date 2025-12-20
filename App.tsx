@@ -75,10 +75,11 @@ import {
 import { uploadPost } from './src/services/uploadPost';
 import { removeSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
+import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
                     
-                    
+
 // Navigation stack shared across auth/app flows
 const Stack = createNativeStackNavigator();
                     
@@ -1836,6 +1837,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [textComposerText, setTextComposerText] = useState<string>('');
   const [isTextStorySending, setIsTextStorySending] =
     useState<boolean>(false);
+  const [isAISuggesting, setIsAISuggesting] = useState<boolean>(false);
   const [showPings, setShowPings] = useState<boolean>(false);
   const [showExplore, setShowExplore] = useState<boolean>(false);
   const [showNotice, setShowNotice] = useState<boolean>(false);
@@ -2025,6 +2027,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     profileName,
     textComposerText,
   ]);
+                    
+  const handleAISuggest = useCallback(async () => {
+    setIsAISuggesting(true);
+    try {
+      const suggestion = await generateVibeSuggestion();
+      setTextComposerText(suggestion);
+    } catch (error) {
+      console.error('AI suggest failed', error);
+      notifyError('AI suggestion failed.');
+    } finally {
+      setIsAISuggesting(false);
+    }
+  }, [notifyError]);
                     
   // Ocean Dialog helper
   const showOceanDialog = useCallback(
@@ -2255,6 +2270,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const [showDeepSearch, setShowDeepSearch] = useState(false);
   const [deepQuery, setDeepQuery] = useState('');
+  const [isAISearchSuggesting, setIsAISearchSuggesting] = useState(false);
   const [deepResults, setDeepResults] = useState<SearchResult[]>([]);
   const [deepSearchLoading, setDeepSearchLoading] = useState(false);
   const [deepSearchError, setDeepSearchError] = useState<string | null>(null);
@@ -2586,8 +2602,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setDeepSearchLoading(false);
     }
   }, [deepQuery, searchOceanEntities]);
+                    
+  const handleAISearchSuggest = useCallback(async () => {
+    setIsAISearchSuggesting(true);
+    try {
+      const suggestion = await generateSearchSuggestion();
+      setDeepQuery(suggestion);
+    } catch (error) {
+      console.error('AI search suggest failed', error);
+      notifyError('AI search suggestion failed.');
+    } finally {
+      setIsAISearchSuggesting(false);
+    }
+  }, [notifyError]);
   const [showCountryPicker, setShowCountryPicker] = useState<boolean>(false);
   const [echoText, setEchoText] = useState<string>('');
+  const [isAIEchoSuggesting, setIsAIEchoSuggesting] = useState(false);
   const echoTextRef = useRef<string>('');
   const updateEchoText = useCallback(
     (value: string) => {
@@ -2596,6 +2626,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [setEchoText],
   );
+                    
+  const handleAIEchoSuggest = useCallback(async () => {
+    setIsAIEchoSuggesting(true);
+    try {
+      const suggestion = await generateEchoSuggestion();
+      updateEchoText(suggestion);
+    } catch (error) {
+      console.error('AI echo suggest failed', error);
+      notifyError('AI echo suggestion failed.');
+    } finally {
+      setIsAIEchoSuggesting(false);
+    }
+  }, [notifyError, updateEchoText]);
   const [echoList, setEchoList] = useState<
     Array<{
       id?: string;
@@ -9384,6 +9427,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={styles.textComposerButtonText}>Cancel</Text>
                       </Pressable>
                       <Pressable
+                        style={[styles.textComposerButton, { backgroundColor: '#FF6B00' }]}
+                        onPress={handleAISuggest}
+                        disabled={isAISuggesting}
+                      >
+                        {isAISuggesting ? (
+                          <ActivityIndicator color="white" />
+                        ) : (
+                          <Text style={styles.textComposerButtonText}>AI Suggest</Text>
+                        )}
+                      </Pressable>
+                      <Pressable
                         style={[
                           styles.textComposerButton,
                           { backgroundColor: '#00C2FF' },
@@ -10614,6 +10668,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Text style={styles.primaryBtnText}>Search</Text>
               )}
             </Pressable>
+            <Pressable
+              style={[styles.primaryBtn, { backgroundColor: '#FF6B00', marginTop: 8 }, isAISearchSuggesting && { opacity: 0.7 }]}
+              onPress={handleAISearchSuggest}
+              disabled={isAISearchSuggesting}
+            >
+              {isAISearchSuggesting ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.primaryBtnText}>AI Suggest</Text>
+              )}
+            </Pressable>
             {deepSearchError && (
               <Text style={[styles.hint, { color: '#ff6b6b', marginTop: 8 }]}>
                 {deepSearchError}
@@ -11313,6 +11378,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.primaryBtnText}>
                     {replyingToEcho ? 'Send Reply' : editingEcho ? 'Save Echo' : 'Send Echo'}
                   </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.primaryBtn, { backgroundColor: '#FF6B00', marginTop: 8 }, isAIEchoSuggesting && { opacity: 0.7 }]}
+                  onPress={handleAIEchoSuggest}
+                  disabled={isAIEchoSuggesting}
+                >
+                  {isAIEchoSuggesting ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <Text style={styles.primaryBtnText}>AI Suggest</Text>
+                  )}
                 </Pressable>
                 {editingEcho && (
                   <Pressable
