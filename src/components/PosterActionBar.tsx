@@ -109,29 +109,47 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     checkInteractions();
   }, [waveId, currentUserId]);
 
-  const handleHug = () => {
+  const handleHug = async () => {
     if (hugActionInProgress) return; // Only prevent concurrent actions, allow immediate interaction
 
     setHugActionInProgress(true);
     
-    // Immediate visual feedback
-    const newHasHugged = !hasHugged;
-    setHasHugged(newHasHugged);
-    
-    // Update count immediately
-    setSplashesCount(prev => newHasHugged ? prev + 1 : Math.max(0, prev - 1));
-    
-    // Call the parent callback
-    if (hasHugged) {
-      onRemove();
-    } else {
-      onAdd();
+    try {
+      // Call Firebase function to toggle splash
+      const toggleSplashFn = functions().httpsCallable('toggleSplash');
+      const result = await toggleSplashFn({
+        waveId: waveId,
+        action: hasHugged ? 'unsplash' : 'splash',
+        splashType: 'octopus_hug'  // This is a hug action
+      });
+      
+      // Update local state based on result
+      const newHasHugged = result.data.status === 'splashed';
+      setHasHugged(newHasHugged);
+      
+      // Update count based on result
+      setSplashesCount(prev => newHasHugged ? prev + 1 : Math.max(0, prev - 1));
+      
+      // Call the parent callback
+      if (newHasHugged) {
+        onAdd();
+      } else {
+        onRemove();
+      }
+      
+    } catch (error) {
+      console.error('Error toggling hug:', error);
+      Alert.alert('Error', 'Could not update hug. Please try again.');
+      
+      // Revert visual feedback on error
+      setHasHugged(hasHugged);
+      setSplashesCount(prev => hasHugged ? prev + 1 : Math.max(0, prev - 1));
+    } finally {
+      // Reset action in progress after a short delay
+      setTimeout(() => {
+        setHugActionInProgress(false);
+      }, 500);
     }
-    
-    // Reset action in progress after a short delay
-    setTimeout(() => {
-      setHugActionInProgress(false);
-    }, 500);
   };
 
   const handleEcho = () => {

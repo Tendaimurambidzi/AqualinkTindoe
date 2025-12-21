@@ -52,6 +52,7 @@ import { DataSaverProvider } from './src/dataSaver/DataSaverProvider';
 import OceanAmbienceToggle from './src/components/OceanAmbienceToggle';
 import InteractiveWavePhysics from './InteractiveWavePhysics';
 import PosterActionBar from './src/components/PosterActionBar';
+import { NotificationBell, NotificationDropdown } from './src/components/NotificationBell';
 import ShakeForStorms from './ShakeForStorms';
 import OctopusHug from './OctopusHug';
 import FloatingWaterAnimation from './FloatingWaterAnimation';
@@ -1518,9 +1519,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const newUnreadNotifications = notificationsData.filter(n => !n.read);
         if (newUnreadNotifications.length > 0) {
           const latestNotification = newUnreadNotifications[0];
-          if (latestNotification.type === 'CONNECT_VIBE') {
-            notifySuccess(latestNotification.message);
-          }
+          notifySuccess(latestNotification.message);
         }
       });
 
@@ -1561,6 +1560,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showEditShore, setShowEditShore] = useState<boolean>(false);
   const [showTreasure, setShowTreasure] = useState<boolean>(false);
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  const [showNotificationDropdown, setShowNotificationDropdown] = useState<boolean>(false);
   const [treasureStats, setTreasureStats] = useState<{
     tipsTotal: number;
     withdrawable: number;
@@ -1812,7 +1812,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       for (const uid of missingUids) {
         try {
           const doc = await firestoreMod().doc(`users/${uid}`).get();
-          const data = doc.data();
+          const data = doc?.data?.() || {};
           updates[uid] = {
             name: data?.name || data?.displayName || 'User',
             avatar: data?.avatar || data?.userPhoto || '',
@@ -1843,7 +1843,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .onSnapshot((snapshot: any) => {
         const waves: Vibe[] = [];
         snapshot?.forEach((doc: any) => {
-          const data = doc.data();
+          const data = doc?.data?.() || {};
           waves.push({
             id: doc.id,
             media: { uri: data.playbackUrl || data.mediaUrl },
@@ -1878,7 +1878,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         snapshot?.docChanges().forEach((change: any) => {
           if (change.type === 'modified') {
             const waveId = change.doc.id;
-            const newData = change.doc.data();
+            const newData = change.doc?.data?.() || {};
             const newCounts = newData.counts || {};
 
             // Update counts in all feed arrays
@@ -3390,7 +3390,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .onSnapshot(
         (snapshot: any) => {
           const posters = (snapshot?.docs || []).map((doc: any) => {
-            const data = doc.data();
+            const data = doc?.data?.() || {};
             return {
               id: doc.id,
               name: data.userName || 'viber',
@@ -3484,14 +3484,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return;
         }
         
-        const echoes = echoesSnap.docs.map(doc => ({
-          id: doc.id,
-          uid: doc.data().userUid,
-          text: doc.data().text,
-          userName: doc.data().userName || null,
-          updatedAt: doc.data().createdAt,
-          userPhoto: doc.data().userPhoto || null,
-        }));
+        const echoes = echoesSnap.docs.map(doc => {
+          const data = doc?.data?.() || {};
+          return {
+            id: doc.id,
+            uid: data.userUid,
+            text: data.text,
+            userName: data.userName || null,
+            updatedAt: data.createdAt,
+            userPhoto: data.userPhoto || null,
+          };
+        });
                     
         setEchoList(echoes);
       } catch (error) {
@@ -4508,7 +4511,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 
                 userDocs.forEach((doc, index) => {
                   if (doc.exists) {
-                    const data = doc.data();
+                    const data = doc?.data?.() || {};
                     const uid = uniqueOwnerUids[index];
                     // Prioritize userPhoto (app-set pictures) over photoURL (Firebase Auth)
                     const avatarUrl = data?.userPhoto || data?.photoURL || data?.avatar || data?.profilePicture || null;
@@ -8310,6 +8313,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         <TouchableOpacity style={{ marginLeft: 10 }}>
           <Text style={{ color: 'white', fontSize: 18 }}>💬</Text>
         </TouchableOpacity>
+        <NotificationBell onPress={() => setShowNotificationDropdown(!showNotificationDropdown)} />
       </View>
       {/* This Pressable now controls both UI visibility and play/pause */}
       <Pressable
@@ -16754,6 +16758,20 @@ function PostDetailScreen({ route, navigation }: any) {
       
       {/* Post Content */}
       {renderPostContent()}
+      
+      {/* Notification Dropdown */}
+      <NotificationDropdown
+        visible={showNotificationDropdown}
+        onClose={() => setShowNotificationDropdown(false)}
+        onNotificationPress={(notification) => {
+          setShowNotificationDropdown(false);
+          // Handle navigation to wave or user profile based on notification
+          if (notification.waveId) {
+            // Navigate to the wave
+            console.log('Navigate to wave:', notification.waveId);
+          }
+        }}
+      />
     </View>
   );
 }

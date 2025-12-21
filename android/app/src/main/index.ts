@@ -75,42 +75,42 @@ async function sendPing(toUid: string, data: {
 
 // ---- triggers (adapt paths to your schema) ----
 
-// Splash (like) created
-export const onSplashCreate = onDocumentCreated("waves/{waveId}/splashes/{splashId}", async (event) => {
-  const splash = event.data?.data();
-  if (!splash) return;
-  // Get wave owner
-  const waveSnap = await db.doc(`waves/${event.params.waveId}`).get();
-  const toUid = waveSnap.get("ownerUid");
-  if (!toUid || toUid === splash.userUid) return;
+// Splash (like) created - handled by Firebase Functions
+// export const onSplashCreate = onDocumentCreated("waves/{waveId}/splashes/{splashId}", async (event) => {
+//   const splash = event.data?.data();
+//   if (!splash) return;
+//   // Get wave owner
+//   const waveSnap = await db.doc(`waves/${event.params.waveId}`).get();
+//   const toUid = waveSnap.get("ownerUid");
+//   if (!toUid || toUid === splash.userUid) return;
 
-  await sendPing(toUid, {
-    type: "splash",
-    fromUid: splash.userUid,
-    fromName: splash.userName,
-    fromPhoto: splash.userPhoto,
-    waveId: event.params.waveId,
-    aggKey: `wave:${event.params.waveId}:splash`,
-  });
-});
+//   await sendPing(toUid, {
+//     type: "splash",
+//     fromUid: splash.userUid,
+//     fromName: splash.userName,
+//     fromPhoto: splash.userPhoto,
+//     waveId: event.params.waveId,
+//     aggKey: `wave:${event.params.waveId}:splash`,
+//   });
+// });
 
-// Echo (comment) created
-export const onEchoCreate = onDocumentCreated("waves/{waveId}/echoes/{echoId}", async (event) => {
-  const echo = event.data?.data();
-  if (!echo) return;
-  const waveSnap = await db.doc(`waves/${event.params.waveId}`).get();
-  const toUid = waveSnap.get("ownerUid");
-  if (!toUid || toUid === echo.userUid) return;
+// Echo (comment) created - handled by Firebase Functions
+// export const onEchoCreate = onDocumentCreated("waves/{waveId}/echoes/{echoId}", async (event) => {
+//   const echo = event.data?.data();
+//   if (!echo) return;
+//   const waveSnap = await db.doc(`waves/${event.params.waveId}`).get();
+//   const toUid = waveSnap.get("ownerUid");
+//   if (!toUid || toUid === echo.userUid) return;
 
-  await sendPing(toUid, {
-    type: "echo",
-    fromUid: echo.userUid,
-    fromName: echo.userName,
-    fromPhoto: echo.userPhoto,
-    waveId: event.params.waveId,
-    text: echo.text?.slice(0, 120) ?? "",
-  });
-});
+//   await sendPing(toUid, {
+//     type: "echo",
+//     fromUid: echo.userUid,
+//     fromName: echo.userName,
+//     fromPhoto: echo.userPhoto,
+//     waveId: event.params.waveId,
+//     text: echo.text?.slice(0, 120) ?? "",
+//   });
+// });
 
 // Follow created
 export const onFollowCreate = onDocumentCreated("follows/{toUid}/followers/{fromUid}", async (event) => {

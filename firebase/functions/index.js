@@ -27,48 +27,193 @@ const DOWNLOAD_BUCKET = admin.storage().bucket();
 const LOGO_SOURCE_PATH = path.join(__dirname, 'assets', 'my_logo.jpg');
 const DOWNLOADS_PREFIX = 'downloads/waves';
 
-async function addPing(userId, data) {
-  await db.collection('users').doc(userId).collection('pings').add({
-    ...data,
-    read: false,
+// ===== FACEBOOK-STYLE NOTIFICATION SYSTEM =====
+
+// Notification types (Facebook-inspired)
+const NOTIFICATION_TYPES = {
+  HUG: 'hug',
+  ECHO: 'echo',
+  CONNECT: 'connect',
+  MENTION: 'mention',
+  FOLLOW: 'follow',
+  SHARE: 'share'
+};
+
+// Create a comprehensive notification
+async function createNotification({
+  recipientId,
+  actorId,
+  actorName,
+  actorPhoto,
+  type,
+  entityId,
+  entityType,
+  message,
+  waveId,
+  waveTitle
+}) {
+  // Don't notify self
+  if (recipientId === actorId) return null;
+
+  const notificationId = `${type}_${entityType}_${entityId}_${Date.now()}`;
+
+  const notification = {
+    id: notificationId,
+    recipientId,
+    actorId,
+    actorName,
+    actorPhoto,
+    type,
+    entityId,
+    entityType,
+    message,
+    waveId,
+    waveTitle,
+    isRead: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  await db.collection('users').doc(userId).set({
-    counters: { unreadPings: admin.firestore.FieldValue.increment(1) }
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  };
+
+  await db.collection('notifications').doc(notificationId).set(notification);
+
+  // Update unread count
+  await db.collection('users').doc(recipientId).set({
+    notificationStats: {
+      unreadCount: admin.firestore.FieldValue.increment(1),
+      lastNotificationAt: admin.firestore.FieldValue.serverTimestamp()
+    }
   }, { merge: true });
-  
-  // Send FCM notification
+
+  // Send push notification
   try {
-    const tokensSnap = await db.collection('users').doc(userId).collection('tokens').get();
-    if (tokensSnap.empty) return;
-    
-    const tokens = [];
-    tokensSnap.forEach(doc => {
-      const tokenData = doc.data();
-      if (tokenData && tokenData.token) tokens.push(tokenData.token);
+    await sendPushNotification(recipientId, {
+      title: getNotificationTitle(type),
+      body: message,
+      data: { type, entityId, entityType, waveId }
     });
-    
-    if (tokens.length === 0) return;
-    
-    const message = {
-      notification: {
-        title: data.type === 'splash' ? 'New Splash! 🌊' : data.type === 'echo' ? 'New Echo 📣' : 'Notification',
-        body: data.text || 'You have a new notification',
-      },
-      data: {
-        type: data.type || 'ping',
-        waveId: data.waveId || '',
-        fromUid: data.fromUid || '',
-      },
-      tokens: tokens,
-    };
-    
-    const response = await admin.messaging().sendEachForMulticast(message);
-    console.log(`Sent ${response.successCount} notifications to user ${userId}`);
   } catch (error) {
-    console.warn('Failed to send FCM notification:', error);
+    console.warn('Push notification failed:', error);
   }
+
+  return notification;
 }
+
+// Send push notification
+async function sendPushNotification(userId, { title, body, data }) {
+  const tokensSnap = await db.collection('users').doc(userId).collection('fcmTokens').get();
+  if (tokensSnap.empty) return;
+
+  const tokens = [];
+  tokensSnap.forEach(doc => {
+    const tokenData = doc.data();
+    if (tokenData.token) tokens.push(tokenData.token);
+  });
+
+  if (tokens.length === 0) return;
+
+  const message = {
+    notification: { title, body },
+    data: data || {},
+    tokens
+  };
+
+  await admin.messaging().sendEachForMulticast(message);
+}
+
+// Get notification title based on type
+function getNotificationTitle(type) {
+  const titles = {
+    [NOTIFICATION_TYPES.HUG]: 'New Hug',
+    [NOTIFICATION_TYPES.ECHO]: 'New Echo',
+    [NOTIFICATION_TYPES.CONNECT]: 'New Connection',
+    [NOTIFICATION_TYPES.MENTION]: 'You were mentioned',
+    [NOTIFICATION_TYPES.FOLLOW]: 'New Follower',
+    [NOTIFICATION_TYPES.SHARE]: 'Wave Shared'
+  };
+  return titles[type] || 'New Notification';
+}
+
+// Mark notification as read
+async function markNotificationAsRead(notificationId, userId) {
+  const notificationRef = db.collection('notifications').doc(notificationId);
+
+  // Verify ownership
+  const notification = await notificationRef.get();
+  if (!notification.exists || notification.data().recipientId !== userId) {
+    throw new HttpsError('permission-denied', 'Not authorized');
+  }
+
+  await notificationRef.update({
+    isRead: true,
+    readAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+
+  // Update unread count
+  await db.collection('users').doc(userId).set({
+    notificationStats: {
+      unreadCount: admin.firestore.FieldValue.increment(-1)
+    }
+  }, { merge: true });
+}
+
+// Get notifications for user
+async function getNotifications(userId, limit = 50, offset = 0) {
+  const notifications = await db.collection('notifications')
+    .where('recipientId', '==', userId)
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .offset(offset)
+    .get();
+
+  return notifications.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data()
+  }));
+}
+
+// Cloud Functions for notifications
+exports.createNotification = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in required');
+
+  const { recipientId, type, entityId, entityType, message, waveId, waveTitle } = req.data;
+
+  // Get actor info
+  const userDoc = await db.collection('users').doc(uid).get();
+  const userData = userDoc.data();
+
+  return await createNotification({
+    recipientId,
+    actorId: uid,
+    actorName: userData?.displayName || userData?.handle || 'Someone',
+    actorPhoto: userData?.photoURL || userData?.userPhoto,
+    type,
+    entityId,
+    entityType,
+    message,
+    waveId,
+    waveTitle
+  });
+});
+
+exports.markNotificationRead = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in required');
+
+  const { notificationId } = req.data;
+  await markNotificationAsRead(notificationId, uid);
+  return { success: true };
+});
+
+exports.getUserNotifications = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in required');
+
+  const { limit, offset } = req.data || {};
+  return await getNotifications(uid, limit, offset);
+});
+
+// ===== END NOTIFICATION SYSTEM =====
 
 // Utility: ensure counts object exists; return a transaction update
 async function ensureCounts(tx, waveRef) {
@@ -146,104 +291,70 @@ async function processMentionsInText(text, authorUid, waveId, authorName, echoId
 }
 
 exports.onSplashCreate = onDocumentCreated('waves/{waveId}/splashes/{uid}', async (event) => {
-  const snap = event.data; // DocumentSnapshot
+  const snap = event.data;
   const waveId = event.params.waveId;
   const splashData = snap.data() || {};
   const splashType = splashData.splashType || 'regular';
-  
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    await ensureCounts(tx, waveRef);
-    tx.update(waveRef, { 
-      'counts.splashes': admin.firestore.FieldValue.increment(1),
-      [`counts.${splashType === 'octopus_hug' ? 'hugs' : 'regularSplashes'}`]: admin.firestore.FieldValue.increment(1)
-    });
-  });
-  // --- PING --- //
+
+  // Get wave info
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
   if (!wave.authorId) return;
-  if (wave.authorId === splashData.userUid) return; // Don't ping self
-  
-  const userName = splashData.userName || 'Drifter';
-  const text = splashType === 'octopus_hug' 
-    ? `${userName} hugged your wave 🐙`
-    : `${userName} splashed your wave 🌊`;
-  
-  await addPing(wave.authorId, {
-    type: 'splash',
-    text,
+  if (wave.authorId === splashData.userUid) return; // Don't notify self
+
+  // Create notification
+  await createNotification({
+    recipientId: wave.authorId,
+    actorId: splashData.userUid,
+    actorName: splashData.userName || 'Someone',
+    actorPhoto: splashData.userPhoto,
+    type: NOTIFICATION_TYPES.HUG,
+    entityId: waveId,
+    entityType: 'wave',
+    message: splashType === 'octopus_hug'
+      ? `${splashData.userName || 'Someone'} hugged your wave 🐙`
+      : `${splashData.userName || 'Someone'} splashed your wave 🌊`,
     waveId,
-    fromUid: splashData.userUid,
-    userName,
-    splashType,
+    waveTitle: wave.title || 'Untitled Wave'
   });
 });
 
 exports.onSplashDelete = onDocumentDeleted('waves/{waveId}/splashes/{uid}', async (event) => {
   const waveId = event.params.waveId;
   const splashData = event.data?.data() || {};
-  const splashType = splashData.splashType || 'regular';
   
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(waveRef);
-    if (!snap.exists) return;
-    const data = snap.data() || {};
-    const counts = data.counts || { splashes: 0, regularSplashes: 0, hugs: 0, echoes: 0 };
-    
-    // Only decrement if counts are above 0 to prevent negative values
-    const updates = {};
-    if (counts.splashes > 0) {
-      updates['counts.splashes'] = admin.firestore.FieldValue.increment(-1);
-    }
-    const countField = splashType === 'octopus_hug' ? 'hugs' : 'regularSplashes';
-    if (counts[countField] > 0) {
-      updates[`counts.${countField}`] = admin.firestore.FieldValue.increment(-1);
-    }
-    
-    if (Object.keys(updates).length > 0) {
-      tx.update(waveRef, updates);
-    }
-  });
+  // Counts are now handled by toggleSplash function, so we skip count updates here
+  
+  // No ping needed for deletion
 });
 
 exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async (event) => {
   const snap = event.data;
   const waveId = event.params.waveId;
-  // --- COUNT --- //
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    const waveSnap = await tx.get(waveRef);
-    if (!waveSnap.exists) return;
-    tx.set(waveRef, { counts: { echoes: admin.firestore.FieldValue.increment(1) } }, { merge: true });
-  });
-  // --- PING --- //
+  const echoData = snap.data() || {};
+
+  // Get wave info
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
-  const waveOwnerUid = wave.ownerUid || wave.authorId;
-  if (!waveOwnerUid) return;
-  const echo = snap.data() || {};
-  const echoSenderUid = echo.userUid;
-  if (!echoSenderUid) return;
-  
+  if (!wave.authorId) return;
+
+  // Determine notification target and type
+  let notificationTargetUid = wave.authorId;
+  let notificationType = NOTIFICATION_TYPES.ECHO;
+  let message = `${echoData.userName || 'Someone'} echoed your wave 🔊`;
+
   // Check if this is a reply to another echo
-  let notificationTargetUid = waveOwnerUid;
-  let notificationType = 'echo';
-  let notificationText = `📣 ${echo.userName || 'Someone'} echoed: ${echo.text?.slice(0, 60) || ''}`;
-  
-  if (echo.replyToEchoId) {
-    // This is a reply to another echo - notify the original echo author
+  if (echoData.replyToEchoId) {
     try {
-      const originalEchoSnap = await db.collection('waves').doc(waveId).collection('echoes').doc(echo.replyToEchoId).get();
+      const originalEchoSnap = await db.collection('waves').doc(waveId).collection('echoes').doc(echoData.replyToEchoId).get();
       if (originalEchoSnap.exists) {
         const originalEcho = originalEchoSnap.data() || {};
         const originalEchoAuthorUid = originalEcho.userUid;
-        if (originalEchoAuthorUid && String(originalEchoAuthorUid) !== String(echoSenderUid)) {
+        if (originalEchoAuthorUid && String(originalEchoAuthorUid) !== String(echoData.userUid)) {
           // Notify the original echo author
           notificationTargetUid = originalEchoAuthorUid;
-          notificationType = 'echo_reply';
-          notificationText = `💬 ${echo.userName || 'Someone'} replied to your echo: ${echo.text?.slice(0, 60) || ''}`;
+          notificationType = NOTIFICATION_TYPES.ECHO_REPLY;
+          message = `${echoData.userName || 'Someone'} replied to your echo 💬`;
         }
       }
     } catch (error) {
@@ -251,15 +362,22 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
       // Fall back to notifying wave owner
     }
   }
-  
-  // Don't send notification if the echo sender is the notification target
-  if (String(notificationTargetUid) === String(echoSenderUid)) return;
-  
-  await addPing(notificationTargetUid, {
+
+  // Don't notify self
+  if (String(notificationTargetUid) === String(echoData.userUid)) return;
+
+  // Create notification
+  await createNotification({
+    recipientId: notificationTargetUid,
+    actorId: echoData.userUid,
+    actorName: echoData.userName || 'Someone',
+    actorPhoto: echoData.userPhoto,
     type: notificationType,
-    text: notificationText,
+    entityId: waveId,
+    entityType: 'wave',
+    message,
     waveId,
-    fromUid: echoSenderUid,
+    waveTitle: wave.title || 'Untitled Wave'
   });
 });
 
@@ -317,13 +435,20 @@ exports.onCrewLeave = onDocumentDeleted('users/{targetUid}/crew/{followerUid}', 
 exports.onFollowCreate = onDocumentCreated('users/{targetUid}/followers/{followerUid}', async (event) => {
   const snap = event.data;
   const followData = snap?.data() || {};
-  const followerName = followData.followerName || 'Drifter';
-  
-  await addPing(event.params.targetUid, {
-    type: 'follow',
-    text: `${followerName} connected with you on Aqualink! 🤝`,
-    fromUid: event.params.followerUid,
-    userName: followerName,
+
+  // Don't notify self
+  if (event.params.targetUid === event.params.followerUid) return;
+
+  // Create notification
+  await createNotification({
+    recipientId: event.params.targetUid,
+    actorId: event.params.followerUid,
+    actorName: followData.followerName || 'Someone',
+    actorPhoto: followData.followerPhoto,
+    type: NOTIFICATION_TYPES.CONNECT,
+    entityId: event.params.followerUid,
+    entityType: 'user',
+    message: `${followData.followerName || 'Someone'} connected with you 🤝`
   });
 });
 
@@ -407,7 +532,7 @@ exports.toggleSplash = onCall({ region: 'us-central1' }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in required');
 
-  const { waveId, action } = req.data || {};
+  const { waveId, action, splashType } = req.data || {};
   if (!waveId || typeof waveId !== 'string') {
     throw new HttpsError('invalid-argument', 'waveId is required');
   }
@@ -421,16 +546,30 @@ exports.toggleSplash = onCall({ region: 'us-central1' }, async (req) => {
     if (!waveSnap.exists) throw new HttpsError('not-found', 'Wave not found');
 
     const wantSplash = action ? action === 'splash' : !splashSnap.exists;
+    const countField = splashType === 'octopus_hug' ? 'hugs' : 'regularSplashes';
+    
     if (wantSplash) {
       if (!splashSnap.exists) {
-        tx.set(splashRef, { userUid: uid, createdAt: Timestamp.now() }, { merge: true });
-        tx.update(waveRef, { 'counts.splashes': FieldValue.increment(1) });
+        tx.set(splashRef, { 
+          userUid: uid, 
+          splashType: splashType || 'regular',
+          createdAt: Timestamp.now() 
+        }, { merge: true });
+        tx.update(waveRef, { 
+          'counts.splashes': FieldValue.increment(1),
+          [`counts.${countField}`]: FieldValue.increment(1)
+        });
       }
       result = 'splashed';
     } else {
       if (splashSnap.exists) {
+        const existingSplashType = splashSnap.data()?.splashType || 'regular';
+        const existingCountField = existingSplashType === 'octopus_hug' ? 'hugs' : 'regularSplashes';
         tx.delete(splashRef);
-        tx.update(waveRef, { 'counts.splashes': FieldValue.increment(-1) });
+        tx.update(waveRef, { 
+          'counts.splashes': FieldValue.increment(-1),
+          [`counts.${existingCountField}`]: FieldValue.increment(-1)
+        });
       }
       result = 'unsplashed';
     }
