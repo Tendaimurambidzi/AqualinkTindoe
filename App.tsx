@@ -79,6 +79,7 @@ import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
+import NotificationsScreen from './src/components/NotificationsScreen';
                     
 
 // Navigation stack shared across auth/app flows
@@ -9007,7 +9008,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   style={styles.topItem}
                   onPress={withUi(() => {
                     showTopBar();
-                    // TODO: Add notifications functionality here
+                    setShowNotifications(true);
                   })}
                 >
                   <Text style={styles.dolphinIcon}>🔔</Text>
@@ -9647,94 +9648,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         animationType="fade"
         onRequestClose={() => setShowNotifications(false)}
       >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
-        >
-          <View
-            style={[
-              styles.logbookContainer,
-              {
-                maxHeight: SCREEN_HEIGHT * 0.8,
-                borderRadius: 12,
-                overflow: 'hidden',
-              },
-            ]}
-          >
-            {paperTexture && (
-              <Image source={paperTexture} style={styles.logbookBg} />
-            )}
-            <View style={{ flex: 1, padding: 16 }}>
-              <Text style={[styles.logbookTitle, { marginBottom: 16, textAlign: 'center' }]}>
-                Notifications
-              </Text>
-              
-              {notifications.length === 0 ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                  <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
-                    No notifications yet
-                  </Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
-                    When someone connects with your vibe, you'll see it here!
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView style={{ flex: 1 }}>
-                  {notifications.map((notification) => (
-                    <Pressable
-                      key={notification.id}
-                      style={{
-                        backgroundColor: notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(0,194,255,0.1)',
-                        borderRadius: 8,
-                        padding: 12,
-                        marginBottom: 8,
-                        borderLeftWidth: notification.read ? 0 : 4,
-                        borderLeftColor: '#00C2FF',
-                      }}
-                      onPress={() => {
-                        if (!notification.read) {
-                          markNotificationAsRead(notification.id);
-                        }
-                      }}
-                    >
-                      <Text style={{
-                        color: 'white',
-                        fontSize: 16,
-                        fontWeight: notification.read ? 'normal' : 'bold',
-                        marginBottom: 4,
-                      }}>
-                        {notification.message}
-                      </Text>
-                      <Text style={{
-                        color: 'rgba(255,255,255,0.6)',
-                        fontSize: 12,
-                      }}>
-                        {notification.createdAt?.toDate ? 
-                          timeAgo(notification.createdAt.toDate()) : 
-                          'Just now'}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              )}
-              
-              {notifications.length > 0 && (
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
-                  <Pressable
-                    style={[styles.primaryBtn, { flex: 1 }]}
-                    onPress={markAllNotificationsAsRead}
-                  >
-                    <Text style={styles.primaryBtnText}>Mark All Read</Text>
-                  </Pressable>
-                </View>
-              )}
-            </View>
-          </View>
-          <Pressable
-            style={styles.dismissBtn}
-            onPress={() => setShowNotifications(false)}
-          >
-            <Text style={styles.dismissText}>Close</Text>
-          </Pressable>
+        <View style={styles.modalRoot}>
+          <NotificationsScreen onClose={() => setShowNotifications(false)} />
         </View>
       </Modal>
 

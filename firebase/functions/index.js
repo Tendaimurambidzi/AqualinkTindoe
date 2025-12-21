@@ -541,10 +541,16 @@ exports.toggleSplash = onCall({ region: 'us-central1' }, async (req) => {
   const splashRef = waveRef.collection('splashes').doc(uid);
 
   let result = 'splashed';
+  let waveData = null;
+  let waveOwnerId = null;
+  
   await dbMod.runTransaction(async (tx) => {
     const [waveSnap, splashSnap] = await Promise.all([tx.get(waveRef), tx.get(splashRef)]);
     if (!waveSnap.exists) throw new HttpsError('not-found', 'Wave not found');
 
+    waveData = waveSnap.data();
+    waveOwnerId = waveData?.ownerUid;
+    
     const wantSplash = action ? action === 'splash' : !splashSnap.exists;
     const countField = splashType === 'octopus_hug' ? 'hugs' : 'regularSplashes';
     
@@ -574,6 +580,31 @@ exports.toggleSplash = onCall({ region: 'us-central1' }, async (req) => {
       result = 'unsplashed';
     }
   });
+
+  // Create notification for hug (only when splashing, not unsplashing, and not self-hug)
+  if (result === 'splashed' && splashType === 'octopus_hug' && waveOwnerId && waveOwnerId !== uid) {
+    try {
+      // Get actor info
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data();
+      const actorName = userData?.displayName || userData?.handle || 'Someone';
+      
+      await createNotification({
+        recipientId: waveOwnerId,
+        actorId: uid,
+        actorName: `/${actorName}`,
+        actorPhoto: userData?.photoURL || userData?.userPhoto,
+        type: NOTIFICATION_TYPES.HUG,
+        entityId: waveId,
+        entityType: 'wave',
+        message: `/${actorName} hugged your vibe!`,
+        waveId: waveId,
+        waveTitle: waveData?.title || 'Untitled Wave'
+      });
+    } catch (error) {
+      console.warn('Failed to create hug notification:', error);
+    }
+  }
 
   // Optional: Ping owner if needed
   return { status: result };
@@ -619,9 +650,16 @@ exports.createEcho = onCall({ region: 'us-central1' }, async (req) => {
   const waveRef = dbMod.doc(`waves/${waveId}`);
   const echoRef = waveRef.collection('echoes').doc();
 
+  let waveData = null;
+  let waveOwnerId = null;
+  
   await dbMod.runTransaction(async (tx) => {
     const waveSnap = await tx.get(waveRef);
     if (!waveSnap.exists) throw new HttpsError('not-found', 'Wave not found');
+    
+    waveData = waveSnap.data();
+    waveOwnerId = waveData?.ownerUid;
+    
     tx.set(echoRef, {
       userUid: uid,
       userName: fromName ?? null,
@@ -635,6 +673,31 @@ exports.createEcho = onCall({ region: 'us-central1' }, async (req) => {
 
   // Process mentions in echo text
   await processMentionsInText(body, uid, waveId, fromName || 'Someone', echoRef.id);
+
+  // Create notification for echo (only if not echoing own post)
+  if (waveOwnerId && waveOwnerId !== uid) {
+    try {
+      // Get actor info
+      const userDoc = await db.collection('users').doc(uid).get();
+      const userData = userDoc.data();
+      const actorName = userData?.displayName || userData?.handle || 'Someone';
+      
+      await createNotification({
+        recipientId: waveOwnerId,
+        actorId: uid,
+        actorName: `/${actorName}`,
+        actorPhoto: userData?.photoURL || userData?.userPhoto,
+        type: NOTIFICATION_TYPES.ECHO,
+        entityId: echoRef.id,
+        entityType: 'echo',
+        message: `/${actorName} echoed your vibe!`,
+        waveId: waveId,
+        waveTitle: waveData?.title || 'Untitled Wave'
+      });
+    } catch (error) {
+      console.warn('Failed to create echo notification:', error);
+    }
+  }
 
   return { echoId: echoRef.id };
 });
@@ -1123,15 +1186,22 @@ exports.connectVibe = functions.https.onCall(
     });
 
     // Create notification with personalized message
-    await admin.firestore().collection("notifications").add({
-      toUserId: toUserId,
-      fromUserId: fromUserId,
-      fromUserHandle: fromUserHandle,
-      type: "CONNECT_VIBE",
-      message: `/${fromUserHandle} connected your vibe!`,
-      read: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    try {
+      await createNotification({
+        recipientId: toUserId,
+        actorId: fromUserId,
+        actorName: `/${fromUserHandle}`,
+        actorPhoto: fromUserData?.photoURL || fromUserData?.userPhoto,
+        type: NOTIFICATION_TYPES.CONNECT,
+        entityId: connectionId,
+        entityType: 'connection',
+        message: `/${fromUserHandle} connected wit you!`,
+        waveId: null,
+        waveTitle: null
+      });
+    } catch (error) {
+      console.warn('Failed to create connect notification:', error);
+    }
 
     return { connected: true };
   }
