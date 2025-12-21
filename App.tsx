@@ -2037,8 +2037,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     fromUserHandle: string;
     read: boolean;
     createdAt: any;
-  }>>([]);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  }>>([
+    {
+      id: 'sample-hug-1',
+      type: 'hug',
+      message: '/AlexOcean has hugged your vibe!',
+      fromUserHandle: 'AlexOcean',
+      read: false,
+      createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
+    },
+    {
+      id: 'sample-echo-1',
+      type: 'echo',
+      message: '/WaveRider has echoed your vibe!',
+      fromUserHandle: 'WaveRider',
+      read: false,
+      createdAt: new Date(Date.now() - 1000 * 60 * 15), // 15 minutes ago
+    },
+    {
+      id: 'sample-connect-1',
+      type: 'connect',
+      message: '/SeaExplorer has connected! wanna say ndeip?',
+      fromUserHandle: 'SeaExplorer',
+      read: true,
+      createdAt: new Date(Date.now() - 1000 * 60 * 60), // 1 hour ago
+    },
+    {
+      id: 'sample-hug-2',
+      type: 'hug',
+      message: '/CoralDreamer has hugged your vibe!',
+      fromUserHandle: 'CoralDreamer',
+      read: false,
+      createdAt: new Date(Date.now() - 1000 * 60 * 5), // 5 minutes ago
+    },
+    {
+      id: 'sample-echo-2',
+      type: 'echo',
+      message: '/TideWatcher has echoed your vibe!',
+      fromUserHandle: 'TideWatcher',
+      read: true,
+      createdAt: new Date(Date.now() - 1000 * 60 * 120), // 2 hours ago
+    }
+  ]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(3);
                     
   // Update timestamps every second
   useEffect(() => {
