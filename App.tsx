@@ -1489,18 +1489,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!myUid) return;
 
     const unsubscribe = firestore()
-      .collection('notifications')
-      .where('toUserId', '==', myUid)
+      .collection(`users/${myUid}/pings`)
       .orderBy('createdAt', 'desc')
       .onSnapshot((snapshot) => {
         if (!snapshot) {
-          console.warn('Notifications snapshot is null');
+          console.warn('Pings snapshot is null');
           return;
         }
         
         const notificationsData = snapshot.docs.map(doc => ({
           id: doc.id,
-          ...doc.data(),
+          type: doc.data().type || 'notification',
+          message: doc.data().text || 'You have a new notification',
+          fromUserHandle: doc.data().fromName || doc.data().userName || 'Someone',
+          read: doc.data().read || false,
+          createdAt: doc.data().createdAt,
+          waveId: doc.data().waveId,
         })) as Array<{
           id: string;
           type: string;
@@ -1508,6 +1512,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromUserHandle: string;
           read: boolean;
           createdAt: any;
+          waveId?: string;
         }>;
 
         setNotifications(notificationsData);
@@ -2037,49 +2042,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     fromUserHandle: string;
     read: boolean;
     createdAt: any;
-  }>>([
-    {
-      id: 'sample-hug-1',
-      type: 'hug',
-      message: '/AlexOcean has hugged your vibe!',
-      fromUserHandle: 'AlexOcean',
-      read: false,
-      createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
-    },
-    {
-      id: 'sample-echo-1',
-      type: 'echo',
-      message: '/WaveRider has echoed your vibe!',
-      fromUserHandle: 'WaveRider',
-      read: false,
-      createdAt: new Date(Date.now() - 1000 * 60 * 15), // 15 minutes ago
-    },
-    {
-      id: 'sample-connect-1',
-      type: 'connect',
-      message: '/SeaExplorer has connected! wanna say ndeip?',
-      fromUserHandle: 'SeaExplorer',
-      read: true,
-      createdAt: new Date(Date.now() - 1000 * 60 * 60), // 1 hour ago
-    },
-    {
-      id: 'sample-hug-2',
-      type: 'hug',
-      message: '/CoralDreamer has hugged your vibe!',
-      fromUserHandle: 'CoralDreamer',
-      read: false,
-      createdAt: new Date(Date.now() - 1000 * 60 * 5), // 5 minutes ago
-    },
-    {
-      id: 'sample-echo-2',
-      type: 'echo',
-      message: '/TideWatcher has echoed your vibe!',
-      fromUserHandle: 'TideWatcher',
-      read: true,
-      createdAt: new Date(Date.now() - 1000 * 60 * 120), // 2 hours ago
-    }
-  ]);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(3);
+  }>>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
                     
   // Update timestamps every second
   useEffect(() => {
@@ -6745,8 +6709,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const markNotificationAsRead = async (notificationId: string) => {
     try {
+      const user = auth().currentUser;
+      if (!user) return;
+
       await firestore()
-        .collection('notifications')
+        .collection(`users/${user.uid}/pings`)
         .doc(notificationId)
         .update({ read: true });
 
@@ -6769,7 +6736,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       unreadNotifications.forEach(notification => {
         const notificationRef = firestore()
-          .collection('notifications')
+          .collection(`users/${user.uid}/pings`)
           .doc(notification.id);
         batch.update(notificationRef, { read: true });
       });
@@ -9027,13 +8994,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 >
                   <View>
                     <Text style={styles.pingsIcon}>📫</Text>
-                    {unreadNotificationsCount > 0 && (
-                      <View style={styles.pingsBadge}>
-                        <Text style={styles.pingsBadgeText}>
-                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount.toString()}
-                        </Text>
-                      </View>
-                    )}
                   </View>
                   <Text style={styles.topLabel}>VIBE ALERTS</Text>
                 </Pressable>
@@ -9707,12 +9667,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Pressable
                       key={notification.id}
                       style={{
-                        backgroundColor: notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(0,194,255,0.1)',
-                        borderRadius: 8,
-                        padding: 12,
-                        marginBottom: 8,
-                        borderLeftWidth: notification.read ? 0 : 4,
-                        borderLeftColor: '#00C2FF',
+                        backgroundColor: notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(255,215,0,0.1)',
+                        borderRadius: 6,
+                        padding: 8,
+                        marginBottom: 6,
+                        borderLeftWidth: notification.read ? 0 : 3,
+                        borderLeftColor: '#FFD700',
                       }}
                       onPress={() => {
                         if (!notification.read) {
