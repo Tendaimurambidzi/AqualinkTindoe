@@ -194,7 +194,43 @@ const formatCount = (n: number) => {
   if (n < 1000) return String(n);
   return `${Math.floor(n / 1000)}k`;
 };
-                    
+
+// Helper function to format notification messages with username, action, and timestamp
+const formatNotificationMessage = (notification: {
+  type: string;
+  message: string;
+  fromUserHandle: string;
+  createdAt: any;
+}) => {
+  const username = notification.fromUserHandle || 'Someone';
+  const timestamp = notification.createdAt?.toDate ? 
+    timeAgo(notification.createdAt.toDate()) : 
+    'Just now';
+
+  // Format based on notification type
+  switch (notification.type) {
+    case 'echo':
+      return `${username} echoed your vibe ${timestamp}`;
+    case 'splash':
+    case 'octopus_hug':
+      return `${username} sent you a wave hug ${timestamp}`;
+    case 'follow':
+    case 'CONNECT_VIBE':
+      return `${username} wants to connect ${timestamp}`;
+    case 'message':
+      return `${username} sent you a message ${timestamp}`;
+    case 'friend_went_live':
+      return `${username} went live ${timestamp}`;
+    case 'joined_tide':
+      return `${username} joined your tide ${timestamp}`;
+    case 'left_crew':
+      return `${username} left your crew ${timestamp}`;
+    case 'system_message':
+    default:
+      return `${username}: ${notification.message} ${timestamp}`;
+  }
+};
+
 type VibeAlert = {
   hostUid: string;
   liveId: string;
@@ -9686,15 +9722,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         fontWeight: notification.read ? 'normal' : 'bold',
                         marginBottom: 4,
                       }}>
-                        {notification.message}
-                      </Text>
-                      <Text style={{
-                        color: 'rgba(255,255,255,0.6)',
-                        fontSize: 12,
-                      }}>
-                        {notification.createdAt?.toDate ? 
-                          timeAgo(notification.createdAt.toDate()) : 
-                          'Just now'}
+                        {formatNotificationMessage(notification)}
                       </Text>
                     </Pressable>
                   ))}
