@@ -8315,6 +8315,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </TouchableOpacity>
         <NotificationBell onPress={() => setShowNotificationDropdown(!showNotificationDropdown)} />
       </View>
+      
       {/* This Pressable now controls both UI visibility and play/pause */}
       <Pressable
         style={styles.videoSpace}
@@ -9000,6 +9001,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     )}
                   </View>
                   <Text style={styles.topLabel}>VIBE ALERTS</Text>
+                </Pressable>
+                {/* NOTIFICATIONS */}
+                <Pressable
+                  style={styles.topItem}
+                  onPress={withUi(() => {
+                    showTopBar();
+                    // TODO: Add notifications functionality here
+                  })}
+                >
+                  <Text style={styles.dolphinIcon}>🔔</Text>
+                  <Text style={styles.topLabel}>NOTIFICATIONS</Text>
                 </Pressable>
                 {/* DEEP DIVE */}
                 <Pressable
