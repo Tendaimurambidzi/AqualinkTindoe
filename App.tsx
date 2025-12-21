@@ -8976,21 +8976,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.dolphinIcon}>✨</Text>
                   <Text style={styles.topLabel}>DROP A VIBE</Text>
                 </Pressable>
-                {/* PINGS */}
+                {/* VIBE ALERTS - Placeholder */}
                 <Pressable
                   style={styles.topItem}
                   onPress={withUi(() => {
                     showTopBar();
-                    setShowPings(true);
-                    markPingsAsRead();
+                    setShowNotifications(true);
                   })}
                 >
                   <View>
                     <Text style={styles.pingsIcon}>📫</Text>
-                    {unreadPingsCount > 0 && (
+                    {unreadNotificationsCount > 0 && (
                       <View style={styles.pingsBadge}>
                         <Text style={styles.pingsBadgeText}>
-                          {unreadPingsCount}
+                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount.toString()}
                         </Text>
                       </View>
                     )}
