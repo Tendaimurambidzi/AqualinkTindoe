@@ -666,9 +666,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: 'rgba(255, 59, 48, 0.4)',
   },
   closeText: { color: 'white', fontWeight: '700' },
                     
@@ -1164,12 +1164,12 @@ const editorStyles = StyleSheet.create({
   editorIcon: { fontSize: 20 },
   editorLabel: { color: 'white', fontSize: 11, fontWeight: '600' },
   doneButton: {
-    backgroundColor: 'rgba(0,194,255,0.08)',
+    backgroundColor: 'rgba(0,194,255,0.2)',
     paddingVertical: 12,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(0,194,255,0.6)',
+    borderColor: 'rgba(0,194,255,0.9)',
     borderRadius: 12,
   },
   doneButtonText: {
