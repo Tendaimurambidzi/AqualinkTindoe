@@ -33,6 +33,12 @@ async function addPing(userId, data) {
     read: false,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+  
+  // Get current unread count before incrementing
+  const userDoc = await db.collection('users').doc(userId).get();
+  const currentUnreadCount = userDoc.exists && userDoc.data().counters ? 
+    (userDoc.data().counters.unreadPings || 0) : 0;
+  
   await db.collection('users').doc(userId).set({
     counters: { unreadPings: admin.firestore.FieldValue.increment(1) }
   }, { merge: true });
@@ -50,6 +56,8 @@ async function addPing(userId, data) {
     
     if (tokens.length === 0) return;
     
+    const newBadgeCount = currentUnreadCount + 1;
+    
     const message = {
       notification: {
         title: data.type === 'splash' ? 'New Splash! 🌊' : data.type === 'echo' ? 'New Echo 📣' : 'Notification',
@@ -60,11 +68,24 @@ async function addPing(userId, data) {
         waveId: data.waveId || '',
         fromUid: data.fromUid || '',
       },
+      android: {
+        notification: {
+          channel_id: 'aqualink_notifications',
+          badge: newBadgeCount,
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            badge: newBadgeCount,
+          },
+        },
+      },
       tokens: tokens,
     };
     
     const response = await admin.messaging().sendEachForMulticast(message);
-    console.log(`Sent ${response.successCount} notifications to user ${userId}`);
+    console.log(`Sent ${response.successCount} notifications to user ${userId} with badge count ${newBadgeCount}`);
   } catch (error) {
     console.warn('Failed to send FCM notification:', error);
   }

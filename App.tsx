@@ -64,6 +64,7 @@ import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import storage from '@react-native-firebase/storage';
+import messaging from '@react-native-firebase/messaging';
                     
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
@@ -4406,6 +4407,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setIsPaused(true);
       } else if (nextAppState === 'active') {
         setIsPaused(false);
+        // Clear app icon badge when app becomes active
+        try {
+          messaging().setBadgeCount(0);
+        } catch (error) {
+          console.warn('Failed to clear badge count:', error);
+        }
         // Force video elements to remount after app resume to avoid stale surfaces
         setWaveKey(Date.now());
         setVideoErrorMap({});
@@ -6911,6 +6918,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
       setUnreadNotificationsCount(prev => Math.max(0, prev - 1));
+      // Clear app icon badge when notification is read
+      try {
+        messaging().setBadgeCount(Math.max(0, unreadNotificationsCount - 1));
+      } catch (error) {
+        console.warn('Failed to update badge count:', error);
+      }
     } catch (e) {
       console.error('Mark notification as read error:', e);
     }
@@ -6937,6 +6950,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         prev.map(n => ({ ...n, read: true }))
       );
       setUnreadNotificationsCount(0);
+      // Clear app icon badge when all notifications are read
+      try {
+        messaging().setBadgeCount(0);
+      } catch (error) {
+        console.warn('Failed to clear badge count:', error);
+      }
     } catch (e) {
       console.error('Mark all notifications as read error:', e);
     }
@@ -9563,7 +9582,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <EditableProfileAvatar
                   initialPhotoUrl={profilePhoto}
                   onPhotoChanged={async (newUri) => {
-                    // Optionally upload newUri to Firebase Storage and update Firestore
+                    // Photo is already uploaded to Firebase Storage and Firestore updated in EditableProfileAvatar
+                    // Just update local state
                     setProfilePhoto(newUri);
                     try {
                       let firestoreMod: any = null;
