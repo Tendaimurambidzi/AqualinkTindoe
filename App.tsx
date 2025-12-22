@@ -3173,6 +3173,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
   const [audioUrlInput, setAudioUrlInput] = useState<string>('');
   const [transcoding, setTranscoding] = useState<boolean>(false);
+  
+  // Unified posting modal state
+  const [showUnifiedPostModal, setShowUnifiedPostModal] = useState<boolean>(false);
+  const [unifiedPostText, setUnifiedPostText] = useState<string>('');
+  const [unifiedPostMedia, setUnifiedPostMedia] = useState<Asset | null>(null);
+  const [isUnifiedPosting, setIsUnifiedPosting] = useState<boolean>(false);
                     
   // DM subscription - adds messages to pings automatically
   useEffect(() => {
@@ -7741,6 +7747,106 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       startPick();
     }
   };
+  
+  // Unified posting functions
+  const handleUnifiedCameraCapture = () => {
+    Alert.alert(
+      'Capture Media',
+      'What would you like to capture?',
+      [
+        {
+          text: 'Take Photo',
+          onPress: () =>
+            launchCamera({ mediaType: 'photo', quality: 0.8 }, response => {
+              if (response.assets && response.assets.length > 0) {
+                setUnifiedPostMedia(response.assets[0]);
+              }
+            }),
+        },
+        {
+          text: 'Record Video',
+          onPress: () =>
+            launchCamera({ mediaType: 'video', videoQuality: 'high' }, response => {
+              if (response.assets && response.assets.length > 0) {
+                setUnifiedPostMedia(response.assets[0]);
+              }
+            }),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true },
+    );
+  };
+  
+  const handleUnifiedGallerySelect = () => {
+    launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, response => {
+      if (response.assets && response.assets.length > 0) {
+        setUnifiedPostMedia(response.assets[0]);
+      }
+    });
+  };
+  
+  const handleUnifiedPost = async () => {
+    const trimmedText = unifiedPostText.trim();
+    
+    // If no text and no media, show error
+    if (!trimmedText && !unifiedPostMedia) {
+      Alert.alert('Create a Post', 'Please add some text or select media to post.');
+      return;
+    }
+    
+    setIsUnifiedPosting(true);
+    try {
+      if (unifiedPostMedia) {
+        // Handle media post with optional caption
+        setCapturedMedia(unifiedPostMedia);
+        setTextComposerText(trimmedText);
+        setShowUnifiedPostModal(false);
+        setShowMakeWaves(true); // Open the media editor
+      } else {
+        // Handle text-only post
+        const result = await uploadPost({ 
+          caption: trimmedText,
+          authorName: profileName || accountCreationHandle || auth?.()?.currentUser?.displayName || null
+        });
+        
+        const ownerUid = auth?.()?.currentUser?.uid || null;
+        const author = profileName || accountCreationHandle || auth?.()?.currentUser?.displayName || null;
+        const placeholderMedia: Asset = {
+          uri: TEXT_STORY_PLACEHOLDER,
+          type: 'image/png',
+        };
+        
+        handlePostPublished({
+          id: result.id,
+          media: placeholderMedia,
+          audio: null,
+          captionText: trimmedText,
+          captionPosition: { x: 0, y: 0 },
+          playbackUrl: result.mediaUrl || null,
+          muxStatus: null,
+          authorName: author,
+          ownerUid,
+        });
+        
+        // Reset and close
+        setUnifiedPostText('');
+        setUnifiedPostMedia(null);
+        setShowUnifiedPostModal(false);
+      }
+    } catch (error) {
+      console.error('Unified post error:', error);
+      Alert.alert('Error', 'Failed to create post. Please try again.');
+    } finally {
+      setIsUnifiedPosting(false);
+    }
+  };
+  
+  const closeUnifiedPostModal = () => {
+    setShowUnifiedPostModal(false);
+    setUnifiedPostText('');
+    setUnifiedPostMedia(null);
+  };
                     
   // Map a user identifier to display label; show "/You" for the signed-in user
   const displayHandle = useCallback(
@@ -10181,64 +10287,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
-                <Pressable style={styles.logbookAction} onPress={() => setShowTextComposer(true)}>
+                <Pressable style={styles.logbookAction} onPress={() => setShowUnifiedPostModal(true)}>
                   <Text style={styles.logbookActionText}>Say Something</Text>
-                </Pressable>
-                {showTextComposer && (
-                  <View style={styles.textComposerContainer}>
-                    <TextInput
-                      placeholder="Share a quick story..."
-                      placeholderTextColor="rgba(255,255,255,0.6)"
-                      value={textComposerText}
-                      onChangeText={setTextComposerText}
-                      style={styles.textComposerInput}
-                      multiline
-                      numberOfLines={4}
-                      textAlignVertical="top"
-                    />
-                    <View style={styles.textComposerButtonRow}>
-                      <Pressable
-                        style={styles.textComposerButton}
-                        onPress={() => {
-                          setShowTextComposer(false);
-                          setTextComposerText('');
-                        }}
-                      >
-                        <Text style={styles.textComposerButtonText}>Cancel</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.textComposerButton, { backgroundColor: '#FF6B00' }]}
-                        onPress={handleAISuggest}
-                        disabled={isAISuggesting}
-                      >
-                        {isAISuggesting ? (
-                          <ActivityIndicator color="white" />
-                        ) : (
-                          <Text style={styles.textComposerButtonText}>AI Suggest</Text>
-                        )}
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.textComposerButton,
-                          { backgroundColor: '#00C2FF' },
-                        ]}
-                        onPress={handleSendTextStory}
-                        disabled={isTextStorySending}
-                      >
-                        {isTextStorySending ? (
-                          <ActivityIndicator color="white" />
-                        ) : (
-                          <Text style={styles.textComposerButtonText}>Send</Text>
-                        )}
-                      </Pressable>
-                    </View>
-                  </View>
-                )}
-                <Pressable style={styles.logbookAction} onPress={openCamera}>
-                  <Text style={styles.logbookActionText}>📷 Capture Vibe</Text>
-                </Pressable>
-                <Pressable style={styles.logbookAction} onPress={fromGallery}>
-                  <Text style={styles.logbookActionText}>🖼️ Aqua Vault</Text>
                 </Pressable>
                 <Pressable style={styles.logbookAction} onPress={goDrift}>
                   <View
@@ -10301,7 +10351,133 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </Pressable>
         </View>
       </Modal>
-                    
+      
+      {/* UNIFIED POSTING MODAL */}
+      <Modal
+        visible={showUnifiedPostModal}
+        transparent
+        animationType="fade"
+        onRequestClose={closeUnifiedPostModal}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.8,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>Create Post</Text>
+              
+              {/* Media Preview */}
+              {unifiedPostMedia && (
+                <View style={{ marginBottom: 16, alignItems: 'center' }}>
+                  {unifiedPostMedia.type?.startsWith('image/') ? (
+                    <Image
+                      source={{ uri: unifiedPostMedia.uri }}
+                      style={{ width: 200, height: 200, borderRadius: 8 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={{ 
+                      width: 200, 
+                      height: 120, 
+                      backgroundColor: '#1a1a1a', 
+                      borderRadius: 8,
+                      justifyContent: 'center',
+                      alignItems: 'center'
+                    }}>
+                      <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎥 Video</Text>
+                      <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                        {unifiedPostMedia.fileName || 'Selected Video'}
+                      </Text>
+                    </View>
+                  )}
+                  <Pressable
+                    onPress={() => setUnifiedPostMedia(null)}
+                    style={{ 
+                      marginTop: 8, 
+                      padding: 4, 
+                      backgroundColor: '#ff4444', 
+                      borderRadius: 4 
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontSize: 12 }}>Remove Media</Text>
+                  </Pressable>
+                </View>
+              )}
+              
+              {/* Text Input */}
+              <TextInput
+                placeholder={unifiedPostMedia ? "Add a caption (optional)..." : "Share your thoughts..."}
+                placeholderTextColor="rgba(255,255,255,0.6)"
+                value={unifiedPostText}
+                onChangeText={setUnifiedPostText}
+                style={styles.textComposerInput}
+                multiline
+                numberOfLines={4}
+                textAlignVertical="top"
+              />
+              
+              {/* Action Buttons */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+                <Pressable
+                  onPress={handleUnifiedCameraCapture}
+                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                >
+                  <Text style={styles.logbookActionText}>📷 Camera</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleUnifiedGallerySelect}
+                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                >
+                  <Text style={styles.logbookActionText}>🖼️ Gallery</Text>
+                </Pressable>
+              </View>
+              
+              {/* Send/Cancel Buttons */}
+              <View style={styles.textComposerButtonRow}>
+                <Pressable
+                  style={styles.textComposerButton}
+                  onPress={closeUnifiedPostModal}
+                >
+                  <Text style={styles.textComposerButtonText}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.textComposerButton,
+                    { backgroundColor: '#00C2FF' },
+                  ]}
+                  onPress={handleUnifiedPost}
+                  disabled={isUnifiedPosting}
+                >
+                  {isUnifiedPosting ? (
+                    <ActivityIndicator color="white" />
+                  ) : (
+                    <Text style={styles.textComposerButtonText}>
+                      {unifiedPostMedia ? 'Post with Media' : 'Post Text'}
+                    </Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </View>
+          <Pressable
+            style={styles.dismissBtn}
+            onPress={closeUnifiedPostModal}
+          >
+            <Text style={styles.dismissText}>Close</Text>
+          </Pressable>
+        </View>
+      </Modal>
+      
       {/* PINGS */}
       <Modal
         visible={showPings}
