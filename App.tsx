@@ -217,10 +217,19 @@ const fetchUserUsername = async (userId: string): Promise<string> => {
 const formatNotificationMessage = (notification: {
   type: string;
   message: string;
-  fromUserHandle: string;
+  fromUid?: string;
+  fromName?: string;
   createdAt: any;
-}) => {
-  const username = notification.fromUserHandle || 'Unknown';
+}, userData: Record<string, { name: string; avatar: string; bio: string }>) => {
+  // Compute username dynamically using the same logic as the feed
+  let username = notification.fromName;
+  if (!username && notification.fromUid) {
+    const userInfo = userData[notification.fromUid];
+    username = userInfo?.name || userInfo?.username;
+  }
+  if (!username) {
+    username = 'Unknown User';
+  }
   
   // Format based on notification type
   switch (notification.type) {
@@ -1548,23 +1557,59 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return;
         }
         
-        const notificationsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          type: doc.data().type || 'notification',
-          message: doc.data().text || 'You have a new notification',
-          fromUserHandle: doc.data().fromName || doc.data().userName || 'Someone',
-          read: doc.data().read || false,
-          createdAt: doc.data().createdAt,
-          waveId: doc.data().waveId,
-        })) as Array<{
+        const notificationsData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          
+          return {
+            id: doc.id,
+            type: data.type || 'notification',
+            message: data.text || 'You have a new notification',
+            fromUid: data.fromUid,
+            fromName: data.fromName || data.userName, // Store the stored name, but we'll compute the display name dynamically
+            read: data.read || false,
+            createdAt: data.createdAt,
+            waveId: data.waveId,
+          };
+        }) as Array<{
           id: string;
           type: string;
           message: string;
-          fromUserHandle: string;
+          fromUid?: string;
+          fromName?: string;
           read: boolean;
           createdAt: any;
           waveId?: string;
         }>;
+
+        // Fetch user data for any notification senders we don't have data for
+        const notificationUids = notificationsData
+          .map(n => n.fromUid)
+          .filter(Boolean)
+          .filter(uid => !userData[uid]);
+        
+        if (notificationUids.length > 0) {
+          const fetchNotificationUsers = async () => {
+            const updates: Record<string, { name: string; avatar: string; bio: string }> = {};
+            for (const uid of notificationUids) {
+              try {
+                const doc = await firestore().doc(`users/${uid}`).get();
+                const data = doc.data();
+                updates[uid] = {
+                  name: data?.username || data?.name || data?.displayName || 'User',
+                  avatar: data?.avatar || data?.userPhoto || '',
+                  bio: data?.bio || '',
+                };
+              } catch (e) {
+                console.warn('Failed to fetch user data for notification sender', uid, e);
+                updates[uid] = { name: 'User', avatar: '', bio: '' };
+              }
+            }
+            if (Object.keys(updates).length > 0) {
+              setUserData(prev => ({ ...prev, ...updates }));
+            }
+          };
+          fetchNotificationUsers();
+        }
 
         setNotifications(notificationsData);
         const unreadCount = notificationsData.filter(n => !n.read).length;
@@ -9749,7 +9794,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         fontWeight: notification.read ? 'normal' : 'bold',
                         marginBottom: 4,
                       }}>
-                        {formatNotificationMessage(notification)}
+                        {formatNotificationMessage(notification, userData)}
                       </Text>
                       <Text style={{
                         color: 'rgba(255,255,255,0.6)',
