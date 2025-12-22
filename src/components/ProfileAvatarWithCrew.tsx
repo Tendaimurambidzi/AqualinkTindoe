@@ -96,10 +96,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       <View style={[styles.container, style]}>
         <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} />
         {showCrewCount && (
-          <Text style={styles.crewText}>Fleet: ...</Text>
+          <Text style={styles.crewText}>Crew: ...</Text>
         )}
         {showFleetCount && (
-          <Text style={styles.fleetText}>Crew: ...</Text>
+          <Text style={styles.fleetText}>Fleet: ...</Text>
         )}
       </View>
     );
@@ -138,10 +138,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         </TouchableOpacity>
         <View style={styles.countsContainer}>
           {showCrewCount && (
-            <Text style={styles.crewText}>Fleet: {formatCrewCount(crewCount)}</Text>
+            <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
           )}
           {showFleetCount && (
-            <Text style={styles.fleetText}>Crew: {formatFleetCount(fleetCount)}</Text>
+            <Text style={styles.fleetText}>Fleet: {formatFleetCount(fleetCount)}</Text>
           )}
         </View>
       </View>
