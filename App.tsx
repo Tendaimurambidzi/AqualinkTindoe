@@ -2039,6 +2039,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             media: { uri: data.playbackUrl || data.mediaUrl },
             audio: data.audioUrl ? { uri: data.audioUrl } : null,
             captionText: data.captionText || data.caption || data.text || '',
+            link: data.link || null,
             captionPosition: { x: data.captionPosition?.x || 0, y: data.captionPosition?.y || 0 },
             playbackUrl: data.playbackUrl,
             muxStatus: data.muxStatus,
@@ -2128,6 +2129,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       loadPostEchoes(wave.id);
       // Load reach count for the new wave
       loadReachCounts([wave.id]);
+      // Clear captured media after successful posting
+      setCapturedMedia(null);
       // Show success message for posting a splashline
       notifySuccess('You dropped a splashline!');
     },
@@ -7803,7 +7806,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setTextComposerText(trimmedText);
         setCaptionText(trimmedText); // Transfer text to caption for media editor
         setShowUnifiedPostModal(false);
-        setShowMakeWaves(true); // Open the media editor
+        setShowMakeWaves(false); // Close the Make Waves modal, media editor opens directly
       } else {
         // Handle text-only post
         const result = await uploadPost({ 
@@ -8869,6 +8872,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 ? item.captionText.substring(0, 500) + '...'
                                 : item.captionText}
                             </Text>
+                          </View>
+                        )}
+                        {/* Post Link (if any) */}
+                        {item.link && (
+                          <View style={{ marginBottom: 10 }}>
+                            <Pressable
+                              onPress={() => {
+                                Linking.openURL(item.link).catch(err => 
+                                  console.log('Failed to open link:', err)
+                                );
+                              }}
+                              style={{ 
+                                backgroundColor: '#E3F2FD', 
+                                padding: 8, 
+                                borderRadius: 4,
+                                borderWidth: 1,
+                                borderColor: '#2196F3'
+                              }}
+                            >
+                              <Text style={{ 
+                                color: '#1976D2', 
+                                fontSize: 16, 
+                                textDecorationLine: 'underline' 
+                              }}>
+                                {item.link}
+                              </Text>
+                            </Pressable>
                           </View>
                         )}
                         {/* Post Media */}
@@ -12888,12 +12918,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </ScrollView>
             </View>
           </View>
-          <Pressable
-            style={styles.dismissBtn}
-            onPress={() => setShowAudioModal(false)}
-          >
-            <Text style={styles.dismissText}>Close</Text>
-          </Pressable>
         </View>
       </Modal>
                     
@@ -17121,9 +17145,29 @@ function PostDetailScreen({ route, navigation }: any) {
                 </Text>
               )}
               {post.link && (
-                <Text style={{ color: '#00C2FF', fontSize: 16 }}>
-                  {post.link}
-                </Text>
+                <Pressable
+                  onPress={() => {
+                    Linking.openURL(post.link).catch(err => 
+                      console.log('Failed to open link:', err)
+                    );
+                  }}
+                  style={{ 
+                    backgroundColor: '#E3F2FD', 
+                    padding: 12, 
+                    borderRadius: 6,
+                    borderWidth: 1,
+                    borderColor: '#2196F3',
+                    marginTop: 10
+                  }}
+                >
+                  <Text style={{ 
+                    color: '#1976D2', 
+                    fontSize: 16, 
+                    textDecorationLine: 'underline' 
+                  }}>
+                    {post.link}
+                  </Text>
+                </Pressable>
               )}
             </View>
           )}
