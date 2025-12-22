@@ -833,6 +833,8 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     throw new HttpsError('failed-precondition', 'Cannot join your own crew');
   }
 
+  console.log(`joinCrew: User ${uid} following ${targetUid}`);
+
   // Add to target user's crew
   await dbMod.collection('users').doc(targetUid).collection('crew').doc(uid).set({
     uid: uid,
@@ -841,11 +843,15 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     joinedAt: Timestamp.now(),
   });
 
+  console.log(`joinCrew: Added ${uid} to ${targetUid}'s crew collection`);
+
   // Add to user's following list
   await dbMod.collection('users').doc(uid).collection('following').doc(targetUid).set({
     uid: targetUid,
     joinedAt: Timestamp.now(),
   });
+
+  console.log(`joinCrew: Added ${targetUid} to ${uid}'s following collection`);
 
   // Send ping notification to target user
   await addPingModular(targetUid, {
@@ -942,6 +948,96 @@ exports.migrateUsernames = onRequest({ region: 'us-central1' }, async (req, res)
     
   } catch (error) {
     console.error('Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// One-time migration function - migrate boarding to following collections
+exports.migrateBoardingToFollowing = onRequest({ region: 'us-central1' }, async (req, res) => {
+  try {
+    const db = admin.firestore();
+    console.log('Starting migration from boarding to following collections...');
+    
+    const usersSnapshot = await db.collection('users').get();
+    console.log(`Found ${usersSnapshot.size} users to check`);
+    
+    let migrated = 0;
+    let skipped = 0;
+    
+    // Process each user
+    for (const userDoc of usersSnapshot.docs) {
+      const userId = userDoc.id;
+      console.log(`Processing user ${userId}...`);
+      
+      // Check if user has boarding collection
+      const boardingRef = db.collection('users').doc(userId).collection('boarding');
+      const boardingSnapshot = await boardingRef.get();
+      
+      if (!boardingSnapshot.empty) {
+        console.log(`User ${userId} has ${boardingSnapshot.size} boarding documents, migrating...`);
+        
+        // Create batch for this user's migration
+        const batch = db.batch();
+        let operationCount = 0;
+        
+        // Move each document from boarding to following
+        for (const doc of boardingSnapshot.docs) {
+          const data = doc.data();
+          const followingRef = db.collection('users').doc(userId).collection('following').doc(doc.id);
+          
+          batch.set(followingRef, data);
+          operationCount++;
+          
+          // Commit in batches of 500
+          if (operationCount >= 500) {
+            await batch.commit();
+            operationCount = 0;
+          }
+        }
+        
+        // Commit remaining operations
+        if (operationCount > 0) {
+          await batch.commit();
+        }
+        
+        // Delete old boarding collection documents
+        const deleteBatch = db.batch();
+        operationCount = 0;
+        
+        for (const doc of boardingSnapshot.docs) {
+          deleteBatch.delete(doc.ref);
+          operationCount++;
+          
+          if (operationCount >= 500) {
+            await deleteBatch.commit();
+            operationCount = 0;
+          }
+        }
+        
+        if (operationCount > 0) {
+          await deleteBatch.commit();
+        }
+        
+        migrated++;
+        console.log(`Migrated user ${userId}: ${boardingSnapshot.size} documents`);
+      } else {
+        skipped++;
+      }
+    }
+    
+    const result = {
+      success: true,
+      totalUsers: usersSnapshot.size,
+      migrated,
+      skipped,
+      message: `Migrated ${migrated} users, skipped ${skipped} users`
+    };
+    
+    console.log(result);
+    res.json(result);
+    
+  } catch (error) {
+    console.error('Migration error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
