@@ -43,7 +43,7 @@ import {
   View,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
-import EditableProfileAvatar from './EditableProfileAvatar';
+import ProfileAvatarWithCrew from './src/components/ProfileAvatarWithCrew';
 import ImageCropPicker from 'react-native-image-crop-picker';
 const { AudioPicker } = NativeModules;
 import BridgeDataSaverPanel from './src/dataSaver/BridgeDataSaverPanel';
@@ -8664,85 +8664,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={{ alignItems: 'center', flex: 2 }}>
                         <TouchableOpacity 
                           onPress={() => {
-                            // Determine which avatar to show
-                            let picUri = null;
-                            const isCurrentUserPost = item.ownerUid === myUid;
-                            
-                            console.log('Profile pic debug for post', item.id, ':', {
-                              ownerUid: item.ownerUid,
-                              myUid: myUid,
-                              isCurrentUserPost,
-                              profilePhoto: profilePhoto,
-                              itemUser: item.user,
-                              itemUserAvatar: item.user?.avatar
-                            });
-                            
-                            if (isCurrentUserPost) {
-                              // For current user's posts, use MY AURA profile picture
-                              picUri = profilePhoto;
+                            if (item.ownerUid === myUid) {
+                              navigation.navigate('Profile');
                             } else {
-                              // For other users, use their Firestore avatar from userData
-                              const userInfo = userData[item.ownerUid];
-                              const userAvatar = userInfo?.avatar;
-                              if (userAvatar && typeof userAvatar === 'string' && userAvatar.trim()) {
-                                picUri = userAvatar;
-                              }
+                              // Navigate to user profile or show user modal
+                              console.log('Pressed user avatar for:', item.ownerUid);
                             }
-                            
-                            if (picUri) setZoomedProfilePic(picUri);
                           }}
-                          style={{ 
-                            borderRadius: 25, 
-                            borderWidth: 2, 
-                            borderColor: '#00C2FF',
-                            overflow: 'hidden',
-                          }}
+                          style={{ alignItems: 'center', marginBottom: 10 }}
                         >
-                          {(() => {
-                            // Determine which avatar to show
-                            let avatarUri = null;
-                            let avatarSource = null;
-                            const isCurrentUserPost = item.ownerUid === myUid;
-                            
-                            if (isCurrentUserPost) {
-                              // For current user's posts, use MY AURA profile picture
-                              avatarUri = profilePhoto;
-                            } else {
-                              // For other users, use their Firestore avatar from userData
-                              const userInfo = userData[item.ownerUid];
-                              const userAvatar = userInfo?.avatar;
-                              if (userAvatar && typeof userAvatar === 'string' && userAvatar.trim()) {
-                                avatarUri = userAvatar;
-                              } else {
-                                // If user data not loaded yet, show placeholder
-                                console.log('User avatar not available for', item.ownerUid, 'user data:', userInfo);
-                              }
-                            }
-                            
-                            console.log('Rendering avatar for post', item.id, ':', {
-                              isCurrentUserPost,
-                              avatarUri,
-                              finalUri: avatarUri
-                            });
-                            
-                            // Only show image if we have a valid URI
-                            if (avatarUri) {
-                              return (
-                                <Image 
-                                  source={{ uri: avatarUri }} 
-                                  style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF' }} 
-                                  onError={() => console.log('Failed to load avatar for user:', item.ownerUid)}
-                                />
-                              );
-                            } else {
-                              // Empty view for users without profile pictures
-                              return (
-                                <View style={{ width: 50, height: 50, borderRadius: 25, borderWidth: 2, borderColor: '#00C2FF', backgroundColor: 'rgba(0, 194, 255, 0.1)', justifyContent: 'center', alignItems: 'center' }}>
-                                  <Text style={{ fontSize: 20, color: '#00C2FF' }}>👤</Text>
-                                </View>
-                              );
-                            }
-                          })()}
+                          <ProfileAvatarWithCrew
+                            userId={item.ownerUid}
+                            size={50}
+                            showCrewCount={true}
+                          />
                         </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
                           {(() => {

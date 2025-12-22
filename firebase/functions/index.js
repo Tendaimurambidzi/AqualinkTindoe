@@ -982,6 +982,21 @@ exports.connectVibe = functions.https.onCall(
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // Increment crew counts for both users
+    await admin.firestore()
+      .collection("users")
+      .doc(fromUserId)
+      .set({
+        crewCount: admin.firestore.FieldValue.increment(1)
+      }, { merge: true });
+
+    await admin.firestore()
+      .collection("users")
+      .doc(toUserId)
+      .set({
+        crewCount: admin.firestore.FieldValue.increment(1)
+      }, { merge: true });
+
     // Create notification with personalized message
     await addPing(toUserId, {
       type: "CONNECT_VIBE",
@@ -1026,6 +1041,33 @@ exports.disconnectVibe = functions.https.onCall(
       .collection("connections")
       .doc(connectionId)
       .delete();
+
+    // Decrement crew counts for both users (prevent negative values)
+    const fromUserRef = admin.firestore().collection("users").doc(fromUserId);
+    const toUserRef = admin.firestore().collection("users").doc(toUserId);
+
+    await admin.firestore().runTransaction(async (tx) => {
+      const [fromUserSnap, toUserSnap] = await Promise.all([
+        tx.get(fromUserRef),
+        tx.get(toUserRef)
+      ]);
+
+      const fromUserData = fromUserSnap.data() || {};
+      const toUserData = toUserSnap.data() || {};
+
+      // Only decrement if crew count is greater than 0
+      if ((fromUserData.crewCount || 0) > 0) {
+        tx.update(fromUserRef, {
+          crewCount: admin.firestore.FieldValue.increment(-1)
+        });
+      }
+
+      if ((toUserData.crewCount || 0) > 0) {
+        tx.update(toUserRef, {
+          crewCount: admin.firestore.FieldValue.increment(-1)
+        });
+      }
+    });
 
     return { connected: false };
   }
