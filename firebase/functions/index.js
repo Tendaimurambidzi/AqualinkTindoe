@@ -843,7 +843,11 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     joinedAt: Timestamp.now(),
   });
 
-  console.log(`[DEBUG] joinCrew: Added ${uid} to ${targetUid}'s crew collection`);
+  console.log(`[DEBUG] joinCrew: Added ${uid} to ${targetUid}'s crew collection - verifying...`);
+  
+  // Verify the document was added
+  const crewDoc = await dbMod.collection('users').doc(targetUid).collection('crew').doc(uid).get();
+  console.log(`[DEBUG] joinCrew: Crew document exists: ${crewDoc.exists}`);
 
   // Add to user's following list
   await dbMod.collection('users').doc(uid).collection('following').doc(targetUid).set({
@@ -851,7 +855,11 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     joinedAt: Timestamp.now(),
   });
 
-  console.log(`[DEBUG] joinCrew: Added ${targetUid} to ${uid}'s following collection`);
+  console.log(`[DEBUG] joinCrew: Added ${targetUid} to ${uid}'s following collection - verifying...`);
+  
+  // Verify the document was added
+  const followingDoc = await dbMod.collection('users').doc(uid).collection('following').doc(targetUid).get();
+  console.log(`[DEBUG] joinCrew: Following document exists: ${followingDoc.exists}`);
 
   // Send ping notification to target user
   await addPingModular(targetUid, {

@@ -27,7 +27,12 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   const [fleetCount, setFleetCount] = useState(0);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      console.log(`[DEBUG] ProfileAvatarWithCrew: No userId provided`);
+      return;
+    }
+
+    console.log(`[DEBUG] ProfileAvatarWithCrew: Setting up listeners for userId: ${userId}, showFleetCount: ${showFleetCount}`);
 
     // Set up real-time listener for user data changes
     const unsubscribeUser = firestore()
@@ -58,10 +63,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       .collection('crew')
       .onSnapshot((crewSnapshot) => {
         const newCount = crewSnapshot.size;
-        console.log(`[DEBUG] Crew count update for user ${userId}: ${crewCount} -> ${newCount}`);
+        console.log(`[DEBUG] Crew count update for user ${userId}: ${crewCount} -> ${newCount} (docs: ${crewSnapshot.docs.length})`);
         setCrewCount(newCount);
       }, (error) => {
-        console.error('Error listening to crew count:', error);
+        console.error(`[DEBUG] Error listening to crew count for ${userId}:`, error);
       });
 
     // Set up real-time listener for fleet count changes
@@ -71,10 +76,11 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       .collection('following')
       .onSnapshot((fleetSnapshot) => {
         const newCount = fleetSnapshot.size;
-        console.log(`[DEBUG] Fleet count update for user ${userId}: ${fleetCount} -> ${newCount}`);
+        console.log(`[DEBUG] Fleet count update for user ${userId}: ${fleetCount} -> ${newCount} (docs: ${fleetSnapshot.docs.length})`);
+        console.log(`[DEBUG] Fleet docs for ${userId}:`, fleetSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
         setFleetCount(newCount);
       }, (error) => {
-        console.error('Error listening to fleet count:', error);
+        console.error(`[DEBUG] Error listening to fleet count for ${userId}:`, error);
       });
 
     // Cleanup listeners on unmount or userId change
