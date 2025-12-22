@@ -166,9 +166,7 @@ exports.onSplashCreate = onDocumentCreated('waves/{waveId}/splashes/{uid}', asyn
   if (wave.authorId === splashData.userUid) return; // Don't ping self
   
   const userName = splashData.userName || 'Drifter';
-  const text = splashType === 'octopus_hug' 
-    ? `${userName} hugged your wave 🐙`
-    : `${userName} splashed your wave 🌊`;
+  const text = `/${userName} has hugged your vibe!`;
   
   await addPing(wave.authorId, {
     type: 'splash',
@@ -985,14 +983,11 @@ exports.connectVibe = functions.https.onCall(
     });
 
     // Create notification with personalized message
-    await admin.firestore().collection("notifications").add({
-      toUserId: toUserId,
-      fromUserId: fromUserId,
-      fromUserHandle: fromUserHandle,
+    await addPing(toUserId, {
       type: "CONNECT_VIBE",
-      message: `/${fromUserHandle} connected your vibe!`,
-      read: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      text: `/${fromUserHandle} has connected! wanna say ndeip zviri sei?`,
+      fromUid: fromUserId,
+      fromName: fromUserHandle,
     });
 
     return { connected: true };
