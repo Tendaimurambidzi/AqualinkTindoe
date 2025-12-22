@@ -44,6 +44,7 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from './src/components/ProfileAvatarWithCrew';
+import EditableProfileAvatar from './EditableProfileAvatar';
 import ImageCropPicker from 'react-native-image-crop-picker';
 const { AudioPicker } = NativeModules;
 import BridgeDataSaverPanel from './src/dataSaver/BridgeDataSaverPanel';
