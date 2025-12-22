@@ -130,7 +130,6 @@ type Vibe = {
   media?: Asset | null;
   audio?: { uri: string; name?: string } | null;
   captionText: string;
-  captionPosition: { x: number; y: number };
   playbackUrl?: string | null; // server-muxed single stream
   muxStatus?: 'pending' | 'ready' | 'failed';
   authorName?: string | null; // display handle (e.g., "/Tindoe")
@@ -1178,30 +1177,6 @@ const editorStyles = StyleSheet.create({
     fontSize: 16,
     paddingHorizontal: 20,
   },
-  draggableCaptionContainer: {
-    position: 'absolute',
-    width: '90%',
-    alignItems: 'center',
-    left: '5%',
-    zIndex: 5,
-    elevation: 5,
-  },
-  captionInput: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 18,
-    textAlign: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    minHeight: 44,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
-    borderRadius: 12,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: -1, height: 1 },
-    textShadowRadius: 10,
-  },
   liveEditorSidebar: {
     position: 'absolute',
     top: '20%',
@@ -1686,7 +1661,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const editorTools = useMemo(
     () => [
       { icon: '🎵', label: 'Ocean melodies' },
-      { icon: '📝', label: 'Sonar Captions' },
       { icon: '🎨', label: 'Ocean Tones' },
       { icon: '🖼️', label: 'Hull & Canvas' },
       { icon: '✂️', label: 'Cut the Wake' },
@@ -2040,7 +2014,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             audio: data.audioUrl ? { uri: data.audioUrl } : null,
             captionText: data.captionText || data.caption || data.text || '',
             link: data.link || null,
-            captionPosition: { x: data.captionPosition?.x || 0, y: data.captionPosition?.y || 0 },
             playbackUrl: data.playbackUrl,
             muxStatus: data.muxStatus,
             authorName: data.authorName,
@@ -2354,7 +2327,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           media: placeholderMedia,
           audio: null,
           captionText: trimmed,
-          captionPosition: { x: 0, y: 0 },
           playbackUrl: result.mediaUrl || null,
           muxStatus: null,
           authorName: author,
@@ -2994,7 +2966,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         : null,
       captionText: extra.caption || '',
-      captionPosition: extra.captionPosition || { x: 0, y: 0 },
       playbackUrl: extra.playbackUrl || null,
       muxStatus: extra.muxStatus || null,
       authorName: extra.authorName || null,
@@ -3239,9 +3210,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
                     
   // Editor state
-  const [showCaptionInput, setShowCaptionInput] = useState(false);
-  const [captionText, setCaptionText] = useState('');
-  const captionInputRef = useRef<TextInput | null>(null);
   const [stageSize, setStageSize] = useState<{ w: number; h: number }>({
     w: 0,
     h: 0,
@@ -3249,22 +3217,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const stageLayoutRef = useRef<{ x: number; y: number; w: number; h: number }>(
     { x: 0, y: 0, w: 0, h: 0 },
   );
-  const captionDrag = useRef(new Animated.ValueXY()).current;
-  const [captionPos, setCaptionPos] = useState<{ x: number; y: number } | null>(
-    null,
-  );
-  const captionBubbleWidth = useMemo(() => {
-    const sample = (captionText?.trim?.() || 'Sonar captions').slice(0, 80);
-    const estimate = sample.length * 9 + 32; // rough width based on characters + padding
-    const maxWidth = stageSize.w > 0 ? stageSize.w - 24 : undefined;
-    const clamped = Math.max(160, Math.min(estimate, 420));
-    return maxWidth ? Math.min(maxWidth, clamped) : clamped;
-  }, [captionText, stageSize.w]);
-  useEffect(() => {
-    if (!capturedMedia) {
-      setShowCaptionInput(false);
-    }
-  }, [capturedMedia]);
+
+  
   const [releasing, setReleasing] = useState(false);
   const splashAnimation = useRef(new Animated.Value(1)).current;
   // Animation for the two small drops when transitioning to Splashed
@@ -4444,11 +4398,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [showMakeWaves]);
                     
   useEffect(() => {
-    if (!showMakeWaves) {
+    if (!showMakeWaves && !capturedMedia) {
       setShowTextComposer(false);
       setTextComposerText('');
     }
-  }, [showMakeWaves]);
+  }, [showMakeWaves, capturedMedia]);
                     
   // Reset overlay ready flags when switching waves or refreshing the feed
   useEffect(() => {
@@ -4545,7 +4499,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           },
           audio: w.audio,
           captionText: w.captionText,
-          captionPosition: w.captionPosition,
           playbackUrl: w.playbackUrl ?? null,
           muxStatus: w.muxStatus ?? null,
           authorName:
@@ -4662,7 +4615,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           for (const d of docs) {
             const data = d.data() || {};
             const id = d.id;
-            const caption = data?.text || '';
+            const feedText = data?.text || ''; // Feed text from "say something"
+            const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
             const cap = data?.caption || { x: 0, y: 0 };
             const authorName = data?.authorName || null;
             let playbackUrl: string | null =
@@ -4682,12 +4636,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               id: id,
               media: { uri: finalUri } as any,
               audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-              captionText: caption,
+              captionText: mediaCaption, // Media overlay text
               link: data.link || null,
-              captionPosition: {
-                x: Number(cap?.x) || 0,
-                y: Number(cap?.y) || 0,
-              },
               playbackUrl: playbackUrl,
               muxStatus: (data?.muxStatus || null) as any,
               authorName,
@@ -4887,7 +4837,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         for (const d of docs) {
           const data = d.data() || {};
           const id = d.id;
-          const caption = data?.text || '';
+          const feedText = data?.text || ''; // Feed text from "say something"
+          const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
           const cap = data?.caption || { x: 0, y: 0 };
           const authorName = data?.authorName || null;
           let playbackUrl: string | null =
@@ -4907,12 +4858,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             id: id,
             media: { uri: finalUri } as any,
             audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-            captionText: caption,
+            captionText: mediaCaption, // Media overlay text
             link: data.link || null,
-            captionPosition: {
-              x: Number(cap?.x) || 0,
-              y: Number(cap?.y) || 0,
-            },
             playbackUrl: playbackUrl,
             muxStatus: (data?.muxStatus || null) as any,
             authorName,
@@ -7804,7 +7751,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Handle media post with optional caption
         setCapturedMedia(unifiedPostMedia);
         setTextComposerText(trimmedText);
-        setCaptionText(trimmedText); // Transfer text to caption for media editor
         setShowUnifiedPostModal(false);
         setShowMakeWaves(false); // Close the Make Waves modal, media editor opens directly
       } else {
@@ -7826,7 +7772,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           media: placeholderMedia,
           audio: null,
           captionText: trimmedText,
-          captionPosition: { x: 0, y: 0 },
           playbackUrl: result.mediaUrl || null,
           muxStatus: null,
           authorName: author,
@@ -8084,12 +8029,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setShowLive(true);
   };
                     
-  // Initialize caption near the vertical middle of the media area (draggable)
-  useEffect(() => {
-    if (capturedMedia && stageSize.h > 0 && !captionPos) {
-      setCaptionPos({ x: 24, y: Math.floor(stageSize.h * 0.35) });
-    }
-  }, [capturedMedia, showCaptionInput, stageSize, captionPos]);
+
                     
   // (removed Movable Textbox state)
   const onEditorToolPress = async (toolLabel: string) => {
@@ -8099,20 +8039,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       toolLabel === 'Ocean melodies'
     ) {
       setShowAudioModal(true);
-      return;
-    }
-    if (toolLabel === 'Sonar Captions') {
-      setShowCaptionInput(prev => {
-        const next = !prev;
-        if (!next) {
-          try {
-            captionInputRef.current?.blur?.();
-          } catch {}
-        } else {
-          setTimeout(() => captionInputRef.current?.focus?.(), 10);
-        }
-        return next;
-      });
       return;
     }
     if (toolLabel === 'Cut the Wake' && capturedMedia && capturedMedia.type && capturedMedia.type.startsWith('image/')) {
@@ -8207,11 +8133,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ownerUid: uid,
               authorName: profileName || a.currentUser?.displayName || null,
               mediaPath: capturedMedia.uri || null,
-              text: captionText,
+              text: textComposerText, // Feed text from "say something"
               createdAt: firestoreMod.FieldValue?.serverTimestamp
                 ? firestoreMod.FieldValue.serverTimestamp()
                 : new Date(),
-              caption: { x: captionPos?.x ?? 0, y: captionPos?.y ?? 0 },
               audioUrl: isHttp(attachedAudio?.uri || '')
                 ? attachedAudio?.uri
                 : null,
@@ -8385,14 +8310,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               a.currentUser?.displayName ||
               null,
             mediaPath: filePath,
-            text: captionText,
+            text: textComposerText,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
-            caption: {
-              x: captionPos?.x ?? 0,
-              y: captionPos?.y ?? 0,
-            },
             audioUrl: audioDownloadUrl || null,
             muxMode: null,
             muxVideoStrategy: null,
@@ -8474,8 +8395,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         audio: audioDownloadUrl
           ? { uri: audioDownloadUrl, name: attachedAudio?.name }
           : null,
-        captionText: captionText,
-        captionPosition: captionPos || { x: 0, y: 0 },
+        captionText: textComposerText,
         playbackUrl: null,
         muxStatus: audioDownloadUrl ? 'pending' : 'ready',
         authorName: profileName || accountCreationHandle || null,
@@ -8487,7 +8407,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             return null;
           }
         })(),
-        counts: { splashes: 0, echoes: 0, views: 0 }, // Ensure counts.splashes is 0 for new waves
+        counts: { splashes: 0, echoes: 0 }, // Ensure counts.splashes is 0 for new waves
       };
       setHasSplashed(false); // Reset splash state for new wave
       setSplashes(0); // Reset splash count for new wave
@@ -8538,18 +8458,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Reset editor state
       setCapturedMedia(null);
       setAttachedAudio(null);
-      setCaptionText('');
-      setShowCaptionInput(false);
-      setCaptionPos(null);
       setReleasing(false);
       setWaveKey(Date.now()); // Force the feed to update and play the new wave
     }
   };
                     
-  const onFinishCaption = () => {
-    // Exit editing mode but keep the overlay visible on media
-    setShowCaptionInput(false);
-  };
+
                     
                     
   if (!isFocused) {
@@ -10447,7 +10361,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               
               {/* Text Input */}
               <TextInput
-                placeholder={unifiedPostMedia ? "Add a caption (optional)..." : "Share your thoughts..."}
+                placeholder="What's the story?"
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 value={unifiedPostText}
                 onChangeText={setUnifiedPostText}
@@ -12694,44 +12608,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   )}
                 </>
               ))}
-            {showCaptionInput && (
-              <View
-                style={{
-                  position: 'absolute',
-                  top:
-                    stageSize.h > 0
-                      ? Math.max(
-                          24,
-                          Math.min(stageSize.h * 0.6, stageSize.h - 140),
-                        )
-                      : '50%',
-                  alignItems: 'center',
-                  zIndex: 5,
-                  width: captionBubbleWidth,
-                  alignSelf: 'center',
-                }}
-              >
-                <TextInput
-                  ref={captionInputRef}
-                  style={[
-                    editorStyles.captionInput,
-                    {
-                      width: captionBubbleWidth,
-                      maxWidth: stageSize.w > 0 ? stageSize.w - 16 : undefined,
-                      textAlign: 'center',
-                    },
-                  ]}
-                  value={captionText}
-                  onChangeText={setCaptionText}
-                  placeholder="Add a caption..."
-                  placeholderTextColor="rgba(255,255,255,0.6)"
-                  multiline
-                  maxLength={200}
-                  returnKeyType="done"
-                  autoCorrect={false}
-                />
-              </View>
-            )}
           </View>
                     
           {/* Attached Audio Summary */}
