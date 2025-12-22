@@ -8606,7 +8606,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   loadMoreFeedItems();
                 }}
                 onEndReachedThreshold={0.5} // Trigger when 50% from the end
-                scrollToIndexFailed={(info) => {
+                onScrollToIndexFailed={(info) => {
                   // Fallback when scrollToIndex fails - try to scroll to a nearby index
                   const { index, highestMeasuredFrameIndex } = info;
                   if (highestMeasuredFrameIndex >= 0 && feedRef.current) {
