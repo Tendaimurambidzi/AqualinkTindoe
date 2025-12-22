@@ -8567,18 +8567,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
-                getItemLayout={(data, index) => ({
-                  length: 450, // Estimated average height per post
-                  offset: 450 * index,
-                  index,
-                })}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={5}
+                windowSize={5}
+                initialNumToRender={3}
                 pagingEnabled={false}
                 snapToInterval={undefined}
-                decelerationRate={'fast'}
+                decelerationRate={'normal'}
                 scrollEventThrottle={16}
-                bounces={false}
+                bounces={true}
                 showsVerticalScrollIndicator={false}
                 overScrollMode="never"
+                maintainVisibleContentPosition={{
+                  minIndexForVisible: 0,
+                  autoscrollToTopThreshold: 10,
+                }}
                 onScrollBeginDrag={() => {
                   setIsSwiping(true);
                   showUiTemporarily(); // Show toggles on swipe

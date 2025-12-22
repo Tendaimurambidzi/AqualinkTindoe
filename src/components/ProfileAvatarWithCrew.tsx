@@ -54,6 +54,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   }
 
   const photoURL = userData?.photoURL || userData?.userPhoto || 'https://via.placeholder.com/50';
+  // Add timestamp to force cache refresh for immediate profile picture updates
+  const photoURLWithCacheBust = photoURL.includes('via.placeholder.com') 
+    ? photoURL 
+    : `${photoURL}?t=${Date.now()}`;
   const crewCount = userData?.crewCount || 0;
 
   // Format crew count (show "1k" for 1000+)
@@ -69,7 +73,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       <View style={[styles.container, style]}>
         <TouchableOpacity onPress={() => setShowModal(true)} activeOpacity={0.8}>
           <Image
-            source={{ uri: photoURL }}
+            source={{ uri: photoURLWithCacheBust }}
             style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
           />
         </TouchableOpacity>
@@ -102,7 +106,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
             onPress={() => setShowModal(false)}
           >
             <Image
-              source={{ uri: photoURL }}
+              source={{ uri: photoURLWithCacheBust }}
               style={styles.fullSizeImage}
               resizeMode="contain"
             />

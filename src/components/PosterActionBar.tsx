@@ -110,10 +110,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   }, [waveId, currentUserId]);
 
   const handleHug = () => {
-    if (hugActionInProgress) return; // Only prevent concurrent actions, allow immediate interaction
-
-    setHugActionInProgress(true);
-    
+    // Remove the action in progress blocking for better responsiveness
     // Immediate visual feedback
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
@@ -128,10 +125,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       onAdd();
     }
     
-    // Reset action in progress after a short delay
+    // Optional: Add a very short cooldown to prevent spam clicking
+    setHugActionInProgress(true);
     setTimeout(() => {
       setHugActionInProgress(false);
-    }, 500);
+    }, 200); // Reduced from 500ms to 200ms
   };
 
   const handleEcho = () => {
