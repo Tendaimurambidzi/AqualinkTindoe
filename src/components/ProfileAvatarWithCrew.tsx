@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, StyleSheet } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Modal, Dimensions } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
+
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface ProfileAvatarWithCrewProps {
   userId: string;
@@ -17,6 +19,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
 }) => {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -64,15 +67,41 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   };
 
   return (
-    <View style={[styles.container, style]}>
-      <Image
-        source={{ uri: photoURL }}
-        style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
-      />
-      {showCrewCount && (
-        <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
-      )}
-    </View>
+    <>
+      <View style={[styles.container, style]}>
+        <TouchableOpacity onPress={() => setShowModal(true)} activeOpacity={0.8}>
+          <Image
+            source={{ uri: photoURL }}
+            style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+          />
+        </TouchableOpacity>
+        {showCrewCount && (
+          <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
+        )}
+      </View>
+
+      {/* Full-size profile picture modal */}
+      <Modal
+        visible={showModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowModal(false)}
+        >
+          <View style={styles.modalContent}>
+            <Image
+              source={{ uri: photoURL }}
+              style={styles.fullSizeImage}
+              resizeMode="contain"
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
   );
 };
 
@@ -91,6 +120,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#00C2FF',
     fontWeight: 'bold',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    width: SCREEN_WIDTH * 0.9,
+    height: SCREEN_HEIGHT * 0.7,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fullSizeImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 10,
   },
 });
 
