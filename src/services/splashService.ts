@@ -3,7 +3,25 @@
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 
-export type SplashResult = { splashed: boolean };
+/**
+ * Fetch the actual username from a user's profile
+ */
+async function fetchUserUsername(userId: string): Promise<string> {
+  try {
+    const userDoc = await firestore()
+      .collection('users')
+      .doc(userId)
+      .get();
+    
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      return userData?.username || userData?.displayName || 'Unknown User';
+    }
+  } catch (error) {
+    console.error('Error fetching user username:', error);
+  }
+  return 'Unknown User';
+}
 
 /**
  * Ensure the current user has splashed a wave, creating the Firestore doc if needed.
@@ -26,11 +44,14 @@ export async function ensureSplash(waveId: string): Promise<SplashResult> {
     return { splashed: true };
   }
 
+  // Fetch the actual username from the user's profile
+  const actualUsername = await fetchUserUsername(user.uid);
+
   await splashRef.set(
     {
       userUid: user.uid, // matches Firestore rules
       waveId,
-      userName: user.displayName || 'Anonymous',
+      userName: actualUsername,
       userPhoto: user.photoURL || null,
       createdAt: firestore.FieldValue?.serverTimestamp
         ? firestore.FieldValue.serverTimestamp()

@@ -195,39 +195,54 @@ const formatCount = (n: number) => {
   return `${Math.floor(n / 1000)}k`;
 };
 
-// Helper function to format notification messages with username, action, and timestamp
+// Helper function to fetch the actual username from a user's profile
+const fetchUserUsername = async (userId: string): Promise<string> => {
+  try {
+    const userDoc = await firestore()
+      .collection('users')
+      .doc(userId)
+      .get();
+    
+    if (userDoc.exists) {
+      const userData = userDoc.data();
+      return userData?.username || userData?.displayName || 'Unknown User';
+    }
+  } catch (error) {
+    console.error('Error fetching user username:', error);
+  }
+  return 'Unknown User';
+};
+
+// Helper function to format notification messages with username and action only (no timestamp)
 const formatNotificationMessage = (notification: {
   type: string;
   message: string;
   fromUserHandle: string;
   createdAt: any;
 }) => {
-  const username = notification.fromUserHandle || 'Someone';
-  const timestamp = notification.createdAt?.toDate ? 
-    timeAgo(notification.createdAt.toDate()) : 
-    'Just now';
-
+  const username = notification.fromUserHandle || 'Unknown';
+  
   // Format based on notification type
   switch (notification.type) {
     case 'echo':
-      return `${username} echoed your vibe ${timestamp}`;
+      return `${username} echoed your vibe`;
     case 'splash':
     case 'octopus_hug':
-      return `${username} sent you a wave hug ${timestamp}`;
+      return `${username} sent you a wave hug`;
     case 'follow':
     case 'CONNECT_VIBE':
-      return `${username} wants to connect ${timestamp}`;
+      return `${username} wants to connect`;
     case 'message':
-      return `${username} sent you a message ${timestamp}`;
+      return `${username} sent you a message`;
     case 'friend_went_live':
-      return `${username} went live ${timestamp}`;
+      return `${username} went live`;
     case 'joined_tide':
-      return `${username} joined your tide ${timestamp}`;
+      return `${username} joined your tide`;
     case 'left_crew':
-      return `${username} left your crew ${timestamp}`;
+      return `${username} left your crew`;
     case 'system_message':
     default:
-      return `${username}: ${notification.message} ${timestamp}`;
+      return `${username}: ${notification.message}`;
   }
 };
 
@@ -5284,13 +5299,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Send notification
       if (functionsMod) {
         try {
+          // Fetch the actual username from the user's profile
+          const fromUsername = await fetchUserUsername(user.uid);
+          
           const addPingFn = functionsMod().httpsCallable('addPing');
           await addPingFn({
             recipientUid: messageRecipient.uid,
             type: 'message',
             text: text,
             fromUid: user.uid,
-            fromName: user.displayName || 'Anonymous',
+            fromName: fromUsername,
             fromPhoto: user.photoURL || null,
           });
         } catch (error) {
@@ -5681,14 +5699,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             functionsMod = require('@react-native-firebase/functions').default;
           } catch {}
           if (functionsMod) {
+            // Fetch the actual username from the user's profile
+            const fromUsername = await fetchUserUsername(currentUserUid);
+            
             const addPingFn = functionsMod().httpsCallable('addPing');
             await addPingFn({
               recipientUid: currentWave.ownerUid,
               type: 'echo',
               waveId: currentWave.id,
-              text: `/${userName} echoed your vibe!`,
+              text: `${fromUsername} echoed your vibe!`,
               fromUid: currentUserUid,
-              fromName: userName,
+              fromName: fromUsername,
               fromPhoto: profilePhoto || null,
             });
           }
@@ -9705,8 +9726,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={{
                         backgroundColor: notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(255,215,0,0.1)',
                         borderRadius: 6,
-                        padding: 8,
-                        marginBottom: 6,
+                        padding: 12,
+                        marginBottom: 8,
                         borderLeftWidth: notification.read ? 0 : 3,
                         borderLeftColor: '#FFD700',
                       }}
@@ -9714,6 +9735,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         if (!notification.read) {
                           markNotificationAsRead(notification.id);
                         }
+                        // Show the actual message content in an alert
+                        Alert.alert(
+                          'Message Details',
+                          notification.message || 'No additional details available',
+                          [{ text: 'OK' }]
+                        );
                       }}
                     >
                       <Text style={{
@@ -9723,6 +9750,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         marginBottom: 4,
                       }}>
                         {formatNotificationMessage(notification)}
+                      </Text>
+                      <Text style={{
+                        color: 'rgba(255,255,255,0.6)',
+                        fontSize: 12,
+                      }}>
+                        {notification.createdAt?.toDate ? 
+                          formatDefiniteTime(notification.createdAt.toDate()) : 
+                          'Unknown time'}
                       </Text>
                     </Pressable>
                   ))}

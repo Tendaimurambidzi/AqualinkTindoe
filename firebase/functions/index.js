@@ -175,7 +175,7 @@ exports.onSplashCreate = onDocumentCreated('waves/{waveId}/splashes/{uid}', asyn
     text,
     waveId,
     fromUid: splashData.userUid,
-    userName,
+    fromName: userName,
     splashType,
   });
 });
@@ -260,6 +260,7 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
     text: notificationText,
     waveId,
     fromUid: echoSenderUid,
+    fromName: echo.userName,
   });
 });
 
