@@ -24,8 +24,13 @@ export async function joinCrew(targetUid: string): Promise<{ success: boolean }>
   } catch {}
   if (!functionsMod) throw new Error('Firebase Functions not available');
 
+  console.log(`[DEBUG] crewService.joinCrew: Calling Firebase function for ${user.uid} -> ${targetUid}`);
+  
   const joinCrewFn = functionsMod().httpsCallable('joinCrew');
   const result = await joinCrewFn({ targetUid });
+  
+  console.log(`[DEBUG] crewService.joinCrew: Firebase function returned:`, result?.data);
+  
   if (result?.data?.success) {
     return { success: true };
   } else {

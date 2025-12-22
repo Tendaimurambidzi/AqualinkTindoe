@@ -6667,12 +6667,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Sign in required', 'Please sign in to connect vibe.');
         return;
       }
-                    
+
+      console.log(`[DEBUG] handleJoinCrew: Connecting ${user.uid} to ${targetUid} (${targetName})`);
+      
       await joinCrew(targetUid);
+      
+      console.log(`[DEBUG] handleJoinCrew: joinCrew function completed for ${targetUid}`);
+      
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
       notifySuccess(`Connected to ${targetName || 'user'}'s vibe`);
       loadCrewCounts();
       await loadDriftWatchers();
+      
+      console.log(`[DEBUG] handleJoinCrew: UI updated for connection to ${targetUid}`);
     } catch (e) {
       console.error('Connect vibe error:', e);
       let msg = 'Could not connect vibe right now';

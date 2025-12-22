@@ -833,7 +833,7 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     throw new HttpsError('failed-precondition', 'Cannot join your own crew');
   }
 
-  console.log(`joinCrew: User ${uid} following ${targetUid}`);
+  console.log(`[DEBUG] joinCrew: User ${uid} following ${targetUid}`);
 
   // Add to target user's crew
   await dbMod.collection('users').doc(targetUid).collection('crew').doc(uid).set({
@@ -843,7 +843,7 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     joinedAt: Timestamp.now(),
   });
 
-  console.log(`joinCrew: Added ${uid} to ${targetUid}'s crew collection`);
+  console.log(`[DEBUG] joinCrew: Added ${uid} to ${targetUid}'s crew collection`);
 
   // Add to user's following list
   await dbMod.collection('users').doc(uid).collection('following').doc(targetUid).set({
@@ -851,7 +851,7 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     joinedAt: Timestamp.now(),
   });
 
-  console.log(`joinCrew: Added ${targetUid} to ${uid}'s following collection`);
+  console.log(`[DEBUG] joinCrew: Added ${targetUid} to ${uid}'s following collection`);
 
   // Send ping notification to target user
   await addPingModular(targetUid, {
@@ -860,6 +860,8 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     fromUid: uid,
     userName: req.auth?.token?.name || 'A drifter',
   });
+
+  console.log(`[DEBUG] joinCrew: Notification sent to ${targetUid}`);
 
   return { success: true };
 });

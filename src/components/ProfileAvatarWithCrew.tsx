@@ -57,8 +57,9 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       .doc(userId)
       .collection('crew')
       .onSnapshot((crewSnapshot) => {
-        console.log(`Crew count update for user ${userId}: ${crewSnapshot.size}`);
-        setCrewCount(crewSnapshot.size);
+        const newCount = crewSnapshot.size;
+        console.log(`[DEBUG] Crew count update for user ${userId}: ${crewCount} -> ${newCount}`);
+        setCrewCount(newCount);
       }, (error) => {
         console.error('Error listening to crew count:', error);
       });
@@ -69,8 +70,9 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       .doc(userId)
       .collection('following')
       .onSnapshot((fleetSnapshot) => {
-        console.log(`Fleet count update for user ${userId}: ${fleetSnapshot.size}`);
-        setFleetCount(fleetSnapshot.size);
+        const newCount = fleetSnapshot.size;
+        console.log(`[DEBUG] Fleet count update for user ${userId}: ${fleetCount} -> ${newCount}`);
+        setFleetCount(newCount);
       }, (error) => {
         console.error('Error listening to fleet count:', error);
       });
