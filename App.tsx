@@ -3054,12 +3054,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setDeepSearchError(null);
         const currentUser = auth?.()?.currentUser;
         if (currentUser) {
-          // Always start with all search results showing "Connect Vibe" (not followed)
-          const crewStatus: Record<string, boolean> = {};
-          for (const result of aggregatedResults) {
-            crewStatus[result.id] = false;
+          // Load actual connection status for search results
+          try {
+            const crewService = await import('./src/services/crewService');
+            const followingList = await crewService.getBoarding(1000);
+
+            const crewStatus: Record<string, boolean> = {};
+            for (const result of aggregatedResults) {
+              crewStatus[result.id] = followingList.includes(result.id);
+            }
+            setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
+
+            console.log(`[DEBUG] Loaded crew status for ${aggregatedResults.length} search results`);
+          } catch (error) {
+            console.error('Error loading crew status for search:', error);
+            // Fallback: set all to false
+            const crewStatus: Record<string, boolean> = {};
+            for (const result of aggregatedResults) {
+              crewStatus[result.id] = false;
+            }
+            setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
           }
-          setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
         }
       }
     } catch (err: any) {
@@ -4733,19 +4748,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
             setPublicFeed(publicWaves);
                   
-            // Load crew status for all users in the feed (always start fresh - no persistence between sessions)
+            // Load actual crew status for all users in the feed
             const currentUser = auth?.()?.currentUser;
             if (currentUser) {
               const uniqueUserIds = [...new Set(wavesWithUserData.map(w => w.ownerUid).filter(uid => uid && uid !== currentUser.uid))];
-              
-              // Always start with all users showing "Connect Vibe" (not followed)
-              const crewStatus: Record<string, boolean> = {};
-              uniqueUserIds.forEach(userId => {
-                crewStatus[userId] = false;
-              });
-              
-              // Update the global crew status state
-              setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
+
+              // Load the current user's following list to determine connection status
+              try {
+                const crewService = await import('./src/services/crewService');
+                const followingList = await crewService.getBoarding(1000); // Get all users I'm following
+
+                // Create crew status based on actual following relationships
+                const crewStatus: Record<string, boolean> = {};
+                uniqueUserIds.forEach(userId => {
+                  crewStatus[userId] = followingList.includes(userId);
+                });
+
+                // Update the global crew status state with actual connection status
+                setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
+
+                console.log(`[DEBUG] Loaded crew status for ${uniqueUserIds.length} users, following ${followingList.length} users`);
+              } catch (error) {
+                console.error('Error loading crew status:', error);
+                // Fallback: set all to false if loading fails
+                const crewStatus: Record<string, boolean> = {};
+                uniqueUserIds.forEach(userId => {
+                  crewStatus[userId] = false;
+                });
+                setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
+              }
             }
                   
             // Initialize waveStats for loaded waves
