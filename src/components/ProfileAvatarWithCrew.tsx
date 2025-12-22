@@ -87,19 +87,29 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         animationType="fade"
         onRequestClose={() => setShowModal(false)}
       >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowModal(false)}
-        >
-          <View style={styles.modalContent}>
+        <View style={styles.modalOverlay}>
+          {/* Close button */}
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => setShowModal(false)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.closeButtonText}>✕</Text>
+          </TouchableOpacity>
+
+          {/* Image container */}
+          <TouchableOpacity
+            style={styles.modalContent}
+            activeOpacity={1}
+            onPress={() => setShowModal(false)}
+          >
             <Image
               source={{ uri: photoURL }}
               style={styles.fullSizeImage}
               resizeMode="contain"
             />
-          </View>
-        </TouchableOpacity>
+          </TouchableOpacity>
+        </View>
       </Modal>
     </>
   );
@@ -126,6 +136,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.8)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  closeButtonText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   modalContent: {
     width: SCREEN_WIDTH * 0.9,
