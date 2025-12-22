@@ -6710,6 +6710,48 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
+  const handleToggleVibe = async (targetUid: string, targetName?: string) => {
+    if (crewLoading) return;
+    setCrewLoading(true);
+    try {
+      const user = auth().currentUser;
+      if (!user) {
+        Alert.alert('Sign in required', 'Please sign in to connect.');
+        return;
+      }
+
+      if (user.uid === targetUid) {
+        Alert.alert('Info', "You can't connect to your own vibe");
+        return;
+      }
+
+      const isCurrentlyConnected = isInUserCrew[targetUid];
+
+      if (isCurrentlyConnected) {
+        // Disconnect vibe
+        console.log(`[DEBUG] Disconnecting from ${targetUid}`);
+        await leaveCrew(targetUid);
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
+        notifySuccess(`Disconnected from ${targetName || 'user'}`);
+        loadCrewCounts();
+        await loadDriftWatchers();
+      } else {
+        // Connect vibe
+        console.log(`[DEBUG] Connecting to ${targetUid}`);
+        await joinCrew(targetUid);
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
+        notifySuccess(`Connected to ${targetName || 'user'}`);
+        loadCrewCounts();
+        await loadDriftWatchers();
+      }
+    } catch (error) {
+      console.error('Toggle vibe error:', error);
+      notifyError('Connection update failed - please try again');
+    } finally {
+      setCrewLoading(false);
+    }
+  };
+
   const handleBlockUser = async (targetUid: string, targetName?: string) => {
     try {
       const user = auth().currentUser;
@@ -8676,31 +8718,57 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     >
                     <View style={{ backgroundColor: 'yellow' }}>
                     {/* Post Header */}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10, paddingHorizontal: 10 }}>
-                      {/* Left side - empty for balance */}
-                      <View style={{ flex: 1 }} />
-                    
-                      {/* Center - Profile Picture */}
-                      <View style={{ alignItems: 'center', flex: 2 }}>
-                        <TouchableOpacity 
-                          onPress={() => {
-                            if (item.ownerUid === myUid) {
-                              navigation.navigate('Profile');
-                            } else {
-                              // Navigate to user profile or show user modal
-                              console.log('Pressed user avatar for:', item.ownerUid);
-                            }
-                          }}
-                          style={{ alignItems: 'center', marginBottom: 10 }}
-                        >
-                          <ProfileAvatarWithCrew
-                            userId={item.ownerUid}
-                            size={50}
-                            showCrewCount={true}
-                            showFleetCount={true}
-                          />
-                        </TouchableOpacity>
-                        <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, paddingHorizontal: 10 }}>
+                      {/* Left side - Connect Button + Profile Avatar */}  
+                      <View style={{ flex: 2, alignItems: 'center' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                          {/* Connect/Disconnect Button */}
+                          {item.ownerUid !== myUid && (
+                            <Pressable
+                              onPress={() => handleToggleVibe(item.ownerUid, item.authorName || item.user?.displayName)}
+                              style={{
+                                paddingVertical: 6,
+                                paddingHorizontal: 12,
+                                borderRadius: 15,
+                                borderWidth: 1,
+                                borderColor: isInUserCrew[item.ownerUid] ? '#ff6b6b' : '#00C2FF',
+                                backgroundColor: isInUserCrew[item.ownerUid] ? '#ff6b6b' : '#00C2FF',
+                                marginRight: 10,
+                              }}
+                              disabled={crewLoading}
+                            >
+                              <Text style={{
+                                color: 'white',
+                                fontSize: 12,
+                                fontWeight: '600',
+                              }}>
+                                {isInUserCrew[item.ownerUid] ? 'Disconnect' : 'Connect'}
+                              </Text>
+                            </Pressable>
+                          )}
+                          
+                          {/* Profile Avatar */}
+                          <TouchableOpacity
+                            onPress={() => {
+                              if (item.ownerUid === myUid) {
+                                navigation.navigate('Profile');
+                              } else {
+                                // Navigate to user profile or show user modal
+                                console.log('Pressed user avatar for:', item.ownerUid);
+                              }
+                            }}
+                          >
+                            <ProfileAvatarWithCrew
+                              userId={item.ownerUid}
+                              size={50}
+                              showCrewCount={true}
+                              showFleetCount={true}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                        
+                        {/* Username and Bio directly under avatar */}
+                        <Text style={{ fontWeight: 'bold', fontSize: 14, textAlign: 'center', marginBottom: 2 }}>
                           {(() => {
                             const isCurrentUserPost = item.ownerUid === myUid;
                             if (isCurrentUserPost) {

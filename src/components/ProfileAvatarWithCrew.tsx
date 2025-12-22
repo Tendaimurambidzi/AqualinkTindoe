@@ -56,27 +56,27 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         setLoading(false);
       });
 
-    // Set up real-time listener for crew count changes
+  // Set up real-time listener for crew count changes (followers)
     const unsubscribeCrew = firestore()
       .collection('users')
       .doc(userId)
       .collection('crew')
       .onSnapshot((crewSnapshot) => {
         const newCount = crewSnapshot.size;
-        console.log(`[DEBUG] Crew count update for user ${userId}: ${crewCount} -> ${newCount} (docs: ${crewSnapshot.docs.length})`);
+        console.log(`[DEBUG] Crew count (followers) update for user ${userId}: ${crewCount} -> ${newCount} (docs: ${crewSnapshot.docs.length})`);
         setCrewCount(newCount);
       }, (error) => {
         console.error(`[DEBUG] Error listening to crew count for ${userId}:`, error);
       });
 
-    // Set up real-time listener for fleet count changes
+    // Set up real-time listener for fleet count changes (following)
     const unsubscribeFleet = firestore()
       .collection('users')
       .doc(userId)
       .collection('following')
       .onSnapshot((fleetSnapshot) => {
         const newCount = fleetSnapshot.size;
-        console.log(`[DEBUG] Fleet count update for user ${userId}: ${fleetCount} -> ${newCount} (docs: ${fleetSnapshot.docs.length})`);
+        console.log(`[DEBUG] Fleet count (following) update for user ${userId}: ${fleetCount} -> ${newCount} (docs: ${fleetSnapshot.docs.length})`);
         console.log(`[DEBUG] Fleet docs for ${userId}:`, fleetSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
         setFleetCount(newCount);
       }, (error) => {
@@ -96,10 +96,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       <View style={[styles.container, style]}>
         <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} />
         {showCrewCount && (
-          <Text style={styles.crewText}>Crew: ...</Text>
+          <Text style={styles.crewText}>Fleet: ...</Text>
         )}
         {showFleetCount && (
-          <Text style={styles.fleetText}>Fleet: ...</Text>
+          <Text style={styles.fleetText}>Crew: ...</Text>
         )}
       </View>
     );
@@ -138,10 +138,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         </TouchableOpacity>
         <View style={styles.countsContainer}>
           {showCrewCount && (
-            <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
+            <Text style={styles.crewText}>Fleet: {formatCrewCount(crewCount)}</Text>
           )}
           {showFleetCount && (
-            <Text style={styles.fleetText}>Fleet: {formatFleetCount(fleetCount)}</Text>
+            <Text style={styles.fleetText}>Crew: {formatFleetCount(fleetCount)}</Text>
           )}
         </View>
       </View>
