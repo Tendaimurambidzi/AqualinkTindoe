@@ -2038,7 +2038,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             id: doc.id,
             media: { uri: data.playbackUrl || data.mediaUrl },
             audio: data.audioUrl ? { uri: data.audioUrl } : null,
-            captionText: data.captionText || data.caption || '',
+            captionText: data.captionText || data.caption || data.text || '',
             captionPosition: { x: data.captionPosition?.x || 0, y: data.captionPosition?.y || 0 },
             playbackUrl: data.playbackUrl,
             muxStatus: data.muxStatus,
@@ -7801,6 +7801,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Handle media post with optional caption
         setCapturedMedia(unifiedPostMedia);
         setTextComposerText(trimmedText);
+        setCaptionText(trimmedText); // Transfer text to caption for media editor
         setShowUnifiedPostModal(false);
         setShowMakeWaves(true); // Open the media editor
       } else {
@@ -10469,12 +10470,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
             </View>
           </View>
-          <Pressable
-            style={styles.dismissBtn}
-            onPress={closeUnifiedPostModal}
-          >
-            <Text style={styles.dismissText}>Close</Text>
-          </Pressable>
         </View>
       </Modal>
       
