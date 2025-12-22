@@ -48,14 +48,14 @@ export async function leaveCrew(targetUid: string): Promise<{ success: boolean }
 
   await crewRef.delete();
 
-  // Also remove from current user's "boarding" (following) list
-  const boardingRef = firestore()
+  // Also remove from current user's "following" list
+  const followingRef = firestore()
     .collection('users')
     .doc(user.uid)
-    .collection('boarding')
+    .collection('following')
     .doc(targetUid);
 
-  await boardingRef.delete();
+  await followingRef.delete();
 
   return { success: true };
 }
@@ -104,10 +104,10 @@ export async function getBoarding(limit: number = 50): Promise<string[]> {
   const user = auth().currentUser;
   if (!user) return [];
 
-  const boardingSnapshot = await firestore()
+  const followingSnapshot = await firestore()
     .collection('users')
     .doc(user.uid)
-    .collection('boarding')
+    .collection('following')
     .orderBy('joinedAt', 'desc')
     .limit(limit)
     .get();
@@ -132,10 +132,10 @@ export async function getCrewCount(targetUid: string): Promise<number> {
  * Get boarding count for a user (how many they're following)
  */
 export async function getBoardingCount(targetUid: string): Promise<number> {
-  const boardingSnapshot = await firestore()
+  const followingSnapshot = await firestore()
     .collection('users')
     .doc(targetUid)
-    .collection('boarding')
+    .collection('following')
     .get();
 
   return boardingSnapshot.size;

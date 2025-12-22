@@ -841,8 +841,8 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
     joinedAt: Timestamp.now(),
   });
 
-  // Add to user's boarding (following) list
-  await dbMod.collection('users').doc(uid).collection('boarding').doc(targetUid).set({
+  // Add to user's following list
+  await dbMod.collection('users').doc(uid).collection('following').doc(targetUid).set({
     uid: targetUid,
     joinedAt: Timestamp.now(),
   });
@@ -980,11 +980,11 @@ exports.connectVibe = functions.https.onCall(
         joinedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-    // Add to boarding collection (following)
+    // Add to following collection
     await admin.firestore()
       .collection("users")
       .doc(fromUserId)
-      .collection("boarding")
+      .collection("following")
       .doc(toUserId)
       .set({
         uid: toUserId,
@@ -1048,11 +1048,11 @@ exports.disconnectVibe = functions.https.onCall(
       .doc(fromUserId)
       .delete();
 
-    // Remove from boarding collection (following)
+    // Remove from following collection
     await admin.firestore()
       .collection("users")
       .doc(fromUserId)
-      .collection("boarding")
+      .collection("following")
       .doc(toUserId)
       .delete();
 
