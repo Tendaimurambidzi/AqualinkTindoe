@@ -20,17 +20,27 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [cacheBustKey, setCacheBustKey] = useState(Date.now());
+  const [crewCount, setCrewCount] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
 
     // Set up real-time listener for user data changes
-    const unsubscribe = firestore()
+    const unsubscribeUser = firestore()
       .collection('users')
       .doc(userId)
       .onSnapshot((userDoc) => {
         if (userDoc.exists) {
-          setUserData(userDoc.data());
+          const newUserData = userDoc.data();
+          setUserData(newUserData);
+          
+          // Update cache-busting key when photoURL changes
+          const newPhotoURL = newUserData?.photoURL || newUserData?.userPhoto;
+          const currentPhotoURL = userData?.photoURL || userData?.userPhoto;
+          if (newPhotoURL !== currentPhotoURL && newPhotoURL) {
+            setCacheBustKey(Date.now());
+          }
         }
         setLoading(false);
       }, (error) => {
@@ -38,8 +48,22 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         setLoading(false);
       });
 
-    // Cleanup listener on unmount or userId change
-    return () => unsubscribe();
+    // Set up real-time listener for crew count changes
+    const unsubscribeCrew = firestore()
+      .collection('users')
+      .doc(userId)
+      .collection('crew')
+      .onSnapshot((crewSnapshot) => {
+        setCrewCount(crewSnapshot.size);
+      }, (error) => {
+        console.error('Error listening to crew count:', error);
+      });
+
+    // Cleanup listeners on unmount or userId change
+    return () => {
+      unsubscribeUser();
+      unsubscribeCrew();
+    };
   }, [userId]);
 
   if (loading) {
@@ -54,11 +78,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   }
 
   const photoURL = userData?.photoURL || userData?.userPhoto || 'https://via.placeholder.com/50';
-  // Add timestamp to force cache refresh for immediate profile picture updates
+  // Use stable cache-busting key that only updates when photoURL actually changes
   const photoURLWithCacheBust = photoURL.includes('via.placeholder.com') 
     ? photoURL 
-    : `${photoURL}?t=${Date.now()}`;
-  const crewCount = userData?.crewCount || 0;
+    : `${photoURL}?t=${cacheBustKey}`;
 
   // Format crew count (show "1k" for 1000+)
   const formatCrewCount = (count: number) => {
