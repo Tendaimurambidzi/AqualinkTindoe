@@ -22,26 +22,24 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    const fetchUserData = async () => {
-      try {
-        const userDoc = await firestore()
-          .collection('users')
-          .doc(userId)
-          .get();
+    if (!userId) return;
 
+    // Set up real-time listener for user data changes
+    const unsubscribe = firestore()
+      .collection('users')
+      .doc(userId)
+      .onSnapshot((userDoc) => {
         if (userDoc.exists) {
           setUserData(userDoc.data());
         }
-      } catch (error) {
-        console.error('Error fetching user data:', error);
-      } finally {
         setLoading(false);
-      }
-    };
+      }, (error) => {
+        console.error('Error listening to user data:', error);
+        setLoading(false);
+      });
 
-    if (userId) {
-      fetchUserData();
-    }
+    // Cleanup listener on unmount or userId change
+    return () => unsubscribe();
   }, [userId]);
 
   if (loading) {
