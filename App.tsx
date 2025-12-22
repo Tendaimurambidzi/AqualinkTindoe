@@ -73,7 +73,7 @@ import {
   leaveCrew,
 } from './src/services/crewService';
 import { uploadPost } from './src/services/uploadPost';
-import { removeSplash } from './src/services/splashService';
+import { removeSplash, ensureSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
@@ -8788,17 +8788,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       isAnchored={false}
                       isCasted={false}
                       creatorUserId={item.ownerUid}
-                      onAdd={() => {
-                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
-                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                      onAdd={async () => {
+                        try {
+                          await ensureSplash(item.id);
+                          // Update local state after successful database write
+                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
+                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        } catch (error) {
+                          console.error('Error adding splash:', error);
+                          Alert.alert('Error', 'Failed to add splash. Please try again.');
+                        }
                       }}
-                      onRemove={() => {
-                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
-                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                      onRemove={async () => {
+                        try {
+                          await removeSplash(item.id);
+                          // Update local state after successful database write
+                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
+                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                        } catch (error) {
+                          console.error('Error removing splash:', error);
+                          Alert.alert('Error', 'Failed to remove splash. Please try again.');
+                        }
                       }}
                       onEcho={() => {
                         setCurrentIndex(index);

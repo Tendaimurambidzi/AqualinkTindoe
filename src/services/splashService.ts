@@ -4,6 +4,13 @@ import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 
 /**
+ * Result type for splash operations
+ */
+export interface SplashResult {
+  splashed: boolean;
+}
+
+/**
  * Fetch the actual username from a user's profile
  */
 async function fetchUserUsername(userId: string): Promise<string> {
