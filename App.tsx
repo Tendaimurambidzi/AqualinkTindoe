@@ -5181,6 +5181,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (!user?.uid) notificationInitRef.current = null;
     };
   }, [user?.uid, handleForegroundRemoteMessage, handleNotificationNavigation]);
+
+  // Real-time listener for current user's connections
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const firestoreMod = require('@react-native-firebase/firestore').default;
+    
+    // Listen to following collection (who I follow)
+    const unsubscribeFollowing = firestoreMod()
+      .collection('users')
+      .doc(user.uid)
+      .collection('following')
+      .onSnapshot((snapshot) => {
+        const followingUids = new Set(snapshot.docs.map(doc => doc.id));
+        
+        // Update isInUserCrew for all users based on current following status
+        setIsInUserCrew(prev => {
+          const updated = { ...prev };
+          // Set following status for all users in the snapshot
+          snapshot.docs.forEach(doc => {
+            updated[doc.id] = true;
+          });
+          // For users not in following but previously marked as connected, keep their status
+          // unless we have explicit information they're not followed
+          return updated;
+        });
+      }, (error) => {
+        console.error('Error listening to following changes:', error);
+      });
+
+    // Listen to followers collection (who follows me) - this affects crew counts
+    const unsubscribeFollowers = firestoreMod()
+      .collection('users')
+      .doc(user.uid)
+      .collection('crew')
+      .onSnapshot((snapshot) => {
+        setMyCrewCount(snapshot.size);
+      }, (error) => {
+        console.error('Error listening to followers changes:', error);
+      });
+
+    return () => {
+      unsubscribeFollowing();
+      unsubscribeFollowers();
+    };
+  }, [user?.uid]);
                     
   const markPingsAsRead = async () => {
     try {
@@ -8724,6 +8770,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             userId={item.ownerUid}
                             size={50}
                             showCrewCount={true}
+                            showFleetCount={true}
                           />
                         </TouchableOpacity>
                         <Text style={{ fontWeight: 'bold', fontSize: 14, marginTop: 5, textAlign: 'center' }}>

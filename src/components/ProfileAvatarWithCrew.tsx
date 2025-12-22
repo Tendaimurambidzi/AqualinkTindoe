@@ -8,6 +8,7 @@ interface ProfileAvatarWithCrewProps {
   userId: string;
   size?: number;
   showCrewCount?: boolean;
+  showFleetCount?: boolean;
   style?: any;
 }
 
@@ -15,6 +16,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   userId,
   size = 50,
   showCrewCount = true,
+  showFleetCount = false,
   style,
 }) => {
   const [userData, setUserData] = useState<any>(null);
@@ -22,6 +24,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   const [showModal, setShowModal] = useState(false);
   const [cacheBustKey, setCacheBustKey] = useState(Date.now());
   const [crewCount, setCrewCount] = useState(0);
+  const [fleetCount, setFleetCount] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
@@ -59,10 +62,22 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         console.error('Error listening to crew count:', error);
       });
 
+    // Set up real-time listener for fleet count changes
+    const unsubscribeFleet = firestore()
+      .collection('users')
+      .doc(userId)
+      .collection('following')
+      .onSnapshot((fleetSnapshot) => {
+        setFleetCount(fleetSnapshot.size);
+      }, (error) => {
+        console.error('Error listening to fleet count:', error);
+      });
+
     // Cleanup listeners on unmount or userId change
     return () => {
       unsubscribeUser();
       unsubscribeCrew();
+      unsubscribeFleet();
     };
   }, [userId]);
 
@@ -72,6 +87,9 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         <View style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} />
         {showCrewCount && (
           <Text style={styles.crewText}>Crew: ...</Text>
+        )}
+        {showFleetCount && (
+          <Text style={styles.fleetText}>Fleet: ...</Text>
         )}
       </View>
     );
@@ -91,6 +109,14 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
     return count.toString();
   };
 
+  // Format fleet count (show "1k" for 1000+)
+  const formatFleetCount = (count: number) => {
+    if (count >= 1000) {
+      return `${Math.floor(count / 1000)}k`;
+    }
+    return count.toString();
+  };
+
   return (
     <>
       <View style={[styles.container, style]}>
@@ -100,9 +126,14 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
             style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
           />
         </TouchableOpacity>
-        {showCrewCount && (
-          <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
-        )}
+        <View style={styles.countsContainer}>
+          {showCrewCount && (
+            <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
+          )}
+          {showFleetCount && (
+            <Text style={styles.fleetText}>Fleet: {formatFleetCount(fleetCount)}</Text>
+          )}
+        </View>
       </View>
 
       {/* Full-size profile picture modal */}
@@ -145,13 +176,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  countsContainer: {
+    marginLeft: 8,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+  },
   avatar: {
     backgroundColor: '#ccc',
     borderWidth: 2,
     borderColor: '#00C2FF',
   },
   crewText: {
-    marginLeft: 8,
+    fontSize: 12,
+    color: '#00C2FF',
+    fontWeight: 'bold',
+  },
+  fleetText: {
     fontSize: 12,
     color: '#00C2FF',
     fontWeight: 'bold',
