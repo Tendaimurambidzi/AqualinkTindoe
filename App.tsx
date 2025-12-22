@@ -240,7 +240,7 @@ const formatNotificationMessage = (notification: {
       return `${username} sent you a wave hug`;
     case 'follow':
     case 'CONNECT_VIBE':
-      return `${username} wants to connect`;
+      return notification.message || `${username} wants to connect`;
     case 'message':
       return `${username} sent you a message`;
     case 'friend_went_live':
