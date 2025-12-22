@@ -430,6 +430,25 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,0,0,0.5)',
   },
   pingsBadgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: '#FFD700', // Yellow color
+    borderRadius: 9,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.3)',
+  },
+  notificationBadgeText: { 
+    color: '#000', // Black text for contrast on yellow
+    fontSize: 10, 
+    fontWeight: 'bold' 
+  },
   boatIcon: { fontSize: 18, marginBottom: 2 },
   noticeIcon: { fontSize: 18, marginBottom: 2 },
   schoolIcon: { fontSize: 18, marginBottom: 2 },
@@ -1662,6 +1681,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showEditShore, setShowEditShore] = useState<boolean>(false);
   const [showTreasure, setShowTreasure] = useState<boolean>(false);
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
+  
+  // Auto-mark notifications as read when opening the modal
+  useEffect(() => {
+    if (showNotifications && unreadNotificationsCount > 0) {
+      markAllNotificationsAsRead();
+    }
+  }, [showNotifications, unreadNotificationsCount]);
+  
   const [treasureStats, setTreasureStats] = useState<{
     tipsTotal: number;
     withdrawable: number;
@@ -9108,8 +9135,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowNotifications(true);
                   })}
                 >
-                  <View>
+                  <View style={{ position: 'relative' }}>
                     <Text style={styles.pingsIcon}>📫</Text>
+                    {unreadNotificationsCount > 0 && (
+                      <View style={styles.notificationBadge}>
+                        <Text style={styles.notificationBadgeText}>
+                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                   <Text style={styles.topLabel}>VIBE ALERTS</Text>
                 </Pressable>
