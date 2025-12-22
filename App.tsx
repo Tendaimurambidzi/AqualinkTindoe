@@ -1634,7 +1634,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const unreadCount = notificationsData.filter(n => !n.read).length;
         setUnreadNotificationsCount(unreadCount);
 
-        // Show toast for new unread notifications
+        // Detect new notifications and show popup/sound
+        if (unreadCount > previousUnreadCount && notificationsData.length > 0) {
+          const newNotifications = notificationsData.filter(n => !n.read);
+          if (newNotifications.length > 0) {
+            const latestNewNotification = newNotifications[0];
+            const displayName = userData[latestNewNotification.fromUid]?.name || latestNewNotification.fromName || 'Someone';
+            
+            let message = '';
+            switch (latestNewNotification.type) {
+              case 'splash':
+                message = `${displayName} splashed your wave! 💧`;
+                break;
+              case 'echo':
+                message = `${displayName} echoed your wave! 📣`;
+                break;
+              case 'CONNECT_VIBE':
+                message = latestNewNotification.message;
+                break;
+              default:
+                message = `${displayName} sent you a notification`;
+            }
+            
+            showNotificationPopup(message, displayName, latestNewNotification.type);
+          }
+        }
+        
+        setPreviousUnreadCount(unreadCount);
+
+        // Show toast for new unread notifications (legacy)
         const newUnreadNotifications = notificationsData.filter(n => !n.read);
         if (newUnreadNotifications.length > 0) {
           const latestNotification = newUnreadNotifications[0];
@@ -1688,6 +1716,38 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       markAllNotificationsAsRead();
     }
   }, [showNotifications, unreadNotificationsCount]);
+  
+  // Notification popup state
+  const [notificationPopup, setNotificationPopup] = useState<{
+    visible: boolean;
+    message: string;
+    fromName: string;
+    type: string;
+  }>({ visible: false, message: '', fromName: '', type: '' });
+  
+  // Notification sound player
+  const [notificationSound, setNotificationSound] = useState<Sound | null>(null);
+  
+  // Track previous unread count to detect new notifications
+  const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
+  
+  // Initialize notification sound
+  useEffect(() => {
+    Sound.setCategory('Playback');
+    const sound = new Sound('notification.wav', Sound.MAIN_BUNDLE, (error) => {
+      if (error) {
+        console.warn('Failed to load notification sound:', error);
+        return;
+      }
+      setNotificationSound(sound);
+    });
+    
+    return () => {
+      if (notificationSound) {
+        notificationSound.release();
+      }
+    };
+  }, []);
   
   const [treasureStats, setTreasureStats] = useState<{
     tipsTotal: number;
@@ -6879,6 +6939,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch (e) {
       console.error('Mark all notifications as read error:', e);
     }
+  };
+
+  // Show notification popup and play sound
+  const showNotificationPopup = (message: string, fromName: string, type: string) => {
+    // Play notification sound
+    if (notificationSound) {
+      notificationSound.setVolume(0.8);
+      notificationSound.play((success) => {
+        if (!success) {
+          console.warn('Notification sound playback failed');
+        }
+      });
+    }
+
+    // Show popup notification
+    setNotificationPopup({
+      visible: true,
+      message,
+      fromName,
+      type
+    });
+
+    // Auto-hide popup after 3 seconds
+    setTimeout(() => {
+      setNotificationPopup({ visible: false, message: '', fromName: '', type: '' });
+    }, 3000);
   };
                     
   const checkIfInCrew = async (targetUid: string) => {
@@ -12825,6 +12911,62 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       />
                     
       {/* Octopus Hug Animation Overlay removed per user request */}
+      
+      {/* Notification Popup Overlay */}
+      {notificationPopup.visible && (
+        <Animated.View
+          style={{
+            position: 'absolute',
+            top: 50,
+            left: 20,
+            right: 20,
+            backgroundColor: 'rgba(0, 18, 45, 0.95)',
+            borderRadius: 12,
+            padding: 16,
+            borderWidth: 2,
+            borderColor: '#00C2FF',
+            shadowColor: '#00C2FF',
+            shadowOpacity: 0.8,
+            shadowRadius: 10,
+            zIndex: 1000,
+            elevation: 10,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+            <Text style={{ 
+              fontSize: 18, 
+              color: '#00C2FF', 
+              fontWeight: 'bold',
+              marginRight: 8 
+            }}>
+              🔔
+            </Text>
+            <Text style={{ 
+              fontSize: 16, 
+              color: 'white', 
+              fontWeight: 'bold' 
+            }}>
+              VIBE ALERTS
+            </Text>
+          </View>
+          <Text style={{ 
+            fontSize: 14, 
+            color: 'white', 
+            lineHeight: 20 
+          }}>
+            {notificationPopup.message}
+          </Text>
+          {notificationPopup.fromName && (
+            <Text style={{ 
+              fontSize: 12, 
+              color: 'rgba(255,255,255,0.7)', 
+              marginTop: 4 
+            }}>
+              from {notificationPopup.fromName}
+            </Text>
+          )}
+        </Animated.View>
+      )}
     </SafeAreaView>
   );
 };
