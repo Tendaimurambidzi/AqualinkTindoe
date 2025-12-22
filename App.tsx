@@ -3987,19 +3987,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const entry = waveOptionMenu.find(item => item.label === label);
       setWaveOptionsTarget(null);
                     
-      // Handle Connect/Disconnect Vibe
-      if (label === 'Connect Vibe') {
-        if (!waveOptionsTarget || !waveOptionsTarget.ownerUid || waveOptionsTarget.ownerUid === myUid) {
-          Alert.alert('Info', "You can't connect to your own SplashLine");
-          return;
-        }
-        const targetUid = waveOptionsTarget.ownerUid;
-        const targetName = waveOptionsTarget.authorName;
-        await handleJoinCrew(targetUid, targetName);
-        setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
-        return;
-      }
-                    
+      // Handle other wave options
       if (label === 'Save to device') {
         if (isSavingWave) return;
         setIsSavingWave(true);
@@ -6709,31 +6697,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
-  // New Connect Vibe / Disconnect Vibe functions with crash-resistant error handling
-  const connectVibe = async (toUserId: string) => {
-    try {
-      const connectVibeFn = functions().httpsCallable('connectVibe');
-      const result = await connectVibeFn({ toUserId });
-      return result.data;
-    } catch (error) {
-      console.error('Connect Vibe function error:', error);
-      // Don't crash - just return a safe response
-      return { connected: false, error: 'Function not available' };
-    }
-  };
-
-  const disconnectVibe = async (toUserId: string) => {
-    try {
-      const disconnectVibeFn = functions().httpsCallable('disconnectVibe');
-      const result = await disconnectVibeFn({ toUserId });
-      return result.data;
-    } catch (error) {
-      console.error('Disconnect Vibe function error:', error);
-      // Don't crash - just return a safe response
-      return { connected: true, error: 'Function not available' };
-    }
-  };
-
   // Record Video Reach function with crash-resistant error handling
   const recordVideoReach = async (postId: string) => {
     try {
@@ -6747,49 +6710,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
-  const handleToggleVibe = async (targetUid: string, targetName?: string) => {
-    try {
-      const user = auth().currentUser;
-      if (!user) {
-        Alert.alert('Sign in required', 'Please sign in to connect vibe.');
-        return;
-      }
-
-      if (user.uid === targetUid) {
-        Alert.alert('Info', "You can't connect your own vibe");
-        return;
-      }
-
-      const isCurrentlyConnected = isInUserCrew[targetUid];
-
-      if (isCurrentlyConnected) {
-        // Disconnect vibe
-        const result = await disconnectVibe(targetUid);
-        if (result.connected === false || result.error) {
-          // Function worked or safely failed - update local state
-          setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
-          notifySuccess(`Disconnected from ${targetName || 'user'}'s vibe`);
-          loadCrewCounts();
-          await loadDriftWatchers();
-        }
-      } else {
-        // Connect vibe
-        const result = await connectVibe(targetUid);
-        if (result.connected === true || result.error) {
-          // Function worked or safely failed - update local state
-          setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
-          notifySuccess(`Connected to ${targetName || 'user'}'s vibe`);
-          loadCrewCounts();
-          await loadDriftWatchers();
-        }
-      }
-    } catch (error) {
-      console.error('Toggle vibe error:', error);
-      // Show user-friendly message but don't crash
-      notifyError('Vibe connection update in progress - please try again');
-    }
-  };
-                    
   const handleBlockUser = async (targetUid: string, targetName?: string) => {
     try {
       const user = auth().currentUser;
@@ -8999,19 +8919,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       onCast={() => onShareWave(item)}
                     />
                     <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
-                      {item.ownerUid !== myUid && item.user?.displayName !== "Tendaimurambidzi" && (
-                        <Pressable
-                          onPress={() => handleToggleVibe(item.ownerUid, item.user?.displayName || item.user?.name)}
-                          style={{ marginRight: 20 }}
-                        >
-                          <Text style={{
-                            fontSize: 14,
-                            color: isInUserCrew[item.ownerUid] ? '#ff6b6b' : '#00C2FF'
-                          }}>
-                            {isInUserCrew[item.ownerUid] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
-                          </Text>
-                        </Pressable>
-                      )}
                       <Pressable
                         onPress={() => {
                           recordVideoReach(item.id).catch(error => {
@@ -11744,53 +11651,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         gap: 8,
                         flexWrap: 'wrap',
                       }}>
-                        {/* Join/Leave Crew Button */}
-                        {result.id !== myUid && (
-                        <Pressable
-                          style={[
-                            {
-                              flex: 1,
-                              minWidth: '45%',
-                              paddingVertical: 10,
-                              borderRadius: 8,
-                              alignItems: 'center',
-                              borderWidth: 1,
-                            },
-                            isInUserCrew[result.id] ? {
-                              backgroundColor: '#ff6b6b',
-                              borderColor: '#ff6b6b',
-                            } : {
-                              backgroundColor: '#00C2FF',
-                              borderColor: '#00C2FF',
-                            }
-                          ]}
-                          onPress={async () => {
-                            const currentUser = auth?.()?.currentUser;
-                            if (!currentUser) {
-                              Alert.alert('Sign in required');
-                              return;
-                            }
-                            if (currentUser.uid === result.id) {
-                              Alert.alert('Info', "You can't join your own crew");
-                              return;
-                            }
-                            if (isInUserCrew[result.id]) {
-                              await handleLeaveCrew(result.id, result.label);
-                            } else {
-                              await handleJoinCrew(result.id, result.label);
-                            }
-                          }}
-                        >
-                          <Text style={{
-                            color: 'white',
-                            fontSize: 14,
-                            fontWeight: '600',
-                          }}>
-                            {isInUserCrew[result.id] ? '🚪 Disconnect Vibe' : '⚓ Connect Vibe'}
-                          </Text>
-                        </Pressable>
-                        )}
-                    
                         {/* Send Message Button */}
                         <Pressable
                           style={{
@@ -12862,29 +12722,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           onPress={() => setWaveOptionsTarget(null)}
         >
           <View style={styles.waveOptionsMenu}>
-            {/* Join/Leave Crew option - dynamically shows based on current state */}
-            {waveOptionsTarget &&
-              waveOptionsTarget.ownerUid &&
-              waveOptionsTarget.ownerUid !== myUid && (
-                <Pressable
-                  style={styles.waveOptionsItem}
-                  onPress={() => {
-                    const targetUid = waveOptionsTarget.ownerUid!;
-                    const targetName = waveOptionsTarget.authorName;
-                    setWaveOptionsTarget(null);
-                    handleWaveOptionSelect('Connect Vibe');
-                  }}
-                  disabled={crewLoading}
-                >
-                  <Text style={styles.waveOptionsItemTitle}>
-                    {'Connect Vibe'}
-                  </Text>
-                  <Text style={styles.waveOptionsItemDescription}>
-                    {'Add this vibe master to your vibe network'}
-                  </Text>
-                </Pressable>
-              )}
-                    
             {/* Gem option - show on public vibes and my vibes for development */}
             <Pressable
               style={styles.waveOptionsItem}
@@ -14960,11 +14797,6 @@ const LiveStreamModal = ({
         { label: 'Timeout', action: 'timeout', icon: '⏱️' },
       ];
       const crewActions = user.id !== myUid ? [
-        {
-          label: (isInUserCrew && isInUserCrew[user.id]) ? 'Disconnect Vibe' : 'Connect Vibe',
-          action: (isInUserCrew && isInUserCrew[user.id]) ? 'removeFromCrew' : 'join',
-          icon: 'dY?',
-        },
         { label: 'Block', action: 'block', icon: 'dYs?' },
       ] : [
         { label: 'Block', action: 'block', icon: 'dYs?' },
