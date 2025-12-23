@@ -1686,13 +1686,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showTreasure, setShowTreasure] = useState<boolean>(false);
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   
-  // Auto-mark notifications as read when opening the modal
-  useEffect(() => {
-    if (showNotifications && unreadNotificationsCount > 0) {
-      markAllNotificationsAsRead();
-    }
-  }, [showNotifications, unreadNotificationsCount]);
-  
   // Notification popup state
   const [notificationPopup, setNotificationPopup] = useState<{
     visible: boolean;
