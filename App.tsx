@@ -8790,10 +8790,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                           >
                             <ProfileAvatarWithCrew
+                              key={item.ownerUid}
                               userId={item.ownerUid}
                               size={50}
                               showCrewCount={true}
-                              showFleetCount={true}
+                              showFleetCount={false}
                             />
                           </TouchableOpacity>
                         </View>

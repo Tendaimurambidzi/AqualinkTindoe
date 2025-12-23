@@ -859,7 +859,10 @@ exports.joinCrew = onCall({ region: 'us-central1' }, async (req) => {
   
   // Verify the document was added
   const followingDoc = await dbMod.collection('users').doc(uid).collection('following').doc(targetUid).get();
-  console.log(`[DEBUG] joinCrew: Following document exists: ${followingDoc.exists}`);
+  console.log(`[DEBUG] joinCrew: Following document exists: ${followingDoc.exists}, data:`, followingDoc.data());
+  if (!followingDoc.exists) {
+    console.error(`[DEBUG] joinCrew: ERROR - Following document was not created for ${uid} -> ${targetUid}`);
+  }
 
   // Send ping notification to target user
   await addPingModular(targetUid, {

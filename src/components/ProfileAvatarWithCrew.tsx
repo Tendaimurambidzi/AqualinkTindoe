@@ -26,13 +26,23 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   const [crewCount, setCrewCount] = useState(0);
   const [fleetCount, setFleetCount] = useState(0);
 
+  // Debug logging for state changes
+  useEffect(() => {
+    console.log(`[DEBUG] ProfileAvatarWithCrew fleetCount changed to ${fleetCount} for user ${userId}`);
+  }, [fleetCount, userId]);
+
   useEffect(() => {
     if (!userId) {
       console.log(`[DEBUG] ProfileAvatarWithCrew: No userId provided`);
       return;
     }
 
-    console.log(`[DEBUG] ProfileAvatarWithCrew: Setting up listeners for userId: ${userId}, showFleetCount: ${showFleetCount}`);
+    console.log(`[DEBUG] ProfileAvatarWithCrew: Setting up listeners for userId: ${userId}, showFleetCount: ${showFleetCount}, current fleetCount: ${fleetCount}`);
+
+    // Reset counts when userId changes
+    setCrewCount(0);
+    setFleetCount(0);
+    setLoading(true);
 
     // Set up real-time listener for user data changes
     const unsubscribeUser = firestore()
@@ -76,9 +86,10 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       .collection('following')
       .onSnapshot((fleetSnapshot) => {
         const newCount = fleetSnapshot.size;
-        console.log(`[DEBUG] Fleet count (following) update for user ${userId}: ${fleetCount} -> ${newCount} (docs: ${fleetSnapshot.docs.length})`);
-        console.log(`[DEBUG] Fleet docs for ${userId}:`, fleetSnapshot.docs.map(doc => ({ id: doc.id, data: doc.data() })));
+        console.log(`[DEBUG] ProfileAvatarWithCrew Fleet listener fired for user ${userId}: current fleetCount=${fleetCount}, newCount=${newCount}, docs:`, fleetSnapshot.docs.map(doc => ({ id: doc.id, exists: doc.exists })));
+        console.log(`[DEBUG] Setting fleetCount to ${newCount} for user ${userId}`);
         setFleetCount(newCount);
+        console.log(`[DEBUG] fleetCount has been set to ${newCount} for user ${userId}`);
       }, (error) => {
         console.error(`[DEBUG] Error listening to fleet count for ${userId}:`, error);
       });
@@ -198,7 +209,7 @@ const styles = StyleSheet.create({
   },
   crewText: {
     fontSize: 12,
-    color: '#00C2FF',
+    color: '#DC143C',
     fontWeight: 'bold',
   },
   fleetText: {
