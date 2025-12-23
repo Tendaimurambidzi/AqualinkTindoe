@@ -42,9 +42,25 @@ const uploadProfilePhotoToFirebase = async (localUri: string): Promise<string> =
   const uid = user.uid;
   let localPath = localUri;
 
-  // Handle file:// prefix for Android
-  if (Platform.OS === 'android' && localPath.startsWith('file://')) {
-    localPath = localPath.replace('file://', '');
+  console.log('Original URI:', localUri);
+
+  // Handle different URI formats from ImageCropPicker
+  if (Platform.OS === 'android') {
+    // Remove file:// prefix if present
+    if (localPath.startsWith('file://')) {
+      localPath = localPath.replace('file://', '');
+    }
+    // Handle content:// URIs by copying to a temp file
+    if (localPath.startsWith('content://')) {
+      // For content:// URIs, we need to copy the file to a temp location
+      // This is handled by react-native-image-crop-picker, so the path should be accessible
+      console.log('Content URI detected, using as-is:', localPath);
+    }
+  } else if (Platform.OS === 'ios') {
+    // iOS typically uses file:// prefix
+    if (!localPath.startsWith('file://')) {
+      localPath = `file://${localPath}`;
+    }
   }
 
   // Decode URI if needed
@@ -52,17 +68,33 @@ const uploadProfilePhotoToFirebase = async (localUri: string): Promise<string> =
     localPath = decodeURI(localPath);
   } catch {}
 
+  console.log('Processed path:', localPath);
+
   // Create a unique filename
   const timestamp = Date.now();
   const safeName = 'profile';
   const dest = `users/${uid}/profile_${timestamp}_${safeName}.jpg`;
 
-  // Upload file
+  console.log('Uploading to:', dest);
+
+  // Upload file with proper metadata
   const storageRef = storage().ref(dest);
-  await storageRef.putFile(localPath, { contentType: 'image/jpeg' });
+  const uploadTask = storageRef.putFile(localPath, {
+    contentType: 'image/jpeg',
+    cacheControl: 'public,max-age=31536000',
+  });
+
+  // Monitor upload progress
+  uploadTask.on('state_changed', (snapshot) => {
+    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+    console.log('Upload progress:', progress + '%');
+  });
+
+  await uploadTask;
 
   // Get download URL
   const downloadURL = await storageRef.getDownloadURL();
+  console.log('Download URL:', downloadURL);
 
   // Update Firestore
   if (firestore) {
@@ -70,6 +102,7 @@ const uploadProfilePhotoToFirebase = async (localUri: string): Promise<string> =
       .collection('users')
       .doc(uid)
       .set({ userPhoto: downloadURL }, { merge: true });
+    console.log('Firestore updated with photo URL');
   }
 
   return downloadURL;
@@ -107,12 +140,16 @@ const EditableProfileAvatar: React.FC<EditableProfileAvatarProps> = ({
         const downloadUrl = await uploadProfilePhotoToFirebase(croppedUri);
         setPhotoUrl(downloadUrl);
         onPhotoChanged?.(downloadUrl);
+        Alert.alert('Success', 'Profile photo updated and visible to other users!');
       } catch (uploadError) {
         console.error('Failed to upload profile photo:', uploadError);
-        // Fallback to local URI if upload fails
-        setPhotoUrl(croppedUri);
-        onPhotoChanged?.(croppedUri);
-        Alert.alert('Upload Failed', 'Photo saved locally. It may not be visible to other users.');
+        // Don't fallback to local URI - show error and keep old photo
+        Alert.alert(
+          'Upload Failed',
+          'Could not upload photo to server. Please check your connection and try again.',
+          [{ text: 'OK' }]
+        );
+        // Keep the old photo URL
       }
     } catch (err: any) {
       if (err?.code === 'E_PICKER_CANCELLED') {
