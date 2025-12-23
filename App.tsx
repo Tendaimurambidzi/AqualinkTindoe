@@ -1686,6 +1686,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showTreasure, setShowTreasure] = useState<boolean>(false);
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   
+  // Notification action buttons state
+  const [notificationWithActions, setNotificationWithActions] = useState<string | null>(null);
+  const [echoReplyText, setEchoReplyText] = useState<string>('');
+  const [showEchoReplyInput, setShowEchoReplyInput] = useState<boolean>(false);
+  
   // Notification popup state
   const [notificationPopup, setNotificationPopup] = useState<{
     visible: boolean;
@@ -9986,12 +9991,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         if (!notification.read) {
                           markNotificationAsRead(notification.id);
                         }
-                        // Show the actual message content in an alert
-                        Alert.alert(
-                          'Message Details',
-                          notification.message || 'No additional details available',
-                          [{ text: 'OK' }]
-                        );
+                        
+                        // For echo notifications, show action buttons instead of alert
+                        if (notification.type === 'echo') {
+                          if (notificationWithActions === notification.id) {
+                            // Clicking the same notification again closes actions
+                            setNotificationWithActions(null);
+                            setEchoReplyText('');
+                            setShowEchoReplyInput(false);
+                          } else {
+                            // Show actions for this notification
+                            setNotificationWithActions(notification.id);
+                            setEchoReplyText('');
+                            setShowEchoReplyInput(false);
+                          }
+                        } else {
+                          // Close any open action buttons
+                          setNotificationWithActions(null);
+                          setEchoReplyText('');
+                          setShowEchoReplyInput(false);
+                          
+                          // Show the actual message content in an alert for other types
+                          Alert.alert(
+                            'Message Details',
+                            notification.message || 'No additional details available',
+                            [{ text: 'OK' }]
+                          );
+                        }
                       }}
                     >
                       <Text style={{
@@ -10010,6 +10036,153 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           formatDefiniteTime(notification.createdAt.toDate()) : 
                           'Unknown time'}
                       </Text>
+                      
+                      {/* Action buttons for echo notifications */}
+                      {notificationWithActions === notification.id && notification.type === 'echo' && (
+                        <View style={{ marginTop: 12 }}>
+                          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                            <Pressable
+                              style={{
+                                backgroundColor: 'rgba(255,255,255,0.1)',
+                                borderRadius: 6,
+                                paddingHorizontal: 12,
+                                paddingVertical: 8,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 6,
+                                flex: 1,
+                              }}
+                              onPress={async () => {
+                                try {
+                                  // Send hug back to the wave that was echoed
+                                  if (notification.waveId) {
+                                    await ensureSplash(notification.waveId);
+                                    Alert.alert('Success', 'Hug sent! 🫂');
+                                  } else {
+                                    Alert.alert('Error', 'Could not find the wave to hug');
+                                  }
+                                } catch (error) {
+                                  console.error('Error sending hug:', error);
+                                  Alert.alert('Error', 'Failed to send hug');
+                                }
+                                setNotificationWithActions(null);
+                              }}
+                            >
+                              <Text style={{ fontSize: 16 }}>🫂</Text>
+                              <Text style={{ color: 'white', fontSize: 14 }}>Hug</Text>
+                            </Pressable>
+                            
+                            <Pressable
+                              style={{
+                                backgroundColor: 'rgba(255,255,255,0.1)',
+                                borderRadius: 6,
+                                paddingHorizontal: 12,
+                                paddingVertical: 8,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 6,
+                                flex: 1,
+                              }}
+                              onPress={() => {
+                                setShowEchoReplyInput(!showEchoReplyInput);
+                              }}
+                            >
+                              <Text style={{ fontSize: 16 }}>📣</Text>
+                              <Text style={{ color: 'white', fontSize: 14 }}>Echo back</Text>
+                            </Pressable>
+                          </View>
+                          
+                          <Pressable
+                            style={{
+                              backgroundColor: 'rgba(255,255,255,0.1)',
+                              borderRadius: 6,
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              alignSelf: 'flex-start',
+                            }}
+                            onPress={() => {
+                              setNotificationWithActions(null);
+                              setEchoReplyText('');
+                              setShowEchoReplyInput(false);
+                            }}
+                          >
+                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Close</Text>
+                          </Pressable>
+                        </View>
+                      )}
+                      
+                      {/* Echo reply input */}
+                      {notificationWithActions === notification.id && showEchoReplyInput && (
+                        <View style={{ marginTop: 8 }}>
+                          <TextInput
+                            style={{
+                              backgroundColor: 'rgba(255,255,255,0.1)',
+                              borderRadius: 6,
+                              padding: 8,
+                              color: 'white',
+                              fontSize: 14,
+                              marginBottom: 8,
+                            }}
+                            placeholder="Type your echo reply..."
+                            placeholderTextColor="rgba(255,255,255,0.5)"
+                            value={echoReplyText}
+                            onChangeText={setEchoReplyText}
+                            multiline
+                            maxLength={280}
+                          />
+                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                            <Pressable
+                              style={{
+                                backgroundColor: '#007AFF',
+                                borderRadius: 6,
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                                flex: 1,
+                              }}
+                              onPress={async () => {
+                                if (!echoReplyText.trim()) {
+                                  Alert.alert('Error', 'Please enter a reply');
+                                  return;
+                                }
+                                
+                                try {
+                                  // Send echo reply to the wave that was echoed
+                                  if (notification.waveId) {
+                                    await sendEcho(notification.waveId, echoReplyText);
+                                    Alert.alert('Success', 'Echo sent! 📣');
+                                  } else {
+                                    Alert.alert('Error', 'Could not find the wave to echo');
+                                  }
+                                } catch (error) {
+                                  console.error('Error sending echo:', error);
+                                  Alert.alert('Error', 'Failed to send echo');
+                                }
+                                
+                                setNotificationWithActions(null);
+                                setEchoReplyText('');
+                                setShowEchoReplyInput(false);
+                              }}
+                            >
+                              <Text style={{ color: 'white', fontSize: 14, textAlign: 'center' }}>Send Echo</Text>
+                            </Pressable>
+                            
+                            <Pressable
+                              style={{
+                                backgroundColor: 'rgba(255,255,255,0.2)',
+                                borderRadius: 6,
+                                paddingHorizontal: 12,
+                                paddingVertical: 6,
+                              }}
+                              onPress={() => {
+                                setShowEchoReplyInput(false);
+                                setEchoReplyText('');
+                              }}
+                            >
+                              <Text style={{ color: 'white', fontSize: 14 }}>Cancel</Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
                     </Pressable>
                   ))}
                 </ScrollView>
