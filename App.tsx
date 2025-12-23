@@ -252,24 +252,25 @@ const formatNotificationMessage = (notification: {
     username = 'Unknown User';
   }
   
-  // Format based on notification type (no username prefix since avatar represents the user)
+  // Format based on notification type with username included and no icons
   switch (notification.type) {
     case 'echo':
-      return `sent an echo to your vibe!`;
+      return `${username} sent an echo to your vibe`;
     case 'splash':
+      return `${username} splashed your vibe`;
     case 'octopus_hug':
-      return `hugged your vibe!`;
+      return `${username} hugged your vibe`;
     case 'follow':
     case 'CONNECT_VIBE':
-      return `connected! Wanna say hi?`;
+      return `${username} connected! Wanna say hi?`;
     case 'message':
-      return `sent you a message`;
+      return `${username} sent you a message`;
     case 'friend_went_live':
-      return `went live`;
+      return `${username} went live`;
     case 'joined_tide':
-      return `joined your tide`;
+      return `${username} joined your tide`;
     case 'left_crew':
-      return `left your crew`;
+      return `${username} left your crew`;
     case 'system_message':
     default:
       return notification.message;
@@ -1641,11 +1642,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             let message = '';
             switch (latestNewNotification.type) {
               case 'splash':
-                message = `splashed your vibe! 💧`;
-                break;
               case 'echo':
-                message = `sent an echo to your vibe! 📣`;
-                break;
               case 'CONNECT_VIBE':
                 message = formatNotificationMessage(latestNewNotification, userData || {});
                 break;
@@ -1660,13 +1657,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         
         setPreviousUnreadCount(unreadCount);
 
-        // Show toast for new unread notifications (legacy)
+        // Show toast for new unread notifications
         const newUnreadNotifications = notificationsData.filter(n => !n.read);
         if (newUnreadNotifications.length > 0) {
           const latestNotification = newUnreadNotifications[0];
-          if (latestNotification.type === 'CONNECT_VIBE') {
-            const avatar = getUserAvatar(latestNotification.fromUid, userData);
-            notifySuccess(latestNotification.message, avatar);
+          // Show toast for social interaction notifications
+          if (['CONNECT_VIBE', 'echo', 'splash', 'octopus_hug', 'follow'].includes(latestNotification.type)) {
+            const avatar = userData ? getUserAvatar(latestNotification.fromUid, userData) : null;
+            const formattedMessage = formatNotificationMessage(latestNotification, userData || {});
+            notifySuccess(formattedMessage, avatar);
           }
         }
       });
@@ -10015,7 +10014,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             ) : (
                               // Image-based avatar
                               <Image
-                                source={{ uri: avatar }}
+                                source={avatar}
                                 style={{
                                   width: 32,
                                   height: 32,

@@ -11,6 +11,7 @@ type Props = {
 
 const NotificationToast: React.FC<Props> = ({ visible, message, kind, logo }) => {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -22,10 +23,10 @@ const NotificationToast: React.FC<Props> = ({ visible, message, kind, logo }) =>
     }).start();
   }, [visible, anim]);
 
-  // Center vertically in the video space
+  // Position at top like Android notification bar/message inbox
   const translateY = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [-150, height / 2 - 40], // 40 is half toast height approx
+    outputRange: [-100, insets.top + 10], // Position below status bar
   });
 
   const opacity = anim.interpolate({
@@ -43,16 +44,18 @@ const NotificationToast: React.FC<Props> = ({ visible, message, kind, logo }) =>
     <Animated.View style={containerStyle} pointerEvents="box-none">
       {logo && (
         typeof logo === 'object' && 'text' in logo ? (
-          // Text-based avatar (initials)
-          <View style={[styles.logo, { backgroundColor: logo.backgroundColor, justifyContent: 'center', alignItems: 'center' }]}>
+          // Text-based avatar (initials) - larger for inbox style
+          <View style={[styles.avatar, { backgroundColor: logo.backgroundColor, justifyContent: 'center', alignItems: 'center' }]}>
             <Text style={[styles.initialsText, { color: logo.color }]}>{logo.text}</Text>
           </View>
         ) : (
-          // Image-based avatar
-          <Image source={logo as ImageSourcePropType} style={styles.logo} />
+          // Image-based avatar - larger for inbox style
+          <Image source={logo as ImageSourcePropType} style={styles.avatar} />
         )
       )}
-      <Text style={styles.message}>{message}</Text>
+      <View style={styles.messageContainer}>
+        <Text style={styles.message} numberOfLines={2}>{message}</Text>
+      </View>
     </Animated.View>
   );
 };
@@ -66,44 +69,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 14,
+    borderRadius: 8, // Less rounded for inbox style
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 4.65,
-    elevation: 8,
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
     zIndex: 9999,
   },
   positive: {
-    backgroundColor: 'rgba(10, 20, 40, 0.9)',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)', // Light background like Gmail
     borderWidth: 1,
-    borderColor: 'rgba(0, 194, 255, 0.5)',
+    borderColor: 'rgba(0, 0, 0, 0.1)',
   },
   negative: {
-    backgroundColor: 'rgba(40, 10, 10, 0.9)',
+    backgroundColor: 'rgba(255, 248, 248, 0.95)', // Light red tint for errors
     borderWidth: 1,
-    borderColor: 'rgba(255, 80, 80, 0.5)',
+    borderColor: 'rgba(255, 80, 80, 0.3)',
   },
-  logo: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+  avatar: {
+    width: 40, // Larger avatar like inbox style
+    height: 40,
+    borderRadius: 20,
     marginRight: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderWidth: 2,
+    borderColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  messageContainer: {
+    flex: 1,
+    justifyContent: 'center',
   },
   initialsText: {
-    fontSize: 10,
+    fontSize: 14, // Larger text for bigger avatar
     fontWeight: 'bold',
   },
   message: {
-    color: 'white',
-    fontWeight: '700',
+    color: '#333', // Dark text on light background
+    fontWeight: '500', // Medium weight like inbox items
     fontSize: 14,
-    flex: 1, // Allow text to wrap
+    lineHeight: 18,
   },
 });
 
