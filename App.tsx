@@ -4281,6 +4281,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           waveData.uid ||
           vibesFeed.find(w => w.id === waveId)?.ownerUid ||
           null;
+        
+        console.log('[DELETE DEBUG] waveId:', waveId);
+        console.log('[DELETE DEBUG] user.uid:', user.uid);
+        console.log('[DELETE DEBUG] waveData.ownerUid:', waveData.ownerUid);
+        console.log('[DELETE DEBUG] waveData.authorId:', waveData.authorId);
+        console.log('[DELETE DEBUG] waveOwner:', waveOwner);
+        console.log('[DELETE DEBUG] waveOwner === user.uid:', waveOwner === user.uid);
+        
         if (waveOwner && waveOwner !== user.uid) {
           Alert.alert('Delete failed', 'You can only delete your own wave.');
           return;
