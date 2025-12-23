@@ -6643,7 +6643,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     {showPublicFeed ? '🌐' : '🌊'}
                   </Text>
                   <Text style={styles.topLabel}>
-                    {showPublicFeed ? 'PUBLIC WAVES' : 'MY WAVES'}
+                    {showPublicFeed ? 'PUBLIC VIBES' : 'MY VIBES'}
                   </Text>
                 </Pressable>
                 {/* MAKE WAVES */}
@@ -6652,7 +6652,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowMakeWaves(true))}
                 >
                   <Text style={styles.dolphinIcon}>🐬</Text>
-                  <Text style={styles.topLabel}>MAKE WAVES</Text>
+                  <Text style={styles.topLabel}>MAKE VIBES</Text>
                 </Pressable>
                 {/* PINGS */}
                 <Pressable
@@ -7398,7 +7398,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       backgroundColor: '#00C2FF',
                     }}
                   />
-                  <Text style={styles.logbookActionText}>My Waves</Text>
+                  <Text style={styles.logbookActionText}>My Vibes</Text>
                 </View>
               </Pressable>
               {/* My Treasure entry */}
@@ -7549,11 +7549,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>My Waves</Text>
+              <Text style={styles.logbookTitle}>My Vibes</Text>
               <ScrollView>
                 {wavesFeed.length === 0 ? (
                   <Text style={styles.hint}>
-                    No waves yet. Post from Make Waves.
+                    No vibes yet. Post from Make Vibes.
                   </Text>
                 ) : (
                   wavesFeed.map((w, idx) => (
@@ -7753,7 +7753,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>Make Waves</Text>
+              <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
                 <Pressable style={styles.logbookAction} onPress={openCamera}>
                   <Text style={styles.logbookActionText}>📷 Open Camera</Text>

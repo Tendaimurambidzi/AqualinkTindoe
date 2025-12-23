@@ -235,13 +235,13 @@ const formatNotificationMessage = (notification: {
   // Format based on notification type
   switch (notification.type) {
     case 'echo':
-      return `${username} echoed your vibe`;
+      return `${username} sent an echo to your vibe!`;
     case 'splash':
     case 'octopus_hug':
-      return `${username} sent you a wave hug`;
+      return `${username} hugged your vibe!`;
     case 'follow':
     case 'CONNECT_VIBE':
-      return notification.message || `${username} wants to connect`;
+      return `${username} connected! Wanna say hi?`;
     case 'message':
       return `${username} sent you a message`;
     case 'friend_went_live':
@@ -8779,7 +8779,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         { margin: 10, borderRadius: 10, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
                       ]}
                     >
-                    <View style={{ backgroundColor: 'yellow' }}>
+                    <View style={{ backgroundColor: '#FFFF00' }}>
                     {/* Post Header */}
                     <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, paddingHorizontal: 10 }}>
                       {/* Left side - Connect Button + Profile Avatar */}  

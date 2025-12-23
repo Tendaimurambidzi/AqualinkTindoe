@@ -26,7 +26,7 @@ const DEPTH_LEVELS: DepthLevelInfo[] = [
     minSplashes: 0,
     maxSplashes: 99,
     emoji: '🏖️',
-    color: '#87CEEB',
+    color: '#FFFF00',
     benefits: ['Basic filters', 'Post SplashLines', 'Connect SplashLines'],
   },
   {
