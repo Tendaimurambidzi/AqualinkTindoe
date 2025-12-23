@@ -182,7 +182,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           onPress={handleHug}
           style={styles.iconTouchable}
           android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          hitSlop={{top: 60, left: 60, bottom: 60, right: 60}}
         >
           <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
             🫂
