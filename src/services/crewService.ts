@@ -2,6 +2,7 @@
 // Service for crew (follow/unfollow) operations using ocean-based terms
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import functions from '@react-native-firebase/functions';
 
 export type CrewMember = {
   uid: string;
@@ -18,15 +19,9 @@ export async function joinCrew(targetUid: string): Promise<{ success: boolean }>
   if (!user) throw new Error('Must be signed in to join a crew.');
   if (user.uid === targetUid) throw new Error('Cannot join your own crew.');
 
-  let functionsMod: any = null;
-  try {
-    functionsMod = require('@react-native-firebase/functions').default;
-  } catch {}
-  if (!functionsMod) throw new Error('Firebase Functions not available');
-
   console.log(`[DEBUG] crewService.joinCrew: Calling Firebase function for ${user.uid} -> ${targetUid}`);
   
-  const joinCrewFn = functionsMod().httpsCallable('joinCrew');
+  const joinCrewFn = functions().httpsCallable('joinCrew');
   const result = await joinCrewFn({ targetUid });
   
   console.log(`[DEBUG] crewService.joinCrew: Firebase function returned:`, result?.data);

@@ -214,6 +214,26 @@ const fetchUserUsername = async (userId: string): Promise<string> => {
   return 'Unknown User';
 };
 
+// Helper function to get user avatar (profile picture or initials)
+const getUserAvatar = (userId: string | undefined, userData: Record<string, { name: string; avatar: string; bio: string }>) => {
+  if (!userId) return null;
+  
+  const userInfo = userData[userId];
+  if (userInfo?.avatar) {
+    return { uri: userInfo.avatar };
+  }
+  
+  // Generate initials from username
+  const username = userInfo?.name || 'Unknown User';
+  const initials = username.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  
+  return {
+    text: initials,
+    backgroundColor: '#87CEEB', // Sky blue background for initials
+    color: '#000080', // Navy blue text
+  };
+};
+
 // Helper function to format notification messages with username and action only (no timestamp)
 const formatNotificationMessage = (notification: {
   type: string;
@@ -221,10 +241,10 @@ const formatNotificationMessage = (notification: {
   fromUid?: string;
   fromName?: string;
   createdAt: any;
-}, userData: Record<string, { name: string; avatar: string; bio: string }>) => {
+}, userData?: Record<string, { name: string; avatar: string; bio: string }>) => {
   // Compute username dynamically using the same logic as the feed
   let username = notification.fromName;
-  if (!username && notification.fromUid) {
+  if (!username && notification.fromUid && userData) {
     const userInfo = userData[notification.fromUid];
     username = userInfo?.name || userInfo?.username;
   }
@@ -232,27 +252,27 @@ const formatNotificationMessage = (notification: {
     username = 'Unknown User';
   }
   
-  // Format based on notification type
+  // Format based on notification type (no username prefix since avatar represents the user)
   switch (notification.type) {
     case 'echo':
-      return `${username} sent an echo to your vibe!`;
+      return `sent an echo to your vibe!`;
     case 'splash':
     case 'octopus_hug':
-      return `${username} hugged your vibe!`;
+      return `hugged your vibe!`;
     case 'follow':
     case 'CONNECT_VIBE':
-      return `${username} connected! Wanna say hi?`;
+      return `connected! Wanna say hi?`;
     case 'message':
-      return `${username} sent you a message`;
+      return `sent you a message`;
     case 'friend_went_live':
-      return `${username} went live`;
+      return `went live`;
     case 'joined_tide':
-      return `${username} joined your tide`;
+      return `joined your tide`;
     case 'left_crew':
-      return `${username} left your crew`;
+      return `left your crew`;
     case 'system_message':
     default:
-      return `${username}: ${notification.message}`;
+      return notification.message;
   }
 };
 
@@ -1621,19 +1641,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             let message = '';
             switch (latestNewNotification.type) {
               case 'splash':
-                message = `${displayName} splashed your wave! 💧`;
+                message = `splashed your vibe! 💧`;
                 break;
               case 'echo':
-                message = `${displayName} echoed your wave! 📣`;
+                message = `sent an echo to your vibe! 📣`;
                 break;
               case 'CONNECT_VIBE':
-                message = latestNewNotification.message;
+                message = formatNotificationMessage(latestNewNotification, userData || {});
                 break;
               default:
-                message = `${displayName} sent you a notification`;
+                message = `sent you a notification`;
             }
             
-            showNotificationPopup(message, displayName, latestNewNotification.type);
+            const avatar = userData ? getUserAvatar(latestNewNotification.fromUid, userData) : null;
+            showNotificationPopup(message, displayName, latestNewNotification.type, avatar);
           }
         }
         
@@ -1644,7 +1665,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         if (newUnreadNotifications.length > 0) {
           const latestNotification = newUnreadNotifications[0];
           if (latestNotification.type === 'CONNECT_VIBE') {
-            notifySuccess(latestNotification.message);
+            const avatar = getUserAvatar(latestNotification.fromUid, userData);
+            notifySuccess(latestNotification.message, avatar);
           }
         }
       });
@@ -1697,7 +1719,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     message: string;
     fromName: string;
     type: string;
-  }>({ visible: false, message: '', fromName: '', type: '' });
+    avatar: any;
+  }>({ visible: false, message: '', fromName: '', type: '', avatar: null });
   
   // Notification sound player
   const [notificationSound, setNotificationSound] = useState<Sound | null>(null);
@@ -2191,6 +2214,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     'positive',
   );
   const [toastMessage, setToastMessage] = useState('');
+  const [toastAvatar, setToastAvatar] = useState<any>(null);
   const toastTimerRef = useRef<any>(null);
 
   // Notifications state
@@ -2260,7 +2284,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   } | null>(null);
                     
   const showToast = useCallback(
-    (kind: 'positive' | 'negative', rawMsg: string, durationMs = 2000) => {
+    (kind: 'positive' | 'negative', rawMsg: string, durationMs = 2000, avatar: any = null) => {
       // Compose message endings based on kind
       const msg =
         kind === 'positive'
@@ -2276,6 +2300,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
       setToastKind(kind);
       setToastMessage(msg);
+      setToastAvatar(avatar);
       setToastVisible(true);
       // Positive: allow animation to play, linger slightly longer
       const dwell = kind === 'positive' ? durationMs : 1600;
@@ -2289,11 +2314,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
                     
   const notifySuccess = useCallback(
-    (msg: string) => showToast('positive', msg),
+    (msg: string, avatar: any = null) => showToast('positive', msg, 2000, avatar),
     [showToast],
   );
   const notifyError = useCallback(
-    (msg: string) => showToast('negative', msg),
+    (msg: string, avatar: any = null) => showToast('negative', msg, 2000, avatar),
     [showToast],
   );
                     
@@ -3881,11 +3906,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setWaveOptionsTarget(wave);
   }, []);
   const functionsClient = useMemo(() => {
-    try {
-      return require('@react-native-firebase/functions').default;
-    } catch {
-      return null;
-    }
+    return functions;
   }, []);
                     
   // Combine all feeds (my vibes + public vibes + post feed) for unified display
@@ -4577,15 +4598,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   useEffect(() => {
     let firestoreMod: any = null;
     let storageMod: any = null;
-    let functionsMod: any = null;
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
     } catch {}
     try {
       storageMod = require('@react-native-firebase/storage').default;
-    } catch {}
-    try {
-      functionsMod = require('@react-native-firebase/functions').default;
     } catch {}
     if (!firestoreMod) return;
                     
@@ -5421,26 +5438,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const onSendMessage = async () => {
     const text = messageText.trim();
     if (!text || !messageRecipient) return;
-    let firestoreMod: any;
-    let authMod: any;
-    let functionsMod: any;
-    try {
-      firestoreMod = require('@react-native-firebase/firestore').default;
-    } catch {}
-    try {
-      authMod = require('@react-native-firebase/auth').default;
-    } catch {}
-    try {
-      functionsMod = require('@react-native-firebase/functions').default;
-    } catch {}
-    const user = authMod?.().currentUser;
-    if (!firestoreMod || !user) {
+    const user = auth().currentUser;
+    if (!user) {
       Alert.alert('Not signed in', 'You must be signed in to send messages.');
       return;
     }
     try {
       // This collection is for the recipient's inbox view
-      await firestoreMod()
+      await firestore()
         .collection(`users/${messageRecipient.uid}/messages`)
         .add({
           text,
@@ -5448,10 +5453,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromName: user.displayName || 'Anonymous',
           route: 'Pings',
           type: 'message',
-          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          createdAt: firestore.FieldValue.serverTimestamp(),
         });
       // This collection triggers the push notification via the onMentionCreate cloud function
-      await firestoreMod()
+      await firestore()
         .collection(`users/${messageRecipient.uid}/mentions`)
         .add({
           text,
@@ -5459,28 +5464,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromName: user.displayName || 'Anonymous',
           fromPhoto: user.photoURL || null,
           route: 'Pings',
-          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          createdAt: firestore.FieldValue.serverTimestamp(),
           type: 'message', // To distinguish from other mention types if needed
         });
 
       // Send notification
-      if (functionsMod) {
-        try {
-          // Fetch the actual username from the user's profile
-          const fromUsername = await fetchUserUsername(user.uid);
-          
-          const addPingFn = functionsMod().httpsCallable('addPing');
-          await addPingFn({
-            recipientUid: messageRecipient.uid,
-            type: 'message',
-            text: text,
-            fromUid: user.uid,
-            fromName: fromUsername,
-            fromPhoto: user.photoURL || null,
-          });
-        } catch (error) {
-          console.error('Error sending message notification:', error);
-        }
+      try {
+        // Fetch the actual username from the user's profile
+        const fromUsername = await fetchUserUsername(user.uid);
+        
+        const addPingFn = functions().httpsCallable('addPing');
+        await addPingFn({
+          recipientUid: messageRecipient.uid,
+          type: 'message',
+          text: text,
+          fromUid: user.uid,
+          fromName: fromUsername,
+          fromPhoto: user.photoURL || null,
+        });
+      } catch (error) {
+        console.error('Error sending message notification:', error);
       }
                     
       setShowSendMessage(false);
@@ -5738,14 +5741,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
   const sendEcho = async (waveId: string, text: string, replyToEchoId?: string) => {
-    // Get firestore instance
-    let firestoreMod: any = null;
-    try {
-      firestoreMod = require('@react-native-firebase/firestore').default;
-    } catch {}
-    if (!firestoreMod) throw new Error('Firebase Firestore not available');
-    
-    const uid = firestoreMod().app.auth().currentUser?.uid; // or however you get uid
+    const uid = auth().currentUser?.uid;
     if (!uid) throw new Error('Not signed in');
                     
     const trimmed = text.trim();
@@ -5755,7 +5751,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let fromName = null;
     let fromPhoto = null;
     try {
-      const userDoc = await firestoreMod().collection('users').doc(uid).get();
+      const userDoc = await firestore().collection('users').doc(uid).get();
       if (userDoc.exists) {
         const userData = userDoc.data();
         fromName = userData?.username || userData?.displayName || userData?.name || null;
@@ -5765,14 +5761,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Continue without profile data
     }
                     
-    // Use Firebase callable function instead of direct Firestore
-    let functionsMod: any = null;
-    try {
-      functionsMod = require('@react-native-firebase/functions').default;
-    } catch {}
-    if (!functionsMod) throw new Error('Firebase Functions not available');
-                    
-    const createEchoFn = functionsMod().httpsCallable('createEcho', { region: 'us-central1' });
+    const createEchoFn = functions().httpsCallable('createEcho', { region: 'us-central1' });
     await createEchoFn({
       waveId,
       text: trimmed,
@@ -5861,25 +5850,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const currentUserUid = auth?.()?.currentUser?.uid;
       if (currentWave.ownerUid && currentUserUid && String(currentWave.ownerUid) !== String(currentUserUid)) {
         try {
-          let functionsMod: any = null;
-          try {
-            functionsMod = require('@react-native-firebase/functions').default;
-          } catch {}
-          if (functionsMod) {
-            // Fetch the actual username from the user's profile
-            const fromUsername = await fetchUserUsername(currentUserUid);
-            
-            const addPingFn = functionsMod().httpsCallable('addPing');
-            await addPingFn({
-              recipientUid: currentWave.ownerUid,
-              type: 'echo',
-              waveId: currentWave.id,
-              text: `${fromUsername} echoed your vibe!`,
-              fromUid: currentUserUid,
-              fromName: fromUsername,
-              fromPhoto: profilePhoto || null,
-            });
-          }
+          // Fetch the actual username from the user's profile
+          const fromUsername = await fetchUserUsername(currentUserUid);
+          
+          const addPingFn = functions().httpsCallable('addPing');
+          await addPingFn({
+            recipientUid: currentWave.ownerUid,
+            type: 'echo',
+            waveId: currentWave.id,
+            text: `${fromUsername} echoed your vibe!`,
+            fromUid: currentUserUid,
+            fromName: fromUsername,
+            fromPhoto: profilePhoto || null,
+          });
         } catch (error) {
           console.error('Error sending echo notification:', error);
         }
@@ -5929,13 +5912,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
                     
     try {
-      let functionsMod: any = null;
-      try {
-        functionsMod = require('@react-native-firebase/functions').default;
-      } catch {}
-      if (!functionsMod) throw new Error('Firebase Functions not available');
-                    
-      const updateEchoFn = functionsMod().httpsCallable('updateEcho');
+      const updateEchoFn = functions().httpsCallable('updateEcho');
       await updateEchoFn({
         waveId: currentWave.id,
         echoId,
@@ -5948,31 +5925,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
   const onDeleteMyEcho = async () => {
     if (!currentWave || !myEcho) return;
+    const user = auth().currentUser;
+    if (!user) return;
+    
     try {
-      let functionsMod: any = null;
-      try {
-        functionsMod = require('@react-native-firebase/functions').default;
-      } catch {}
-      if (!functionsMod) throw new Error('Firebase Functions not available');
-                    
-      // Find the most recent echo by the user to delete it
-      let firestoreMod: any;
-      let authMod: any;
-      try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
-      } catch {}
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const user = authMod?.().currentUser;
-      if (!firestoreMod || !user) {
-        setEchoList(prev => prev.filter(e => e.uid !== 'me'));
-        setMyEcho(null);
-        return;
-      }
-                    
       // Find the most recent echo by the user to delete it.
-      const query = await firestoreMod()
+      const query = await firestore()
         .collection('waves')
         .doc(currentWave.id)
         .collection('echoes')
@@ -5980,16 +5938,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .orderBy('createdAt', 'desc')
         .limit(1)
         .get();
-                    
+      
       const docToDelete = query?.docs?.[0];
       if (docToDelete) {
-        const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
+        const deleteEchoFn = functions().httpsCallable('deleteEcho');
         await deleteEchoFn({
           waveId: currentWave.id,
           echoId: docToDelete.id
         });
       }
-                    
+      
       setEchoList(prev => prev.filter(e => e.uid !== user.uid));
       setMyEcho(null);
       updateEchoText('');
@@ -6013,13 +5971,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
                     
     try {
-      let functionsMod: any = null;
-      try {
-        functionsMod = require('@react-native-firebase/functions').default;
-      } catch {}
-      if (!functionsMod) throw new Error('Firebase Functions not available');
-                    
-      const deleteEchoFn = functionsMod().httpsCallable('deleteEcho');
+      const deleteEchoFn = functions().httpsCallable('deleteEcho');
       await deleteEchoFn({
         waveId: currentWave.id,
         echoId
@@ -6051,20 +6003,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let unsubWaveCounts: any = null;
                     
     (async () => {
-      let firestoreMod: any = null;
-      let authMod: any = null;
-      try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
-      } catch {}
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const uid = authMod?.().currentUser?.uid;
+      const uid = auth().currentUser?.uid;
                     
-      if (!firestoreMod || !currentWave?.id) return;
+      if (!currentWave?.id) return;
                     
       // Listen to wave counts
-      unsubWaveCounts = firestoreMod()
+      unsubWaveCounts = firestore()
         .doc(`waves/${currentWave.id}`)
         .onSnapshot((snap: any) => {
           const data = snap?.data() || {};
@@ -6098,7 +6042,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       if (uid) {
         // Check if current user has splashed this wave
-        unsubSplash = firestoreMod()
+        unsubSplash = firestore()
           .collection('waves')
           .doc(currentWave.id)
           .collection('splashes')
@@ -6150,7 +6094,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         };
                     
-        const myEchoQuery = firestoreMod()
+        const myEchoQuery = firestore()
           .collection('waves')
           .doc(currentWave.id)
           .collection('echoes')
@@ -6194,7 +6138,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         
         // Load my echo once instead of real-time
         try {
-          const myEchoSnap = await firestoreMod()
+          const myEchoSnap = await firestore()
             .collection('waves')
             .doc(currentWave.id)
             .collection('echoes')
@@ -6241,7 +6185,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       
       // Load echo list once instead of real-time
       try {
-        const echoListSnap = await firestoreMod()
+        const echoListSnap = await firestore()
           .collection('waves')
           .doc(currentWave.id)
           .collection('echoes')
@@ -6530,12 +6474,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setEchoSending(prev => ({ ...prev, [waveId]: true }));
                     
     try {
-      let functionsMod: any = null;
-      try {
-        functionsMod = require('@react-native-firebase/functions').default;
-      } catch {}
-      if (!functionsMod) throw new Error('Firebase Functions not available');
-                    
       // Get user profile data for the echo
       let fromName = null;
       let fromPhoto = null;
@@ -6550,7 +6488,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Continue without profile data
       }
                     
-      const createEchoFn = functionsMod().httpsCallable('createEcho', { region: 'us-central1' });
+      const createEchoFn = functions().httpsCallable('createEcho', { region: 'us-central1' });
       await createEchoFn({
         waveId,
         text,
@@ -6809,7 +6747,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     } catch (error) {
       console.error('Toggle vibe error:', error);
-      notifyError('Connection update failed - please try again');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      notifyError(`Connection update failed: ${errorMessage}`);
     } finally {
       setCrewLoading(false);
     }
@@ -6996,7 +6935,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
 
   // Show notification popup and play sound
-  const showNotificationPopup = (message: string, fromName: string, type: string) => {
+  const showNotificationPopup = (message: string, fromName: string, type: string, avatar: any = null) => {
     // Play notification sound
     if (notificationSound) {
       notificationSound.setVolume(0.8);
@@ -7012,12 +6951,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       visible: true,
       message,
       fromName,
-      type
+      type,
+      avatar
     });
 
     // Auto-hide popup after 3 seconds
     setTimeout(() => {
-      setNotificationPopup({ visible: false, message: '', fromName: '', type: '' });
+      setNotificationPopup({ visible: false, message: '', fromName: '', type: '', avatar: null });
     }, 3000);
   };
                     
@@ -9455,7 +9395,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         kind={toastKind}
         message={toastMessage}
         visible={toastVisible}
-        logo={myLogo}
+        logo={toastAvatar}
       />
                     
       {/* ========== SIMPLE OCEAN EFFECTS ========== */}
@@ -10046,14 +9986,58 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         }
                       }}
                     >
-                      <Text style={{
-                        color: 'white',
-                        fontSize: 16,
-                        fontWeight: notification.read ? 'normal' : 'bold',
-                        marginBottom: 4,
-                      }}>
-                        {formatNotificationMessage(notification, userData)}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                        {/* Avatar */}
+                        {(() => {
+                          const avatar = userData ? getUserAvatar(notification.fromUid, userData) : null;
+                          return avatar ? (
+                            typeof avatar === 'object' && 'text' in avatar ? (
+                              // Text-based avatar (initials)
+                              <View style={{
+                                width: 32,
+                                height: 32,
+                                borderRadius: 16,
+                                backgroundColor: avatar.backgroundColor,
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                marginRight: 12,
+                                borderWidth: 1,
+                                borderColor: 'rgba(255,255,255,0.2)',
+                              }}>
+                                <Text style={{
+                                  fontSize: 14,
+                                  fontWeight: 'bold',
+                                  color: avatar.color
+                                }}>
+                                  {avatar.text}
+                                </Text>
+                              </View>
+                            ) : (
+                              // Image-based avatar
+                              <Image
+                                source={{ uri: avatar }}
+                                style={{
+                                  width: 32,
+                                  height: 32,
+                                  borderRadius: 16,
+                                  marginRight: 12,
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(255,255,255,0.2)',
+                                }}
+                              />
+                            )
+                          ) : null;
+                        })()}
+                        
+                        <Text style={{
+                          color: 'white',
+                          fontSize: 16,
+                          fontWeight: notification.read ? 'normal' : 'bold',
+                          flex: 1,
+                        }}>
+                          {formatNotificationMessage(notification, userData || {})}
+                        </Text>
+                      </View>
                       <Text style={{
                         color: 'rgba(255,255,255,0.6)',
                         fontSize: 12,
@@ -10089,7 +10073,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   }
                                 } catch (error) {
                                   console.error('Error sending hug:', error);
-                                  Alert.alert('Error', 'Failed to send hug');
+                                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                                  Alert.alert('Error', `Failed to add hug: ${errorMessage}`);
                                 }
                                 setNotificationWithActions(null);
                               }}
@@ -10181,7 +10166,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   }
                                 } catch (error) {
                                   console.error('Error sending echo:', error);
-                                  Alert.alert('Error', 'Failed to send echo');
+                                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+                                  Alert.alert('Error', `Couldn't send echo: ${errorMessage}`);
                                 }
                                 
                                 setNotificationWithActions(null);
@@ -13154,6 +13140,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+            {notificationPopup.avatar && (
+              <View style={{ marginRight: 12 }}>
+                {typeof notificationPopup.avatar === 'object' && 'text' in notificationPopup.avatar ? (
+                  // Text-based avatar (initials)
+                  <View style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: notificationPopup.avatar.backgroundColor,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 2,
+                    borderColor: '#00C2FF'
+                  }}>
+                    <Text style={{
+                      fontSize: 14,
+                      fontWeight: 'bold',
+                      color: notificationPopup.avatar.color
+                    }}>
+                      {notificationPopup.avatar.text}
+                    </Text>
+                  </View>
+                ) : (
+                  // Image-based avatar
+                  <Image
+                    source={notificationPopup.avatar}
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      borderWidth: 2,
+                      borderColor: '#00C2FF'
+                    }}
+                  />
+                )}
+              </View>
+            )}
             <Text style={{ 
               fontSize: 18, 
               color: '#00C2FF', 
@@ -14199,13 +14222,8 @@ const LiveStreamModal = ({
   const inviteUserToDrift = async (targetUid: string) => {
     const me = auth?.()?.currentUser;
     if (!me) throw new Error('Sign in required');
-    let functionsMod: any = null;
-    try {
-      functionsMod = require('@react-native-firebase/functions').default;
-    } catch {}
-    if (!functionsMod) throw new Error('Firebase Functions not available');
     const sendCrewInvitation =
-      functionsMod().httpsCallable('sendCrewInvitation');
+      functions().httpsCallable('sendCrewInvitation');
     const result = await sendCrewInvitation({
       toUid: targetUid,
       crewId: liveDocId || 'default-crew',
@@ -17012,8 +17030,7 @@ function PostDetailScreen({ route, navigation }: any) {
   // Record video reach function
   const recordVideoReach = async (postId: string) => {
     try {
-      const functionsMod = require('@react-native-firebase/functions').default;
-      const recordReachFn = functionsMod().httpsCallable('recordVideoReach');
+      const recordReachFn = functions().httpsCallable('recordVideoReach');
       const result = await recordReachFn({ postId });
       return result.data;
     } catch (error) {
@@ -17027,13 +17044,11 @@ function PostDetailScreen({ route, navigation }: any) {
   useEffect(() => {
     const getCurrentUser = async () => {
       try {
-        const authMod = require('@react-native-firebase/auth').default;
-        const user = authMod().currentUser;
+        const user = auth().currentUser;
         if (user) {
           setCurrentUserId(user.uid);
           // Check if already following
-          const firestoreMod = require('@react-native-firebase/firestore').default;
-          const followDoc = await firestoreMod()
+          const followDoc = await firestore()
             .collection('users')
             .doc(user.uid)
             .collection('following')
@@ -17052,8 +17067,7 @@ function PostDetailScreen({ route, navigation }: any) {
   useEffect(() => {
     const getReachCount = async () => {
       try {
-        const firestoreMod = require('@react-native-firebase/firestore').default;
-        const doc = await firestoreMod()
+        const doc = await firestore()
           .collection('waves')
           .doc(post.id)
           .get();

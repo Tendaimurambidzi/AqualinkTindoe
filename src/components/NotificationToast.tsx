@@ -6,7 +6,7 @@ type Props = {
   visible: boolean;
   message: string;
   kind: 'positive' | 'negative';
-  logo?: ImageSourcePropType | null;
+  logo?: ImageSourcePropType | { text: string; backgroundColor: string; color: string } | null;
 };
 
 const NotificationToast: React.FC<Props> = ({ visible, message, kind, logo }) => {
@@ -41,7 +41,17 @@ const NotificationToast: React.FC<Props> = ({ visible, message, kind, logo }) =>
 
   return (
     <Animated.View style={containerStyle} pointerEvents="box-none">
-      {logo && <Image source={logo} style={styles.logo} />}
+      {logo && (
+        typeof logo === 'object' && 'text' in logo ? (
+          // Text-based avatar (initials)
+          <View style={[styles.logo, { backgroundColor: logo.backgroundColor, justifyContent: 'center', alignItems: 'center' }]}>
+            <Text style={[styles.initialsText, { color: logo.color }]}>{logo.text}</Text>
+          </View>
+        ) : (
+          // Image-based avatar
+          <Image source={logo as ImageSourcePropType} style={styles.logo} />
+        )
+      )}
       <Text style={styles.message}>{message}</Text>
     </Animated.View>
   );
@@ -84,6 +94,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
+  },
+  initialsText: {
+    fontSize: 10,
+    fontWeight: 'bold',
   },
   message: {
     color: 'white',
