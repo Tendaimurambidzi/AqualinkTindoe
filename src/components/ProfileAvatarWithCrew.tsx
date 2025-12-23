@@ -51,18 +51,24 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       .onSnapshot((userDoc) => {
         if (userDoc.exists) {
           const newUserData = userDoc.data();
+          console.log(`[ProfileAvatarWithCrew] Firestore update for user ${userId}:`, {
+            oldPhoto: userData?.photoURL || userData?.userPhoto,
+            newPhoto: newUserData?.photoURL || newUserData?.userPhoto,
+            hasData: !!newUserData
+          });
           setUserData(newUserData);
           
           // Update cache-busting key when photoURL changes
           const newPhotoURL = newUserData?.photoURL || newUserData?.userPhoto;
           const currentPhotoURL = userData?.photoURL || userData?.userPhoto;
           if (newPhotoURL !== currentPhotoURL && newPhotoURL) {
+            console.log(`[ProfileAvatarWithCrew] Photo URL changed for user ${userId}, updating cache key`);
             setCacheBustKey(Date.now());
           }
         }
         setLoading(false);
       }, (error) => {
-        console.error('Error listening to user data:', error);
+        console.error('[ProfileAvatarWithCrew] Error listening to user data:', error);
         setLoading(false);
       });
 

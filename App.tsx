@@ -9668,6 +9668,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     // Photo is already uploaded to Firebase Storage and Firestore updated in EditableProfileAvatar
                     // Just update local state
                     setProfilePhoto(newUri);
+                    
+                    // Also update userData state for immediate UI updates
+                    const currentUser = auth()?.currentUser;
+                    if (currentUser) {
+                      setUserData(prev => ({
+                        ...prev,
+                        [currentUser.uid]: {
+                          ...prev[currentUser.uid],
+                          avatar: newUri || '',
+                          name: prev[currentUser.uid]?.name || 'User',
+                          bio: prev[currentUser.uid]?.bio || '',
+                        }
+                      }));
+                    }
+                    
                     try {
                       let firestoreMod: any = null;
                       let authMod: any = null;
