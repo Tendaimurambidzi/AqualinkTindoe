@@ -6747,6 +6747,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
+  // Record Image Reach function with crash-resistant error handling
+  const recordImageReach = async (postId: string) => {
+    try {
+      const recordReachFn = functions().httpsCallable('recordImageReach');
+      const result = await recordReachFn({ postId });
+      return result.data;
+    } catch (error) {
+      console.error('Record Image Reach function error:', error);
+      // Don't crash - just return a safe response
+      return { success: false, error: 'Function not available' };
+    }
+  };
+
+  // Record Text Reach function with crash-resistant error handling
+  const recordTextReach = async (postId: string) => {
+    try {
+      const recordReachFn = functions().httpsCallable('recordTextReach');
+      const result = await recordReachFn({ postId });
+      return result.data;
+    } catch (error) {
+      console.error('Record Text Reach function error:', error);
+      // Don't crash - just return a safe response
+      return { success: false, error: 'Function not available' };
+    }
+  };
+
   const handleToggleVibe = async (targetUid: string, targetName?: string) => {
     if (crewLoading) return;
     setCrewLoading(true);
@@ -17169,12 +17195,27 @@ function PostDetailScreen({ route, navigation }: any) {
             <Image
               source={{ uri: post.media.uri }}
               style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'contain' }}
+              onLoad={() => {
+                // Record image reach when image loads in post detail view
+                recordImageReach(post.id).catch(error => {
+                  console.log('Image reach recording failed:', error.message);
+                });
+              }}
             />
           ) : null}
                     
           {/* Text */}
           {hasText && (
             <View style={{ padding: 20 }}>
+              {(() => {
+                // Record text reach when text content is displayed
+                if (!hasImage && !hasVideo) {
+                  recordTextReach(post.id).catch(error => {
+                    console.log('Text reach recording failed:', error.message);
+                  });
+                }
+                return null;
+              })()}
               {post.captionText && (
                 <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>
                   {post.captionText}

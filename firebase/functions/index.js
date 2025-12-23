@@ -1244,6 +1244,88 @@ exports.recordVideoReach = functions.https.onCall(
   }
 );
 
+// Record Image Reach Cloud Function
+exports.recordImageReach = functions.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError("unauthenticated");
+    }
+
+    const viewerId = context.auth.uid;
+    const postId = data.postId;
+
+    const postRef = admin.firestore().collection("waves").doc(postId);
+    const reachRef = postRef.collection("reach").doc(viewerId);
+
+    await admin.firestore().runTransaction(async (tx) => {
+      const postSnap = await tx.get(postRef);
+
+      if (!postSnap.exists) return;
+
+      const post = postSnap.data();
+
+      // ❌ Do not count owner views
+      if (post.ownerUid === viewerId) return;
+
+      // ❌ Do not count duplicate views
+      const reachSnap = await tx.get(reachRef);
+      if (reachSnap.exists) return;
+
+      // ✅ Count reach
+      tx.set(reachRef, {
+        viewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      tx.update(postRef, {
+        reachCount: admin.firestore.FieldValue.increment(1),
+      });
+    });
+
+    return { success: true };
+  }
+);
+
+// Record Text Reach Cloud Function
+exports.recordTextReach = functions.https.onCall(
+  async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError("unauthenticated");
+    }
+
+    const viewerId = context.auth.uid;
+    const postId = data.postId;
+
+    const postRef = admin.firestore().collection("waves").doc(postId);
+    const reachRef = postRef.collection("reach").doc(viewerId);
+
+    await admin.firestore().runTransaction(async (tx) => {
+      const postSnap = await tx.get(postRef);
+
+      if (!postSnap.exists) return;
+
+      const post = postSnap.data();
+
+      // ❌ Do not count owner views
+      if (post.ownerUid === viewerId) return;
+
+      // ❌ Do not count duplicate views
+      const reachSnap = await tx.get(reachRef);
+      if (reachSnap.exists) return;
+
+      // ✅ Count reach
+      tx.set(reachRef, {
+        viewedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      tx.update(postRef, {
+        reachCount: admin.firestore.FieldValue.increment(1),
+      });
+    });
+
+    return { success: true };
+  }
+);
+
 exports.generateAIResponse = onCall(async (data, context) => {
   // Temporarily disable auth check for testing
   // if (!context.auth) {
