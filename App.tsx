@@ -9808,25 +9808,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={{ color: '#001529', fontWeight: 'bold', fontSize: 16 }}>Save Profile</Text>
                 </TouchableOpacity>
               </View>
-              {/* Stats tab - moved up for better professional layout */}
-              <View style={{ marginBottom: 16 }}>
-                <View style={{ backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 18 }}>
-                  {/* Vertical stats list: label left, count right, no icons/dots */}
-                  {[
-                    { key: 'waves', label: 'Vibes', value: 0 },
-                    { key: 'crew', label: 'Crew', value: 0 },
-                    { key: 'hugs', label: 'Hugs', value: 0 },
-                    { key: 'echoes', label: 'Echoes', value: 0 },
-                  ].map((entry) => (
-                    <View key={entry.key} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 4 }}>
-                      <Text style={{ color: 'white', fontSize: 16, fontWeight: '600' }}>{entry.label}</Text>
-                      <Text style={{ color: 'white', fontSize: 16, fontWeight: '400', marginLeft: 16 }}>{entry.value}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
               {/* My Vibes, Notifications, and My Collection */}
-              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingHorizontal: 20, alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 20, alignItems: 'center', gap: 16 }}>
                 <Pressable
                   style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
                   onPress={() => {
@@ -9846,6 +9829,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       }}
                     />
                     <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Vibes</Text>
+                  </View>
+                </Pressable>
+                <Pressable
+                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
+                  onPress={() => {
+                    setShowProfile(false);
+                    setShowTreasure(true);
+                  }}
+                >
+                  <View
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
+                  >
+                    <View
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 6,
+                        backgroundColor: '#FFD700',
+                      }}
+                    />
+                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Collection</Text>
                   </View>
                 </Pressable>
                 <Pressable
@@ -9902,7 +9906,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#FFD700',
                       }}
                     />
-                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Collection</Text>
+                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Treasure</Text>
                   </View>
                 </Pressable>
               </View>
