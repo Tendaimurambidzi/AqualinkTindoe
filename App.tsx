@@ -196,6 +196,50 @@ const formatCount = (n: number) => {
   return `${Math.floor(n / 1000)}k`;
 };
 
+// URL parsing and clickable text component
+const parseUrls = (text: string) => {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  
+  return parts.map((part, index) => {
+    if (urlRegex.test(part)) {
+      return { type: 'url', content: part, key: index };
+    }
+    return { type: 'text', content: part, key: index };
+  });
+};
+
+const ClickableTextWithLinks = ({ text, style, numberOfLines }: { text: string; style?: any; numberOfLines?: number }) => {
+  const parts = parseUrls(text);
+  
+  return (
+    <Text style={style} numberOfLines={numberOfLines}>
+      {parts.map((part) => {
+        if (part.type === 'url') {
+          return (
+            <Text
+              key={part.key}
+              style={{ color: '#1976D2', textDecorationLine: 'underline' }}
+              onPress={() => {
+                Linking.openURL(part.content).catch(err => 
+                  console.log('Failed to open link:', err)
+                );
+              }}
+            >
+              {part.content}
+            </Text>
+          );
+        }
+        return (
+          <Text key={part.key}>
+            {part.content}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+};
+
 // Helper function to fetch the actual username from a user's profile
 const fetchUserUsername = async (userId: string): Promise<string> => {
   try {
@@ -8862,13 +8906,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         {/* Post Text (if any) */}
                         {item.captionText && (
                           <View style={{ marginBottom: 10 }}>
-                            <Text style={{ fontSize: 16, lineHeight: 20 }}>
-                              {expandedPosts[item.id]
-                                ? item.captionText
-                                : item.captionText.length > 500
-                                ? item.captionText.substring(0, 500) + '...'
-                                : item.captionText}
-                            </Text>
+                            <ClickableTextWithLinks
+                              text={
+                                expandedPosts[item.id]
+                                  ? item.captionText
+                                  : item.captionText.length > 500
+                                  ? item.captionText.substring(0, 500) + '...'
+                                  : item.captionText
+                              }
+                              style={{ fontSize: 16, lineHeight: 20 }}
+                            />
                           </View>
                         )}
                         {/* Post Link (if any) */}
@@ -10367,12 +10414,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>My Vibes</Text>
               <ScrollView>
-                {vibesFeed.length === 0 ? (
+                {vibesFeed.filter(w => w.ownerUid === myUid).length === 0 ? (
                   <Text style={styles.hint}>
                     No vibes yet. Post from Make Vibes.
                   </Text>
                 ) : (
-                  vibesFeed.map((w, idx) => (
+                  vibesFeed.filter(w => w.ownerUid === myUid).map((w, idx) => {
+                    const actualIndex = vibesFeed.findIndex(v => v.id === w.id);
+                    return (
                     <View
                       key={w.id}
                       style={{
@@ -10387,11 +10436,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           try {
                             setShowMyWaves(false);
                             setIsPaused(false);
-                            setCurrentIndex(idx);
+                            setCurrentIndex(actualIndex);
                             setWaveKey(Date.now());
                             requestAnimationFrame(() => {
                               feedRef.current?.scrollToIndex?.({
-                                index: idx,
+                                index: actualIndex,
                                 animated: false,
                               });
                             });
@@ -10415,11 +10464,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             try {
                               setShowMyWaves(false);
                               setIsPaused(false);
-                              setCurrentIndex(idx);
+                              setCurrentIndex(actualIndex);
                               setWaveKey(Date.now());
                               requestAnimationFrame(() => {
                                 feedRef.current?.scrollToIndex?.({
-                                  index: idx,
+                                  index: actualIndex,
                                   animated: false,
                                 });
                               });
@@ -10522,7 +10571,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </View>
                       </View>
                     </View>
-                  ))
+                  );
+                  })
                 )}
               </ScrollView>
             </View>
