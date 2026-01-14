@@ -367,11 +367,14 @@ const VideoWithTapControls: React.FC<Props> = ({
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
           </TouchableOpacity>
-          <Text style={styles.timeText}>
-            {formatTime(currentTime)} / {formatTime(duration)}
-          </Text>
         </View>
       </Animated.View>
+      {/* Always visible time display next to speaker */}
+      <View style={styles.alwaysVisibleTimeContainer}>
+        <Text style={styles.alwaysVisibleTimeText}>
+          {formatTime(currentTime)} / {formatTime(duration)}
+        </Text>
+      </View>
     </View>
   );
 };
@@ -449,6 +452,20 @@ const styles = StyleSheet.create({
   },
   muteSymbol: {
     fontSize: 16,
+  },
+  alwaysVisibleTimeContainer: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  alwaysVisibleTimeText: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '500',
   },
   replayContainer: {
     ...StyleSheet.absoluteFillObject,

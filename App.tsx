@@ -8907,11 +8907,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             paused={!playSynced}
                             playInBackground={false}
                             isActive={item.id === activeVideoId}
+                            poster={undefined}
                             bufferConfig={{
-                              minBufferMs: 15000,
-                              maxBufferMs: 45000,
-                              bufferForPlaybackMs: 1000,
-                              bufferForPlaybackAfterRebufferMs: 3000,
+                              minBufferMs: 5000,
+                              maxBufferMs: 20000,
+                              bufferForPlaybackMs: 500,
+                              bufferForPlaybackAfterRebufferMs: 1000,
                             }}
                             onPlay={() => {
                               // Record video reach when video starts playing in feed
