@@ -160,11 +160,6 @@ const VideoWithTapControls: React.FC<Props> = ({
     const willUnmute = isMuted; // If currently muted, this action will unmute
     setIsMuted(prev => !prev);
     
-    // If unmuting, also maximize the video
-    if (willUnmute) {
-      onMaximize?.();
-    }
-    
     showControls();
   }, [isMuted, showControls, onMaximize]);
 
@@ -190,7 +185,6 @@ const VideoWithTapControls: React.FC<Props> = ({
       
       // If starting playback (pressing play), maximize (if available) and unmute
       if (willStartPlaying) {
-        onMaximize?.();
         setIsMuted(false); // Unmute when starting playback
       }
     }

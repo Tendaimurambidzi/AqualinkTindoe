@@ -1734,6 +1734,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Track previous unread count to detect new notifications
   const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
   
+  // Track which images have been revealed in the feed
+  const [revealedImages, setRevealedImages] = useState<Set<string>>(new Set());
+  
   // Initialize notification sound
   useEffect(() => {
     Sound.setCategory('Playback');
@@ -8907,24 +8910,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             onPlay={() => {
                               // Video started playing - no longer recording reach here
                             }}
-                            onMaximize={() => {
-                              // Save current scroll position before navigating to full screen
-                              setPreservedScrollPosition(currentIndex);
-                              // Navigate to full screen post detail and unmute
-                              navigation.navigate('PostDetail', { post: item });
-                            }}
                           />
                         ) : (
                           <Pressable onPress={() => {
-                            // Save current scroll position before navigating to full screen
-                            setPreservedScrollPosition(currentIndex);
-                            navigation.navigate('PostDetail', { post: item });
+                            if (revealedImages.has(item.id)) {
+                              // If already revealed, navigate to PostDetail
+                              setPreservedScrollPosition(currentIndex);
+                              navigation.navigate('PostDetail', { post: item });
+                            } else {
+                              // Reveal the image
+                              setRevealedImages(prev => new Set(prev).add(item.id));
+                            }
                           }}>
-                            <Image
-                              source={{ uri: item.media.uri }}
-                              style={videoStyleFor(item.id) as any}
-                              resizeMode="contain"
-                            />
+                            <View style={{ position: 'relative' }}>
+                              <Image
+                                source={{ uri: item.media.uri }}
+                                style={videoStyleFor(item.id) as any}
+                                resizeMode="contain"
+                              />
+                              {!revealedImages.has(item.id) && (
+                                <View style={{
+                                  position: 'absolute',
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  backgroundColor: 'rgba(255, 255, 0, 0.3)', // Faded yellow overlay
+                                  justifyContent: 'center',
+                                  alignItems: 'center'
+                                }}>
+                                  <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
+                                    Tap to reveal
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
                           </Pressable>
                         )}
                       </>
@@ -17254,21 +17274,31 @@ function PostDetailScreen({ route, navigation }: any) {
                   console.log('Reach recording failed:', error.message);
                 });
               }}
-              onMaximize={() => {
-                // Already in full screen, no further maximization needed
-              }}
             />
           ) : hasImage ? (
-            <Image
-              source={{ uri: post.media.uri }}
-              style={{ flex: 1, resizeMode: 'contain' }}
-              onLoad={() => {
-                // Record image reach when image loads in post detail view
-                recordImageReach(post.id).catch(error => {
-                  console.log('Image reach recording failed:', error.message);
-                });
-              }}
-            />
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+              <Image
+                source={{ uri: post.media.uri }}
+                style={{
+                  width: SCREEN_WIDTH,
+                  height: SCREEN_WIDTH / (9/16), // Default 16:9 aspect ratio, will be adjusted when dimensions are known
+                  resizeMode: 'contain'
+                }}
+                onLoad={(event) => {
+                  // Record image reach when image loads in post detail view
+                  recordImageReach(post.id).catch(error => {
+                    console.log('Image reach recording failed:', error.message);
+                  });
+                  
+                  // Optionally adjust aspect ratio based on actual image dimensions
+                  const { width, height } = event.nativeEvent.source;
+                  if (width && height) {
+                    // Could update state to adjust dimensions, but for now keep simple
+                    console.log('Image loaded with dimensions:', width, height);
+                  }
+                }}
+              />
+            </View>
           ) : null}
                     
           {/* Text */}
