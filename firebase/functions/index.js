@@ -43,6 +43,20 @@ async function addPing(userId, data) {
     counters: { unreadPings: admin.firestore.FieldValue.increment(1) }
   }, { merge: true });
   
+  // Fetch sender's name
+  let senderName = 'Someone';
+  if (data.fromUid) {
+    try {
+      const senderDoc = await db.collection('users').doc(data.fromUid).get();
+      if (senderDoc.exists) {
+        const senderData = senderDoc.data();
+        senderName = senderData?.username || senderData?.displayName || senderData?.name || 'Someone';
+      }
+    } catch (error) {
+      console.warn('Failed to fetch sender name:', error);
+    }
+  }
+  
   // Send FCM notification
   try {
     const tokensSnap = await db.collection('users').doc(userId).collection('tokens').get();
@@ -60,8 +74,8 @@ async function addPing(userId, data) {
     
     const message = {
       notification: {
-        title: data.type === 'splash' ? 'New Splash! 🌊' : data.type === 'echo' ? 'New Echo 📣' : 'Notification',
-        body: data.text || 'You have a new notification',
+        title: data.type === 'splash' ? `New Splash from ${senderName}! 🌊` : data.type === 'echo' ? `New Echo from ${senderName} 📣` : 'Notification',
+        body: data.text || `You have a new notification from ${senderName}`,
       },
       data: {
         type: data.type || 'ping',

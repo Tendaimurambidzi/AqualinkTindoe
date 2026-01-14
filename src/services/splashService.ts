@@ -2,6 +2,7 @@
 // React Native version using @react-native-firebase packages
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import { offlineQueue } from './offlineQueue';
 
 /**
  * Result type for splash operations
@@ -38,34 +39,16 @@ export async function ensureSplash(waveId: string): Promise<SplashResult> {
   const user = auth().currentUser;
   if (!user) throw new Error('Must be signed in to splash.');
 
-  const splashRef = firestore()
-    .collection('waves')
-    .doc(waveId)
-    .collection('splashes')
-    .doc(user.uid);
-
-  const snap = await splashRef.get();
-  const exists =
-    (snap as any)?.exists === true || (typeof (snap as any)?.exists === 'function' && (snap as any).exists());
-  if (exists) {
-    return { splashed: true };
-  }
-
   // Fetch the actual username from the user's profile
   const actualUsername = await fetchUserUsername(user.uid);
 
-  await splashRef.set(
-    {
-      userUid: user.uid, // matches Firestore rules
-      waveId,
-      userName: actualUsername,
-      userPhoto: user.photoURL || null,
-      createdAt: firestore.FieldValue?.serverTimestamp
-        ? firestore.FieldValue.serverTimestamp()
-        : new Date(),
-    },
-    { merge: true }
-  );
+  await offlineQueue.addAction('addSplash', {
+    waveId,
+    userId: user.uid,
+    userName: actualUsername,
+    userPhoto: user.photoURL || null,
+  });
+
   return { splashed: true };
 }
 
@@ -76,12 +59,10 @@ export async function removeSplash(waveId: string): Promise<{ removed: boolean }
   const user = auth().currentUser;
   if (!user) throw new Error('Must be signed in to remove splash.');
 
-  const splashRef = firestore()
-    .collection('waves')
-    .doc(waveId)
-    .collection('splashes')
-    .doc(user.uid);
+  await offlineQueue.addAction('removeSplash', {
+    waveId,
+    userId: user.uid,
+  });
 
-  await splashRef.delete();
   return { removed: true };
 }

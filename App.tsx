@@ -76,6 +76,7 @@ import {
 } from './src/services/crewService';
 import { uploadPost } from './src/services/uploadPost';
 import { removeSplash, ensureSplash } from './src/services/splashService';
+import { offlineQueue } from './src/services/offlineQueue';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
@@ -5760,13 +5761,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Continue without profile data
     }
                     
-    const createEchoFn = functions().httpsCallable('createEcho', { region: 'us-central1' });
-    await createEchoFn({
+    await offlineQueue.addAction('addEcho', {
       waveId,
       text: trimmed,
-      fromName,
-      fromPhoto,
-      replyToEchoId
+      userId: uid,
+      userName: fromName,
+      userPhoto: fromPhoto,
+      replyToEchoId,
     });
   };
   const onSendEcho = async () => {
