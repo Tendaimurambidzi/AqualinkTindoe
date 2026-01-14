@@ -2096,6 +2096,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [preservedScrollPosition, setPreservedScrollPosition] = useState<number | null>(null); // Preserve scroll position when navigating to PostDetail
+  const [fullScreenPost, setFullScreenPost] = useState<any>(null); // Post for full screen modal
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
@@ -8874,17 +8875,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               // Video started playing - no longer recording reach here
                             }}
                             onMaximize={() => {
-                              // Save current scroll position before navigating to full screen
-                              setPreservedScrollPosition(currentIndex);
-                              // Navigate to full screen post detail and unmute
-                              navigation.navigate('PostDetail', { post: item });
+                              setFullScreenPost(item);
                             }}
                           />
                         ) : (
                           <Pressable onPress={() => {
-                            // Save current scroll position before navigating to full screen
-                            setPreservedScrollPosition(currentIndex);
-                            navigation.navigate('PostDetail', { post: item });
+                            setFullScreenPost(item);
                           }}>
                             <Image
                               source={{ uri: item.media.uri }}
@@ -17856,5 +17852,55 @@ const authStyles = StyleSheet.create({
     textShadowRadius: 2,
   },
 });
-                    
+
+{/* Full Screen Post Modal */}
+<Modal
+  visible={!!fullScreenPost}
+  transparent={false}
+  animationType="fade"
+  onRequestClose={() => setFullScreenPost(null)}
+>
+  <View style={{ flex: 1, backgroundColor: 'black' }}>
+    {fullScreenPost && (
+      <>
+        {fullScreenPost.media?.type === 'video' || fullScreenPost.playbackUrl ? (
+          <VideoWithTapControls
+            videoUrl={fullScreenPost.media?.uri || ''}
+            audioUrl={fullScreenPost.audioUrl}
+            playbackUrl={fullScreenPost.playbackUrl}
+            isFocused={true}
+            onProgress={() => {}}
+            onLoaded={() => {}}
+            style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+            resizeMode="contain"
+            paused={false}
+            playInBackground={false}
+            isActive={true}
+            onPlay={() => {}}
+            onMaximize={() => {}}
+          />
+        ) : (
+          <Image
+            source={{ uri: fullScreenPost.media?.uri }}
+            style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+            resizeMode="contain"
+          />
+        )}
+        <Pressable
+          style={{
+            position: 'absolute',
+            top: 50,
+            right: 20,
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            borderRadius: 20,
+            padding: 10,
+          }}
+          onPress={() => setFullScreenPost(null)}
+        >
+          <Text style={{ color: 'white', fontSize: 18 }}>✕</Text>
+        </Pressable>
+      </>
+    )}
+  </View>
+</Modal>
                     
