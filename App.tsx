@@ -1637,6 +1637,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const newNotifications = notificationsData.filter(n => !n.read);
           if (newNotifications.length > 0) {
             const latestNewNotification = newNotifications[0];
+            
+            // Ensure user data is available for the notification sender (async, don't wait)
+            ensureUserData(latestNewNotification.fromUid);
+            
             const displayName = userData[latestNewNotification.fromUid]?.name || latestNewNotification.fromName || 'Someone';
             
             let message = '';
@@ -1663,6 +1667,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const latestNotification = newUnreadNotifications[0];
           // Show toast for social interaction notifications
           if (['CONNECT_VIBE', 'echo', 'splash', 'octopus_hug', 'follow'].includes(latestNotification.type)) {
+            // Ensure user data is available for the notification sender (async, don't wait)
+            ensureUserData(latestNotification.fromUid);
+            
             const avatar = userData ? getUserAvatar(latestNotification.fromUid, userData) : null;
             const formattedMessage = formatNotificationMessage(latestNotification, userData || {});
             notifySuccess(formattedMessage, avatar);
@@ -1949,6 +1956,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
   const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string }>>({});
 
+  // Helper function to ensure user data is available for a given user ID
+  const ensureUserData = async (userId: string) => {
+    if (userData[userId]) {
+      return userData[userId];
+    }
+
+    try {
+      let firestoreMod: any = null;
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      if (!firestoreMod) return null;
+
+      const doc = await firestoreMod().doc(`users/${userId}`).get();
+      const data = doc.data();
+      const userInfo = {
+        name: data?.name || data?.displayName || data?.username || 'User',
+        avatar: data?.avatar || data?.userPhoto || '',
+        bio: data?.bio || '',
+      };
+      setUserData(prev => ({ ...prev, [userId]: userInfo }));
+      return userInfo;
+    } catch (error) {
+      console.warn('Failed to fetch user data for', userId, error);
+      return null;
+    }
+  };
+
   // Load userData from AsyncStorage on app start
   useEffect(() => {
     const loadUserData = async () => {
@@ -2141,7 +2176,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             feedRef.current.scrollToIndex({ 
               index: preservedScrollPosition, 
               animated: false,
-              viewPosition: 0 // Align to top of screen
+              viewPosition: 0.5 // Center the item in the screen
             });
             setCurrentIndex(preservedScrollPosition);
           }
@@ -17226,7 +17261,7 @@ function PostDetailScreen({ route, navigation }: any) {
           ) : hasImage ? (
             <Image
               source={{ uri: post.media.uri }}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'contain' }}
+              style={{ flex: 1, resizeMode: 'contain' }}
               onLoad={() => {
                 // Record image reach when image loads in post detail view
                 recordImageReach(post.id).catch(error => {

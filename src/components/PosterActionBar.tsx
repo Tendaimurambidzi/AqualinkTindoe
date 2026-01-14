@@ -3,6 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
+import NetInfo from '@react-native-community/netinfo';
+import { offlineQueueService } from '../services/offlineQueueService';
 
 // Function to fetch user data by ID
 const fetchUserData = async (userId: string) => {
@@ -69,6 +71,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
 
+  // Connectivity state
+  const [isOnline, setIsOnline] = useState(true);
+
   // Fetch user data for the creator of the post
   useEffect(() => {
     const fetchCreatorUserData = async () => {
@@ -80,6 +85,20 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       fetchCreatorUserData();
     }
   }, [creatorUserId]);
+
+  // Monitor connectivity
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsOnline(state.isConnected ?? true);
+    });
+
+    // Initial check
+    NetInfo.fetch().then(state => {
+      setIsOnline(state.isConnected ?? true);
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Check if user has already interacted
   useEffect(() => {
@@ -114,17 +133,24 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     // Immediate visual feedback
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
-    
+
     // Update count immediately
     setSplashesCount(prev => newHasHugged ? prev + 1 : Math.max(0, prev - 1));
-    
-    // Call the parent callback
-    if (hasHugged) {
-      onRemove();
+
+    // Handle action based on connectivity
+    if (isOnline) {
+      // Call the parent callback for immediate sync
+      if (hasHugged) {
+        onRemove();
+      } else {
+        onAdd();
+      }
     } else {
-      onAdd();
+      // Queue action for offline processing
+      const actionType = hasHugged ? 'unsplash' : 'splash';
+      offlineQueueService.addAction(actionType, waveId);
     }
-    
+
     // Optional: Add a very short cooldown to prevent spam clicking
     setHugActionInProgress(true);
     setTimeout(() => {
@@ -136,13 +162,19 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     if (echoActionInProgress) return; // Prevent concurrent actions
 
     setEchoActionInProgress(true);
-    
+
     // Immediate visual feedback
     setHasEchoed(true);
-    
-    // Call the parent callback
-    onEcho();
-    
+
+    // Handle action based on connectivity
+    if (isOnline) {
+      // Call the parent callback for immediate sync
+      onEcho();
+    } else {
+      // Queue action for offline processing (basic echo without text for now)
+      offlineQueueService.addAction('echo', waveId, { text: '' });
+    }
+
     // Reset action in progress after a short delay
     setTimeout(() => {
       setEchoActionInProgress(false);
