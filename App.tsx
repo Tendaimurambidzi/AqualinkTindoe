@@ -17865,25 +17865,51 @@ const authStyles = StyleSheet.create({
       <>
         {fullScreenPost.media?.type === 'video' || fullScreenPost.playbackUrl ? (
           <VideoWithTapControls
-            videoUrl={fullScreenPost.media?.uri || ''}
-            audioUrl={fullScreenPost.audioUrl}
-            playbackUrl={fullScreenPost.playbackUrl}
-            isFocused={true}
-            onProgress={() => {}}
-            onLoaded={() => {}}
+            source={{ uri: String(fullScreenPost.playbackUrl || fullScreenPost.media.uri) }}
             style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
             resizeMode="contain"
             paused={false}
+            muted={false}
+            maxBitRate={1500000}
+            bufferConfig={{
+              minBufferMs: 20000,
+              maxBufferMs: 60000,
+              bufferForPlaybackMs: 5000,
+              bufferForPlaybackAfterRebufferMs: 10000,
+            }}
+            useTextureView={false}
+            progressUpdateInterval={750}
+            poster={String(fullScreenPost.media?.uri || fullScreenPost.playbackUrl)}
+            posterResizeMode="cover"
+            disableFocus={true}
             playInBackground={false}
-            isActive={true}
-            onPlay={() => {}}
-            onMaximize={() => {}}
+            playWhenInactive={false}
+            ignoreSilentSwitch="ignore"
+            onLoad={(e: any) => {
+              // setPlaybackDuration(e?.duration || 0);
+              // incrementViews();
+            }}
+            onProgress={(e: any) => {
+              // setPlaybackTime(e?.currentTime || 0);
+            }}
+            onPlay={() => {
+              // recordVideoReach(fullScreenPost.id).catch(error => {
+              //   console.log('Reach recording failed:', error.message);
+              // });
+            }}
+            onMaximize={() => {
+              // Already in full screen, no further maximization needed
+            }}
           />
         ) : (
           <Image
-            source={{ uri: fullScreenPost.media?.uri }}
-            style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
-            resizeMode="contain"
+            source={{ uri: fullScreenPost.media.uri }}
+            style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'contain' }}
+            onLoad={() => {
+              // recordImageReach(fullScreenPost.id).catch(error => {
+              //   console.log('Image reach recording failed:', error.message);
+              // });
+            }}
           />
         )}
         <Pressable
