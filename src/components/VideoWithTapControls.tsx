@@ -107,7 +107,7 @@ const VideoWithTapControls: React.FC<Props> = ({
     setControlsVisible(true);
     Animated.timing(controlsOpacity, {
       toValue: 1,
-      duration: 180,
+      duration: 50, // Reduced from 180ms to 50ms for immediate response
       useNativeDriver: true,
     }).start();
 
@@ -125,7 +125,7 @@ const VideoWithTapControls: React.FC<Props> = ({
     setControlsVisible(true);
     Animated.timing(controlsOpacity, {
       toValue: 1,
-      duration: 180,
+      duration: 50, // Reduced from 180ms to 50ms for immediate response
       useNativeDriver: true,
     }).start();
 
@@ -142,7 +142,7 @@ const VideoWithTapControls: React.FC<Props> = ({
     }
     Animated.timing(controlsOpacity, {
       toValue: 0,
-      duration: 180,
+      duration: 50, // Reduced from 180ms to 50ms for immediate response
       useNativeDriver: true,
     }).start(() => setControlsVisible(false));
   }, [controlsOpacity]);
