@@ -53,7 +53,7 @@ type Props = {
 const VideoWithTapControls: React.FC<Props> = ({
   source,
   style = {},
-  hideTimeout = 3000,
+  hideTimeout = 4000,
   seekStep = 10,
   paused = false,
   maxBitRate,
@@ -87,6 +87,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
+  const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
 
   useEffect(() => {
@@ -111,11 +112,13 @@ const VideoWithTapControls: React.FC<Props> = ({
       useNativeDriver: true,
     }).start();
 
-    // Always auto-hide controls after timeout
-    hideTimer.current = setTimeout(() => {
-      hideControls();
-    }, hideTimeout);
-  }, [hideTimeout, controlsOpacity]);
+    // Only auto-hide controls after timeout if video is not loading
+    if (!isLoading) {
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, hideTimeout);
+    }
+  }, [hideTimeout, controlsOpacity, isLoading]);
 
   const showControlsWithTimeout = useCallback((timeout: number) => {
     if (hideTimer.current) {
@@ -129,11 +132,13 @@ const VideoWithTapControls: React.FC<Props> = ({
       useNativeDriver: true,
     }).start();
 
-    // Auto-hide controls after specified timeout
-    hideTimer.current = setTimeout(() => {
-      hideControls();
-    }, timeout);
-  }, [controlsOpacity]);
+    // Auto-hide controls after specified timeout (unless loading)
+    if (!isLoading) {
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, timeout);
+    }
+  }, [controlsOpacity, isLoading]);
 
   const hideControls = useCallback(() => {
     if (hideTimer.current) {
@@ -217,6 +222,7 @@ const VideoWithTapControls: React.FC<Props> = ({
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);
+    setIsLoading(false); // Video has loaded
     onLoad?.(meta);
   }, [onLoad]);
 
@@ -287,6 +293,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         ignoreSilentSwitch={ignoreSilentSwitch}
         controls={controls}
         muted={isMuted}
+        preload="auto"
         onLoad={handleLoad}
         onProgress={handleProgress}
         onBuffer={onBuffer}
