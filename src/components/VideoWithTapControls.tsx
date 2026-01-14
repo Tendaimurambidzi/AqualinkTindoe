@@ -89,6 +89,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
   const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
+  const loadingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setInternalPaused(paused);
@@ -99,6 +100,27 @@ const VideoWithTapControls: React.FC<Props> = ({
       setIsMuted(true);
     }
   }, [isActive]);
+
+  // Loading timeout - if video doesn't load within 15 seconds, stop showing loading state
+  useEffect(() => {
+    if (isLoading) {
+      loadingTimeoutRef.current = setTimeout(() => {
+        console.log('Video loading timeout - stopping loading state');
+        setIsLoading(false);
+      }, 15000); // 15 seconds timeout
+    } else {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+    }
+
+    return () => {
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current);
+      }
+    };
+  }, [isLoading]);
 
   const showControls = useCallback(() => {
     if (hideTimer.current) {
@@ -236,6 +258,16 @@ const VideoWithTapControls: React.FC<Props> = ({
     setInternalPaused(true);
   }, []);
 
+  const handleError = useCallback((error: any) => {
+    console.log('Video error:', error);
+    setIsLoading(false); // Stop loading on error so controls can hide
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+    onError?.(error);
+  }, [onError]);
+
   useEffect(() => {
     return () => {
       if (hideTimer.current) {
@@ -298,7 +330,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         onLoad={handleLoad}
         onProgress={handleProgress}
         onBuffer={onBuffer}
-        onError={onError}
+        onError={handleError}
         onEnd={handleEnd}
       />
       <TouchableWithoutFeedback 
@@ -316,6 +348,13 @@ const VideoWithTapControls: React.FC<Props> = ({
           >
             <Text style={styles.replaySymbol}>↺</Text>
           </TouchableOpacity>
+        </View>
+      )}
+      {isLoading && !videoCompleted && (
+        <View style={styles.loadingContainer}>
+          <View style={styles.loadingSpinner}>
+            <Text style={styles.loadingText}>Loading...</Text>
+          </View>
         </View>
       )}
       <Animated.View
@@ -488,6 +527,23 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 24,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 4,
+  },
+  loadingSpinner: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  loadingText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
 

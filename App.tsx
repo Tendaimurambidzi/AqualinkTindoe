@@ -8909,16 +8909,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             isActive={item.id === activeVideoId}
                             poster={undefined}
                             bufferConfig={{
-                              minBufferMs: 5000,
-                              maxBufferMs: 20000,
-                              bufferForPlaybackMs: 500,
-                              bufferForPlaybackAfterRebufferMs: 1000,
+                              minBufferMs: 1500,
+                              maxBufferMs: 10000,
+                              bufferForPlaybackMs: 2500,
+                              bufferForPlaybackAfterRebufferMs: 5000,
                             }}
                             onPlay={() => {
                               // Record video reach when video starts playing in feed
                               recordVideoReach(item.id).catch(error => {
                                 console.log('Video reach recording failed:', error.message);
                               });
+                            }}
+                            onError={(error) => {
+                              console.log('Video load error for', item.id, ':', error);
                             }}
                           />
                         ) : (
