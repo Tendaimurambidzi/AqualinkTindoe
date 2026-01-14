@@ -8907,8 +8907,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             paused={!playSynced}
                             playInBackground={false}
                             isActive={item.id === activeVideoId}
+                            bufferConfig={{
+                              minBufferMs: 10000,
+                              maxBufferMs: 30000,
+                              bufferForPlaybackMs: 2000,
+                              bufferForPlaybackAfterRebufferMs: 5000,
+                            }}
                             onPlay={() => {
-                              // Video started playing - no longer recording reach here
+                              // Record video reach when video starts playing in feed
+                              recordVideoReach(item.id).catch(error => {
+                                console.log('Video reach recording failed:', error.message);
+                              });
                             }}
                           />
                         ) : (
@@ -8916,6 +8925,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             if (!revealedImages.has(item.id)) {
                               // Reveal the image
                               setRevealedImages(prev => new Set(prev).add(item.id));
+                              // Record image reach when image is revealed
+                              recordImageReach(item.id).catch(error => {
+                                console.log('Image reach recording failed:', error.message);
+                              });
                             }
                             // Once revealed, no further action on tap
                           }}>
