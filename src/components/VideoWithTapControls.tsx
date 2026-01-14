@@ -117,6 +117,24 @@ const VideoWithTapControls: React.FC<Props> = ({
     }, hideTimeout);
   }, [hideTimeout, controlsOpacity]);
 
+  const showControlsWithTimeout = useCallback((timeout: number) => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setControlsVisible(true);
+    Animated.timing(controlsOpacity, {
+      toValue: 1,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+
+    // Auto-hide controls after specified timeout
+    hideTimer.current = setTimeout(() => {
+      hideControls();
+    }, timeout);
+  }, [controlsOpacity]);
+
   const hideControls = useCallback(() => {
     if (hideTimer.current) {
       clearTimeout(hideTimer.current);
@@ -188,8 +206,14 @@ const VideoWithTapControls: React.FC<Props> = ({
         setIsMuted(false); // Unmute when starting playback
       }
     }
-    showControls();
-  }, [videoCompleted, safeSeek, showControls, internalPaused, onMaximize]);
+    
+    // Show controls and auto-hide after 3 seconds when starting playback
+    if (!internalPaused) {
+      showControlsWithTimeout(3000);
+    } else {
+      showControls();
+    }
+  }, [videoCompleted, safeSeek, showControls, showControlsWithTimeout, internalPaused, onMaximize]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);

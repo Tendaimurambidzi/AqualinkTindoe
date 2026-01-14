@@ -8913,14 +8913,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           />
                         ) : (
                           <Pressable onPress={() => {
-                            if (revealedImages.has(item.id)) {
-                              // If already revealed, navigate to PostDetail
-                              setPreservedScrollPosition(currentIndex);
-                              navigation.navigate('PostDetail', { post: item });
-                            } else {
+                            if (!revealedImages.has(item.id)) {
                               // Reveal the image
                               setRevealedImages(prev => new Set(prev).add(item.id));
                             }
+                            // Once revealed, no further action on tap
                           }}>
                             <View style={{ position: 'relative' }}>
                               <Image
