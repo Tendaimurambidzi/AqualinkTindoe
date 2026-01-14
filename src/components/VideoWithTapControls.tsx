@@ -291,6 +291,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         playInBackground={playInBackground}
         playWhenInactive={playWhenInactive}
         ignoreSilentSwitch={ignoreSilentSwitch}
+        accessibilityLabel="Video player"
         controls={controls}
         muted={isMuted}
         preload="auto"
