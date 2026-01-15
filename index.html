@@ -35,5 +35,20 @@
         <p>&copy; 2026 SplashLine. All rights reserved.</p>
     </footer>
     <script src="script.js"></script>
+    <script>
+        // Handle shared links
+        const urlParams = new URLSearchParams(window.location.search);
+        const docId = urlParams.get('docId');
+        const channel = urlParams.get('channel');
+        if (docId && channel) {
+            document.getElementById('hero').innerHTML = `
+                <h2>Shared Drift</h2>
+                <p>Doc ID: ${docId}</p>
+                <p>Channel: ${channel}</p>
+                <p>Open the app to join this drift!</p>
+                <a href="https://play.google.com/store" class="btn">Download App</a>
+            `;
+        }
+    </script>
 </body>
 </html>
