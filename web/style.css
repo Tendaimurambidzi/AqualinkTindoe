@@ -1,0 +1,50 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(to bottom, #0077be, #00a8cc);
+    color: white;
+    text-align: center;
+}
+
+header {
+    background: rgba(0, 0, 0, 0.5);
+    padding: 20px;
+}
+
+#hero {
+    padding: 50px 20px;
+}
+
+.btn {
+    display: inline-block;
+    background: #ff6b6b;
+    color: white;
+    padding: 10px 20px;
+    text-decoration: none;
+    border-radius: 5px;
+    margin: 10px;
+}
+
+.btn:hover {
+    background: #ff5252;
+}
+
+#features {
+    padding: 50px 20px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+ul {
+    list-style: none;
+    padding: 0;
+}
+
+li {
+    margin: 10px 0;
+}
+
+footer {
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.5);
+}
