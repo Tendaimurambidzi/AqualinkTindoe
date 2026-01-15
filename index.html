@@ -40,14 +40,27 @@
         const urlParams = new URLSearchParams(window.location.search);
         const liveId = urlParams.get('liveId');
         const channel = urlParams.get('channel');
-        if (liveId && channel) {
-            document.getElementById('hero').innerHTML = `
-                <h2>Shared Drift</h2>
-                <p>Live ID: ${liveId}</p>
-                <p>Channel: ${channel}</p>
-                <p>Open the app to join this drift!</p>
-                <a href="https://play.google.com/store" class="btn">Download App</a>
-            `;
+        const docId = urlParams.get('docId');
+        if ((liveId && channel) || (docId && channel)) {
+            // Smart redirect: try to open app on mobile
+            const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            if (isMobile) {
+                const appUrl = `aqualink://drift?${urlParams.toString()}`;
+                window.location.href = appUrl;
+                // Fallback to store after delay
+                setTimeout(() => {
+                    window.location.href = 'https://play.google.com/store/apps/details?id=com.aqualink.tindo';
+                }, 2000);
+            } else {
+                // Desktop: show web page
+                document.getElementById('hero').innerHTML = `
+                    <h2>Shared Drift</h2>
+                    <p>Live ID: ${liveId || docId}</p>
+                    <p>Channel: ${channel}</p>
+                    <p>Open the app to join this drift!</p>
+                    <a href="https://play.google.com/store" class="btn">Download App</a>
+                `;
+            }
         }
     </script>
 </body>
