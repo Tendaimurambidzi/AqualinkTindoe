@@ -38,12 +38,12 @@
     <script>
         // Handle shared links
         const urlParams = new URLSearchParams(window.location.search);
-        const docId = urlParams.get('docId');
+        const liveId = urlParams.get('liveId');
         const channel = urlParams.get('channel');
-        if (docId && channel) {
+        if (liveId && channel) {
             document.getElementById('hero').innerHTML = `
                 <h2>Shared Drift</h2>
-                <p>Doc ID: ${docId}</p>
+                <p>Live ID: ${liveId}</p>
                 <p>Channel: ${channel}</p>
                 <p>Open the app to join this drift!</p>
                 <a href="https://play.google.com/store" class="btn">Download App</a>
