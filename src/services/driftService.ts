@@ -308,22 +308,38 @@ export async function shareDriftLink(
   message: string;
 }> {
   try {
-    const response = await fetch(`${BACKEND_BASE_URL}/drift/share-link`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ liveId, channel, title }),
+    // Import Branch dynamically to avoid issues
+    const branch = require('react-native-branch').default;
+
+    // Create a Branch universal object
+    const buo = await branch.createBranchUniversalObject('drift/' + liveId, {
+      title: title || 'Join the drift',
+      contentDescription: 'Dive into this ocean adventure!',
+      contentMetadata: {
+        customMetadata: {
+          liveId,
+          channel,
+        },
+      },
     });
 
-    const data = await response.json();
+    const linkProperties = {
+      feature: 'share',
+      channel: 'app',
+    };
 
-    if (!response.ok || !data.ok) {
-      throw new Error(data.error || 'Failed to get share link');
-    }
+    const controlParams = {
+      $desktop_url: `https://tendaimurambidzi.github.io/AqualinkTindoe/drift?liveId=${liveId}&channel=${channel}`,
+      $ios_url: 'https://apps.apple.com/app/your-app-id', // Replace with your App Store URL
+      $android_url: 'https://play.google.com/store/apps/details?id=com.aqualink.tindo', // Replace with your Play Store URL
+    };
+
+    const { url } = await buo.generateShortUrl(linkProperties, controlParams);
 
     return {
-      shareLink: data.shareLink,
-      webLink: data.webLink,
-      message: data.message,
+      shareLink: url,
+      webLink: `https://tendaimurambidzi.github.io/AqualinkTindoe/drift?liveId=${liveId}&channel=${channel}`,
+      message: `Check out this drift: ${url}`,
     };
   } catch (error: any) {
     console.error('Share drift link error:', error);
