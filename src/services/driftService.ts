@@ -1,27 +1,36 @@
-import dynamicLinks from '@react-native-firebase/dynamic-links';
+import branch from 'react-native-branch';
 import { Share } from 'react-native';
 
 export const shareDriftLink = async (docId: string, channel: string, title: string) => {
   try {
-    // Create a dynamic link
-    const link = await dynamicLinks().buildShortLink({
-      link: `https://tendaimurambidzi.github.io/AqualinkTindoe/drift?docId=${docId}&channel=${channel}`,
-      domainUriPrefix: 'https://aqualinktindoe.page.link', // Your Firebase Dynamic Links domain
-      android: {
-        packageName: 'com.aqualink.tindo', // Your Android package name
-      },
-      ios: {
-        bundleId: 'com.aqualink.tindo', // Your iOS bundle ID
-      },
-      social: {
-        title: `Join the drift: ${title}`,
-        descriptionText: 'Dive into this ocean adventure!',
+    // Create a Branch link
+    const buo = await branch.createBranchUniversalObject('drift/' + docId, {
+      title: `Join the drift: ${title}`,
+      contentDescription: 'Dive into this ocean adventure!',
+      contentMetadata: {
+        customMetadata: {
+          docId,
+          channel,
+        },
       },
     });
 
+    const linkProperties = {
+      feature: 'share',
+      channel: 'app',
+    };
+
+    const controlParams = {
+      $desktop_url: `https://tendaimurambidzi.github.io/AqualinkTindoe/drift?docId=${docId}&channel=${channel}`,
+      $ios_url: 'https://apps.apple.com/app/your-app-id', // Replace with your App Store URL
+      $android_url: 'https://play.google.com/store/apps/details?id=com.aqualink.tindo', // Replace with your Play Store URL
+    };
+
+    const { url } = await buo.generateShortUrl(linkProperties, controlParams);
+
     // Share the link
     await Share.share({
-      message: `Check out this drift: ${link}`,
+      message: `Check out this drift: ${url}`,
     });
 
     return { success: true };

@@ -1,5 +1,5 @@
 {
   "dependencies": {
-    "@react-native-firebase/dynamic-links": "^22.4.0"
+    "react-native-branch": "^6.9.0"
   }
 }
