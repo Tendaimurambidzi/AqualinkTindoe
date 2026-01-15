@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthed() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerUid) {
+      return request.auth != null && request.auth.uid == ownerUid;
+    }
+
+    // Allow updates that ONLY change the top-level "counts" map (e.g., counts.echoes, counts.splashes)
+    function isOnlyCountsUpdate() {
+      // Check if the update only modifies the 'counts' field at the top level
+      let affectedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      // Allow if all affected keys are under 'counts' or just 'counts' itself
+      return affectedKeys.hasOnly(['counts']) || 
+             request.resource.data.diff(resource.data).changedKeys().hasOnly(['counts']);
+    }
+
+    // waves/{waveId}
+    match /waves/{waveId} {
+      allow read: if true; // public read; change to isAuthed() if you want private
+
+      // Create allowed only by the owner (must provide ownerUid == auth.uid)
+      allow create: if isAuthed() && request.resource.data.ownerUid == request.auth.uid;
+
+      // Update allowed by the owner OR any authenticated user when only updating counts
+      // This allows client-side atomic counters like FieldValue.increment on counts.echoes/splashes
+      allow update: if isAuthed() && (
+        resource.data.ownerUid == request.auth.uid || 
+        isOnlyCountsUpdate()
+      );
+
+      // Delete allowed only by owner
+      allow delete: if isAuthed() && resource.data.ownerUid == request.auth.uid;
+
+      // waves/{waveId}/splashes/{uid}
+      match /splashes/{uid} {
+        allow read: if true;
+
+        // Exactly one splash per user: doc id must equal auth uid on create
+        allow create: if isAuthed()
+                      && uid == request.auth.uid
+                      && request.resource.data.userUid == request.auth.uid;
+
+        // No updates – delete and recreate instead
+        allow update: if false;
+
+        // Unsplash: only the user who splashed can delete their own doc
+        allow delete: if isAuthed() && uid == request.auth.uid;
+      }
+
+      // waves/{waveId}/echoes/{echoId}
+      match /echoes/{echoId} {
+        allow read: if true;
+
+        // Create only by authed user writing their uid to userUid
+        allow create: if isAuthed()
+                      && request.resource.data.userUid == request.auth.uid
+                      && request.resource.data.text is string;
+
+        // Update only by the author; restrict mutable fields to text only
+        allow update: if isAuthed() && resource.data.userUid == request.auth.uid
+                      && request.resource.data.diff(resource.data).changedKeys().hasOnly(["text"]);
+
+        // Delete only by the author
+        allow delete: if isAuthed() && resource.data.userUid == request.auth.uid;
+      }
+    }
+
+    // users/{uid}/pings/{pingId} – allow users to manage their own pings
+    match /users/{uid} {
+      // Allow any authenticated user to read user profiles (for search)
+      allow read: if isAuthed();
+      // Only owner can create, update, delete
+      allow create, update: if isOwner(uid);
+      allow delete: if isOwner(uid);
+
+      match /pings/{pingId} {
+        allow read: if isOwner(uid);
+        allow create: if isOwner(uid);
+        allow update, delete: if isOwner(uid);
+      }
+
+      // Crew members: any authed user can add/remove themselves
+      match /crew/{memberId} {
+        allow read: if isAuthed();
+        allow create, delete: if isAuthed() && memberId == request.auth.uid;
+        allow update: if false;
+      }
+
+      // Boarding (following): owner can read, any authed user can add themselves
+      match /boarding/{targetId} {
+        allow read: if isOwner(uid);
+        allow create, delete: if isOwner(uid);
+        allow update: if false;
+      }
+
+      // Allow owner to read recentPosters list (populated by Cloud Functions)
+      match /recentPosters/{posterId} {
+        allow read: if isOwner(uid);
+        // Owner may clear/prune their own list
+        allow create, update, delete: if isOwner(uid);
+      }
+
+      // Mentions inbox: owner can read/update/delete; any authed user can create (send)
+      match /mentions/{mentionId} {
+        allow read, update, delete: if isOwner(uid);
+        allow create: if isAuthed();
+      }
+
+      // Direct messages: owner can read/update/delete; any authed user can create (send)
+      match /messages/{messageId} {
+        allow read, update, delete: if isOwner(uid);
+        allow create: if isAuthed();
+      }
+    }
+
+    // Connections (followers) - new collection for follow system
+    match /connections/{connectionId} {
+      allow create, delete: if request.auth != null
+        && request.resource.data.followerId == request.auth.uid;
+      allow read: if request.auth != null;
+    }
+
+    // Notifications - new collection for follow notifications
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null
+        && resource.data.toUserId == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+
+    // Posts collection for reach tracking
+    match /waves/{postId} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && request.auth.uid == resource.data.ownerUid;
+    }
+
+    // Post reach subcollection - viewers list stays private
+    match /waves/{postId}/reach/{userId} {
+      allow create: if request.auth != null
+                    && request.auth.uid == userId;
+      allow read: if false; // viewers list stays private
+    }
+  }
+}
+

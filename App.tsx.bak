@@ -1,0 +1,2174 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  // Animated,
+  Text,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Dimensions,
+  Modal,
+  TextInput,
+  Share,
+  Alert,
+  PermissionsAndroid,
+  AppState,
+  Platform,
+} from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import DraggableTextBox from './DraggableTextBox';
+
+// Try to use react-native-video if installed; otherwise fall back to <Image>
+let RNVideo: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  RNVideo = require('react-native-video').default;
+} catch {}
+import { launchCamera, launchImageLibrary, CameraOptions, Asset, ImagePickerResponse } from 'react-native-image-picker';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image, Linking } from 'react-native';
+import { normalizeVideoToMp4, normalizeAudioToM4a } from './MediaTranscode';
+
+/**
+ * App.tsx — Ocean App UI Scaffold (SafeAreaProvider)
+ * ---------------------------------------------------
+ * Change request:
+ *  • Restore icons ABOVE the words for the top functions.
+ *  • Remove the rectangular chip backgrounds; leave the words "in the open" but still clickable.
+ *  • Keep all prior updates (MY SHORE on right half under camera, SafeAreaProvider, layout, counters, bubbles, modals).
+ */
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+type Wave = {
+  id: string;
+  media: Asset;
+  audio: { uri: string; name?: string } | null;
+  captionText: string;
+  captionPosition: { x: number; y: number };
+  playbackUrl?: string | null;           // server-muxed single stream
+  muxStatus?: 'pending' | 'ready' | 'failed';
+};
+
+const formatCount = (n: number) => {
+  if (n < 1000) return String(n);
+  return `${Math.floor(n / 1000)}k`;
+};
+
+// ======================== STYLES ========================
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: 'transparent' },
+  topStrip: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 12, paddingBottom: 4 },
+  upperRow: { height: 48, justifyContent: 'center', alignItems: 'center' },
+  profileButton: { alignItems: 'center', justifyContent: 'center', paddingVertical: 2, paddingHorizontal: 10 },
+  umbrellaIcon: { fontSize: 20, textAlign: 'center' },
+  profileLabel: { color: 'white', fontWeight: '700', letterSpacing: 1.2 },
+
+  lowerRow: { height: 64 },
+  scrollRow: { alignItems: 'flex-end', gap: 18, paddingRight: 12 },
+
+  // Transparent, open text links (no rectangular background)
+  topItem: { alignItems: 'center', justifyContent: 'flex-end', paddingVertical: 2, paddingHorizontal: 6 },
+  topLabel: { color: 'white', fontWeight: '800', fontSize: 12, letterSpacing: 0.5 },
+
+  // Icons above words
+  dolphinIcon: { fontSize: 18, marginBottom: 2 },
+  pingsIcon: { fontSize: 18, marginBottom: 2 },
+  boatIcon: { fontSize: 18, marginBottom: 2 },
+  noticeIcon: { fontSize: 18, marginBottom: 2 },
+  gearIcon: { fontSize: 18, marginBottom: 2, color: 'white' },
+  placeholderIcon: { fontSize: 18, marginBottom: 2 },
+
+  videoSpace: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'black' },
+  videoHint: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
+  mediaPreview: { flex: 1, width: '100%', resizeMode: 'contain' },
+  postedWaveContainer: { flex: 1, width: '100%', justifyContent: 'center', alignItems: 'center' },
+  postedWaveMedia: { position: 'absolute', top: 0, left: 0, bottom: 0, right: 0 },
+  postedWaveCaption: {
+    position: 'absolute',
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 18,
+    textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: { width: -1, height: 1 }, textShadowRadius: 10,
+  },
+  mediaTitleBar: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    right: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8, // This can be kept or removed, doesn't affect transparency
+    backgroundColor: 'transparent',
+  },
+  mediaTitleText: { color: 'white', fontWeight: '800', flexShrink: 1 },
+  mediaTimerText: { color: 'white', fontVariant: ['tabular-nums'], fontWeight: '700', marginLeft: 12 },
+
+  bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-around', paddingHorizontal: 6, paddingTop: 8, backgroundColor: 'transparent' },
+  bottomItem: { alignItems: 'center', justifyContent: 'center', minWidth: SCREEN_WIDTH / 6 },
+  youngManIcon: { fontSize: 22, opacity: 0.75 },
+  speakerIcon: { fontSize: 22 },
+  moneyIcon: { fontSize: 22 },
+  castaIcon: { fontSize: 22 },
+  placeholderSmall: { fontSize: 20 },
+  bottomLabel: { color: 'white', fontSize: 12, marginTop: 2 },
+
+  counterText: { color: 'white', fontWeight: '700', fontSize: 12, opacity: 0.9, marginTop: 2, minHeight: 14 },
+
+  rightBubbles: { position: 'absolute', right: 12, top: '45%', alignItems: 'flex-end' },
+  bubble: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(20, 80, 150, 0.7)', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'rgba(255, 255, 255, 0.8)' },
+  bubbleText: { color: 'white', fontWeight: '800' },
+
+  modalRoot: { flex: 1, backgroundColor: 'transparent' },
+  modalHeader: { paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.2)' },
+  modalTitle: { color: 'white', fontSize: 16, fontWeight: '800', letterSpacing: 0.5 },
+  modalContent: { padding: 16, gap: 12, backgroundColor: 'transparent' },
+  closeBtn: { alignSelf: 'center', marginVertical: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  closeText: { color: 'white', fontWeight: '700' },
+
+  profileCard: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 16, padding: 16, gap: 8 },
+  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#2ec7ff', borderWidth: 2, borderColor: 'white' },
+  profileName: { color: 'white', fontWeight: '800', fontSize: 16 },
+  profileBio: { color: 'rgba(255,255,255,0.8)' },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
+  statBox: { alignItems: 'center', flex: 1 },
+  statNumber: { color: 'white', fontWeight: '800' },
+  statLabel: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+
+  primaryBtn: { backgroundColor: 'rgba(0,194,255,0.08)', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(0,194,255,0.6)' },
+  primaryBtnText: { color: '#00C2FF', fontWeight: '800' },
+  hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+
+  sheetOverlay: { flex: 1, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'flex-end', padding: 16 },
+  sheet: { width: '100%', backgroundColor: 'rgba(15,19,32,0.85)', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, gap: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(255,255,255,0.12)' },
+  sheetTitle: { color: 'white', fontWeight: '800', fontSize: 16 },
+  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  actionItem: { width: '47%', backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingVertical: 14, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  actionIcon: { fontSize: 22 },
+  actionLabel: { color: 'white', fontWeight: '700' },
+
+  sectionTitle: { color: 'white', fontWeight: '800', fontSize: 14 },
+  subLabel: { color: 'rgba(255,255,255,0.9)', fontWeight: '700' },
+  input: { backgroundColor: 'rgba(255,255,255,0.08)', color: 'white', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 },
+  settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.06)', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, marginBottom: 8 },
+  settingLabel: { color: 'white' },
+  dismissBtn: { alignSelf: 'center', marginTop: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.03)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
+  dismissText: { color: 'white', fontWeight: '700' },
+  tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tag: { backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16 },
+  tagText: { color: 'white', fontWeight: '700' },
+
+  pingItem: { backgroundColor: 'rgba(255,255,255,0.06)', padding: 12, borderRadius: 12, marginBottom: 8 },
+  pingText: { color: 'white' },
+
+  // Dropdown styles
+  dropdownButton: { backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 12, borderRadius: 10, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  dropdownButtonText: { color: 'white', fontWeight: '700' },
+  dropdownItem: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.2)' },
+  dropdownItemText: { color: 'white', fontSize: 16, fontWeight: '600' },
+});
+const editorStyles = StyleSheet.create({
+  editorRoot: { flex: 1, backgroundColor: 'black' },
+  stage: { flex: 1, position: 'relative', backgroundColor: 'black' },
+  editorContainer: { backgroundColor: 'rgba(10, 10, 20, 0.65)', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.12)' },
+  editorScroll: { paddingHorizontal: 16, paddingVertical: 12 },
+  editorItem: { alignItems: 'center', paddingHorizontal: 10, gap: 4 },
+  editorIcon: { fontSize: 20 },
+  editorLabel: { color: 'white', fontSize: 11, fontWeight: '600' },
+  doneButton: { backgroundColor: 'rgba(0,194,255,0.08)', paddingVertical: 12, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(0,194,255,0.6)', borderRadius: 12 },
+  doneButtonText: { color: '#00C2FF', fontWeight: '800', fontSize: 16, paddingHorizontal: 20 },
+  draggableCaptionContainer: { position: 'absolute', width: '90%', alignItems: 'center', left: '5%', zIndex: 5, elevation: 5 },
+  captionInput: {
+    color: 'white',
+    fontWeight: 'bold',
+    fontSize: 18,
+    textAlign: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minHeight: 44,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    textShadowColor: 'rgba(0, 0, 0, 0.75)', textShadowOffset: { width: -1, height: 1 }, textShadowRadius: 10,
+  },
+  liveEditorSidebar: {
+    position: 'absolute',
+    top: '20%',
+    right: 16,
+    gap: 24,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  liveEditorButton: { alignItems: 'center', gap: 4 },
+  liveEditorIcon: { fontSize: 28, color: 'white', textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4 },
+  liveEditorLabel: { color: 'white', fontWeight: '600', fontSize: 12, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 2 },
+
+  // Live bottom media editor bar (TikTok-style)
+  liveBottomBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+    paddingTop: 10,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  liveBottomScroll: { flexDirection: 'row', gap: 16 },
+  liveBottomItem: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  liveBottomIcon: { fontSize: 22, color: 'white' },
+  liveBottomLabel: { color: 'white', fontSize: 12, fontWeight: '700', marginTop: 2 },
+
+  // Right-side action stack (from bottom to top)
+  liveRightControls: {
+    position: 'absolute',
+    right: 12,
+    bottom: 0,
+    alignItems: 'center',
+    gap: 18,
+    zIndex: 25,
+  },
+  liveRightButton: { alignItems: 'center', justifyContent: 'center' },
+  liveRightIcon: { fontSize: 24, color: 'white' },
+  liveRightLabel: { color: 'white', fontSize: 10, fontWeight: '700', marginTop: 2 },
+
+
+});
+
+const AFRICAN_COUNTRIES = [
+  "Algeria", "Angola", "Benin", "Botswana", "Burkina Faso", "Burundi", "Cabo Verde",
+  "Cameroon", "Central African Republic", "Chad", "Comoros", "Congo, Dem. Rep.",
+  "Congo, Rep.", "Cote d'Ivoire", "Djibouti", "Egypt", "Equatorial Guinea",
+  "Eritrea", "Eswatini", "Ethiopia", "Gabon", "Gambia", "Ghana", "Guinea", "Guinea-Bissau",
+  "Kenya", "Lesotho", "Liberia", "Libya", "Madagascar", "Malawi", "Mali", "Mauritania",
+  "Mauritius", "Morocco", "Mozambique", "Namibia", "Niger", "Nigeria", "Rwanda", "Sao Tome and Principe",
+  "Senegal", "Seychelles", "Sierra Leone", "Somalia", "South Africa", "South Sudan", "Sudan",
+  "Tanzania", "Togo", "Tunisia", "Uganda", "Zambia", "Zimbabwe"
+];
+
+// Payment details are only configured for these countries
+const SUPPORTED_PEARL_COUNTRIES = ['Zimbabwe', 'Kenya'];
+
+
+// ======================== INNER APP ========================
+const InnerApp: React.FC = () => {
+  const insets = useSafeAreaInsets();
+
+  const [splashes, setSplashes] = useState<number>(0);
+  const [echoes, setEchoes] = useState<number>(0);
+  const [wavesFeed, setWavesFeed] = useState<Wave[]>([]);
+  const [isFeedLoaded, setIsFeedLoaded] = useState(false);
+
+  const [showProfile, setShowProfile] = useState<boolean>(false);
+  const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
+  const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
+  const [showPings, setShowPings] = useState<boolean>(false);
+  const [showExplore, setShowExplore] = useState<boolean>(false);
+  const [showNotice, setShowNotice] = useState<boolean>(false);
+  const [showBridge, setShowBridge] = useState<boolean>(false);
+  const [showPearls, setShowPearls] = useState<boolean>(false);
+  const [showEchoes, setShowEchoes] = useState<boolean>(false);
+  const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [showCountryPicker, setShowCountryPicker] = useState<boolean>(false);
+  const [echoText, setEchoText] = useState<string>('');
+  const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
+  const [attachedAudio, setAttachedAudio] = useState<{ uri: string; name?: string } | null>(null);
+  const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
+  const [audioUrlInput, setAudioUrlInput] = useState<string>('');
+  const [transcoding, setTranscoding] = useState<boolean>(false);
+
+  // Editor state
+  const [showCaptionInput, setShowCaptionInput] = useState(false);
+  const [captionText, setCaptionText] = useState('');
+  const [stageSize, setStageSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const [editorControlsHeight, setEditorControlsHeight] = useState(0);
+  const [captionPos, setCaptionPos] = useState<{ x: number; y: number } | null>(null);
+  const [releasing, setReleasing] = useState(false);
+  const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
+  const [currentIndex, setCurrentIndex] = useState<number>(-1);
+  const [isPaused, setIsPaused] = useState(false);
+  const [showLive, setShowLive] = useState(false);
+  // Editor playback control + sync helpers
+  const [editorPlaying, setEditorPlaying] = useState(true);
+  const [audioUnpaused, setAudioUnpaused] = useState(true);
+  const overlayAudioDelayMs = 80; // small delay to align overlay audio with video start
+  const editorVideoRef = React.useRef<any>(null);
+  const editorAudioRef = React.useRef<any>(null);
+  const audioDelayTimerRef = React.useRef<any>(null);
+
+  // Playback HUD state (for posted wave)
+  const [playbackTime, setPlaybackTime] = useState(0);
+  const [playbackDuration, setPlaybackDuration] = useState(0);
+  const [bottomBarHeight, setBottomBarHeight] = useState(88);
+
+  const isVideoAsset = (asset: Asset | null | undefined): boolean => {
+    if (!asset) return false;
+    const t = (asset.type || '').toLowerCase();
+    if (t.includes('video')) return true;
+    const uri = String(asset.uri || '').toLowerCase();
+    if (/(\.(mp4|mov|m4v|webm|3gp|3gpp|mkv|avi))($|\?)/i.test(uri)) return true;
+    const isLocal = uri.startsWith('file://') || uri.startsWith('content://');
+    const isImageExt = /(\.(jpg|jpeg|png|gif|heic|webp))($|\?)/i.test(uri);
+    if (isLocal && !isImageExt) return true;
+    return false;
+  };
+
+  const currentWave = wavesFeed.length > 0 && currentIndex >= 0 ? wavesFeed[currentIndex] : null;
+
+  useEffect(() => {
+    // Reset timer when a new wave is shown
+    setPlaybackTime(0);
+    setPlaybackDuration(0);
+    setIsPaused(false);
+
+    // Reset pearls country selection when modal is closed
+    if (!showPearls) {
+      setSelectedCountry(null);
+    }
+
+    const handleAppStateChange = (nextAppState: any) => {
+      if (nextAppState.match(/inactive|background/)) {
+        setIsPaused(true);
+      } else if (nextAppState === 'active') {
+        setIsPaused(false);
+      }
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription.remove();
+    };
+  }, [waveKey, currentWave?.id, showPearls]);
+
+  // Persistence of waves with AsyncStorage if available, otherwise file-based via react-native-fs
+  useEffect(() => {
+    const loadPersisted = async () => {
+      let AS: any = null;
+      let FS: any = null;
+      try { AS = require('@react-native-async-storage/async-storage').default; } catch {}
+      try { FS = require('react-native-fs'); } catch {}
+
+      try {
+        let raw: string | null = null;
+        if (AS && typeof AS.getItem === 'function') {
+          raw = await AS.getItem('my_waves');
+        } else if (FS && FS.DocumentDirectoryPath) {
+          const filePath = FS.DocumentDirectoryPath + '/my_waves.json';
+          const exists = await FS.exists(filePath);
+          if (exists) raw = await FS.readFile(filePath, 'utf8');
+        }
+        if (raw) {
+          const data = JSON.parse(raw);
+          if (Array.isArray(data)) {
+            const reversedData = data.reverse();
+            setWavesFeed(reversedData);
+            setCurrentIndex(reversedData.length ? 0 : -1);
+          }
+        }
+      } catch {}
+      finally {
+        setIsFeedLoaded(true);
+      }
+    };
+    loadPersisted();
+  }, []);
+
+  useEffect(() => {
+    if (!isFeedLoaded) return;
+    const savePersisted = async () => {
+      let AS: any = null;
+      let FS: any = null;
+      try { AS = require('@react-native-async-storage/async-storage').default; } catch {}
+      try { FS = require('react-native-fs'); } catch {}
+      try {
+        const chronologicalFeed = [...wavesFeed].reverse();
+        const compact = chronologicalFeed.map(w => ({
+          id: w.id,
+          media: { uri: w.media?.uri, type: w.media?.type, fileName: w.media?.fileName },
+          audio: w.audio,
+          captionText: w.captionText,
+          captionPosition: w.captionPosition,
+          playbackUrl: w.playbackUrl ?? null,
+          muxStatus: w.muxStatus ?? null,
+        }));
+        const payload = JSON.stringify(compact);
+        if (AS && typeof AS.setItem === 'function') {
+          await AS.setItem('my_waves', payload);
+        } else if (FS && FS.DocumentDirectoryPath) {
+          const filePath = FS.DocumentDirectoryPath + '/my_waves.json';
+          await FS.writeFile(filePath, payload, 'utf8');
+        }
+      } catch {}
+    };
+    savePersisted();
+  }, [wavesFeed, isFeedLoaded]);
+
+  const formatTime = (secs: number) => {
+    const s = Math.max(0, Math.floor(secs || 0));
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    return `${m}:${ss}`;
+  };
+
+  const extractBaseName = (uri: string | undefined | null): string => {
+    if (!uri) return '';
+    try {
+      const trimmed = String(uri).split('?')[0].split('#')[0];
+      const last = trimmed.substring(trimmed.lastIndexOf('/') + 1);
+      return last || '';
+    } catch {
+      return '';
+    }
+  };
+
+  const getWaveTitle = (w: Wave | null): string => {
+    if (!w) return '';
+    const isVid = isVideoAsset(w.media);
+    if (isVid) {
+      return w.media.fileName || extractBaseName(w.media.uri) || 'Wave';
+    }
+    // If not video, fall back to audio name if present, otherwise image name
+    return (
+      w.audio?.name || extractBaseName(w.audio?.uri) || w.media.fileName || extractBaseName(w.media.uri) || 'Wave'
+    );
+  };
+
+  const pings = useMemo(
+    () => [
+      { id: '1', text: '🌊 @Kai splashed your wave' },
+      { id: '2', text: '🐠 @Mira echoed on your clip' },
+      { id: '3', text: '🏝️ New follower joined your crew' },
+    ],
+    []
+  );
+
+  const explore = useMemo(
+    () => ['#HeatWave', '#DeepBlue', '#ShoreShots', '#GoDriftLIVE', '#PearlsTips', '#LagoonLaughs'],
+    []
+  );
+
+  const onSplash = () => setSplashes((s) => s + 1);
+  const onSendEcho = () => {
+    if (!echoText.trim()) return;
+    setEchoes((e) => e + 1);
+    setEchoText('');
+    Alert.alert('Echo sent', 'Your echo has been cast.');
+  };
+  const onShare = async () => {
+    try {
+      await Share.share({ title: 'Casta Net', message: 'Casting a net – check out this wave!' });
+    } catch {
+      Alert.alert('Share failed', 'Unable to cast the net right now.');
+    }
+  };
+
+  // Android: robust camera + mic permission flow with Settings fallback
+  const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const api = typeof Platform.Version === 'number' ? Platform.Version : 0;
+      const perms: string[] = [
+        PermissionsAndroid.PERMISSIONS.CAMERA,
+        PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+      ];
+      if (api >= 31 && (PermissionsAndroid as any).PERMISSIONS.BLUETOOTH_CONNECT) {
+        perms.push((PermissionsAndroid as any).PERMISSIONS.BLUETOOTH_CONNECT);
+      }
+      const results = await PermissionsAndroid.requestMultiple(perms as any);
+      const cam = results[PermissionsAndroid.PERMISSIONS.CAMERA];
+      const mic = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+      const bt = (api >= 31 && results[(PermissionsAndroid as any).PERMISSIONS.BLUETOOTH_CONNECT]) || undefined;
+      const granted = cam === PermissionsAndroid.RESULTS.GRANTED && mic === PermissionsAndroid.RESULTS.GRANTED;
+      if (granted) return true;
+
+      const neverAskAgain = cam === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN || mic === PermissionsAndroid.RESULTS.NEVER_ASK_AGAIN;
+      if (neverAskAgain) {
+        Alert.alert(
+          'Permission required',
+          'Camera and microphone permissions are permanently denied. Please enable them in Settings.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      } else {
+        Alert.alert('Permission needed', 'Camera and microphone permissions are required to go live.');
+      }
+      if (bt && bt !== PermissionsAndroid.RESULTS.GRANTED) {
+        console.warn('Bluetooth connect permission not granted; BT mics may not work.');
+      }
+    } catch (e) {
+      console.warn('Permission request failed', e);
+    }
+    return false;
+  };
+
+  // Cross-platform permission request for Camera and Microphone
+  const requestMediaPermissions = async (): Promise<boolean> => {
+    if (Platform.OS === 'android') {
+      return await ensureCamMicPermissionsAndroid();
+    }
+
+    if (Platform.OS === 'ios') {
+      // On iOS, permissions are implicitly requested when you first try to use the feature.
+      // Libraries like react-native-agora or react-native-camera handle this.
+      // We can return true here and assume the library will trigger the system prompt.
+      // For robust handling, a dedicated permissions library like 'react-native-permissions'
+      // would be ideal to check status beforehand, but for now, this is sufficient.
+      console.log('iOS: Permissions will be requested by the live streaming library upon use.');
+      return true;
+    }
+
+    // For other platforms, assume permissions are not needed or handled differently.
+    return true;
+  };
+
+  const handleCameraLaunch = (options: CameraOptions) => {
+    launchCamera(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled camera');
+      } else if (response.errorCode) {
+        Alert.alert('Camera Error', response.errorMessage || 'An unknown error occurred.');
+      } else if (response.assets && response.assets.length > 0) {
+        // Close the action sheet and open the editor
+        setShowMakeWaves(false);
+        const picked = response.assets[0];
+        if (isVideoAsset(picked)) {
+          setTranscoding(true);
+          normalizeVideoToMp4(String(picked.uri))
+            .then((outUri) => {
+              const fileName = (picked.fileName || 'video').replace(/\.[^.]+$/, '') + '.mp4';
+              setCapturedMedia({ ...picked, uri: outUri, type: 'video/mp4', fileName } as any);
+            })
+            .catch(() => setCapturedMedia(picked))
+            .finally(() => setTranscoding(false));
+        } else {
+          setCapturedMedia(picked);
+        }
+      }
+    });
+  };
+
+  const handleMediaSelect = (response: ImagePickerResponse) => {
+    if (response.didCancel) {
+      console.log('User cancelled media selection');
+    } else if (response.errorCode) {
+      Alert.alert('Media Error', response.errorMessage || 'An unknown error occurred.');
+    } else if (response.assets && response.assets.length > 0) {
+      // Close the action sheet and open the editor
+      setShowMakeWaves(false);
+      const picked = response.assets[0];
+      if (isVideoAsset(picked)) {
+        setTranscoding(true);
+        normalizeVideoToMp4(String(picked.uri))
+          .then((outUri) => {
+            const fileName = (picked.fileName || 'video').replace(/\.[^.]+$/, '') + '.mp4';
+            setCapturedMedia({ ...picked, uri: outUri, type: 'video/mp4', fileName } as any);
+          })
+          .catch(() => setCapturedMedia(picked))
+          .finally(() => setTranscoding(false));
+      } else {
+        setCapturedMedia(picked);
+      }
+    }
+  };
+
+  // Start in-app Live with editor overlays (TikTok-style)
+  const goLiveEditor = async () => {
+    setShowMakeWaves(false);
+    if (Platform.OS === 'android') {
+      try {
+        const results = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ] as any);
+        const cam = results[PermissionsAndroid.PERMISSIONS.CAMERA];
+        const mic = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+        if (cam !== PermissionsAndroid.RESULTS.GRANTED || mic !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert('Permission needed', 'Camera and microphone are required to go live.');
+          return;
+        }
+      } catch {}
+    }
+    setShowLive(true);
+  };
+
+  const openCamera = async () => {
+    Alert.alert(
+      'Create a Wave',
+      'What would you like to do?',
+      [
+        {
+          text: 'Take Photo',
+          onPress: () => handleCameraLaunch({ mediaType: 'photo', quality: 0.8 }),
+        },
+        {
+          text: 'Record Video',
+          onPress: () => handleCameraLaunch({ mediaType: 'video', videoQuality: 'high' }),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+      { cancelable: true }
+    );
+  };
+
+  const fromGallery = () => {
+    launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, handleMediaSelect);
+  };
+
+  // Using launchImageLibrary for "From Files" as well, as it's the most common
+  // and stable way to select media (photos/videos) on a mobile device.
+  const fromFiles = () => {
+    launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, handleMediaSelect);
+  };
+
+  const pickAudioFromDevice = () => {
+    const ensureAudioPermissionAndroid = async (): Promise<boolean> => {
+      if (Platform.OS !== 'android') return true;
+      try {
+        const apiLevel = typeof Platform.Version === 'number' ? Platform.Version : 0;
+        if (apiLevel >= 33) {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
+            {
+              title: 'Drift Audio Permission',
+              message: 'Drift needs access to your music to attach Sea Shanties.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+            }
+          );
+          return granted === PermissionsAndroid.RESULTS.GRANTED;
+        } else {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            {
+              title: 'Drift Storage Permission',
+              message: 'Drift needs access to your storage to pick audio files.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+            }
+          );
+          return granted === PermissionsAndroid.RESULTS.GRANTED;
+        }
+      } catch (e) {
+        console.warn(e);
+        return false;
+      }
+    };
+
+    const startPick = () => launchImageLibrary({ mediaType: 'mixed', selectionLimit: 1 }, (response) => {
+      if (response.didCancel) return;
+      if (response.errorCode) {
+        Alert.alert('Audio Picker Error', response.errorMessage || 'Unable to open picker.');
+        return;
+      }
+      const asset = response.assets?.[0];
+      if (asset?.type?.startsWith('audio/') && asset.uri) {
+        const rawUri = String(asset.uri);
+        // Best-effort: convert local files to m4a if ffmpeg-kit is available
+        if (/^file:/.test(rawUri)) {
+          normalizeAudioToM4a(rawUri)
+            .then((outUri) => setAttachedAudio({ uri: outUri, name: (asset.fileName || 'audio').replace(/\.[^.]+$/, '') + '.m4a' }))
+            .catch(() => setAttachedAudio({ uri: rawUri, name: asset.fileName }))
+            .finally(() => { setShowAudioModal(false); setAudioUrlInput(''); });
+        } else {
+          setAttachedAudio({ uri: rawUri, name: asset.fileName });
+          setShowAudioModal(false);
+          setAudioUrlInput('');
+        }
+      } else {
+        Alert.alert('No audio selected', 'Please choose an audio file.');
+      }
+    });
+
+    if (Platform.OS === 'android') {
+      ensureAudioPermissionAndroid().then((ok) => {
+        if (!ok) {
+          Alert.alert('Permission Required', 'Storage permission is needed to access music files.');
+          return;
+        }
+        startPick();
+      });
+    } else {
+      startPick();
+    }
+  };
+
+  // Stable: use react-native-document-picker with runtime-safe require and guards
+  const pickAudioWithDocumentPicker = async () => {
+    let DP: any | null = null;
+    try {
+      // Lazy require so the app won’t crash if the module isn’t installed yet
+      // and to avoid Metro bundling errors pre-install.
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      DP = require('react-native-document-picker');
+    } catch (e) {
+      DP = null;
+    }
+
+    if (!DP) {
+      Alert.alert(
+        'Module Missing',
+        'Install react-native-document-picker to use the stable picker.\n\nRun:\n• npm i react-native-document-picker\n• cd ios && pod install (iOS)'
+      );
+      return;
+    }
+
+    try {
+      // Prefer single-select API if available, otherwise pick + first item
+      const doPickSingle = DP.pickSingle || (async (opts: any) => {
+        const res = await DP.pick(opts);
+        return Array.isArray(res) ? res[0] : res;
+      });
+
+      const file = await doPickSingle({
+        type: [DP.types.audio],
+        presentationStyle: 'fullScreen',
+        allowMultiSelection: false,
+        copyTo: 'cachesDirectory',
+      });
+
+      if (file?.uri || file?.fileCopyUri) {
+        const playableUri = file?.fileCopyUri || file?.uri;
+        if (/^file:/.test(String(playableUri))) {
+          // Try to normalize to m4a when local
+          const raw = String(playableUri);
+          try {
+            const outUri = await normalizeAudioToM4a(raw);
+            setAttachedAudio({ uri: outUri, name: (file.name || 'audio').replace(/\.[^.]+$/, '') + '.m4a' });
+          } catch {
+            setAttachedAudio({ uri: raw, name: file.name });
+          }
+        } else {
+          setAttachedAudio({ uri: playableUri, name: file.name });
+        }
+        setShowAudioModal(false);
+        setAudioUrlInput('');
+      } else {
+        Alert.alert('No audio selected', 'Please choose an audio file.');
+      }
+    } catch (err: any) {
+      if (DP?.isCancel?.(err)) {
+        // User cancelled — do nothing
+        return;
+      }
+      console.warn('DocumentPicker error', err);
+      Alert.alert('Picker Error', 'Unable to open the document picker safely.');
+    }
+  };
+
+// Fresh Go Drift: request permissions and open native camera
+const goDrift = async () => {
+    setShowMakeWaves(false);
+    // Android: request camera + mic
+    if (Platform.OS === 'android') {
+      try {
+        const results = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ] as any);
+        const cam = results[PermissionsAndroid.PERMISSIONS.CAMERA];
+        const mic = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+        if (cam !== PermissionsAndroid.RESULTS.GRANTED || mic !== PermissionsAndroid.RESULTS.GRANTED) {
+          Alert.alert('Permission needed', 'Camera and microphone are required to go live.');
+          return;
+        }
+      } catch {}
+    }
+    // Open device camera to start capturing immediately
+    handleCameraLaunch({ mediaType: 'video', videoQuality: 'high' });
+  };
+
+  // Initialize caption near the vertical middle of the media area (PanResponder version)
+  useEffect(() => {
+    if (capturedMedia && showCaptionInput && stageSize.h > 0 && !captionPos) {
+      setCaptionPos({ x: 24, y: Math.floor(stageSize.h * 0.35) });
+    }
+  }, [capturedMedia, showCaptionInput, stageSize, captionPos]);
+
+  const onEditorToolPress = (toolLabel: string) => {
+    if (toolLabel === 'Sea Shanties') {
+      setShowAudioModal(true);
+      return;
+    }
+    if (toolLabel === 'Sonar Captions') {
+      setShowCaptionInput(prev => !prev);
+      return;
+    }
+    Alert.alert(toolLabel, 'This editing tool is not yet implemented.');
+  };
+
+  // Arm audio delay based on whether media is video or image
+  useEffect(() => {
+    if (audioDelayTimerRef.current) { try { clearTimeout(audioDelayTimerRef.current); } catch {} }
+    if (attachedAudio?.uri) {
+      if (isVideoAsset(capturedMedia)) {
+        // Will be released on video onLoad
+        setAudioUnpaused(false);
+      } else {
+        setAudioUnpaused(true);
+      }
+    } else {
+      setAudioUnpaused(true);
+    }
+    return () => { if (audioDelayTimerRef.current) { try { clearTimeout(audioDelayTimerRef.current); } catch {} } };
+  }, [capturedMedia?.uri, attachedAudio?.uri]);
+
+  const onPostWave = async () => {
+    if (!capturedMedia) {
+      Alert.alert('No media', 'Please select or capture media first.');
+      return;
+    }
+    setReleasing(true);
+    let uploadedPath: string | null = null;
+    let audioDownloadUrl: string | null = null;
+    let serverDocId: string | null = null;
+    let storageMod: any = null;
+    let firestoreMod: any = null;
+    let authMod: any = null;
+    try {
+      try { storageMod = require('@react-native-firebase/storage').default; } catch {}
+      try { firestoreMod = require('@react-native-firebase/firestore').default; } catch {}
+      try { authMod = require('@react-native-firebase/auth').default; } catch {}
+
+      if (storageMod && firestoreMod && authMod) {
+        const a = authMod();
+        if (!a.currentUser) {
+          await a.signInAnonymously();
+        }
+        const uid = a.currentUser?.uid;
+        const isHttp = (u: string) => /^https?:\/\//i.test(u);
+        const nameGuessRaw = capturedMedia.fileName || 'wave';
+        const type = (capturedMedia.type || '').toLowerCase();
+        const sanitizedBase = nameGuessRaw.replace(/[^A-Za-z0-9._-]/g, '_').replace(/_{2,}/g, '_');
+        const baseNoExt = sanitizedBase.includes('.') ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.')) : sanitizedBase;
+        const ext = sanitizedBase.includes('.') ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1) : (type.startsWith('video/') ? 'mp4' : type.startsWith('image/') ? 'jpg' : 'dat');
+        const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+
+        // Normalize local URI for putFile
+        let localPath = String(capturedMedia.uri || '');
+        try {
+          localPath = decodeURI(localPath);
+        } catch {}
+        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+          // RNFirebase on Android expects a filesystem path or content://
+          localPath = localPath.replace('file://', '');
+        }
+        // Set contentType to help ExoPlayer/iOS pick the right pipeline
+        const videoContentType = (type && type.startsWith('video/')) ? type : 'video/mp4';
+        await storageMod().ref(filePath).putFile(localPath, { contentType: videoContentType });
+        uploadedPath = filePath;
+        if (attachedAudio?.uri) {
+          if (isHttp(attachedAudio.uri)) {
+            audioDownloadUrl = attachedAudio.uri; // remote URL pasted by user
+          } else {
+            // local file from picker; upload to Storage
+            let audioLocal = attachedAudio.uri;
+            try { audioLocal = decodeURI(audioLocal); } catch {}
+            if (Platform.OS === 'android' && audioLocal.startsWith('file://')) {
+              audioLocal = audioLocal.replace('file://', '');
+            }
+            const audioNameGuess = (attachedAudio.name || 'track').replace(/[^A-Za-z0-9._-]/g, '_');
+            const audioExt =
+              (audioNameGuess.includes('.') && audioNameGuess.split('.').pop()) ||
+              (/\.(mp3|m4a|aac|wav|ogg)$/i.exec(attachedAudio.uri || '')?.[1]) ||
+              'm4a';
+            const audioPath = `posts/${uid}/${Date.now()}_${audioNameGuess}.${audioExt}`;
+            const audioCt = /m4a$/i.test(audioExt)
+              ? 'audio/m4a'
+              : /mp3$/i.test(audioExt)
+              ? 'audio/mpeg'
+              : /aac$/i.test(audioExt)
+              ? 'audio/aac'
+              : /wav$/i.test(audioExt)
+              ? 'audio/wav'
+              : /ogg$/i.test(audioExt)
+              ? 'audio/ogg'
+              : 'audio/mpeg';
+            await storageMod().ref(audioPath).putFile(audioLocal, { contentType: audioCt });
+            audioDownloadUrl = await storageMod().ref(audioPath).getDownloadURL();
+          }
+        }
+        const docRef = await firestoreMod().collection('waves').add({
+          authorId: uid,
+          mediaPath: filePath,
+          text: captionText,
+          createdAt: firestoreMod.FieldValue?.serverTimestamp ? firestoreMod.FieldValue.serverTimestamp() : new Date(),
+          caption: {
+            x: captionPos?.x ?? 0,
+            y: captionPos?.y ?? 0,
+          },
+          audioUrl: audioDownloadUrl || null,
+          muxMode: audioDownloadUrl ? 'replace' : null,
+          // Default to safe re-encode. To try fast copy, set 'copy'.
+          muxVideoStrategy: audioDownloadUrl ? 'safe' : null,
+          // Optional: set FPS to force CFR when needed (e.g., 30)
+          muxFps: null,
+          muxStatus: audioDownloadUrl ? 'pending' : 'ready',
+          playbackUrl: null,
+        });
+        serverDocId = docRef?.id || null;
+        if (Platform.OS === 'android') {
+          try { require('react-native').ToastAndroid.show('Wave released', require('react-native').ToastAndroid.SHORT); } catch {}
+        } else {
+          Alert.alert('Wave Released', 'Your wave is live!');
+        }
+      } else {
+        Alert.alert(
+          'Backend not ready',
+          'Install @react-native-firebase/storage and @react-native-firebase/firestore to upload waves. Showing locally for now.'
+        );
+      }
+    } catch (e) {
+      console.warn('Release wave failed', e);
+      const msg = (e && (e.message || (typeof e === 'string' ? e : ''))) || 'Unknown error';
+      Alert.alert('Release failed', `Could not release your wave. ${msg}`);
+    } finally {
+      // Update local feed immediately (uses local media path)
+      const newWave: Wave = {
+        id: serverDocId || new Date().toISOString(),
+        media: capturedMedia,
+        audio: audioDownloadUrl ? { uri: audioDownloadUrl, name: attachedAudio?.name } : null,
+        captionText: captionText,
+        captionPosition: captionPos || { x: 0, y: 0 },
+        playbackUrl: null,
+        muxStatus: audioDownloadUrl ? 'pending' : 'ready',
+      };
+      setWavesFeed(prev => {
+        // Add new wave to the beginning of the array
+        const next = [newWave, ...prev];
+        setCurrentIndex(0); // Set view to the new wave
+        return next;
+      });
+      // If we created a server doc, watch for mux completion updates
+      if (serverDocId && firestoreMod) {
+        try {
+          firestoreMod()
+            .collection('waves')
+            .doc(serverDocId)
+            .onSnapshot((snap: any) => {
+              const data = snap?.data?.() || snap?.data || {};
+              const playbackUrl = data?.playbackUrl || null;
+              const muxStatus = data?.muxStatus || null;
+              if (playbackUrl || muxStatus) {
+                setWavesFeed((prev) => prev.map((w) => (
+                  w.id === serverDocId ? { ...w, playbackUrl: playbackUrl ?? w.playbackUrl, muxStatus: (muxStatus as any) ?? w.muxStatus } : w
+                )));
+              }
+            });
+        } catch {}
+      }
+      // Reset editor state
+      setCapturedMedia(null);
+      setAttachedAudio(null);
+      setCaptionText('');
+      setShowCaptionInput(false);
+      setCaptionPos(null);
+      setReleasing(false);
+      setWaveKey(Date.now()); // Force the feed to update and play the new wave
+    }
+  };
+
+  const onFinishCaption = () => {
+    // Exit editing mode but keep the overlay visible on media
+    setShowCaptionInput(false);
+  };
+
+  const editorTools = useMemo(() => [
+    { icon: '🎵', label: 'Sea Shanties' },
+    { icon: '🎨', label: 'Ocean Tones' },
+    { icon: '🖼️', label: 'Hull & Canvas' },
+    { icon: '✂️', label: 'Cut the Wake' },
+    { icon: '🌀', label: 'Riptide' },
+    { icon: '💬', label: 'Sonar Captions' },
+    { icon: '✨', label: 'Ripples & Foam' },
+    { icon: '🛟', label: 'Buoys' },
+  ], []);
+
+  return (
+    <SafeAreaView style={styles.root} edges={['right', 'left']}>
+      {/* Video player now acts as the absolute background */}
+      <View style={styles.videoSpace}>
+        {wavesFeed.length > 0 ? (
+          <>
+            <ScrollView
+              style={{ flex: 1 }}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onLayout={() => {
+                if (currentIndex < 0 && wavesFeed.length > 0) {
+                  setCurrentIndex(0);
+                }
+              }}
+              onMomentumScrollEnd={(e) => {
+                const page = Math.round(e.nativeEvent.contentOffset.x / e.nativeEvent.layoutMeasurement.width);
+                if (page !== currentIndex && page < wavesFeed.length) {
+                  setCurrentIndex(page);
+                  setWaveKey(Date.now());
+                }
+              }}
+            >
+              {wavesFeed.map((item, index) => {
+                const shouldPlay = !isPaused && index === currentIndex;
+                return (
+                  <View key={item.id} style={[styles.postedWaveContainer, { width: SCREEN_WIDTH }]}>
+                    {RNVideo && (item.playbackUrl || isVideoAsset(item.media)) ? ( // This line has a logic error, let's fix it
+              currentWave.playbackUrl ? (
+                // Single stream: server-muxed URL
+                <RNVideo
+                  source={{ uri: String(item.playbackUrl) }}
+                  style={styles.postedWaveMedia as any}
+                  resizeMode={"contain"}
+                  repeat={true}
+                  paused={!shouldPlay}
+                  disableFocus={true}
+                  playInBackground={false}
+                  playWhenInactive={false}
+                  ignoreSilentSwitch={"ignore"}
+                  onError={(e: any) => console.warn('FEED VIDEO ERR', e)}
+                  onLoad={(e: any) => setPlaybackDuration(e?.duration || 0)}
+                  onProgress={(e: any) => setPlaybackTime(e?.currentTime || 0)}
+                />
+              ) : (
+                // Fallback: separate video + hidden audio when an overlay audio is present
+                <>
+                  <RNVideo
+                    source={{ uri: String(item.media.uri) }}
+                    style={styles.postedWaveMedia as any}
+                    resizeMode={"contain"}
+                    repeat={true}
+                    paused={!shouldPlay}
+                    muted={!!item.audio?.uri}
+                    disableFocus={true}
+                    playInBackground={false}
+                    playWhenInactive={false}
+                    ignoreSilentSwitch={"ignore"}
+                    onError={(e: any) => console.warn('FEED VIDEO ERR', e)}
+                    onLoad={(e: any) => setPlaybackDuration(e?.duration || 0)}
+                    onProgress={(e: any) => setPlaybackTime(e?.currentTime || 0)}
+                  />
+                  {RNVideo && item.audio?.uri && (
+                    <RNVideo
+                      source={{ uri: item.audio.uri }}
+                      audioOnly
+                      repeat={true}
+                      paused={!shouldPlay}
+                      disableFocus={true}
+                      playInBackground={true}
+                      playWhenInactive={true}
+                      volume={1.0}
+                      ignoreSilentSwitch={"ignore"}
+                      style={{ width: 1, height: 1, opacity: 0.01, position: 'absolute' }}
+                      onError={(e: any) => console.warn('FEED AUDIO ERR', e)}
+                      onLoad={(data: any) => setPlaybackDuration(data?.duration || 0)}
+                      onProgress={(data: any) => setPlaybackTime(data?.currentTime || 0)}
+                    />
+                  )}
+                </>
+              )
+            ) : (
+              <>
+                <Image source={{ uri: item.media.uri }} style={[styles.postedWaveMedia, { resizeMode: 'contain' }]} />
+                {RNVideo && item.audio?.uri && (
+                  <RNVideo
+                    source={{ uri: item.audio.uri }}
+                    audioOnly
+                    repeat={true}
+                    paused={!shouldPlay}
+                    disableFocus={true}
+                    playInBackground={true}
+                    playWhenInactive={true}
+                    volume={1.0}
+                    ignoreSilentSwitch={"ignore"}
+                    style={{ width: 1, height: 1, opacity: 0.01, position: 'absolute' }}
+                    onError={(e: any) => console.warn('FEED AUDIO ERR', e)}
+                    onLoad={(data: any) => setPlaybackDuration(data?.duration || 0)}
+                    onProgress={(data: any) => setPlaybackTime(data?.currentTime || 0)}
+                  />
+                )}
+              </>
+            )}
+            {!!item.captionText && (
+              <Text style={[styles.postedWaveCaption, { transform: [{ translateX: item.captionPosition.x }, { translateY: item.captionPosition.y }] }]}>{item.captionText}</Text>
+            )}
+                    {/* Play/Pause Button Overlay */}
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsPaused(p => !p)}>
+                      {index === currentIndex && (
+                        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.2)', alignItems: 'center', justifyContent: 'center' }}>
+                          <Text style={{ fontSize: 60, color: 'rgba(255,255,255,0.8)', textShadowColor: 'rgba(0,0,0,0.5)', textShadowRadius: 8 }}>
+                            {isPaused ? '►' : ''}
+                          </Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </>
+        ) : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={styles.videoHint}>Your posted waves will appear here</Text>
+          </View>
+        )}
+      </View>
+
+      {/* UI elements are now absolutely positioned over the video */}
+      <View style={[styles.topStrip, { paddingTop: insets.top }]}>
+        {/* Upper row — MY SHORE shifted to right-half */}
+        <View style={styles.upperRow}>
+          <Pressable style={styles.profileButton} onPress={() => setShowProfile(true)}>
+            <Text style={styles.umbrellaIcon}>⛱️</Text>
+            <Text style={styles.profileLabel}>MY SHORE</Text>
+          </Pressable>
+        </View>
+
+        {/* Lower row — horizontal functions (icons above words, no rectangles) */}
+        <View style={styles.lowerRow}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scrollRow}>
+            {/* MAKE WAVES */}
+            <Pressable style={styles.topItem} onPress={() => setShowMakeWaves(true)}>
+              <Text style={styles.dolphinIcon}>🐬</Text>
+              <Text style={styles.topLabel}>MAKE WAVES</Text>
+            </Pressable>
+
+            {/* PINGS */}
+            <Pressable style={styles.topItem} onPress={() => setShowPings(true)}>
+              <Text style={styles.pingsIcon}>📫</Text>
+              <Text style={styles.topLabel}>PINGS</Text>
+            </Pressable>
+
+            {/* SET SAIL */}
+            <Pressable style={styles.topItem} onPress={() => setShowExplore(true)}>
+              <Text style={styles.boatIcon}>⛵</Text>
+              <Text style={styles.topLabel}>SET SAIL</Text>
+            </Pressable>
+
+            {/* NOTICE BOARD */}
+            <Pressable style={styles.topItem} onPress={() => setShowNotice(true)}>
+              <Text style={styles.noticeIcon}>🪧</Text>
+              <Text style={styles.topLabel}>NOTICE BOARD</Text>
+            </Pressable>
+
+            {/* THE BRIDGE */}
+            <Pressable style={styles.topItem} onPress={() => setShowBridge(true)}>
+              <Text style={styles.gearIcon}>⚙️</Text>
+              <Text style={styles.topLabel}>THE BRIDGE</Text>
+            </Pressable>
+
+            {/* PLACE HOLDER */}
+            <Pressable style={styles.topItem} onPress={() => Alert.alert('Placeholder', 'Reserved for future feature.') }>
+              <Text style={styles.placeholderIcon}>🧩</Text>
+              <Text style={styles.topLabel}>PLACE HOLDER</Text>
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+
+      {/* Media title + timer overlay (at bottom above interactions) */}
+      {currentWave && <View pointerEvents="none" style={[styles.mediaTitleBar, { top: undefined, bottom: insets.bottom + bottomBarHeight - 6 }] }>
+        <Text numberOfLines={1} style={styles.mediaTitleText}>{getWaveTitle(currentWave)}</Text>
+        <Text style={styles.mediaTimerText}>{formatTime(playbackTime)}</Text>
+      </View>}
+
+      {/* Right-edge overlapped bubbles */}
+      <View style={styles.rightBubbles}>
+        {['A', 'B', 'C', 'D'].map((t, i) => (
+          <View key={t} style={[styles.bubble, i > 0 ? { marginTop: -12 } : null]}>
+            <Text style={styles.bubbleText}>{t}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* Bottom bar */}
+      <View
+        style={[styles.bottomBar, { paddingBottom: insets.bottom }]}
+        onLayout={(e) => setBottomBarHeight(e.nativeEvent.layout.height)}
+      >
+        <Pressable style={styles.bottomItem} onPress={() => setSplashes((s) => s + 1)}>
+          <Text style={styles.youngManIcon}>🙌</Text>
+          <Text style={styles.bottomLabel}>Splashes</Text>
+          <Text style={styles.counterText}>{formatCount(splashes)}</Text>
+        </Pressable>
+        <Pressable style={styles.bottomItem} onPress={() => setShowEchoes(true)}>
+          <Text style={styles.speakerIcon}>📣</Text>
+          <Text style={styles.bottomLabel}>Echoes</Text>
+          <Text style={styles.counterText}>{formatCount(echoes)}</Text>
+        </Pressable>
+        <Pressable style={styles.bottomItem} onPress={() => setShowPearls(true)}>
+          <Text style={styles.moneyIcon}>💰</Text>
+          <Text style={styles.bottomLabel}>Pearls</Text>
+          <Text style={styles.counterText}> </Text>
+        </Pressable>
+        <Pressable style={styles.bottomItem} onPress={() => Alert.alert('Placeholder', 'Reserved for future feature.') }>
+          <Text style={styles.placeholderSmall}>🧭</Text>
+          <Text style={styles.bottomLabel}>Placeholder</Text>
+          <Text style={styles.counterText}> </Text>
+        </Pressable>
+        <Pressable style={styles.bottomItem} onPress={onShare}>
+          <Text style={styles.castaIcon}>🎣</Text>
+          <Text style={styles.bottomLabel}>Casta Net</Text>
+          <Text style={styles.counterText}> </Text>
+        </Pressable>
+      </View>
+
+      {/* MY SHORE */}
+      <Modal visible={showProfile} transparent animationType="slide" onRequestClose={() => setShowProfile(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.sheetTitle}>⛱️ MY SHORE</Text>
+            <ScrollView>
+              <View style={styles.profileCard}>
+                <View style={styles.avatar} />
+                <Text style={styles.profileName}>@your_handle</Text>
+                <Text style={styles.profileBio}>Bio: Ocean wanderer • Building waves • Casting nets</Text>
+                <View style={styles.statsRow}>
+                  <View style={styles.statBox}><Text style={styles.statNumber}>{formatCount(12345)}</Text><Text style={styles.statLabel}>Waves</Text></View>
+                  <View style={styles.statBox}><Text style={styles.statNumber}>{formatCount(8901)}</Text><Text style={styles.statLabel}>Crew</Text></View>
+                  <View style={styles.statBox}><Text style={styles.statNumber}>{formatCount(2345)}</Text><Text style={styles.statLabel}>Splashes</Text></View>
+                </View>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <Pressable style={[styles.primaryBtn, { flex: 1 }]} onPress={() => setShowMyWaves(true)}><Text style={styles.primaryBtnText}>My Waves</Text></Pressable>
+                  <Pressable style={[styles.primaryBtn, { flex: 1 }]}><Text style={styles.primaryBtnText}>Edit Shore</Text></Pressable>
+                </View>
+              </View>
+            </ScrollView>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowProfile(false)}>
+              <Text style={styles.dismissText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MY WAVES (grid) - This is a secondary modal, keeping its slide-up style is fine */}
+      <Modal visible={showMyWaves} transparent animationType="slide" onRequestClose={() => setShowMyWaves(false)}>
+        <SafeAreaView style={styles.modalRoot}>
+          <View style={styles.modalHeader}><Text style={styles.modalTitle}>My Waves</Text></View>
+          <ScrollView contentContainerStyle={[styles.modalContent, { paddingBottom: insets.bottom + 12 }]}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' }}>
+              {wavesFeed.map((w, idx) => (
+                <Pressable
+                  key={w.id}
+                  style={{ width: '32%', aspectRatio: 1, marginBottom: 8, backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}
+                  onPress={() => { setShowMyWaves(false); setShowProfile(false); setCurrentIndex(idx); setWaveKey(Date.now()); }}
+                >
+                  {isVideoAsset(w.media) ? (
+                    RNVideo ? (
+                      <RNVideo
+                        source={{ uri: String(w.playbackUrl || w.media.uri) }}
+                        style={{ width: '100%', height: '100%' } as any}
+                        resizeMode={"cover"}
+                        paused={true}
+                        muted={true}
+                        repeat={false}
+                        disableFocus={true}
+                      />
+                    ) : (
+                      <Text style={{ color: 'white', fontSize: 12, textAlign: 'center', padding: 6 }}>Video</Text>
+                    )
+                  ) : (
+                    <Image source={{ uri: String(w.media.uri) }} style={{ width: '100%', height: '100%', resizeMode: 'cover' }} />
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          </ScrollView>
+          <Pressable style={styles.closeBtn} onPress={() => setShowMyWaves(false)}><Text style={styles.closeText}>Close</Text></Pressable>
+        </SafeAreaView>
+      </Modal>
+
+      {/* MAKE WAVES */}
+      <Modal visible={showMakeWaves} transparent animationType="fade" onRequestClose={() => setShowMakeWaves(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>MAKE WAVES</Text>
+            <View style={styles.actionGrid}>
+              <Pressable style={styles.actionItem} onPress={openCamera}>
+                <Text style={styles.actionIcon}>📷</Text>
+                <Text style={styles.actionLabel}>Open Camera</Text>
+              </Pressable>
+              <Pressable style={styles.actionItem} onPress={fromGallery}>
+                <Text style={styles.actionIcon}>🖼️</Text>
+                <Text style={styles.actionLabel}>From Gallery</Text>
+              </Pressable>
+              <Pressable style={styles.actionItem} onPress={fromFiles}>
+                <Text style={styles.actionIcon}>📁</Text>
+                <Text style={styles.actionLabel}>From Files</Text>
+              </Pressable>
+              <Pressable style={styles.actionItem} onPress={goDrift}>
+                <Text style={styles.actionIcon}>🌊</Text>
+                <Text style={styles.actionLabel}>Go Drift (LIVE)</Text>
+              </Pressable>
+              <Pressable style={styles.actionItem} onPress={goLiveEditor}>
+                <Text style={styles.actionIcon}>dYO?</Text>
+                <Text style={styles.actionLabel}>Go Live (Editor)</Text>
+              </Pressable>
+            </View>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowMakeWaves(false)}><Text style={styles.dismissText}>Bhoo 👍</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* PINGS */}
+      <Modal visible={showPings} transparent animationType="fade" onRequestClose={() => setShowPings(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.sheetTitle}>PINGS</Text>
+            <ScrollView>
+              {pings.map((p) => (
+                <View key={p.id} style={styles.pingItem}><Text style={styles.pingText}>{p.text}</Text></View>
+              ))}
+            </ScrollView>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowPings(false)}><Text style={styles.dismissText}>Close</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* SET SAIL */}
+      <Modal visible={showExplore} transparent animationType="fade" onRequestClose={() => setShowExplore(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.sheetTitle}>SET SAIL</Text>
+            <ScrollView>
+              <View style={styles.tagWrap}>
+                {explore.map((t) => (
+                  <View style={styles.tag} key={t}><Text style={styles.tagText}>{t}</Text></View>
+                ))}
+              </View>
+            </ScrollView>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowExplore(false)}><Text style={styles.dismissText}>Close</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* NOTICE BOARD */}
+      <Modal visible={showNotice} transparent animationType="fade" onRequestClose={() => setShowNotice(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.sheetTitle}>NOTICE BOARD</Text>
+            <ScrollView>
+              <Text style={styles.sectionTitle}>Register your organization</Text>
+              <TextInput placeholder="Organization name" style={styles.input} />
+              <TextInput placeholder="Type (Public/Private)" style={styles.input} />
+              <TextInput placeholder="Official email" style={styles.input} keyboardType="email-address" />
+              <TextInput placeholder="Phone number" style={styles.input} keyboardType="phone-pad" />
+              <TextInput placeholder="Short bio / About" style={[styles.input, { height: 100 }]} multiline />
+              <Pressable style={styles.primaryBtn}><Text style={styles.primaryBtnText}>Submit</Text></Pressable>
+              <Text style={styles.hint}>After approval, you can post public notices/adverts here.</Text>
+            </ScrollView>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowNotice(false)}><Text style={styles.dismissText}>Close</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* THE BRIDGE */}
+      <Modal visible={showBridge} transparent animationType="fade" onRequestClose={() => setShowBridge(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.sheetTitle}>THE BRIDGE</Text>
+            <ScrollView>
+              <Text style={styles.sectionTitle}>Data Saver</Text>
+              <View style={styles.settingRow}><Text style={styles.settingLabel}>Use lower-bitrate playback</Text><Text>ON</Text></View>
+              <View style={styles.settingRow}><Text style={styles.settingLabel}>Auto-transcode uploads to 720p</Text><Text>ON</Text></View>
+              <View style={styles.settingRow}><Text style={styles.settingLabel}>Prefer Wi‑Fi for Go Drift</Text><Text>ON</Text></View>
+              <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Compression</Text>
+              <View style={styles.settingRow}><Text style={styles.settingLabel}>Aggressive video compression</Text><Text>MED</Text></View>
+              <View style={styles.settingRow}><Text style={styles.settingLabel}>Image upload compression</Text><Text>HIGH</Text></View>
+              <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Privacy & Safety</Text>
+              <View style={styles.settingRow}><Text style={styles.settingLabel}>Private Shore (profile)</Text><Text>OFF</Text></View>
+              <View style={styles.settingRow}><Text style={styles.settingLabel}>Filter explicit echoes</Text><Text>ON</Text></View>
+            </ScrollView>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowBridge(false)}><Text style={styles.dismissText}>Close</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* PEARLS */}
+      <Modal visible={showPearls} transparent animationType="fade" onRequestClose={() => setShowPearls(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.sheetTitle}>PEARLS</Text>
+            <ScrollView>
+              {!selectedCountry ? (
+                <View>
+                  <Text style={styles.sectionTitle}>Select your country</Text>
+                  <Pressable style={[styles.dropdownButton, { marginTop: 8 }]} onPress={() => setShowCountryPicker(true)}>
+                    <Text style={styles.dropdownButtonText}>{selectedCountry || 'Select a country...'}</Text>
+                    <Text style={{ color: 'white' }}>▼</Text>
+                  </Pressable>
+                  <Text style={styles.hint}>Payment details are available for supported countries.</Text>
+                </View>
+              ) : (
+                <View style={{ gap: 12 }}>
+                  <Pressable style={styles.dropdownButton} onPress={() => setShowCountryPicker(true)}>
+                    <Text style={styles.dropdownButtonText}>{selectedCountry}</Text>
+                    <Text style={{ color: 'white' }}>▼</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setSelectedCountry(null)}>
+                    <Text style={{ color: '#00C2FF', fontWeight: '700', marginBottom: 8 }}>← Change Country</Text>
+                  </Pressable>
+
+                  {selectedCountry === 'Zimbabwe' && (
+                    <>
+                      <Text style={styles.sectionTitle}>Zimbabwe — Sources of funds</Text>
+                      <Text style={styles.subLabel}>NMB Bank</Text>
+                      <TextInput placeholder="Account Name" style={styles.input} />
+                      <TextInput placeholder="Account Number" style={styles.input} keyboardType="number-pad" />
+                      <Text style={[styles.subLabel, { marginTop: 8 }]}>EcoCash</Text>
+                      <TextInput placeholder="EcoCash Phone (e.g., 07xx...)" style={styles.input} keyboardType="phone-pad" />
+                    </>
+                  )}
+
+                  {selectedCountry === 'Kenya' && (
+                    <>
+                      <Text style={styles.sectionTitle}>Kenya — Sources of funds</Text>
+                      <Text style={styles.subLabel}>KCB Bank</Text>
+                      <TextInput placeholder="Account Name" style={styles.input} />
+                      <TextInput placeholder="Account Number" style={styles.input} keyboardType="number-pad" />
+                      <Text style={[styles.subLabel, { marginTop: 8 }]}>M‑Pesa</Text>
+                      <TextInput placeholder="M‑Pesa Phone (e.g., 07xx...)" style={styles.input} keyboardType="phone-pad" />
+                    </>
+                  )}
+
+                  {SUPPORTED_PEARL_COUNTRIES.includes(selectedCountry) ? (
+                    <>
+                      <Text style={[styles.sectionTitle, { marginTop: 16 }]}>Tip Details</Text>
+                      <TextInput placeholder="Amount (USD/ZiG/KES)" style={styles.input} keyboardType="decimal-pad" />
+                      <TextInput placeholder="Optional note to creator" style={styles.input} />
+                      <Pressable style={styles.primaryBtn} onPress={() => Alert.alert('Pearls', 'Tip flow submitted (connect to payments backend).')}>
+                        <Text style={styles.primaryBtnText}>Send Tip</Text>
+                      </Pressable>
+                    </>
+                  ) : <Text style={styles.hint}>Payment methods for {selectedCountry} are not yet configured.</Text>}
+                  <Text style={styles.hint}>Wire these inputs to your payment rails (bank/mobile money) and credit creator wallets.</Text>
+                </View>
+              )}
+            </ScrollView>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowPearls(false)}><Text style={styles.dismissText}>Close</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Country Picker Modal */}
+      <Modal visible={showCountryPicker} transparent animationType="fade" onRequestClose={() => setShowCountryPicker(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={[styles.sheet, { maxHeight: '70%', paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.sheetTitle}>Select a Country</Text>
+            <ScrollView>
+              {AFRICAN_COUNTRIES.map(country => (
+                <Pressable
+                  key={country}
+                  style={styles.dropdownItem}
+                  onPress={() => {
+                    setSelectedCountry(country);
+                    setShowCountryPicker(false);
+                  }}
+                ><Text style={styles.dropdownItemText}>{country}</Text></Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ECHOES */}
+      <Modal visible={showEchoes} transparent animationType="fade" onRequestClose={() => setShowEchoes(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>ECHOES</Text>
+            <View style={{ width: '100%', gap: 8 }}>
+              <TextInput
+                placeholder="Cast your echo..."
+                value={echoText}
+                onChangeText={setEchoText}
+                style={styles.input}
+              />
+              <Pressable style={styles.primaryBtn} onPress={onSendEcho}>
+                <Text style={styles.primaryBtnText}>Send Echo</Text>
+              </Pressable>
+            </View>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowEchoes(false)}><Text style={styles.dismissText}>Bhoo 👍</Text></Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MEDIA EDITOR */}
+      <Modal visible={!!capturedMedia} transparent animationType="slide" onRequestClose={() => setCapturedMedia(null)}>
+        <View style={editorStyles.editorRoot}>
+          {/* Stage: media underlay + draggable caption overlay */}
+          <View
+            style={editorStyles.stage}
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              setStageSize({ w: width, h: height });
+            }}
+          >
+            {capturedMedia?.uri && (
+              RNVideo && isVideoAsset(capturedMedia) ? (
+                <>
+                  <RNVideo
+                    ref={editorVideoRef}
+                    source={{ uri: String(capturedMedia.uri) }}
+                    style={StyleSheet.absoluteFillObject as any}
+                    resizeMode={"contain"}
+                    repeat
+                    paused={isPaused || !editorPlaying}
+                    muted={true} // Mute video preview by default
+                    disableFocus={true}
+                    playInBackground={false}
+                    playWhenInactive={false}
+                    ignoreSilentSwitch={"ignore"}
+                    onLoad={(e: any) => {
+                      setPlaybackDuration(e?.duration || 0);
+                      if (attachedAudio?.uri) {
+                        try { if (audioDelayTimerRef.current) clearTimeout(audioDelayTimerRef.current); } catch {}
+                        setAudioUnpaused(false);
+                        audioDelayTimerRef.current = setTimeout(() => setAudioUnpaused(true), overlayAudioDelayMs);
+                      }
+                    }}
+                    onError={(e: any) => console.warn('EDITOR VIDEO ERR', e)}
+                  />
+                  {attachedAudio?.uri && (
+                    <RNVideo
+                      ref={editorAudioRef}
+                      source={{ uri: String(attachedAudio.uri) }}
+                      audioOnly
+                      repeat
+                      paused={isPaused || !editorPlaying || !audioUnpaused}
+                      disableFocus={true}
+                      playInBackground={true}
+                      playWhenInactive={true}
+                      volume={1.0}
+                      ignoreSilentSwitch={"ignore"}
+                      style={{ width: 1, height: 1, opacity: 0.01, position: 'absolute' }}
+                      onError={(e: any) => console.warn('EDITOR AUDIO ERR', e)}
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  <Image source={{ uri: capturedMedia.uri }} style={[StyleSheet.absoluteFillObject as any, { resizeMode: 'contain' }]} />
+                  {RNVideo && attachedAudio?.uri && (
+                    <RNVideo
+                      ref={editorAudioRef}
+                      source={{ uri: String(attachedAudio.uri) }}
+                      audioOnly
+                      repeat
+                      paused={isPaused || !editorPlaying}
+                      playInBackground={true}
+                      playWhenInactive={true}
+                      volume={1.0}
+                      ignoreSilentSwitch={"ignore"}
+                      style={{ width: 1, height: 1, opacity: 0.01, position: 'absolute' }}
+                      onError={(e: any) => console.warn('EDITOR AUDIO ERR', e)}
+                    />
+                  )}
+                </>
+              )
+            )}
+            {showCaptionInput && stageSize.w > 0 && stageSize.h > 0 && captionPos && (
+              <DraggableTextBox
+                containerWidth={stageSize.w}
+                containerHeight={stageSize.h}
+                textValue={captionText}
+                onChangeText={setCaptionText}
+                bottomControlHeight={editorControlsHeight}
+                initialX={captionPos.x}
+                initialY={captionPos.y}
+                onDrag={(x, y) => setCaptionPos({ x, y })}
+                onDragEnd={(x, y) => setCaptionPos({ x, y })}
+              />
+            )}
+            {!showCaptionInput && !!captionText && !!captionPos && (
+              <Text style={[styles.postedWaveCaption, { transform: [{ translateX: captionPos.x }, { translateY: captionPos.y }] }]}>
+                {captionText}
+              </Text>
+            )}
+          </View>
+
+          {/* Attached Audio Summary */}
+          {attachedAudio && (
+            <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
+              <Text style={{ color: 'white' }}>Attached audio: {attachedAudio.name || attachedAudio.uri}</Text>
+              <View style={{ flexDirection: 'row', gap: 16, marginTop: 8, alignItems: 'center' }}>
+                <Pressable onPress={() => setAttachedAudio(null)} style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
+                  <Text style={{ color: '#00C2FF', fontWeight: '700' }}>Remove audio</Text>
+                </Pressable>
+                <Text style={{ color: 'rgba(255,255,255,0.7)'}}>Plays automatically with video</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Editor Controls */}
+          <View
+            style={[editorStyles.editorContainer, { paddingBottom: insets.bottom }]}
+            onLayout={(e) => {
+              const { height } = e.nativeEvent.layout;
+              if (height > 0) setEditorControlsHeight(height);
+            }}
+          >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={editorStyles.editorScroll}>
+              {editorTools.map((tool) => (
+                <Pressable key={tool.label} style={editorStyles.editorItem} onPress={() => onEditorToolPress(tool.label)}>
+                  <Text style={editorStyles.editorIcon}>{tool.icon}</Text>
+                  <Text style={editorStyles.editorLabel}>{tool.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            {showCaptionInput && (
+              <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+                <TextInput
+                  placeholder="Sonar Caption..."
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  value={captionText}
+                  onChangeText={setCaptionText}
+                  style={styles.input}
+                />
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12, paddingHorizontal: 16, paddingBottom: 8 }}>
+              <Pressable
+                style={[styles.closeBtn, { paddingHorizontal: 14, paddingVertical: 6 }]}
+                onPress={() => setEditorPlaying((p) => !p)}
+              >
+                <Text style={styles.closeText}>{editorPlaying ? 'Pause' : 'Play'}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.closeBtn, { paddingHorizontal: 14, paddingVertical: 6 }]}
+                onPress={() => {
+                  try { editorVideoRef.current?.seek?.(0); } catch {}
+                  try { editorAudioRef.current?.seek?.(0); } catch {}
+                  if (attachedAudio?.uri && isVideoAsset(capturedMedia)) {
+                    try { if (audioDelayTimerRef.current) clearTimeout(audioDelayTimerRef.current); } catch {}
+                    setAudioUnpaused(false);
+                    audioDelayTimerRef.current = setTimeout(() => setAudioUnpaused(true), overlayAudioDelayMs);
+                  } else {
+                    setAudioUnpaused(true);
+                  }
+                  setEditorPlaying(true);
+                }}
+              >
+                <Text style={styles.closeText}>Restart</Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={[editorStyles.doneButton, { marginTop: 8, opacity: releasing ? 0.6 : 1 }]}
+              onPress={onPostWave}
+              disabled={releasing}
+            >
+              <Text style={editorStyles.doneButtonText}>{releasing ? 'Releasing…' : 'Release Wave'}</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* SEA SHANTIES: Attach Audio */}
+      <Modal visible={showAudioModal} transparent animationType="fade" onRequestClose={() => setShowAudioModal(false)}>
+        <View style={styles.sheetOverlay}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>SEA SHANTIES</Text>
+            <View style={{ width: '100%', gap: 10 }}>
+              <Text style={styles.hint}>Attach an audio track to your wave.</Text>
+              <Pressable style={[styles.primaryBtn, { alignSelf: 'center' }]} onPress={pickAudioWithDocumentPicker}>
+                <Text style={styles.primaryBtnText}>Pick audio</Text>
+              </Pressable>
+              <Text style={styles.subLabel}>Or paste an audio URL</Text>
+              <TextInput
+                placeholder="https://example.com/track.mp3"
+                value={audioUrlInput}
+                onChangeText={setAudioUrlInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+              />
+              <Pressable
+                style={[styles.primaryBtn, { opacity: audioUrlInput.trim() ? 1 : 0.5, alignSelf: 'center' }]}
+                disabled={!audioUrlInput.trim()}
+                onPress={() => {
+                  const url = audioUrlInput.trim();
+                  const looksAudio = /\.(mp3|m4a|aac|wav|ogg)(\?|#|$)/i.test(url) || /^https?:\/\//i.test(url);
+                  if (!looksAudio) {
+                    Alert.alert('Invalid URL', 'Please enter a valid audio URL.');
+                    return;
+                  }
+                  setAttachedAudio({ uri: url });
+                  setShowAudioModal(false);
+                  setAudioUrlInput('');
+                }}
+              >
+                <Text style={styles.primaryBtnText}>Attach URL</Text>
+              </Pressable>
+            </View>
+            <Pressable style={styles.dismissBtn} onPress={() => setShowAudioModal(false)}>
+              <Text style={styles.dismissText}>Bhoo 👍</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* GO DRIFT (LIVE) */}
+      <LiveStreamModal
+        visible={showLive}
+        onClose={() => setShowLive(false)}
+      />
+    </SafeAreaView>
+  );
+};
+
+// ======================== AGORA LIVE STREAM COMPONENT ========================
+const LiveStreamModal = ({ visible, onClose }: { visible: boolean; onClose: () => void }) => {
+  const insets = useSafeAreaInsets();
+  const Agora = useMemo(() => { try { return require('react-native-agora'); } catch { return null; } }, []);
+  const cfg = (() => { try { return require('./liveConfig'); } catch { return null; } })();
+  const appId: string = (cfg && cfg.AGORA_APP_ID) || '';
+  const token: string | null = (cfg && cfg.AGORA_STATIC_TOKEN) || null;
+  const channel: string = (cfg && (cfg.AGORA_CHANNEL_NAME || 'Tindoe-')) || 'Tindoe-';
+  const engineRef = React.useRef<any>(null);
+  const [micMuted, setMicMuted] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !Agora || !appId) return;
+    (async () => {
+      try {
+        const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
+        if (isV4) {
+          const engine = Agora.createAgoraRtcEngine();
+          engineRef.current = engine;
+          try { engine.initialize?.({ appId, channelProfile: (Agora.ChannelProfileType?.ChannelProfileLiveBroadcasting ?? 1) }); } catch {}
+          try { engine.enableVideo?.(); } catch {}
+          try { engine.startPreview?.(); } catch {}
+          try { engine.updateChannelMediaOptions?.({ clientRoleType: (Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1) }); } catch {}
+          try { await engine.joinChannel(token, channel, 0, { publishMicrophoneTrack: true, publishCameraTrack: true }); } catch {}
+        } else if (Agora?.RtcEngine && typeof Agora.RtcEngine.create === 'function') {
+          const engine = await Agora.RtcEngine.create(appId);
+          engineRef.current = engine;
+          try { engine.enableVideo(); } catch {}
+          try { engine.startPreview?.(); } catch {}
+          try { engine.setChannelProfile(Agora.ChannelProfile?.LiveBroadcasting ?? Agora.ChannelProfile); } catch {}
+          try { engine.setClientRole(Agora.ClientRole?.Broadcaster ?? Agora.ClientRole); } catch {}
+          try { await engine.joinChannel(token, channel, 0); } catch {}
+        }
+      } catch (e) {
+        console.warn('Agora init error', e);
+      }
+    })();
+    return () => {
+      if (engineRef.current) {
+        try { engineRef.current.leaveChannel?.(); } catch {}
+        try { (engineRef.current.destroy ?? engineRef.current.release)?.(); } catch {}
+        engineRef.current = null;
+      }
+    };
+  }, [visible, Agora, appId, token, channel]);
+
+  if (!visible) return null;
+  if (!Agora) {
+    return (
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'black' }}>
+          <Text style={{ color: 'white', textAlign: 'center', padding: 20 }}>Install react-native-agora and rebuild.</Text>
+          <Pressable style={styles.closeBtn} onPress={onClose}><Text style={styles.closeText}>Close</Text></Pressable>
+        </View>
+      </Modal>
+    );
+  }
+  if (!appId) {
+    return (
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'black' }}>
+          <Text style={{ color: 'white', textAlign: 'center', padding: 20 }}>Missing AGORA_APP_ID in liveConfig.ts</Text>
+          <Pressable style={styles.closeBtn} onPress={onClose}><Text style={styles.closeText}>Close</Text></Pressable>
+        </View>
+      </Modal>
+    );
+  }
+
+  const LocalV3 = Agora?.RtcLocalView?.SurfaceView || null;
+  const AVView = Agora?.AgoraVideoView || null;
+  const VideoRenderMode = Agora?.VideoRenderMode;
+  const VideoSourceType = Agora?.VideoSourceType;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={editorStyles.editorRoot}>
+        <Text style={{ color: 'white', position: 'absolute', top: insets.top + 10, left: 16, zIndex: 10, backgroundColor: 'rgba(255,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, fontWeight: 'bold' }}>LIVE</Text>
+        {AVView ? (
+          <AVView
+            style={StyleSheet.absoluteFill}
+            showLocalVideo={true}
+            videoSourceType={(VideoSourceType && (VideoSourceType.VideoSourceCameraPrimary ?? VideoSourceType.VideoSourceCamera)) || 0}
+            renderMode={(VideoRenderMode && VideoRenderMode.Hidden) || 1}
+          />
+        ) : LocalV3 ? (
+          React.createElement(LocalV3, { style: StyleSheet.absoluteFill, renderMode: VideoRenderMode?.Hidden ?? 1 })
+        ) : (
+          <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+            <Text style={{ color: 'white' }}>Initializing preview…</Text>
+          </View>
+        )}
+        {/* Live Editor Sidebar (TikTok-style) */}
+        {visible && (
+          <View style={editorStyles.liveEditorSidebar}>
+            <Pressable
+              style={editorStyles.liveEditorButton}
+              onPress={() => {
+                try { engineRef.current?.switchCamera(); } catch (e) { console.warn('Switch camera failed', e); }
+              }}
+            >
+              <Text style={editorStyles.liveEditorIcon}>🔄</Text>
+              <Text style={editorStyles.liveEditorLabel}>Flip</Text>
+            </Pressable>
+            <Pressable style={editorStyles.liveEditorButton} onPress={() => Alert.alert('Enhance', 'This feature is not yet implemented.')}>
+              <Text style={editorStyles.liveEditorIcon}>✨</Text><Text style={editorStyles.liveEditorLabel}>Enhance</Text>
+            </Pressable>
+            <Pressable style={editorStyles.liveEditorButton} onPress={() => Alert.alert('Effects', 'This feature is not yet implemented.')}>
+              <Text style={editorStyles.liveEditorIcon}>🎨</Text><Text style={editorStyles.liveEditorLabel}>Effects</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Right-side live controls (bottom-to-top) */}
+        {visible && (
+          <View pointerEvents="box-none" style={[editorStyles.liveRightControls, { bottom: insets.bottom + 90, flexDirection: 'column-reverse' }]}>
+            <Pressable style={editorStyles.liveRightButton} onPress={async () => { try { await Share.share({ message: `Join my live on Drift — channel: ${channel}` }); } catch {} }}>
+              <Text style={editorStyles.liveRightIcon}>🔗</Text>
+              <Text style={editorStyles.liveRightLabel}>Share</Text>
+            </Pressable>
+            <Pressable style={editorStyles.liveRightButton} onPress={async () => { try { await Share.share({ message: `Invitation: join my Drift live now — channel: ${channel}` }); } catch {} }}>
+              <Text style={editorStyles.liveRightIcon}>📨</Text>
+              <Text style={editorStyles.liveRightLabel}>Invite</Text>
+            </Pressable>
+            <Pressable style={editorStyles.liveRightButton} onPress={() => { const next = !micMuted; setMicMuted(next); try { engineRef.current?.muteLocalAudioStream?.(next); } catch {} }}>
+              <Text style={editorStyles.liveRightIcon}>{micMuted ? '🎙️🚫' : '🎙️'}</Text>
+              <Text style={editorStyles.liveRightLabel}>{micMuted ? 'Unmute' : 'Mute'}</Text>
+            </Pressable>
+            <Pressable style={editorStyles.liveRightButton} onPress={() => { try { engineRef.current?.switchCamera?.(); } catch (e) { console.warn('Switch camera failed', e); } }}>
+              <Text style={editorStyles.liveRightIcon}>🔄</Text>
+              <Text style={editorStyles.liveRightLabel}>Flip</Text>
+            </Pressable>
+            <Pressable style={editorStyles.liveRightButton} onPress={() => Alert.alert('Mute User', 'Select a participant to mute (not implemented)')}>
+              <Text style={editorStyles.liveRightIcon}>🤫</Text>
+              <Text style={editorStyles.liveRightLabel}>Mute user</Text>
+            </Pressable>
+            <Pressable style={editorStyles.liveRightButton} onPress={() => Alert.alert('Remove User', 'Select a participant to remove (not implemented)')}>
+              <Text style={editorStyles.liveRightIcon}>🚫</Text>
+              <Text style={editorStyles.liveRightLabel}>Remove</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Bottom media editor bar */}
+        {visible && (
+          <View pointerEvents="box-none" style={[editorStyles.liveBottomBar, { bottom: insets.bottom + 12 }] }>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={editorStyles.liveBottomScroll}>
+              {[
+                { icon: '🎵', label: 'Music' },
+                { icon: '✨', label: 'Enhance' },
+                { icon: '🎨', label: 'Filters' },
+                { icon: '🌀', label: 'Effects' },
+                { icon: '🔤', label: 'Text' },
+                { icon: '💄', label: 'Beauty' },
+                { icon: '🎭', label: 'Stickers' },
+              ].map((it) => (
+                <Pressable key={it.label} style={editorStyles.liveBottomItem} onPress={() => Alert.alert(it.label, 'This tool is not implemented yet.') }>
+                  <Text style={editorStyles.liveBottomIcon}>{it.icon}</Text>
+                  <Text style={editorStyles.liveBottomLabel}>{it.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        <Pressable style={[editorStyles.doneButton, { position: 'absolute', bottom: insets.bottom + 16, left: 16, right: 16, backgroundColor: '#E53935' }]} onPress={onClose}>
+          <Text style={[editorStyles.doneButtonText, { color: 'white' }]}>End Drift</Text>
+        </Pressable>
+      </View>
+    </Modal>
+  );
+  /*
+  const insets = useSafeAreaInsets();
+  const [isJoined, setIsJoined] = useState(false);
+  const agoraEngineRef = React.useRef<any>(null);
+  const [channelName, setChannelName] = useState<string>('');
+  // Track whether we've triggered a fallback camera open for this modal session
+  const fallbackCameraStartedRef = React.useRef(false);
+
+  // Lazy-load Agora module (support both v3 and v4 APIs)
+  const AgoraModules = useMemo(() => {
+    try {
+      // Single require to inspect available API surface
+      return require('react-native-agora');
+    } catch (e) {
+      return null;
+    }
+  }, []);
+
+  const cfg = (() => { try { return require('./liveConfig'); } catch { return null; } })();
+  const appId = (cfg && cfg.AGORA_APP_ID) || '';
+  const [agoraToken, setAgoraToken] = useState<string | null>((cfg && cfg.AGORA_STATIC_TOKEN) || null);
+  // Capture a stable channel name when modal opens to avoid re-inits
+  useEffect(() => {
+    if (!visible) return;
+    try {
+      const uid = require('@react-native-firebase/auth').default().currentUser?.uid;
+      setChannelName(uid || 'defaultChannel');
+    } catch {
+      setChannelName('defaultChannel');
+    }
+  }, [visible]);
+
+  // If Agora is unavailable or appId missing, automatically open the device camera
+  useEffect(() => {
+    if (!visible) { fallbackCameraStartedRef.current = false; return; }
+    const needFallback = !AgoraModules || !appId;
+    if (!needFallback || fallbackCameraStartedRef.current) return;
+    fallbackCameraStartedRef.current = true;
+    const openFallbackCamera = async () => {
+      try {
+        if (Platform.OS === 'android') {
+          try {
+            const results = await PermissionsAndroid.requestMultiple([
+              PermissionsAndroid.PERMISSIONS.CAMERA,
+              PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            ] as any);
+            const cam = results[PermissionsAndroid.PERMISSIONS.CAMERA];
+            const mic = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+            if (cam !== PermissionsAndroid.RESULTS.GRANTED || mic !== PermissionsAndroid.RESULTS.GRANTED) {
+              return;
+            }
+          } catch {}
+        }
+        launchCamera({ mediaType: 'video', videoQuality: 'high' }, () => {});
+      } catch {}
+    };
+    openFallbackCamera();
+  }, [visible, AgoraModules, appId]);
+
+  useEffect(() => {
+    if (visible && AgoraModules && channelName) {
+      const init = async () => {
+        // Double-check permissions on Android to ensure camera/mic open immediately
+        if (Platform.OS === 'android') {
+          try {
+            await PermissionsAndroid.requestMultiple([
+              PermissionsAndroid.PERMISSIONS.CAMERA,
+              PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            ] as any);
+          } catch {}
+        }
+        console.log('[GoDrift] init live: appId?', !!appId, 'channel:', channelName, 'hasEndpoint?', !!(cfg && cfg.AGORA_TOKEN_ENDPOINT));
+        // Fetch token from backend if endpoint configured
+        if (cfg && cfg.AGORA_TOKEN_ENDPOINT) {
+          try {
+            const url = `${cfg.AGORA_TOKEN_ENDPOINT}?channel=${encodeURIComponent(channelName)}&uid=0&role=publisher&expire=3600`;
+            const resp = await fetch(url);
+            if (resp.ok) {
+              const json = await resp.json();
+              setAgoraToken(json?.token || null);
+              console.log('[GoDrift] token fetched:', !!json?.token);
+            }
+          } catch (e) {
+            console.warn('Token fetch failed', e);
+          }
+        }
+
+        // Support Agora v3 (RtcEngine.create) and v4 (createAgoraRtcEngine)
+        try {
+          const RNAgora: any = AgoraModules as any;
+          const isV3 = RNAgora?.RtcEngine && typeof RNAgora.RtcEngine.create === 'function';
+          const isV4 = typeof RNAgora?.createAgoraRtcEngine === 'function';
+
+          if (isV3) {
+            const engine = await RNAgora.RtcEngine.create(appId);
+            // Assign ref immediately so preview persists even if join fails
+            agoraEngineRef.current = engine;
+            engine.enableVideo();
+            try { engine.enableAudio?.(); } catch {}
+            // Ensure mic is active immediately in v3
+            try { engine.enableLocalAudio?.(true); } catch {}
+            try { engine.muteLocalAudioStream?.(false); } catch {}
+            // Route audio to speaker if API available
+            try { engine.setDefaultAudioRoutetoSpeakerphone?.(true); } catch {}
+            try { engine.setEnableSpeakerphone?.(true); } catch {}
+            try { engine.enableLocalVideo?.(true); } catch {}
+            try { engine.startPreview?.(); } catch {}
+            try { engine.setChannelProfile(RNAgora.ChannelProfile?.LiveBroadcasting ?? RNAgora.ChannelProfile); } catch {}
+            try { engine.setClientRole(RNAgora.ClientRole?.Broadcaster ?? RNAgora.ClientRole); } catch {}
+            try {
+              engine.addListener('JoinChannelSuccess', () => { setIsJoined(true); });
+              engine.addListener('UserOffline', (uid: number, reason: any) => { console.log('User offline', uid, reason); });
+              engine.addListener('Error', (code: any) => { console.warn('[Agora v3] onError:', code); });
+            } catch {}
+            try {
+              await engine.joinChannel(agoraToken || null, channelName, 0);
+            } catch (joinErr) {
+              console.warn('Agora join failed (v3), preview should continue:', joinErr);
+            }
+            console.log('Agora v3 engine initialized');
+          } else if (isV4) {
+            const engine = RNAgora.createAgoraRtcEngine();
+            const ChannelProfileType = RNAgora.ChannelProfileType || {};
+            const ClientRoleType = RNAgora.ClientRoleType || {};
+            const AudioScenarioType = RNAgora.AudioScenarioType || {};
+            engine.initialize({ appId, channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting ?? 1 });
+            try { engine.setClientRole(ClientRoleType.ClientRoleBroadcaster ?? 1); } catch {}
+            // Assign ref immediately so preview persists even if join fails
+            agoraEngineRef.current = engine;
+            engine.enableVideo();
+            try { engine.enableAudio?.(); } catch {}
+            // Ensure mic is active immediately in v4
+            try { engine.enableLocalAudio?.(true); } catch {}
+            try { engine.muteLocalAudioStream?.(false); } catch {}
+            // Route audio to speaker on v4 if available
+            try { engine.setDefaultAudioRouteToSpeakerphone?.(true); } catch {}
+            try { engine.enableLocalVideo?.(true); } catch {}
+            try { engine.startPreview?.(); } catch {}
+            try {
+              if (typeof engine.registerEventHandler === 'function') {
+                engine.registerEventHandler({
+                  onJoinChannelSuccess: () => { setIsJoined(true); },
+                  onUserOffline: (uid: number, reason: number) => { console.log('User offline', uid, reason); },
+                  onError: (err: number, msg?: string) => { console.warn('[Agora v4] onError:', err, msg); },
+                } as any);
+              }
+            } catch {}
+            const joinOpts = {
+              clientRoleType: ClientRoleType.ClientRoleBroadcaster ?? 1,
+              channelProfile: ChannelProfileType.ChannelProfileLiveBroadcasting ?? 1,
+            };
+            try {
+              await engine.joinChannel(agoraToken || '', channelName, 0, joinOpts);
+            } catch (joinErr) {
+              console.warn('Agora join failed (v4), preview should continue:', joinErr);
+            }
+            console.log('Agora v4 engine initialized');
+          } else {
+            console.warn('Agora module loaded but no compatible API found');
+          }
+        } catch (e) {
+          console.warn('Agora init/join failed', e);
+        }
+      };
+      init();
+    }
+
+    return () => {
+      if (agoraEngineRef.current) {
+        try { agoraEngineRef.current.leaveChannel?.(); } catch {}
+        try { (agoraEngineRef.current.destroy ?? agoraEngineRef.current.release)?.(); } catch {}
+        setIsJoined(false);
+      }
+    };
+  }, [visible, AgoraModules, channelName]);
+
+  const handleEndDrift = async () => {
+    onClose();
+    try {
+      const uid = require('@react-native-firebase/auth').default().currentUser?.uid;
+      await require('@react-native-firebase/firestore').default().collection('livestreams').doc(uid).update({ status: 'ended' });
+    } catch (e) {
+      console.warn('Error ending stream:', e);
+    }
+  };
+
+  if (!AgoraModules) {
+    return (
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'black' }}>
+          <Text style={{ color: 'white', textAlign: 'center', padding: 20 }}>
+            Live streaming requires `react-native-agora`. Please run `npm i react-native-agora` and rebuild.
+          </Text>
+          <Pressable style={styles.closeBtn} onPress={onClose}><Text style={styles.closeText}>Close</Text></Pressable>
+        </View>
+      </Modal>
+    );
+  }
+
+  if (!appId) {
+    return (
+      <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'black' }}>
+          <Text style={{ color: 'white', textAlign: 'center', padding: 20 }}>
+            Missing AGORA_APP_ID. Set values in `Drift/liveConfig.ts` and rebuild.
+          </Text>
+          <Pressable style={styles.closeBtn} onPress={onClose}><Text style={styles.closeText}>Close</Text></Pressable>
+        </View>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleEndDrift}>
+      <View style={editorStyles.editorRoot}>
+        <Text style={{ color: 'white', position: 'absolute', top: insets.top + 10, left: 16, zIndex: 10, backgroundColor: 'rgba(255,0,0,0.7)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, fontWeight: 'bold' }}>
+          ● LIVE
+        </Text>
+        {(() => {
+          // Show local preview whenever modal is visible; do not gate on isJoined
+          if (!visible) return null;
+          const RNAgora: any = AgoraModules as any;
+          const LocalSurface = RNAgora?.RtcLocalView?.SurfaceView || RNAgora?.RtcSurfaceView;
+          const VideoRenderMode = RNAgora?.VideoRenderMode;
+          const AVView = RNAgora?.AgoraVideoView;
+          const VideoSourceType = RNAgora?.VideoSourceType;
+
+          // Agora v3 local view
+          if (LocalSurface && VideoRenderMode && RNAgora?.RtcLocalView) {
+            return (
+              React.createElement(LocalSurface, {
+                style: StyleSheet.absoluteFill,
+                renderMode: VideoRenderMode.Hidden,
+                zOrderMediaOverlay: true,
+              })
+            );
+          }
+
+          // Agora v4 local view
+          if (AVView) {
+            const sourceType = (VideoSourceType && (VideoSourceType.VideoSourceCameraPrimary ?? VideoSourceType.VideoSourceCamera)) || 0;
+            const renderMode = (VideoRenderMode && VideoRenderMode.Hidden) || 1;
+            return (
+              <AVView
+                style={StyleSheet.absoluteFill}
+                showLocalVideo={true}
+                videoSourceType={sourceType}
+                renderMode={renderMode}
+              />
+            );
+          }
+
+          // Fallback
+          return (
+            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }]}>
+              <Text style={{ color: 'white' }}>Initializing camera preview…</Text>
+            </View>
+          );
+        })()}
+        <Pressable style={[editorStyles.doneButton, { position: 'absolute', bottom: insets.bottom + 16, left: 16, right: 16, backgroundColor: '#E53935' }]} onPress={handleEndDrift}>
+          <Text style={[editorStyles.doneButtonText, { color: 'white' }]}>End Drift</Text>
+        </Pressable>
+      </View>
+    </Modal>
+  );
+*/
+};
+
+// ======================== ROOT (Provider Wrapper) ========================
+const App: React.FC = () => {
+  return (
+    <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <SafeAreaProvider>
+          <InnerApp />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </View>
+  );
+};
+
+export default App;
+

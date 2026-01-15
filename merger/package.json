@@ -1,0 +1,15 @@
+{
+  "name": "drift-9f114-merger",
+  "version": "1.0.0",
+  "description": "Backend for merging audio and video, with Mux integration.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@mux/mux-node": "12.8.0",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "multer": "2.0.2"
+  }
+}
