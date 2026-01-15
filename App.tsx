@@ -48,7 +48,6 @@ import EditableProfileAvatar from './EditableProfileAvatar';
 import ImageCropPicker from 'react-native-image-crop-picker';
 const { AudioPicker } = NativeModules;
 import BridgeDataSaverPanel from './src/dataSaver/BridgeDataSaverPanel';
-import branch from 'react-native-branch';
 import CrabWalkBadge from './src/components/CrabWalkBadge';
 import { DataSaverProvider } from './src/dataSaver/DataSaverProvider';
 import OceanAmbienceToggle from './src/components/OceanAmbienceToggle';
@@ -17776,17 +17775,6 @@ const App: React.FC = () => {
       }
     };
     loadAuthStatus();
-  }, []);
-                    
-  // Initialize Branch for deep linking
-  useEffect(() => {
-    branch.initSessionT().then((data) => {
-      if (data && data.params && !data.error) {
-        // Handle the link data, e.g., navigate to the drift
-        console.log('Branch link params:', data.params);
-        // You can dispatch an action or navigate here
-      }
-    });
   }, []);
                     
   useEffect(() => {
