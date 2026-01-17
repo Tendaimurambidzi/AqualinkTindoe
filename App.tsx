@@ -3843,7 +3843,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const videoStyleFor = useCallback(
     (id: string) => {
       const ar = videoAspectMap[id] || 9 / 16;
-      const width = SCREEN_WIDTH; // Full screen width for edge-to-edge videos
+      const width = SCREEN_WIDTH + 40; // Extend beyond screen edges to eliminate yellow margins
       const height = (width / ar) * 0.5; // Reduced height by half for 3-post view
       return [
         styles.postedWaveMedia,
@@ -3851,6 +3851,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           width,
           height,
           alignSelf: 'center',
+          marginHorizontal: -20, // Negative margin to position video beyond screen edges
         },
       ] as any;
     },
@@ -9028,7 +9029,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           navigation.navigate('PostDetail', { post: item });
                         }}
                         style={[
-                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH) / (9/16)) * 0.5 } : videoStyleFor(item.id),
+                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH + 40) / (9/16)) * 0.5 } : videoStyleFor(item.id),
                           expandedPosts[item.id] ? {} : { overflow: 'hidden' }
                         ] as any}
                       >
@@ -9071,7 +9072,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </Pressable>
                     )}
                     </View>
-                    <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%', marginHorizontal: -10 }} />
+                    <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%', marginHorizontal: -20 }} />
                     <PosterActionBar
                       waveId={item.id}
                       currentUserId={myUid || ''}
