@@ -1,6 +1,6 @@
 // Import necessary components and hooks
 import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import NetInfo from '@react-native-community/netinfo';
@@ -36,7 +36,7 @@ interface PosterActionBarProps {
   isCasted: boolean;
   onAdd: () => void;
   onRemove: () => void;
-  onEcho: () => void;
+  onEcho: (waveId: string) => void;
   onPearl: () => void;
   onAnchor: () => void;
   onCast: () => void;
@@ -47,7 +47,7 @@ interface PosterActionBarProps {
 const PosterActionBar: React.FC<PosterActionBarProps> = ({
   waveId,
   currentUserId,
-  splashesCount: initialSplashesCount,
+  splashesCount,
   echoesCount,
   pearlsCount,
   isAnchored,
@@ -66,7 +66,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const [echoActionInProgress, setEchoActionInProgress] = useState(false);
   const [pearlActionInProgress, setPearlActionInProgress] = useState(false);
   const [hugInitialized, setHugInitialized] = useState(false);
-  const [splashesCount, setSplashesCount] = useState(initialSplashesCount);
 
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
@@ -134,9 +133,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
 
-    // Update count immediately
-    setSplashesCount(prev => newHasHugged ? prev + 1 : Math.max(0, prev - 1));
-
     // Handle action based on connectivity
     if (isOnline) {
       // Call the parent callback for immediate sync
@@ -169,7 +165,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     // Handle action based on connectivity
     if (isOnline) {
       // Call the parent callback for immediate sync
-      onEcho();
+      onEcho(waveId);
     } else {
       // Queue action for offline processing (basic echo without text for now)
       offlineQueueService.addAction('echo', waveId, { text: '' });
@@ -207,19 +203,26 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const creatorProfilePicture = creatorUserData?.userPhoto || creatorUserData?.photoURL || 'https://via.placeholder.com/100x100.png?text=No+Photo';
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
+    <ScrollView 
+      horizontal 
+      showsHorizontalScrollIndicator={false} 
+      style={styles.actionBar}
+      keyboardShouldPersistTaps="handled"
+      scrollEnabled={true}
+      contentContainerStyle={{ flexDirection: 'row' }}
+    >
       {/* Splashes Button */}
       <View style={styles.actionButton}>
-        <Pressable
+        <TouchableOpacity
           onPress={handleHug}
           style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 60, left: 60, bottom: 60, right: 60}}
+          activeOpacity={0.7}
+          disabled={hugActionInProgress}
         >
           <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
             🫂
           </Text>
-        </Pressable>
+        </TouchableOpacity>
         <Text style={styles.actionLabel}>Hugs</Text>
         <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
           {Math.max(0, splashesCount)}
@@ -228,16 +231,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Echoes Button */}
       <View style={styles.actionButton}>
-        <Pressable
+        <TouchableOpacity
           onPress={handleEcho}
           style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          activeOpacity={0.7}
+          disabled={echoActionInProgress}
         >
           <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
             📣
           </Text>
-        </Pressable>
+        </TouchableOpacity>
         <Text style={styles.actionLabel}>Echoes</Text>
         <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
           {echoesCount}
@@ -246,32 +249,30 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Gems Button */}
       <View style={styles.actionButton}>
-        <Pressable
+        <TouchableOpacity
           onPress={handlePearl}
           style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          activeOpacity={0.7}
         >
           <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
             💎
           </Text>
-        </Pressable>
+        </TouchableOpacity>
         <Text style={styles.actionLabel}>Gems</Text>
       </View>
 
       {/* Anchor Wave Button - Only show for other users' posts */}
       {currentUserId !== creatorUserId && (
         <View style={styles.actionButton}>
-          <Pressable
+          <TouchableOpacity
             onPress={handleAnchor}
             style={styles.iconTouchable}
-            android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-            hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
+            activeOpacity={0.7}
           >
             <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
               ⚓
             </Text>
-          </Pressable>
+          </TouchableOpacity>
           <Text style={styles.actionLabel}>Anchor</Text>
           <Text style={styles.actionCount}></Text>
         </View>
@@ -280,16 +281,15 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Cast Wave Button - Only show for other users' posts */}
       {currentUserId !== creatorUserId && (
         <View style={styles.actionButton}>
-          <Pressable
+          <TouchableOpacity
             onPress={handleCast}
             style={styles.iconTouchable}
-            android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-            hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
+            activeOpacity={0.7}
           >
             <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
               📡
             </Text>
-          </Pressable>
+          </TouchableOpacity>
           <Text style={styles.actionLabel}>Cast</Text>
           <Text style={styles.actionCount}></Text>
         </View>
@@ -297,52 +297,48 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Placeholder Button 1 */}
       <View style={styles.actionButton}>
-        <Pressable
+        <TouchableOpacity
           style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          activeOpacity={0.7}
         >
           <Text style={styles.actionIcon}>🔱</Text>
-        </Pressable>
+        </TouchableOpacity>
         <Text style={styles.actionLabel}>Placeholder 1</Text>
         <Text style={styles.actionCount}></Text>
       </View>
 
       {/* Placeholder Button 2 */}
       <View style={styles.actionButton}>
-        <Pressable
+        <TouchableOpacity
           style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          activeOpacity={0.7}
         >
           <Text style={styles.actionIcon}>🐚</Text>
-        </Pressable>
+        </TouchableOpacity>
         <Text style={styles.actionLabel}>Placeholder 2</Text>
         <Text style={styles.actionCount}></Text>
       </View>
 
       {/* Placeholder Button 3 */}
       <View style={styles.actionButton}>
-        <Pressable
+        <TouchableOpacity
           style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          activeOpacity={0.7}
         >
           <Text style={styles.actionIcon}></Text>
-        </Pressable>
+        </TouchableOpacity>
         <Text style={styles.actionLabel}></Text>
         <Text style={styles.actionCount}></Text>
       </View>
 
       {/* Placeholder Button 4 */}
       <View style={styles.actionButton}>
-        <Pressable
+        <TouchableOpacity
           style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          activeOpacity={0.7}
         >
           <Text style={styles.actionIcon}></Text>
-        </Pressable>
+        </TouchableOpacity>
         <Text style={styles.actionLabel}></Text>
         <Text style={styles.actionCount}></Text>
       </View>

@@ -2804,6 +2804,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [bridge.rainEffectsEnabled]);
   const [showPearls, setShowPearls] = useState<boolean>(false);
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
+  const [echoWaveId, setEchoWaveId] = useState<string | null>(null);
   const [postEchoTexts, setPostEchoTexts] = useState<{[postId: string]: string}>({});
   const [postEchoLists, setPostEchoLists] = useState<{[postId: string]: any[]}>({});
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -3736,7 +3737,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // Load echoes when echo modal opens
   useEffect(() => {
-    if (!showEchoes || !currentWave) {
+    if (!showEchoes || !echoWaveId) {
       setEchoList([]);
       return;
     }
@@ -3745,7 +3746,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         const echoesSnap = await firestore()
           .collection('waves')
-          .doc(currentWave.id)
+          .doc(echoWaveId)
           .collection('echoes')
           .orderBy('createdAt', 'desc')
           .get();
@@ -3773,7 +3774,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
                     
     loadEchoes();
-  }, [showEchoes, currentWave]);
+  }, [showEchoes, echoWaveId]);
                     
   // Adjust right-side bubble vertical anchor to fit up to 3 stacks
   const rightBubblesTop = useMemo(() => {
@@ -5861,8 +5862,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       text.length,
       'Text:',
       text,
-      'Current wave:',
-      currentWave?.id,
+      'Echo wave:',
+      echoWaveId,
     );
                     
     if (!text || text.length === 0) {
@@ -5874,8 +5875,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
                     
-    if (!currentWave) {
-      console.log('[ECHO] No current wave');
+    if (!echoWaveId) {
+      console.log('[ECHO] No echo wave');
       showOceanDialog(
         'No Wave Selected',
         'Please navigate to a wave before casting your echo.',
@@ -5886,6 +5887,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     console.log('[ECHO] Validation passed, proceeding with echo send');
                     
     try {
+      // Fetch the wave data
+      const waveDoc = await firestore().collection('waves').doc(echoWaveId).get();
+      if (!waveDoc.exists) {
+        console.log('[ECHO] Wave not found');
+        showOceanDialog('Wave Not Found', 'The wave you are trying to echo no longer exists.');
+        return;
+      }
+      const waveData = waveDoc.data();
+      const ownerUid = waveData?.ownerUid;
       // Optimistic local insertion for immediate UI feedback
       const rawText = echoTextRef.current || '';
       const text = rawText.trim();
@@ -5904,16 +5914,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       ]);
                     
       // Use the new sendEcho transaction
-      await sendEcho(currentWave.id, text, replyingToEcho?.id);
+      await sendEcho(echoWaveId, text, replyingToEcho?.id);
       
       // Update local echo counts
-      setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      setVibesFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      setPublicFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      setPostFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       
       // Update Firestore echo count
       try {
-        await firestore().doc(`waves/${currentWave.id}`).update({
+        await firestore().doc(`waves/${echoWaveId}`).update({
           'counts.echoes': firestore.FieldValue.increment(1)
         });
       } catch (error) {
@@ -5929,16 +5939,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       // Send ping notification to wave owner (if not self)
       const currentUserUid = auth?.()?.currentUser?.uid;
-      if (currentWave.ownerUid && currentUserUid && String(currentWave.ownerUid) !== String(currentUserUid)) {
+      if (ownerUid && currentUserUid && String(ownerUid) !== String(currentUserUid)) {
         try {
           // Fetch the actual username from the user's profile
           const fromUsername = await fetchUserUsername(currentUserUid);
           
           const addPingFn = functions().httpsCallable('addPing');
           await addPingFn({
-            recipientUid: currentWave.ownerUid,
+            recipientUid: ownerUid,
             type: 'echo',
-            waveId: currentWave.id,
+            waveId: echoWaveId,
             text: `${fromUsername} echoed your vibe!`,
             fromUid: currentUserUid,
             fromName: fromUsername,
@@ -8954,6 +8964,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             paused={!playSynced}
                             playInBackground={false}
                             isActive={item.id === activeVideoId}
+                            videoId={item.id}
                             bufferConfig={{
                               minBufferMs: 15000,
                               maxBufferMs: 45000,
@@ -9093,7 +9104,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           Alert.alert('Error', 'Failed to remove splash. Please try again.');
                         }
                       }}
-                      onEcho={() => {
+                      onEcho={(waveId) => {
+                        setEchoWaveId(waveId);
                         setCurrentIndex(index);
                         setShowEchoes(true);
                       }}
@@ -10612,7 +10624,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
-                <Pressable style={styles.logbookAction} onPress={() => setShowUnifiedPostModal(true)}>
+                <Pressable style={styles.logbookAction} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}>
                   <Text style={styles.logbookActionText}>Say Something</Text>
                 </Pressable>
                 <Pressable style={styles.logbookAction} onPress={goDrift}>
@@ -10637,6 +10649,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <CharteredSeaDriftButton
                   buttonStyle={styles.logbookAction}
                   buttonTextStyle={styles.logbookActionText}
+                  hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {
                     setIsCharteredDrift(true);
                     console.log('Chartered Drift Started:', cfg.title);

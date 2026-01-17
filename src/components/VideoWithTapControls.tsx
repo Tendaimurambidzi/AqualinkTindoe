@@ -10,8 +10,17 @@ import {
   Platform,
   AccessibilityInfo,
   Dimensions,
+  Image,
 } from "react-native";
 import Video, {OnProgressData} from "react-native-video";
+import NetInfo from '@react-native-community/netinfo';
+import {
+  getCachedVideoPath,
+  cacheVideo,
+  getVideoManifest,
+  saveVideoManifest,
+  VideoManifest,
+} from '../services/videoCache';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -48,6 +57,7 @@ type Props = {
   isActive?: boolean;
   onTap?: () => void;
   onMaximize?: () => void; // New prop for maximizing video
+  videoId?: string; // Add videoId prop to fetch poster
 };
 
 const VideoWithTapControls: React.FC<Props> = ({
@@ -60,7 +70,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   bufferConfig,
   useTextureView,
   progressUpdateInterval,
-  poster,
+  poster: initialPoster,
   posterResizeMode,
   disableFocus,
   playInBackground,
@@ -77,6 +87,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   isActive = true,
   onTap,
   onMaximize, // New prop
+  videoId,
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
@@ -88,6 +99,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
   const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true
+  const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
 
   useEffect(() => {
@@ -237,6 +249,24 @@ const VideoWithTapControls: React.FC<Props> = ({
   }, []);
 
   useEffect(() => {
+    if (videoId) {
+      let alive = true;
+      const fetchPoster = async () => {
+        try {
+          const manifest = await getVideoManifest(videoId);
+          if (alive && manifest?.thumb) {
+            setFetchedPoster(manifest.thumb);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch video poster:', error);
+        }
+      };
+      fetchPoster();
+      return () => { alive = false; };
+    }
+  }, [videoId]);
+
+  useEffect(() => {
     return () => {
       if (hideTimer.current) {
         clearTimeout(hideTimer.current);
@@ -285,7 +315,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         bufferConfig={bufferConfig}
         useTextureView={useTextureView}
         progressUpdateInterval={progressUpdateInterval}
-        poster={poster}
+        poster={initialPoster || fetchedPoster}
         posterResizeMode={posterResizeMode}
         disableFocus={disableFocus}
         playInBackground={playInBackground}
@@ -305,6 +335,11 @@ const VideoWithTapControls: React.FC<Props> = ({
       >
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
+      {videoCompleted && (initialPoster || fetchedPoster) && (
+        <View style={styles.posterContainer}>
+          <Image source={{ uri: initialPoster || fetchedPoster }} style={styles.posterImage} resizeMode={posterResizeMode || 'contain'} />
+        </View>
+      )}
       {videoCompleted && (
         <View style={styles.replayContainer}>
           <TouchableOpacity
@@ -470,6 +505,14 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 24,
     fontWeight: '600',
+  },
+  posterContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  posterImage: {
+    width: '100%',
+    height: '100%',
   },
 });
 
