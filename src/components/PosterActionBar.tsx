@@ -213,10 +213,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           activeOpacity={0.7}
           delayPressIn={0}
         >
-          <Text style={styles.actionLabel}>Hugs</Text>
-          <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
-            {Math.max(0, splashesCount)}
-          </Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionLabel}>Hugs</Text>
+            <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
+              {Math.max(0, splashesCount)}
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -231,10 +233,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           activeOpacity={0.7}
           delayPressIn={0}
         >
-          <Text style={styles.actionLabel}>Echoes</Text>
-          <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
-            {echoesCount}
-          </Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionLabel}>Echoes</Text>
+            <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
+              {echoesCount}
+            </Text>
+          </View>
         </TouchableOpacity>
       </View>
 
@@ -370,6 +374,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: 4,
   },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   actionIcon: {
     fontSize: 24, // Enlarged icons
     color: '#fff',
@@ -390,13 +399,11 @@ const styles = StyleSheet.create({
   actionLabel: {
     fontSize: 12,
     color: '#ccc',
-    marginTop: 2,
-    marginBottom: 2,
+    marginRight: 4, // Space between text and count
   },
   actionCount: {
     fontSize: 12,
     fontWeight: 'bold',
-    marginTop: 2,
   },
   activeCount: {
     color: '#00ff88', // Green for counts > 0
