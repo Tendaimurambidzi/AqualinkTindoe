@@ -128,12 +128,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   }, [waveId, currentUserId]);
 
   const handleHug = () => {
-    // Remove the action in progress blocking for better responsiveness
-    // Immediate visual feedback
+    // Immediate visual feedback - no blocking
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
 
-    // Handle action based on connectivity
+    // Handle action based on connectivity - fire and forget
     if (isOnline) {
       // Call the parent callback for immediate sync
       if (hasHugged) {
@@ -147,11 +146,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       offlineQueueService.addAction(actionType, waveId);
     }
 
-    // Optional: Add a very short cooldown to prevent spam clicking
-    setHugActionInProgress(true);
-    setTimeout(() => {
-      setHugActionInProgress(false);
-    }, 200); // Reduced from 500ms to 200ms
+    // No blocking timeout - allow instant re-taps
   };
 
   const handleEcho = () => {
@@ -171,10 +166,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       offlineQueueService.addAction('echo', waveId, { text: '' });
     }
 
-    // Reset action in progress after a short delay
-    setTimeout(() => {
-      setEchoActionInProgress(false);
-    }, 500);
+    // No blocking timeout - allow instant re-taps
+    setEchoActionInProgress(false);
   };
 
   const handlePearl = () => {
@@ -185,10 +178,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     // Call the parent callback
     onPearl();
     
-    // Reset action in progress after a short delay
-    setTimeout(() => {
-      setPearlActionInProgress(false);
-    }, 500);
+    // No blocking timeout - allow instant re-taps
+    setPearlActionInProgress(false);
   };
 
   const handleAnchor = () => {
@@ -213,134 +204,135 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     >
       {/* Splashes Button */}
       <View style={styles.actionButton}>
+        <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
+          🫂
+        </Text>
         <TouchableOpacity
           onPress={handleHug}
-          style={styles.iconTouchable}
+          style={styles.textButton}
           activeOpacity={0.7}
-          disabled={hugActionInProgress}
+          delayPressIn={0}
         >
-          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
-            🫂
+          <Text style={styles.actionLabel}>Hugs</Text>
+          <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
+            {Math.max(0, splashesCount)}
           </Text>
         </TouchableOpacity>
-        <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
-          {Math.max(0, splashesCount)}
-        </Text>
       </View>
 
       {/* Echoes Button */}
       <View style={styles.actionButton}>
+        <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
+          📣
+        </Text>
         <TouchableOpacity
           onPress={handleEcho}
-          style={styles.iconTouchable}
+          style={styles.textButton}
           activeOpacity={0.7}
-          disabled={echoActionInProgress}
+          delayPressIn={0}
         >
-          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
-            📣
+          <Text style={styles.actionLabel}>Echoes</Text>
+          <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
+            {echoesCount}
           </Text>
         </TouchableOpacity>
-        <Text style={styles.actionLabel}>Echoes</Text>
-        <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
-          {echoesCount}
-        </Text>
       </View>
 
       {/* Gems Button */}
       <View style={styles.actionButton}>
+        <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
+          💎
+        </Text>
         <TouchableOpacity
           onPress={handlePearl}
-          style={styles.iconTouchable}
+          style={styles.textButton}
           activeOpacity={0.7}
+          delayPressIn={0}
         >
-          <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
-            💎
-          </Text>
+          <Text style={styles.actionLabel}>Gems</Text>
         </TouchableOpacity>
-        <Text style={styles.actionLabel}>Gems</Text>
       </View>
 
       {/* Anchor Wave Button - Only show for other users' posts */}
       {currentUserId !== creatorUserId && (
         <View style={styles.actionButton}>
+          <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
+            ⚓
+          </Text>
           <TouchableOpacity
             onPress={handleAnchor}
-            style={styles.iconTouchable}
+            style={styles.textButton}
             activeOpacity={0.7}
+            delayPressIn={0}
           >
-            <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
-              ⚓
-            </Text>
+            <Text style={styles.actionLabel}>Anchor</Text>
           </TouchableOpacity>
-          <Text style={styles.actionLabel}>Anchor</Text>
-          <Text style={styles.actionCount}></Text>
         </View>
       )}
 
       {/* Cast Wave Button - Only show for other users' posts */}
       {currentUserId !== creatorUserId && (
         <View style={styles.actionButton}>
+          <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
+            📡
+          </Text>
           <TouchableOpacity
             onPress={handleCast}
-            style={styles.iconTouchable}
+            style={styles.textButton}
             activeOpacity={0.7}
+            delayPressIn={0}
           >
-            <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
-              📡
-            </Text>
+            <Text style={styles.actionLabel}>Cast</Text>
           </TouchableOpacity>
-          <Text style={styles.actionLabel}>Cast</Text>
-          <Text style={styles.actionCount}></Text>
         </View>
       )}
 
       {/* Placeholder Button 1 */}
       <View style={styles.actionButton}>
+        <Text style={styles.actionIcon}>🔱</Text>
         <TouchableOpacity
-          style={styles.iconTouchable}
+          style={styles.textButton}
           activeOpacity={0.7}
+          delayPressIn={0}
         >
-          <Text style={styles.actionIcon}>🔱</Text>
+          <Text style={styles.actionLabel}>Placeholder 1</Text>
         </TouchableOpacity>
-        <Text style={styles.actionLabel}>Placeholder 1</Text>
-        <Text style={styles.actionCount}></Text>
       </View>
 
       {/* Placeholder Button 2 */}
       <View style={styles.actionButton}>
+        <Text style={styles.actionIcon}>🐚</Text>
         <TouchableOpacity
-          style={styles.iconTouchable}
+          style={styles.textButton}
           activeOpacity={0.7}
+          delayPressIn={0}
         >
-          <Text style={styles.actionIcon}>🐚</Text>
+          <Text style={styles.actionLabel}>Placeholder 2</Text>
         </TouchableOpacity>
-        <Text style={styles.actionLabel}>Placeholder 2</Text>
-        <Text style={styles.actionCount}></Text>
       </View>
 
       {/* Placeholder Button 3 */}
       <View style={styles.actionButton}>
+        <Text style={styles.actionIcon}></Text>
         <TouchableOpacity
-          style={styles.iconTouchable}
+          style={styles.textButton}
           activeOpacity={0.7}
+          delayPressIn={0}
         >
-          <Text style={styles.actionIcon}></Text>
+          <Text style={styles.actionLabel}></Text>
         </TouchableOpacity>
-        <Text style={styles.actionLabel}></Text>
-        <Text style={styles.actionCount}></Text>
       </View>
 
       {/* Placeholder Button 4 */}
       <View style={styles.actionButton}>
+        <Text style={styles.actionIcon}></Text>
         <TouchableOpacity
-          style={styles.iconTouchable}
+          style={styles.textButton}
           activeOpacity={0.7}
+          delayPressIn={0}
         >
-          <Text style={styles.actionIcon}></Text>
+          <Text style={styles.actionLabel}></Text>
         </TouchableOpacity>
-        <Text style={styles.actionLabel}></Text>
-        <Text style={styles.actionCount}></Text>
       </View>
     </ScrollView>
   );
@@ -359,14 +351,24 @@ const styles = StyleSheet.create({
   actionButton: {
     alignItems: 'center',
     padding: 8,
-    marginHorizontal: 15, // Increased spacing between buttons to prevent accidental clicks
+    marginHorizontal: 20, // Increased spacing between buttons to prevent accidental clicks
   },
   iconTouchable: {
-    padding: 8, // Increased padding for better touch area
-    minWidth: 40, // Minimum touch width
-    minHeight: 40, // Minimum touch height
+    padding: 12, // Increased padding for better touch area
+    minWidth: 48, // Increased minimum touch width
+    minHeight: 48, // Increased minimum touch height
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  textButton: {
+    backgroundColor: '#ff4444', // Red background like Facebook buttons
+    borderRadius: 20, // Smooth curved corners
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
   },
   actionIcon: {
     fontSize: 24, // Enlarged icons

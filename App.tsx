@@ -8698,6 +8698,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return false; // do not block scroll/swipe
         }}
         delayPressIn={0}
+        pointerEvents="box-none"
       >
         <View style={{ flex: 1 }}>
           {displayFeed.length === 0 ? (
@@ -9079,31 +9080,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       isAnchored={false}
                       isCasted={false}
                       creatorUserId={item.ownerUid}
-                      onAdd={async () => {
-                        try {
-                          await ensureSplash(item.id);
+                      onAdd={() => {
+                        // Fire-and-forget for instant response - no await
+                        ensureSplash(item.id).then(() => {
                           // Update local state after successful database write
                           setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
                           setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                           setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                           setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        } catch (error) {
+                        }).catch((error) => {
                           console.error('Error adding splash:', error);
-                          Alert.alert('Error', 'Failed to add splash. Please try again.');
-                        }
+                          // Revert visual state on error
+                          setTimeout(() => {
+                            setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
+                            setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                            setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                            setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                          }, 100);
+                        });
                       }}
-                      onRemove={async () => {
-                        try {
-                          await removeSplash(item.id);
+                      onRemove={() => {
+                        // Fire-and-forget for instant response - no await
+                        removeSplash(item.id).then(() => {
                           // Update local state after successful database write
                           setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
                           setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                           setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                           setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        } catch (error) {
+                        }).catch((error) => {
                           console.error('Error removing splash:', error);
-                          Alert.alert('Error', 'Failed to remove splash. Please try again.');
-                        }
+                          // Revert visual state on error
+                          setTimeout(() => {
+                            setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
+                            setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                            setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                            setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                          }, 100);
+                        });
                       }}
                       onEcho={(waveId) => {
                         setEchoWaveId(waveId);
