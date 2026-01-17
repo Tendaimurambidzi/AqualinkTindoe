@@ -314,30 +314,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           <Text style={styles.actionLabel}>Placeholder 2</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Placeholder Button 3 */}
-      <View style={styles.actionButton}>
-        <Text style={styles.actionIcon}></Text>
-        <TouchableOpacity
-          style={styles.textButton}
-          activeOpacity={0.7}
-          delayPressIn={0}
-        >
-          <Text style={styles.actionLabel}></Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Placeholder Button 4 */}
-      <View style={styles.actionButton}>
-        <Text style={styles.actionIcon}></Text>
-        <TouchableOpacity
-          style={styles.textButton}
-          activeOpacity={0.7}
-          delayPressIn={0}
-        >
-          <Text style={styles.actionLabel}></Text>
-        </TouchableOpacity>
-      </View>
     </ScrollView>
   );
 };
