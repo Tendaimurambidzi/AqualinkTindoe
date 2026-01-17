@@ -3844,7 +3844,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     (id: string) => {
       const ar = videoAspectMap[id] || 9 / 16;
       const width = SCREEN_WIDTH - 40;
-      const height = width / ar;
+      const height = (width / ar) * 0.5; // Reduced height by half for 3-post view
       return [
         styles.postedWaveMedia,
         {
@@ -8745,7 +8745,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   setIsSwiping(false);
                   // Update currentIndex based on final scroll position
                   const scrollY = event.nativeEvent.contentOffset.y;
-                  const averageItemHeight = 400; // approximate height per post
+                  const averageItemHeight = 300; // approximate height per post (reduced for smaller video space)
                   const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
                   setCurrentIndex(newIndex);
                 }}
@@ -9028,7 +9028,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           navigation.navigate('PostDetail', { post: item });
                         }}
                         style={[
-                          expandedPosts[item.id] ? { minHeight: (SCREEN_WIDTH - 40) / (9/16) } : videoStyleFor(item.id),
+                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH - 40) / (9/16)) * 0.5 } : videoStyleFor(item.id),
                           expandedPosts[item.id] ? {} : { overflow: 'hidden' }
                         ] as any}
                       >
