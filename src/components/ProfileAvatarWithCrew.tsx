@@ -176,6 +176,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
             style={styles.closeButton}
             onPress={() => setShowModal(false)}
             activeOpacity={0.8}
+            delayPressIn={0}
           >
             <Text style={styles.closeButtonText}>✕</Text>
           </TouchableOpacity>
@@ -185,6 +186,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
             style={styles.modalContent}
             activeOpacity={1}
             onPress={() => setShowModal(false)}
+            delayPressIn={0}
           >
             <Image
               source={{ uri: photoURLWithCacheBust }}

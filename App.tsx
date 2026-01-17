@@ -8831,6 +8831,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 marginRight: 10,
                               }}
                               activeOpacity={0.7}
+                              delayPressIn={0}
                               disabled={crewLoading}
                             >
                               <Text style={{
@@ -8906,7 +8907,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
                       {/* Right side - Menu button */}
                       <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}>
+                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}} delayPressIn={0}>
                           <Text style={{ fontSize: 24 }}>⋮</Text>
                         </TouchableOpacity>
                       </View>
@@ -17090,7 +17091,7 @@ function SignInScreen({ navigation }: any) {
           secureTextEntry
         />
                     
-        <TouchableOpacity onPress={resetPassword} style={{ marginTop: 6 }}>
+        <TouchableOpacity onPress={resetPassword} style={{ marginTop: 6 }} delayPressIn={0}>
           <Text style={authStyles.link}>Forgot Password?</Text>
         </TouchableOpacity>
                     

@@ -58,7 +58,7 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
             </Text>
           </ScrollView>
 
-          <TouchableOpacity onPress={this.handleReload} style={styles.button}>
+          <TouchableOpacity onPress={this.handleReload} style={styles.button} delayPressIn={0}>
             <Text style={styles.buttonText}>Try Again</Text>
           </TouchableOpacity>
 
@@ -69,6 +69,7 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
               Alert.alert('Error Details Logged', 'Error details have been logged to console for debugging.');
             }}
             style={styles.debugButton}
+            delayPressIn={0}
           >
             <Text style={styles.debugButtonText}>Copy Debug Info</Text>
           </TouchableOpacity>

@@ -5,7 +5,7 @@ import {
   FlatList,
   Text,
   Image,
-  Pressable,
+  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
@@ -116,26 +116,30 @@ const UserSearch: React.FC<UserSearchProps> = ({
       {(onJoinCrew || onInviteToDrift) && (
         <View style={styles.userActions}>
           {onJoinCrew && (
-            <Pressable
+            <TouchableOpacity
               style={styles.userActionButton}
               onPress={event => {
                 event.stopPropagation?.();
                 onJoinCrew(item);
               }}
+              delayPressIn={0}
+              activeOpacity={0.7}
             >
               <Text style={styles.userActionText}>Connect SplashLine</Text>
-            </Pressable>
+            </TouchableOpacity>
           )}
           {onInviteToDrift && (
-            <Pressable
+            <TouchableOpacity
               style={styles.userActionButton}
               onPress={event => {
                 event.stopPropagation?.();
                 onInviteToDrift(item);
               }}
+              delayPressIn={0}
+              activeOpacity={0.7}
             >
               <Text style={styles.userActionText}>Invite</Text>
-            </Pressable>
+            </TouchableOpacity>
           )}
         </View>
       )}

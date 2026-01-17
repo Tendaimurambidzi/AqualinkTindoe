@@ -352,6 +352,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             onPress={onPlayPause}
             style={styles.replayButton}
             hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
+            delayPressIn={0}
           >
             <Text style={styles.replaySymbol}>↺</Text>
           </TouchableOpacity>
@@ -367,6 +368,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             onPress={onRewind}
             style={styles.seekButton}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            delayPressIn={0}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -379,6 +381,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             onPress={onPlayPause}
             style={styles.playButton}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            delayPressIn={0}
           >
             <View style={styles.playCircle}>
               <Text style={styles.playSymbol}>
@@ -392,6 +395,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             onPress={onFastForward}
             style={styles.seekButton}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            delayPressIn={0}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -404,6 +408,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             onPress={onToggleMute}
             style={styles.muteButton}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            delayPressIn={0}
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
           </TouchableOpacity>
