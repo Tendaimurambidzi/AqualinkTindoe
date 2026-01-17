@@ -336,10 +336,10 @@ const VideoWithTapControls: React.FC<Props> = ({
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
       {/* Show poster overlay when video is paused or completed */}
-      {(internalPaused || videoCompleted) && (initialPoster || fetchedPoster) && (
+      {(internalPaused || videoCompleted) && (
         <View style={styles.posterContainer}>
           <Image 
-            source={{ uri: initialPoster || fetchedPoster }} 
+            source={{ uri: initialPoster || fetchedPoster || (videoCompleted ? source.uri : null) }} 
             style={styles.posterImage} 
             resizeMode={posterResizeMode || 'contain'} 
           />
