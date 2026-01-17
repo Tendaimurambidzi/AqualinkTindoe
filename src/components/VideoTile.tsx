@@ -260,10 +260,54 @@ export default function VideoTile({
 
   return (
     <View style={{ aspectRatio: 9 / 16, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', minHeight: 300, minWidth: 169, position: 'relative' }}>
-      {thumb && (
+      {/* Video thumbnail preview - shows looping video instead of static image */}
+      {r?.low && !play && (
+        <View style={{ 
+          position: 'absolute', 
+          top: -20, 
+          left: -20, 
+          right: -20, 
+          bottom: -20, 
+          zIndex: 0,
+          borderRadius: 12,
+          overflow: 'hidden'
+        }}>
+          <Video
+            source={{ uri: r.low }}
+            style={{ 
+              width: '120%', 
+              height: '120%', 
+              position: 'absolute',
+              top: '-10%',
+              left: '-10%'
+            }}
+            paused={false}
+            resizeMode="cover"
+            repeat={true}
+            muted={true}
+            controls={false}
+            posterResizeMode="cover"
+            bufferConfig={{
+              minBufferMs: 100,
+              maxBufferMs: 500,
+              bufferForPlaybackMs: 50,
+              bufferForPlaybackAfterRebufferMs: 100,
+            }}
+            progressUpdateInterval={1000}
+            onLoadStart={() => {}}
+            onError={() => {}}
+            onProgress={() => {}}
+            onBuffer={() => {}}
+            onEnd={() => {}}
+          />
+        </View>
+      )}
+
+      {/* Static poster fallback if video fails */}
+      {thumb && !play && (
         <FastImage
           source={{ uri: thumb }}
-          style={posterStyles.background}
+          style={posterStyles.fallbackBackground}
           resizeMode={FastImage.resizeMode.cover}
           pointerEvents="none"
         />
@@ -361,6 +405,10 @@ const posterStyles = StyleSheet.create({
   background: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
+  },
+  fallbackBackground: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: -1, // Behind video
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
