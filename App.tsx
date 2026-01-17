@@ -8818,7 +8818,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                           {/* Connect/Disconnect Button */}
                           {item.ownerUid !== myUid && (
-                            <Pressable
+                            <TouchableOpacity
                               onPress={() => handleToggleVibe(item.ownerUid, item.authorName || item.user?.displayName)}
                               style={{
                                 paddingVertical: 6,
@@ -8829,6 +8829,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 backgroundColor: isInUserCrew[item.ownerUid] ? '#ff6b6b' : '#00C2FF',
                                 marginRight: 10,
                               }}
+                              activeOpacity={0.7}
                               disabled={crewLoading}
                             >
                               <Text style={{
@@ -8838,7 +8839,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               }}>
                                 {isInUserCrew[item.ownerUid] ? 'Disconnect' : 'Connect'}
                               </Text>
-                            </Pressable>
+                            </TouchableOpacity>
                           )}
                           
                           {/* Profile Avatar */}
