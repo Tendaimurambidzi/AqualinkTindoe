@@ -3843,7 +3843,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const videoStyleFor = useCallback(
     (id: string) => {
       const ar = videoAspectMap[id] || 9 / 16;
-      const width = SCREEN_WIDTH - 40;
+      const width = SCREEN_WIDTH; // Full screen width for edge-to-edge videos
       const height = (width / ar) * 0.5; // Reduced height by half for 3-post view
       return [
         styles.postedWaveMedia,
@@ -9028,7 +9028,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           navigation.navigate('PostDetail', { post: item });
                         }}
                         style={[
-                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH - 40) / (9/16)) * 0.5 } : videoStyleFor(item.id),
+                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH) / (9/16)) * 0.5 } : videoStyleFor(item.id),
                           expandedPosts[item.id] ? {} : { overflow: 'hidden' }
                         ] as any}
                       >
