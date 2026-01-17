@@ -3842,8 +3842,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const videoStyleFor = useCallback(
     (id: string) => {
-      const ar = videoAspectMap[id] || 9 / 16;
-      const width = SCREEN_WIDTH + 40; // Extend beyond screen edges to eliminate yellow margins
+      const ar = 9 / 16; // Use fixed aspect ratio for consistent full-width display
+      const width = SCREEN_WIDTH; // Full screen width to fill entire device width
       const height = (width / ar) * 0.5; // Reduced height by half for 3-post view
       return [
         styles.postedWaveMedia,
@@ -3851,11 +3851,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           width,
           height,
           alignSelf: 'center',
-          marginHorizontal: -20, // Negative margin to position video beyond screen edges
+          backgroundColor: 'transparent', // Override yellow background
         },
       ] as any;
     },
-    [videoAspectMap],
+    [], // Remove videoAspectMap dependency since we use fixed aspect ratio
   );
   const [bufferingMap, setBufferingMap] = useState<Record<string, boolean>>({});
   const bufferingTimeoutsRef = useRef<Record<string, any>>({});
@@ -8961,27 +8961,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         )}
                         {/* Post Media */}
                         {isVideoAsset(item.media) ? (
-                          <VideoWithTapControls
-                            source={{ uri: item.media.uri }}
-                            style={videoStyleFor(item.id) as any}
-                            resizeMode={'contain'}
-                            paused={!playSynced}
-                            playInBackground={false}
-                            isActive={item.id === activeVideoId}
-                            videoId={item.id}
-                            bufferConfig={{
-                              minBufferMs: 15000,
-                              maxBufferMs: 45000,
-                              bufferForPlaybackMs: 1000,
-                              bufferForPlaybackAfterRebufferMs: 3000,
-                            }}
-                            onPlay={() => {
-                              // Record video reach when video starts playing in feed
-                              recordVideoReach(item.id).catch(error => {
-                                console.log('Video reach recording failed:', error.message);
-                              });
-                            }}
-                          />
+                          <View style={{ marginHorizontal: -10 }}>
+                            <VideoWithTapControls
+                              source={{ uri: item.media.uri }}
+                              style={videoStyleFor(item.id) as any}
+                              resizeMode={'cover'}
+                              paused={!playSynced}
+                              playInBackground={false}
+                              isActive={item.id === activeVideoId}
+                              videoId={item.id}
+                              bufferConfig={{
+                                minBufferMs: 15000,
+                                maxBufferMs: 45000,
+                                bufferForPlaybackMs: 1000,
+                                bufferForPlaybackAfterRebufferMs: 3000,
+                              }}
+                              onPlay={() => {
+                                // Record video reach when video starts playing in feed
+                                recordVideoReach(item.id).catch(error => {
+                                  console.log('Video reach recording failed:', error.message);
+                                });
+                              }}
+                            />
+                          </View>
                         ) : (
                           <Pressable onPress={() => {
                             if (!revealedImages.has(item.id)) {
@@ -8994,7 +8996,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }
                             // Once revealed, no further action on tap
                           }}>
-                            <View style={{ position: 'relative' }}>
+                            <View style={{ position: 'relative', marginHorizontal: -10 }}>
                               <Image
                                 source={{ uri: item.media.uri }}
                                 style={videoStyleFor(item.id) as any}
@@ -9029,7 +9031,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           navigation.navigate('PostDetail', { post: item });
                         }}
                         style={[
-                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH + 40) / (9/16)) * 0.5 } : videoStyleFor(item.id),
+                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH) / (9/16)) * 0.5 } : videoStyleFor(item.id),
                           expandedPosts[item.id] ? {} : { overflow: 'hidden' }
                         ] as any}
                       >
