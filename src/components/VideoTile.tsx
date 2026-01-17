@@ -330,6 +330,11 @@ export default function VideoTile({
               setIsBuffering(isBuffering || !playbackReady);
               setShowPoster(isBuffering || !playbackReady);
             }}
+            onEnd={() => {
+              // When video ends, stop playing and show poster
+              setPlay(false);
+              setShowPoster(true);
+            }}
           />
         ) : null}
 
