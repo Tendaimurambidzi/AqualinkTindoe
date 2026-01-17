@@ -5965,7 +5965,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setReplyingToEcho(null);
       setEchoList(prev => prev.filter(e => e.id !== pendingId));
       setMyEcho({ text });
-      setShowEchoes(false); // Hide echo UI first
+      // setShowEchoes(false); // Keep echo UI open for next echo
       try {
         recordPingEvent('echo', currentWave.id, { text });
       } catch {}

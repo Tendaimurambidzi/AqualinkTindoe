@@ -210,7 +210,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <TouchableOpacity
           onPress={handleHug}
           style={styles.textButton}
-          activeOpacity={0.7}
+          activeOpacity={1}
           delayPressIn={0}
         >
           <View style={styles.buttonContent}>
@@ -230,7 +230,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <TouchableOpacity
           onPress={handleEcho}
           style={styles.textButton}
-          activeOpacity={0.7}
+          activeOpacity={1}
           delayPressIn={0}
         >
           <View style={styles.buttonContent}>
@@ -250,7 +250,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <TouchableOpacity
           onPress={handlePearl}
           style={styles.textButton}
-          activeOpacity={0.7}
+          activeOpacity={1}
           delayPressIn={0}
         >
           <Text style={styles.actionLabel}>Gems</Text>
@@ -266,7 +266,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           <TouchableOpacity
             onPress={handleAnchor}
             style={styles.textButton}
-            activeOpacity={0.7}
+            activeOpacity={1}
             delayPressIn={0}
           >
             <Text style={styles.actionLabel}>Anchor</Text>
@@ -283,7 +283,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           <TouchableOpacity
             onPress={handleCast}
             style={styles.textButton}
-            activeOpacity={0.7}
+            activeOpacity={1}
             delayPressIn={0}
           >
             <Text style={styles.actionLabel}>Cast</Text>
@@ -296,7 +296,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={styles.actionIcon}>🔱</Text>
         <TouchableOpacity
           style={styles.textButton}
-          activeOpacity={0.7}
+          activeOpacity={1}
           delayPressIn={0}
         >
           <Text style={styles.actionLabel}>Placeholder 1</Text>
@@ -308,7 +308,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={styles.actionIcon}>🐚</Text>
         <TouchableOpacity
           style={styles.textButton}
-          activeOpacity={0.7}
+          activeOpacity={1}
           delayPressIn={0}
         >
           <Text style={styles.actionLabel}>Placeholder 2</Text>
