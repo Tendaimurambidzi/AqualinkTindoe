@@ -8813,9 +8813,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     >
                     <View style={{ backgroundColor: '#FFFF00', marginHorizontal: -10, paddingHorizontal: 10, marginTop: -10, paddingTop: 10, marginBottom: -10, paddingBottom: 10 }}>
                     {/* Post Header */}
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10, paddingHorizontal: 10 }}>
-                      {/* Left side - Connect Button + Profile Avatar */}  
-                      <View style={{ flex: 2, alignItems: 'center' }}>
+                    <View style={{ position: 'relative', alignItems: 'center', marginBottom: 10, paddingHorizontal: 10 }}>
+                      {/* Menu button positioned absolutely in top-right */}
+                      <View style={{ position: 'absolute', top: 0, right: 10 }}>
+                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}} delayPressIn={0}>
+                          <Text style={{ fontSize: 24 }}>⋮</Text>
+                        </TouchableOpacity>
+                      </View>
+                      
+                      {/* Centered Profile Info */}
+                      <View style={{ alignItems: 'center' }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                           {/* Connect/Disconnect Button */}
                           {item.ownerUid !== myUid && (
@@ -8903,13 +8910,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
                           {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || new Date())}
                         </Text>
-                      </View>
-                    
-                      {/* Right side - Menu button */}
-                      <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}} delayPressIn={0}>
-                          <Text style={{ fontSize: 24 }}>⋮</Text>
-                        </TouchableOpacity>
                       </View>
                     </View>
                     {/* Post Content - Text or Media */}
@@ -9071,7 +9071,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </Pressable>
                     )}
                     </View>
-                    <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%' }} />
+                    <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%', marginHorizontal: -10 }} />
                     <PosterActionBar
                       waveId={item.id}
                       currentUserId={myUid || ''}
