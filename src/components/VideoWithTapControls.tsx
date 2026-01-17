@@ -184,12 +184,12 @@ const VideoWithTapControls: React.FC<Props> = ({
     } else if (locationX > rightThird) {
       safeSeek(currentTime + seekStep);
     } else {
-      // Center tap - navigate to full screen detail view
-      onTap?.();
+      // Center tap - just show controls, don't navigate
+      // onTap?.(); // Removed navigation on center tap
     }
     // Always show controls when tapping anywhere on video
     showControls();
-  }, [currentTime, seekStep, safeSeek, showControls, onTap]);
+  }, [currentTime, seekStep, safeSeek, showControls]);
 
   const onToggleMute = useCallback(() => {
     const willUnmute = isMuted; // If currently muted, this action will unmute
@@ -336,10 +336,10 @@ const VideoWithTapControls: React.FC<Props> = ({
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
       {/* Show poster overlay when video is paused */}
-      {internalPaused && (
+      {internalPaused && (initialPoster || fetchedPoster) && (
         <View style={styles.posterContainer}>
           <Image 
-            source={{ uri: initialPoster || fetchedPoster || source.uri }} 
+            source={{ uri: initialPoster || fetchedPoster }} 
             style={styles.posterImage} 
             resizeMode={posterResizeMode || 'contain'} 
           />
