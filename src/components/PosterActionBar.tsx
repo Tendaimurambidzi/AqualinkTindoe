@@ -322,10 +322,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 const styles = StyleSheet.create({
   actionBar: {
     paddingVertical: 5,
-    paddingHorizontal: 5,
+    paddingHorizontal: 0,
     backgroundColor: 'grey',
     borderRadius: 0,
-    marginHorizontal: 0,
+    marginHorizontal: -10,
     marginBottom: 10,
   },
   actionButton: {
