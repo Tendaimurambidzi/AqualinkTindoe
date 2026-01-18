@@ -358,7 +358,9 @@ const VideoWithTapControls: React.FC<Props> = ({
                 transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
+            hitSlop={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            pressRetentionOffset={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.replaySymbol}>↺</Text>
           </Pressable>
@@ -379,7 +381,9 @@ const VideoWithTapControls: React.FC<Props> = ({
                 transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
+            hitSlop={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            pressRetentionOffset={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -397,7 +401,9 @@ const VideoWithTapControls: React.FC<Props> = ({
                 transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
+            hitSlop={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            pressRetentionOffset={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.playCircle}>
               <Text style={styles.playSymbol}>
@@ -416,7 +422,9 @@ const VideoWithTapControls: React.FC<Props> = ({
                 transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
+            hitSlop={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            pressRetentionOffset={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -434,7 +442,9 @@ const VideoWithTapControls: React.FC<Props> = ({
                 transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
+            hitSlop={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            pressRetentionOffset={{ top: 80, bottom: 80, left: 80, right: 80 }}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
           </Pressable>
