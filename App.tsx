@@ -299,11 +299,11 @@ const formatNotificationMessage = (notification: {
   // Format based on notification type with username included and no icons
   switch (notification.type) {
     case 'echo':
-      return `${username} sent an echo to your vibe`;
+      return `${username} sent an echo to your wave`;
     case 'splash':
-      return `${username} splashed your vibe`;
+      return `${username} hugged your wave`;
     case 'octopus_hug':
-      return `${username} hugged your vibe`;
+      return `${username} hugged your wave`;
     case 'follow':
     case 'CONNECT_VIBE':
       return `${username} connected! Wanna say hi?`;
@@ -5805,8 +5805,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         const message =
           splashType === 'octopus_hug'
-            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
-            : 'You splashed this vibe!';
+            ? 'You hugged this wave - the wave is embraced with 8 arms!'
+            : 'You hugged this wave!';
         notifySuccess(message);
         // Show octopus hug animation on screen
         // Octopus hug animation removed per user request; only show success message
@@ -6719,7 +6719,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const user = auth().currentUser;
       if (!user) {
-        Alert.alert('Sign in required', 'Please sign in to connect vibe.');
+        Alert.alert('Sign in required', 'Please sign in to connect wave.');
         return;
       }
 
@@ -6730,14 +6730,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.log(`[DEBUG] handleJoinCrew: joinCrew function completed for ${targetUid}`);
       
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
-      notifySuccess(`Connected to ${targetName || 'user'}'s vibe`);
+      notifySuccess(`Connected to ${targetName || 'user'}'s wave`);
       loadCrewCounts();
       await loadDriftWatchers();
       
       console.log(`[DEBUG] handleJoinCrew: UI updated for connection to ${targetUid}`);
     } catch (e) {
-      console.error('Connect vibe error:', e);
-      let msg = 'Could not connect vibe right now';
+      console.error('Connect wave error:', e);
+      let msg = 'Could not connect wave right now';
       if (e && (e.message || (typeof e === 'string'))) {
         msg = e.message || e.toString();
       }
@@ -6753,12 +6753,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       await leaveCrew(targetUid);
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
-      notifySuccess(`Disconnected from ${targetName || 'user'}'s vibe`);
+      notifySuccess(`Disconnected from ${targetName || 'user'}'s wave`);
       loadCrewCounts();
       await loadDriftWatchers();
     } catch (e) {
-      console.error('Disconnect vibe error:', e);
-      notifyError('Could not disconnect vibe right now');
+      console.error('Disconnect wave error:', e);
+      notifyError('Could not disconnect wave right now');
     } finally {
       setCrewLoading(false);
     }
