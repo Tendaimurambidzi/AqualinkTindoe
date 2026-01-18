@@ -69,6 +69,11 @@ const CreatePostScreen = ({ navigation, route }: any) => {
 
     const selected = selectedMedia;
 
+    // Clear the form immediately for better UX
+    setCaption('');
+    setSelectedMedia(null);
+    setLink('');
+
     try {
       setUploading(true);
       const result = await uploadPost({
@@ -103,8 +108,6 @@ const CreatePostScreen = ({ navigation, route }: any) => {
       }
 
       setUploading(false);
-      setCaption('');
-      setSelectedMedia(null);
 
       if (navigation?.goBack) {
         navigation.goBack();
@@ -112,6 +115,10 @@ const CreatePostScreen = ({ navigation, route }: any) => {
     } catch (err: any) {
       console.warn(err);
       setUploading(false);
+      // Restore the cleared content on error
+      setCaption(trimmedCaption);
+      setSelectedMedia(selected);
+      setLink(link.trim());
       Alert.alert(
         'Upload failed',
         err?.message || 'Could not upload your post. Please try again.',

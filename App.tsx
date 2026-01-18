@@ -2818,6 +2818,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showPearls, setShowPearls] = useState<boolean>(false);
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
   const [echoWaveId, setEchoWaveId] = useState<string | null>(null);
+  const [mainEchoSending, setMainEchoSending] = useState<boolean>(false);
   const [postEchoTexts, setPostEchoTexts] = useState<{[postId: string]: string}>({});
   const [postEchoLists, setPostEchoLists] = useState<{[postId: string]: any[]}>({});
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -5897,6 +5898,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       return;
     }
+
+    // Prevent duplicate sends
+    if (mainEchoSending) return;
+    setMainEchoSending(true);
                     
     console.log('[ECHO] Validation passed, proceeding with echo send');
                     
@@ -5978,6 +5983,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setReplyingToEcho(null);
       setEchoList(prev => prev.filter(e => e.id !== pendingId));
       setMyEcho({ text });
+      setMainEchoSending(false);
       // setShowEchoes(false); // Keep echo UI open for next echo
       try {
         recordPingEvent('echo', currentWave.id, { text });
@@ -5987,8 +5993,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (e?.message && e.message.includes('permission-denied')) {
         // Silently ignore, since echo is likely created
         setShowEchoes(false);
+        setMainEchoSending(false);
         return;
       }
+      setMainEchoSending(false);
       Alert.alert('Error', `Could not send echo: ${e?.message || e || 'Unknown error'}`);
     }
   };
@@ -12706,11 +12714,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   multiline
                 />
                 <Pressable
-                  style={[styles.primaryBtn, { marginTop: 16 }]}
+                  style={[styles.primaryBtn, { marginTop: 16 }, mainEchoSending && { opacity: 0.7 }]}
                   onPress={editingEcho ? onSaveEditedEcho : onSendEcho}
+                  disabled={mainEchoSending}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {replyingToEcho ? 'Send Reply' : editingEcho ? 'Save Echo' : 'Send Echo'}
+                    {mainEchoSending ? 'Sending...' : (replyingToEcho ? 'Send Reply' : editingEcho ? 'Save Echo' : 'Send Echo')}
                   </Text>
                 </Pressable>
                 <Pressable
