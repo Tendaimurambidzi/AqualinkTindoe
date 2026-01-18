@@ -34,6 +34,7 @@ export default function VideoTile({
   const [hadError, setHadError] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [playbackReady, setPlaybackReady] = useState(false);
+  const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted for feed
   const lastTime = useRef(0);
   const cacheKickoff = useRef(false);
   const loadTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -62,7 +63,15 @@ export default function VideoTile({
     setHasStarted(false);
     lastTime.current = 0;
     cacheKickoff.current = false;
+    setIsMuted(true); // Reset to muted for new videos
   }, [videoId]);
+
+  // Unmute when video starts playing
+  useEffect(() => {
+    if (play && !isBuffering) {
+      setIsMuted(false);
+    }
+  }, [play, isBuffering]);
 
   // Check network status
   useEffect(() => {
@@ -201,6 +210,7 @@ export default function VideoTile({
     setHasStarted(false);
     setPlaybackReady(false);
     setPlay(true);
+    setIsMuted(false); // Unmute when user taps to play
   };
 
   const thumb = r?.thumb || undefined;
@@ -283,7 +293,7 @@ export default function VideoTile({
               paused={false}
               resizeMode="cover"
               repeat={true}
-              muted={true}
+              muted={isMuted}ed}ed}
               controls={false}
               posterResizeMode="cover"
               bufferConfig={{

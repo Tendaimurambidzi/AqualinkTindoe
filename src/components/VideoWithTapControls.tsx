@@ -113,6 +113,13 @@ const VideoWithTapControls: React.FC<Props> = ({
     }
   }, [isActive]);
 
+  // Unmute when video starts playing
+  useEffect(() => {
+    if (!internalPaused && !videoCompleted && isActive) {
+      setIsMuted(false);
+    }
+  }, [internalPaused, videoCompleted, isActive]);
+
   const showControls = useCallback(() => {
     if (hideTimer.current) {
       clearTimeout(hideTimer.current);
