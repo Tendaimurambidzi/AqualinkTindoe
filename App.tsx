@@ -285,12 +285,29 @@ const formatNotificationMessage = (notification: {
   fromUid?: string;
   fromName?: string;
   createdAt: any;
-}, userData?: Record<string, { name: string; avatar: string; bio: string }>) => {
+}, userData?: Record<string, { name: string; avatar: string; bio: string; email?: string; phoneNumber?: string }>) => {
   // Compute username dynamically using the same logic as the feed
   let username = notification.fromName;
   if (!username && notification.fromUid && userData) {
     const userInfo = userData[notification.fromUid];
     username = userInfo?.name || userInfo?.username;
+  }
+  // If still no username, try to get email or phone number from Firebase Auth
+  if (!username && notification.fromUid) {
+    try {
+      const auth = require('@react-native-firebase/auth').default;
+      const currentUser = auth().currentUser;
+      if (currentUser && currentUser.uid === notification.fromUid) {
+        username = currentUser.email || currentUser.phoneNumber || 'Unknown User';
+      } else {
+        // For other users, we might not have their auth data, so check userData
+        const userInfo = userData?.[notification.fromUid];
+        username = userInfo?.email || userInfo?.phoneNumber || 'Unknown User';
+      }
+    } catch (error) {
+      console.warn('Could not get user auth data for notification:', error);
+      username = 'Unknown User';
+    }
   }
   if (!username) {
     username = 'Unknown User';
@@ -303,13 +320,8 @@ const formatNotificationMessage = (notification: {
     case 'octopus_hug':
     case 'follow':
     case 'CONNECT_VIBE':
-      return `${username} connected! Wanna say hi?`;
-    case 'message':
-      return `${username} sent you a message`;
-    case 'friend_went_live':
-      return `${username} went live`;
     case 'joined_tide':
-      return `${username} joined your tide`;
+      return `/${username} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
     case 'system_message':
@@ -9563,25 +9575,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </Pressable>
                     
-      {/* Media title + timer overlay (at bottom above interactions) */}
-      {currentWave && !isUiVisible && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.mediaTitleBar,
-            { top: undefined, bottom: insets.bottom + bottomBarHeight - 6 },
-          ]}
-        >
-          <Text
-            style={[styles.mediaTimerText, { marginLeft: 0, marginRight: 12 }]}
-          >
-            {formatTime(playbackTime)}
-          </Text>
-          <Text numberOfLines={1} style={styles.mediaTitleText}>
-            {getWaveTitle(currentWave)}
-          </Text>
-        </View>
-      )}
+    
                     
       {/* Right-edge overlapped bubbles */}
       {/* Notification Toast */}
