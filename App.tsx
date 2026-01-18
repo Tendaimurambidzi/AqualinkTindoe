@@ -321,7 +321,9 @@ const formatNotificationMessage = (notification: {
     case 'follow':
     case 'CONNECT_VIBE':
     case 'joined_tide':
-      return `/${username} joined your tide! Wanna say hi?`;
+      // Ensure username has only one leading slash
+      const cleanUsername = username.startsWith('/') ? username : `/${username}`;
+      return `${cleanUsername} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
     case 'system_message':
@@ -1576,8 +1578,8 @@ function AuthButton({
           transform: [{ scale: 0.98 }],
         }
       ]}
-      hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-      pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+      hitSlop={{ top: 30, bottom: 30, left: 25, right: 25 }}
+      pressRetentionOffset={{ top: 30, bottom: 30, left: 25, right: 25 }}
       android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
     >
       <Text style={authStyles.btnText}>{title}</Text>
@@ -8795,7 +8797,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 }}
                 // TikTok-style viewability tracking - lower threshold for more responsive playback
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 50, // video must be at least 50% visible to play
+                  itemVisiblePercentThreshold: 30, // video must be at least 30% visible to play (reduced from 50% for faster switching)
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
@@ -8897,7 +8899,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   transform: [{ scale: 0.95 }],
                                 }
                               ]}
-                              hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
+                              hitSlop={{ top: 30, bottom: 30, left: 20, right: 20 }}
                             >
                               <Text style={{
                                 color: 'white',
