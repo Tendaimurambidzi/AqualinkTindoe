@@ -8847,7 +8847,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 fontSize: 12,
                                 fontWeight: '600',
                               }}>
-                                {isInUserCrew[item.ownerUid] ? 'Disconnect' : 'Connect'}
+                                {isInUserCrew[item.ownerUid] ? 'Leave Tide' : 'Join Tide'}
                               </Text>
                             </TouchableOpacity>
                           )}
