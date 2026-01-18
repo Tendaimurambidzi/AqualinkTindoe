@@ -299,7 +299,7 @@ const formatNotificationMessage = (notification: {
   // Format based on notification type with username included and no icons
   switch (notification.type) {
     case 'echo':
-      return `${username} sent an echo to your wave`;
+      return `${username} echoed your wave`;
     case 'splash':
       return `${username} hugged your wave`;
     case 'octopus_hug':
@@ -8834,13 +8834,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 paddingHorizontal: 12,
                                 borderRadius: 15,
                                 borderWidth: 1,
-                                borderColor: isInUserCrew[item.ownerUid] ? '#ff6b6b' : '#00C2FF',
-                                backgroundColor: isInUserCrew[item.ownerUid] ? '#ff6b6b' : '#00C2FF',
+                                borderColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
+                                backgroundColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
                                 marginRight: 10,
                               }}
                               activeOpacity={0.7}
                               delayPressIn={0}
-                              disabled={crewLoading}
                             >
                               <Text style={{
                                 color: 'white',
