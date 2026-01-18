@@ -241,10 +241,24 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
   const waveOwnerUid = wave.ownerUid || wave.authorId;
-  if (!waveOwnerUid) return;
+  if (!waveOwnerUid) {
+    console.log(`No wave owner found for wave ${waveId}`);
+    return;
+  }
   const echo = snap.data() || {};
   const echoSenderUid = echo.userUid;
-  if (!echoSenderUid) return;
+  if (!echoSenderUid) {
+    console.log(`No echo sender UID found for echo in wave ${waveId}`);
+    return;
+  }
+  
+  console.log(`Echo created: waveOwner=${waveOwnerUid}, echoSender=${echoSenderUid}, userName=${echo.userName}`);
+  
+  // IMMEDIATE SELF-NOTIFICATION CHECK - Don't send any notifications for self-actions
+  if (String(waveOwnerUid).trim() === String(echoSenderUid).trim()) {
+    console.log(`Blocking self-notification: wave owner ${waveOwnerUid} echoed their own wave`);
+    return;
+  }
   
   // Check if this is a reply to another echo
   let notificationTargetUid = waveOwnerUid;
@@ -258,11 +272,17 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
       if (originalEchoSnap.exists) {
         const originalEcho = originalEchoSnap.data() || {};
         const originalEchoAuthorUid = originalEcho.userUid;
-        if (originalEchoAuthorUid && String(originalEchoAuthorUid) !== String(echoSenderUid)) {
+        console.log(`Echo reply: originalAuthor=${originalEchoAuthorUid}, echoSender=${echoSenderUid}`);
+        
+        // Don't notify if replying to own echo
+        if (originalEchoAuthorUid && String(originalEchoAuthorUid).trim() !== String(echoSenderUid).trim()) {
           // Notify the original echo author
           notificationTargetUid = originalEchoAuthorUid;
           notificationType = 'echo_reply';
           notificationText = `💬 ${echo.userName || 'Someone'} replied to your echo: ${echo.text?.slice(0, 60) || ''}`;
+        } else {
+          console.log(`Blocking self-reply notification: ${echoSenderUid} replied to their own echo`);
+          return;
         }
       }
     } catch (error) {
@@ -271,8 +291,13 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
     }
   }
   
-  // Don't send notification if the echo sender is the notification target
-  if (String(notificationTargetUid) === String(echoSenderUid)) return;
+  // FINAL SELF-NOTIFICATION CHECK - Don't send notification if the echo sender is the notification target
+  if (String(notificationTargetUid).trim() === String(echoSenderUid).trim()) {
+    console.log(`Blocking self-notification: echo sender ${echoSenderUid} is the notification target ${notificationTargetUid}`);
+    return;
+  }
+  
+  console.log(`Sending echo notification to ${notificationTargetUid}: ${notificationText}`);
   
   await addPing(notificationTargetUid, {
     type: notificationType,

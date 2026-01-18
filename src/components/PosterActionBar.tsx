@@ -181,11 +181,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       const huggers = [];
       for (const doc of splashesSnap.docs) {
         const splashData = doc.data();
-        if (splashData.userId) {
-          const userData = await fetchUserData(splashData.userId);
+        const userId = doc.id; // The document ID is the user ID
+        if (userId) {
+          const userData = await fetchUserData(userId);
           if (userData) {
             huggers.push({
-              id: splashData.userId,
+              id: userId,
               name: userData.displayName || userData.username || 'Unknown User',
               photo: userData.photoURL || userData.userPhoto,
               timestamp: splashData.createdAt,
@@ -205,13 +206,13 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   };
 
   const handleHugPress = () => {
-    if (splashesCount > 0) {
-      // If there are hugs, show the dropdown
-      fetchHuggers();
-    } else {
-      // If no hugs yet, just perform the hug action
-      handleHug();
-    }
+    // Always show the dropdown when the hugs icon is clicked
+    fetchHuggers();
+  };
+
+  const handleHugAction = () => {
+    // Perform the hug action (increment/decrement count)
+    handleHug();
   };
 
   const handlePearl = () => {
@@ -244,11 +245,19 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       >
       {/* Splashes Button */}
       <View style={styles.actionButton}>
-        <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
-          🫂
-        </Text>
         <Pressable
           onPress={handleHugPress}
+          style={styles.iconTouchable}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+        >
+          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
+            🫂
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={handleHugAction}
           style={({ pressed }) => [
             styles.textButton,
             pressed && styles.pressedButton
@@ -396,16 +405,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         onPress={() => setShowHuggersDropdown(false)}
       >
         <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>People who hugged this post</Text>
-            <Pressable
-              onPress={() => setShowHuggersDropdown(false)}
-              style={styles.closeButton}
-            >
-              <Text style={styles.closeButtonText}>✕</Text>
-            </Pressable>
-          </View>
-
           {loadingHuggers ? (
             <View style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Loading huggers...</Text>
@@ -420,34 +419,15 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               keyExtractor={(item) => item.id}
               renderItem={({ item }) => (
                 <View style={styles.huggerItem}>
-                  <View style={styles.huggerAvatar}>
-                    <Text style={styles.huggerEmoji}>🫂</Text>
-                  </View>
-                  <View style={styles.huggerInfo}>
-                    <Text style={styles.huggerName}>{item.name}</Text>
-                    <Text style={styles.huggerTimestamp}>
-                      {item.timestamp ? new Date(item.timestamp.toDate()).toLocaleDateString() : 'Recently'}
-                    </Text>
-                  </View>
+                  <Text style={styles.huggerName}>{item.name}</Text>
+                  <Text style={styles.huggerTimestamp}>
+                    {item.timestamp ? new Date(item.timestamp.toDate()).toLocaleDateString() : 'Recently'}
+                  </Text>
                 </View>
               )}
               style={styles.huggersList}
             />
           )}
-
-          <View style={styles.modalActions}>
-            <Pressable
-              style={styles.hugButton}
-              onPress={() => {
-                setShowHuggersDropdown(false);
-                handleHug();
-              }}
-            >
-              <Text style={styles.hugButtonText}>
-                {hasHugged ? 'Remove Hug' : 'Add Hug'} 🫂
-              </Text>
-            </Pressable>
-          </View>
         </View>
       </Pressable>
     </Modal>
@@ -471,9 +451,6 @@ const styles = StyleSheet.create({
     marginHorizontal: 20, // Increased spacing between buttons to prevent accidental clicks
   },
   iconTouchable: {
-    padding: 12, // Increased padding for better touch area
-    minWidth: 48, // Increased minimum touch width
-    minHeight: 48, // Increased minimum touch height
     alignItems: 'center',
     justifyContent: 'center',
   },
