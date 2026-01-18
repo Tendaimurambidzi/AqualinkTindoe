@@ -8784,7 +8784,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 }}
                 // TikTok-style viewability tracking
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 80, // video must be mostly visible
+                  itemVisiblePercentThreshold: 95, // video must be almost fully visible to play
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
@@ -8886,7 +8886,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   transform: [{ scale: 0.95 }],
                                 }
                               ]}
-                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
                             >
                               <Text style={{
                                 color: 'white',
@@ -8914,7 +8914,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 transform: [{ scale: 0.95 }],
                               }
                             ]}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
                           >
                             <ProfileAvatarWithCrew
                               key={item.ownerUid}
