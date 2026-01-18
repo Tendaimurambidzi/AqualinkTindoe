@@ -1,6 +1,6 @@
 // Import necessary components and hooks
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Pressable } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import NetInfo from '@react-native-community/netinfo';
@@ -63,8 +63,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const [hasHugged, setHasHugged] = useState(false);
   const [hasEchoed, setHasEchoed] = useState(false);
   const [hugActionInProgress, setHugActionInProgress] = useState(false);
-  const [echoActionInProgress, setEchoActionInProgress] = useState(false);
-  const [pearlActionInProgress, setPearlActionInProgress] = useState(false);
   const [hugInitialized, setHugInitialized] = useState(false);
 
   // State for creator user data
@@ -150,10 +148,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   };
 
   const handleEcho = () => {
-    if (echoActionInProgress) return; // Prevent concurrent actions
-
-    setEchoActionInProgress(true);
-
     // Immediate visual feedback
     setHasEchoed(true);
 
@@ -167,19 +161,13 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     }
 
     // No blocking timeout - allow instant re-taps
-    setEchoActionInProgress(false);
   };
 
   const handlePearl = () => {
-    if (pearlActionInProgress) return; // Prevent concurrent actions
-
-    setPearlActionInProgress(true);
-    
     // Call the parent callback
     onPearl();
     
     // No blocking timeout - allow instant re-taps
-    setPearlActionInProgress(false);
   };
 
   const handleAnchor = () => {
@@ -207,11 +195,13 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
           🫂
         </Text>
-        <TouchableOpacity
+        <Pressable
           onPress={handleHug}
-          style={styles.textButton}
-          activeOpacity={1}
-          delayPressIn={0}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionLabel}>Hugs</Text>
@@ -219,7 +209,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               {Math.max(0, splashesCount)}
             </Text>
           </View>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Echoes Button */}
@@ -227,11 +217,13 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
           📣
         </Text>
-        <TouchableOpacity
+        <Pressable
           onPress={handleEcho}
-          style={styles.textButton}
-          activeOpacity={1}
-          delayPressIn={0}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionLabel}>Echoes</Text>
@@ -239,7 +231,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               {echoesCount}
             </Text>
           </View>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Gems Button */}
@@ -247,14 +239,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
           💎
         </Text>
-        <TouchableOpacity
+        <Pressable
           onPress={handlePearl}
-          style={styles.textButton}
-          activeOpacity={1}
-          delayPressIn={0}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={styles.actionLabel}>Gems</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Anchor Wave Button - Only show for other users' posts */}
@@ -263,14 +257,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
             ⚓
           </Text>
-          <TouchableOpacity
+          <Pressable
             onPress={handleAnchor}
-            style={styles.textButton}
-            activeOpacity={1}
-            delayPressIn={0}
+            style={({ pressed }) => [
+              styles.textButton,
+              pressed && styles.pressedButton
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={styles.actionLabel}>Anchor</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
 
@@ -280,39 +276,45 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
             📡
           </Text>
-          <TouchableOpacity
+          <Pressable
             onPress={handleCast}
-            style={styles.textButton}
-            activeOpacity={1}
-            delayPressIn={0}
+            style={({ pressed }) => [
+              styles.textButton,
+              pressed && styles.pressedButton
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={styles.actionLabel}>Cast</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
 
       {/* Placeholder Button 1 */}
       <View style={styles.actionButton}>
         <Text style={styles.actionIcon}>🔱</Text>
-        <TouchableOpacity
-          style={styles.textButton}
-          activeOpacity={1}
-          delayPressIn={0}
+        <Pressable
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={styles.actionLabel}>Placeholder 1</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
 
       {/* Placeholder Button 2 */}
       <View style={styles.actionButton}>
         <Text style={styles.actionIcon}>🐚</Text>
-        <TouchableOpacity
-          style={styles.textButton}
-          activeOpacity={1}
-          delayPressIn={0}
+        <Pressable
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={styles.actionLabel}>Placeholder 2</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     </ScrollView>
   );
@@ -343,12 +345,17 @@ const styles = StyleSheet.create({
   textButton: {
     backgroundColor: '#ff4444', // Red background like Facebook buttons
     borderRadius: 20, // Smooth curved corners
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    minWidth: 60,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minWidth: 80,
+    minHeight: 36,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 4,
+  },
+  pressedButton: {
+    opacity: 0.7,
+    transform: [{ scale: 0.95 }],
   },
   buttonContent: {
     flexDirection: 'row',

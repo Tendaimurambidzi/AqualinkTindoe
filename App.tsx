@@ -2271,6 +2271,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isInUserCrew, setIsInUserCrew] = useState<{ [uid: string]: boolean }>(
     {},
   );
+  const [optimisticCrewCounts, setOptimisticCrewCounts] = useState<{ [uid: string]: number }>({});
   const [crewLoading, setCrewLoading] = useState<boolean>(false);
   const [blockedUsers, setBlockedUsers] = useState<Set<string>>(new Set());
   const [removedUsers, setRemovedUsers] = useState<Set<string>>(new Set());
@@ -6821,7 +6822,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const isCurrentlyConnected = isInUserCrew[targetUid];
 
       if (isCurrentlyConnected) {
-        // Disconnect vibe
+        // Disconnect vibe - optimistically decrement crew count
+        setOptimisticCrewCounts(prev => ({ ...prev, [targetUid]: (prev[targetUid] || 0) - 1 }));
         console.log(`[DEBUG] Disconnecting from ${targetUid}`);
         await leaveCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
@@ -6829,7 +6831,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         loadCrewCounts();
         await loadDriftWatchers();
       } else {
-        // Connect vibe
+        // Connect vibe - optimistically increment crew count
+        setOptimisticCrewCounts(prev => ({ ...prev, [targetUid]: (prev[targetUid] || 0) + 1 }));
         console.log(`[DEBUG] Connecting to ${targetUid}`);
         await joinCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
@@ -6837,12 +6840,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         loadCrewCounts();
         await loadDriftWatchers();
       }
-    } catch (error) {
-      console.error('Toggle vibe error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      notifyError(`Connection update failed: ${errorMessage}`);
     } finally {
       setCrewLoading(false);
+      // Clear optimistic crew count after a delay to allow real-time listener to update
+      setTimeout(() => {
+        setOptimisticCrewCounts(prev => {
+          const newCounts = { ...prev };
+          delete newCounts[targetUid];
+          return newCounts;
+        });
+      }, 2000); // 2 seconds should be enough for real-time update
     }
   };
 
@@ -8868,6 +8875,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               size={50}
                               showCrewCount={true}
                               showFleetCount={false}
+                              optimisticCrewCount={optimisticCrewCounts[item.ownerUid]}
                             />
                           </TouchableOpacity>
                         </View>
@@ -9084,41 +9092,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       isCasted={false}
                       creatorUserId={item.ownerUid}
                       onAdd={() => {
-                        // Fire-and-forget for instant response - no await
-                        ensureSplash(item.id).then(() => {
-                          // Update local state after successful database write
-                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
-                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        }).catch((error) => {
+                        // IMMEDIATE UI UPDATE - no delay
+                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
+                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+
+                        // Database operation in background
+                        ensureSplash(item.id).catch((error) => {
                           console.error('Error adding splash:', error);
-                          // Revert visual state on error
-                          setTimeout(() => {
-                            setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
-                            setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                            setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                            setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                          }, 100);
-                        });
-                      }}
-                      onRemove={() => {
-                        // Fire-and-forget for instant response - no await
-                        removeSplash(item.id).then(() => {
-                          // Update local state after successful database write
+                          // Revert UI on error
                           setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
                           setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                           setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
                           setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        }).catch((error) => {
+                        });
+                      }}
+                      onRemove={() => {
+                        // IMMEDIATE UI UPDATE - no delay
+                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
+                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
+
+                        // Database operation in background
+                        removeSplash(item.id).catch((error) => {
                           console.error('Error removing splash:', error);
-                          // Revert visual state on error
-                          setTimeout(() => {
-                            setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
-                            setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                            setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                            setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                          }, 100);
+                          // Revert UI on error
+                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
+                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
+                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
                         });
                       }}
                       onEcho={(waveId) => {

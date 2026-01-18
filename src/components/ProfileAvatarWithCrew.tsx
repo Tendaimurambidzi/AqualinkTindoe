@@ -10,6 +10,7 @@ interface ProfileAvatarWithCrewProps {
   showCrewCount?: boolean;
   showFleetCount?: boolean;
   style?: any;
+  optimisticCrewCount?: number; // For instant UI feedback
 }
 
 const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
@@ -18,6 +19,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   showCrewCount = true,
   showFleetCount = false,
   style,
+  optimisticCrewCount,
 }) => {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -155,7 +157,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
         </TouchableOpacity>
         <View style={styles.countsContainer}>
           {showCrewCount && (
-            <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
+            <Text style={styles.crewText}>Crew: {formatCrewCount(optimisticCrewCount !== undefined ? optimisticCrewCount : crewCount)}</Text>
           )}
           {showFleetCount && (
             <Text style={styles.fleetText}>Fleet: {formatFleetCount(fleetCount)}</Text>
