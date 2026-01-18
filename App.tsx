@@ -1558,9 +1558,19 @@ function AuthButton({
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} style={authStyles.btn}>
+    <Pressable 
+      onPress={onPress} 
+      style={({ pressed }) => [
+        authStyles.btn,
+        pressed && {
+          opacity: 0.8,
+          transform: [{ scale: 0.98 }],
+        }
+      ]}
+      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+    >
       <Text style={authStyles.btnText}>{title}</Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
                     
@@ -8824,9 +8834,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <View style={{ position: 'relative', alignItems: 'center', marginBottom: 10, paddingHorizontal: 10 }}>
                       {/* Menu button positioned absolutely in top-right */}
                       <View style={{ position: 'absolute', top: 0, right: 10 }}>
-                        <TouchableOpacity onPress={() => openWaveOptions(item)} hitSlop={{top: 30, bottom: 30, left: 30, right: 30}} delayPressIn={0}>
+                        <Pressable 
+                          onPress={() => openWaveOptions(item)} 
+                          style={({ pressed }) => [
+                            { padding: 5 },
+                            pressed && {
+                              opacity: 0.7,
+                              transform: [{ scale: 0.9 }],
+                            }
+                          ]}
+                          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                        >
                           <Text style={{ fontSize: 24 }}>⋮</Text>
-                        </TouchableOpacity>
+                        </Pressable>
                       </View>
                       
                       {/* Centered Profile Info */}
@@ -8834,19 +8854,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                           {/* Connect/Disconnect Button */}
                           {item.ownerUid !== myUid && (
-                            <TouchableOpacity
+                            <Pressable
                               onPress={() => handleToggleVibe(item.ownerUid, item.authorName || item.user?.displayName)}
-                              style={{
-                                paddingVertical: 6,
-                                paddingHorizontal: 12,
-                                borderRadius: 15,
-                                borderWidth: 1,
-                                borderColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
-                                backgroundColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
-                                marginRight: 10,
-                              }}
-                              activeOpacity={0.7}
-                              delayPressIn={0}
+                              style={({ pressed }) => [
+                                {
+                                  paddingVertical: 6,
+                                  paddingHorizontal: 12,
+                                  borderRadius: 15,
+                                  borderWidth: 1,
+                                  borderColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
+                                  backgroundColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
+                                  marginRight: 10,
+                                },
+                                pressed && {
+                                  opacity: 0.7,
+                                  transform: [{ scale: 0.95 }],
+                                }
+                              ]}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             >
                               <Text style={{
                                 color: 'white',
@@ -8855,11 +8880,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               }}>
                                 {isInUserCrew[item.ownerUid] ? 'Leave Tide' : 'Join Tide'}
                               </Text>
-                            </TouchableOpacity>
+                            </Pressable>
                           )}
                           
                           {/* Profile Avatar */}
-                          <TouchableOpacity
+                          <Pressable
                             onPress={() => {
                               if (item.ownerUid === myUid) {
                                 navigation.navigate('Profile');
@@ -8868,6 +8893,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 console.log('Pressed user avatar for:', item.ownerUid);
                               }
                             }}
+                            style={({ pressed }) => [
+                              pressed && {
+                                opacity: 0.8,
+                                transform: [{ scale: 0.95 }],
+                              }
+                            ]}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
                             <ProfileAvatarWithCrew
                               key={item.ownerUid}
@@ -8877,7 +8909,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               showFleetCount={false}
                               optimisticCrewCount={optimisticCrewCounts[item.ownerUid]}
                             />
-                          </TouchableOpacity>
+                          </Pressable>
                         </View>
                         
                         {/* Username and Bio directly under avatar */}
@@ -8901,18 +8933,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           const isCurrentUserPost = item.ownerUid === myUid;
                           const bioToShow = isCurrentUserPost ? profileBio : userData[item.ownerUid]?.bio;
                           return bioToShow ? (
-                            <TouchableOpacity
+                            <Pressable
                               onPress={() => {
                                 Share.share({
                                   message: `Check out this bio: "${bioToShow}"`,
                                 }).catch(err => console.log('Share failed', err));
                               }}
-                              style={{ marginTop: 2 }}
+                              style={({ pressed }) => [
+                                { marginTop: 2 },
+                                pressed && { opacity: 0.7 }
+                              ]}
+                              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
                             >
                               <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', fontStyle: 'italic' }}>
                                 {bioToShow}
                               </Text>
-                            </TouchableOpacity>
+                            </Pressable>
                           ) : null;
                         })()}
                         <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
@@ -9898,15 +9934,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     },
                   ]}
                 />
-                <TouchableOpacity
-                  style={{
-                    backgroundColor: '#00C2FF',
-                    paddingVertical: 12,
-                    paddingHorizontal: 24,
-                    borderRadius: 10,
-                    marginTop: 16,
-                    alignSelf: 'center',
-                  }}
+                <Pressable
+                  style={({ pressed }) => [
+                    {
+                      backgroundColor: '#00C2FF',
+                      paddingVertical: 12,
+                      paddingHorizontal: 24,
+                      borderRadius: 10,
+                      marginTop: 16,
+                      alignSelf: 'center',
+                    },
+                    pressed && {
+                      opacity: 0.8,
+                      transform: [{ scale: 0.95 }],
+                    }
+                  ]}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={async () => {
                     if (!profileName.trim()) {
                       Alert.alert('Error', 'Username cannot be empty.');
@@ -9951,7 +9994,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }}
                 >
                   <Text style={{ color: '#001529', fontWeight: 'bold', fontSize: 16 }}>Save Profile</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
               {/* My Vibes, Notifications, and My Collection */}
               <View style={{ flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 20, alignItems: 'center', gap: 16 }}>
@@ -16932,18 +16975,25 @@ function SignUpScreen({ navigation }: any) {
               marginVertical: 12,
             }}
           >
-            <TouchableOpacity
+            <Pressable
               onPress={() => setAgreedToTerms(!agreedToTerms)}
-              style={{
-                width: 24,
-                height: 24,
-                borderWidth: 1,
-                borderColor: 'white',
-                borderRadius: 4,
-                marginRight: 12,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+              style={({ pressed }) => [
+                {
+                  width: 24,
+                  height: 24,
+                  borderWidth: 1,
+                  borderColor: 'white',
+                  borderRadius: 4,
+                  marginRight: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+                pressed && {
+                  opacity: 0.8,
+                  transform: [{ scale: 0.9 }],
+                }
+              ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               {agreedToTerms && (
                 <Text
@@ -16952,7 +17002,7 @@ function SignUpScreen({ navigation }: any) {
                   ✓
                 </Text>
               )}
-            </TouchableOpacity>
+            </Pressable>
             <Text style={{ color: 'white', flex: 1 }}>
               I agree to the{' '}
               <Text
@@ -16978,14 +17028,18 @@ function SignUpScreen({ navigation }: any) {
                     
           <AuthButton title="Sign Up" onPress={signUp} />
                     
-          <TouchableOpacity
+          <Pressable
             onPress={() => navigation.replace('SignIn')}
-            style={{ marginTop: 14 }}
+            style={({ pressed }) => [
+              { marginTop: 14 },
+              pressed && { opacity: 0.7 }
+            ]}
+            hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
           >
             <Text style={authStyles.link}>
               Already have an account? Sign In
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -17097,20 +17151,31 @@ function SignInScreen({ navigation }: any) {
           secureTextEntry
         />
                     
-        <TouchableOpacity onPress={resetPassword} style={{ marginTop: 6 }} delayPressIn={0}>
+        <Pressable 
+          onPress={resetPassword} 
+          style={({ pressed }) => [
+            { marginTop: 6 },
+            pressed && { opacity: 0.7 }
+          ]}
+          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+        >
           <Text style={authStyles.link}>Forgot Password?</Text>
-        </TouchableOpacity>
+        </Pressable>
                     
         <View style={{ marginTop: 4 }}>
           <AuthButton title="Sign In" onPress={signIn} />
         </View>
                     
-        <TouchableOpacity
+        <Pressable
           onPress={() => navigation.replace('SignUp')}
-          style={{ marginTop: 14 }}
+          style={({ pressed }) => [
+            { marginTop: 14 },
+            pressed && { opacity: 0.7 }
+          ]}
+          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
         >
           <Text style={authStyles.link}>Don't have an account? Sign up</Text>
-        </TouchableOpacity>
+        </Pressable>
       </KeyboardAvoidingView>
     </View>
   );
@@ -17670,20 +17735,27 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
             </Text>
           </ScrollView>
 
-          <TouchableOpacity
+          <Pressable
             onPress={this.handleRetry}
-            style={{
-              backgroundColor: '#00C2FF',
-              paddingHorizontal: 18,
-              paddingVertical: 10,
-              borderRadius: 10,
-              marginBottom: 10,
-            }}
+            style={({ pressed }) => [
+              {
+                backgroundColor: '#00C2FF',
+                paddingHorizontal: 18,
+                paddingVertical: 10,
+                borderRadius: 10,
+                marginBottom: 10,
+              },
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={{ color: '#001529', fontWeight: '700', fontSize: 15 }}>Retry App</Text>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             onPress={() => {
               // Copy error details to clipboard for debugging
               const errorDetails = `Error: ${errorName}\nMessage: ${errorMessage}\nStack:\n${errorStack}\nTimestamp: ${new Date().toISOString()}`;
@@ -17691,15 +17763,22 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
               console.log('Error details for debugging:', errorDetails);
               Alert.alert('Error Details Copied', 'Error details have been logged to console for debugging.');
             }}
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.2)',
-              paddingHorizontal: 18,
-              paddingVertical: 8,
-              borderRadius: 8,
-            }}
+            style={({ pressed }) => [
+              {
+                backgroundColor: 'rgba(255,255,255,0.2)',
+                paddingHorizontal: 18,
+                paddingVertical: 8,
+                borderRadius: 8,
+              },
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={{ color: 'white', fontSize: 12 }}>Copy Error Details</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       );
     }
@@ -17898,12 +17977,19 @@ const App: React.FC = () => {
         <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, textAlign: 'center', marginBottom: 16 }}>
           {nativeInitError}
         </Text>
-        <TouchableOpacity
+        <Pressable
           onPress={() => setNativeInitError(null)}
-          style={{ backgroundColor: '#00C2FF', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 }}
+          style={({ pressed }) => [
+            { backgroundColor: '#00C2FF', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 },
+            pressed && {
+              opacity: 0.8,
+              transform: [{ scale: 0.95 }],
+            }
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={{ color: '#001529', fontWeight: '700', fontSize: 15 }}>Retry</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     );
   }

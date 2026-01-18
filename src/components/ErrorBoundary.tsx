@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Pressable } from 'react-native';
 
 type ErrorBoundaryProps = {
   children: React.ReactNode;
@@ -58,21 +58,37 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
             </Text>
           </ScrollView>
 
-          <TouchableOpacity onPress={this.handleReload} style={styles.button} delayPressIn={0}>
+          <Pressable 
+            onPress={this.handleReload} 
+            style={({ pressed }) => [
+              styles.button,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <Text style={styles.buttonText}>Try Again</Text>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             onPress={() => {
               const errorDetails = `Error: ${errorName}\nMessage: ${errorMessage}\nStack:\n${errorStack}\nTimestamp: ${new Date().toISOString()}`;
               console.log('Error details for debugging:', errorDetails);
               Alert.alert('Error Details Logged', 'Error details have been logged to console for debugging.');
             }}
-            style={styles.debugButton}
-            delayPressIn={0}
+            style={({ pressed }) => [
+              styles.debugButton,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={styles.debugButtonText}>Copy Debug Info</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       );
     }

@@ -11,6 +11,7 @@ import {
   AccessibilityInfo,
   Dimensions,
   Image,
+  Pressable,
 } from "react-native";
 import Video, {OnProgressData} from "react-native-video";
 import NetInfo from '@react-native-community/netinfo';
@@ -347,15 +348,20 @@ const VideoWithTapControls: React.FC<Props> = ({
       )}
       {videoCompleted && (
         <View style={styles.replayContainer}>
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel="Replay video"
             onPress={onPlayPause}
-            style={styles.replayButton}
-            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
-            delayPressIn={0}
+            style={({ pressed }) => [
+              styles.replayButton,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
           >
             <Text style={styles.replaySymbol}>↺</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
       <Animated.View
@@ -363,55 +369,75 @@ const VideoWithTapControls: React.FC<Props> = ({
         style={[styles.controlsContainer, { opacity: controlsOpacity, zIndex: 10 }]}
       >
         <View style={styles.controlsRow}>
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel="Rewind ten seconds"
             onPress={onRewind}
-            style={styles.seekButton}
+            style={({ pressed }) => [
+              styles.seekButton,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            delayPressIn={0}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             accessibilityRole="button"
             accessibilityLabel={videoCompleted ? "Replay video" : internalPaused ? "Play" : "Pause"}
             onPress={onPlayPause}
-            style={styles.playButton}
+            style={({ pressed }) => [
+              styles.playButton,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            delayPressIn={0}
           >
             <View style={styles.playCircle}>
               <Text style={styles.playSymbol}>
                 {internalPaused ? "▶" : "⏸"}
               </Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel="Fast forward ten seconds"
             onPress={onFastForward}
-            style={styles.seekButton}
+            style={({ pressed }) => [
+              styles.seekButton,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            delayPressIn={0}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </View>
         <View style={styles.timeContainer}>
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel={isMuted ? "Unmute video" : "Mute video"}
             onPress={onToggleMute}
-            style={styles.muteButton}
+            style={({ pressed }) => [
+              styles.muteButton,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            delayPressIn={0}
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
-          </TouchableOpacity>
+          </Pressable>
           <Text style={styles.timeText}>
             {formatTime(currentTime)} / {formatTime(duration)}
           </Text>

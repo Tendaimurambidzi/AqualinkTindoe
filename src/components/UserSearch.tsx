@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 
@@ -116,30 +117,40 @@ const UserSearch: React.FC<UserSearchProps> = ({
       {(onJoinCrew || onInviteToDrift) && (
         <View style={styles.userActions}>
           {onJoinCrew && (
-            <TouchableOpacity
-              style={styles.userActionButton}
+            <Pressable
+              style={({ pressed }) => [
+                styles.userActionButton,
+                pressed && {
+                  opacity: 0.8,
+                  transform: [{ scale: 0.95 }],
+                }
+              ]}
               onPress={event => {
                 event.stopPropagation?.();
                 onJoinCrew(item);
               }}
-              delayPressIn={0}
-              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.userActionText}>Connect SplashLine</Text>
-            </TouchableOpacity>
+            </Pressable>
           )}
           {onInviteToDrift && (
-            <TouchableOpacity
-              style={styles.userActionButton}
+            <Pressable
+              style={({ pressed }) => [
+                styles.userActionButton,
+                pressed && {
+                  opacity: 0.8,
+                  transform: [{ scale: 0.95 }],
+                }
+              ]}
               onPress={event => {
                 event.stopPropagation?.();
                 onInviteToDrift(item);
               }}
-              delayPressIn={0}
-              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.userActionText}>Invite</Text>
-            </TouchableOpacity>
+            </Pressable>
           )}
         </View>
       )}
