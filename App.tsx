@@ -299,11 +299,8 @@ const formatNotificationMessage = (notification: {
   // Format based on notification type with username included and no icons
   switch (notification.type) {
     case 'echo':
-      return `${username} echoed your wave`;
     case 'splash':
-      return `${username} hugged your wave`;
     case 'octopus_hug':
-      return `${username} hugged your wave`;
     case 'follow':
     case 'CONNECT_VIBE':
       return `${username} connected! Wanna say hi?`;
@@ -5460,7 +5457,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
                     
-  // Local + remote ping recording for in-app activity
+  // Local + remote ping recording for in-app activity (skip Firestore for self-notifications)
   const recordPingEvent = async (
     type: Ping['type'],
     waveId?: string,
@@ -5482,6 +5479,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ...prev,
       ]);
       setUnreadPingsCount(c => c + 1);
+      // Skip Firestore storage for self-notifications as requested
+      return;
       let firestoreMod: any = null;
       let authMod: any = null;
       try {
@@ -6869,7 +6868,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           delete newCounts[targetUid];
           return newCounts;
         });
-      }, 2000); // 2 seconds should be enough for real-time update
+      }, 5000); // 5 seconds should be enough for real-time update
     }
   };
 
@@ -8782,9 +8781,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
                   setCurrentIndex(newIndex);
                 }}
-                // TikTok-style viewability tracking
+                // TikTok-style viewability tracking - lower threshold for more responsive playback
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 95, // video must be almost fully visible to play
+                  itemVisiblePercentThreshold: 50, // video must be at least 50% visible to play
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
