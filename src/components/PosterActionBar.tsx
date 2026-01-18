@@ -1,6 +1,6 @@
 // Import necessary components and hooks
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Pressable, Modal, FlatList } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import NetInfo from '@react-native-community/netinfo';
@@ -64,6 +64,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const [hasEchoed, setHasEchoed] = useState(false);
   const [hugActionInProgress, setHugActionInProgress] = useState(false);
   const [hugInitialized, setHugInitialized] = useState(false);
+
+  // State for huggers dropdown
+  const [showHuggersDropdown, setShowHuggersDropdown] = useState(false);
+  const [huggersList, setHuggersList] = useState([]);
+  const [loadingHuggers, setLoadingHuggers] = useState(false);
 
   // State for creator user data
   const [creatorUserData, setCreatorUserData] = useState(null);
@@ -163,6 +168,52 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     // No blocking timeout - allow instant re-taps
   };
 
+  const fetchHuggers = async () => {
+    if (loadingHuggers) return;
+    
+    setLoadingHuggers(true);
+    try {
+      const splashesSnap = await firestore()
+        .collection(`waves/${waveId}/splashes`)
+        .orderBy('createdAt', 'desc')
+        .get();
+      
+      const huggers = [];
+      for (const doc of splashesSnap.docs) {
+        const splashData = doc.data();
+        if (splashData.userId) {
+          const userData = await fetchUserData(splashData.userId);
+          if (userData) {
+            huggers.push({
+              id: splashData.userId,
+              name: userData.displayName || userData.username || 'Unknown User',
+              photo: userData.photoURL || userData.userPhoto,
+              timestamp: splashData.createdAt,
+            });
+          }
+        }
+      }
+      
+      setHuggersList(huggers);
+      setShowHuggersDropdown(true);
+    } catch (error) {
+      console.error('Error fetching huggers:', error);
+      Alert.alert('Error', 'Failed to load huggers list');
+    } finally {
+      setLoadingHuggers(false);
+    }
+  };
+
+  const handleHugPress = () => {
+    if (splashesCount > 0) {
+      // If there are hugs, show the dropdown
+      fetchHuggers();
+    } else {
+      // If no hugs yet, just perform the hug action
+      handleHug();
+    }
+  };
+
   const handlePearl = () => {
     // Call the parent callback
     onPearl();
@@ -182,21 +233,22 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const creatorProfilePicture = creatorUserData?.userPhoto || creatorUserData?.photoURL || 'https://via.placeholder.com/100x100.png?text=No+Photo';
 
   return (
-    <ScrollView 
-      horizontal 
-      showsHorizontalScrollIndicator={false} 
-      style={styles.actionBar}
-      keyboardShouldPersistTaps="handled"
-      scrollEnabled={true}
-      contentContainerStyle={{ flexDirection: 'row' }}
-    >
+    <>
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false} 
+        style={styles.actionBar}
+        keyboardShouldPersistTaps="handled"
+        scrollEnabled={true}
+        contentContainerStyle={{ flexDirection: 'row' }}
+      >
       {/* Splashes Button */}
       <View style={styles.actionButton}>
         <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
           🫂
         </Text>
         <Pressable
-          onPress={handleHug}
+          onPress={handleHugPress}
           style={({ pressed }) => [
             styles.textButton,
             pressed && styles.pressedButton
@@ -331,6 +383,75 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         </Pressable>
       </View>
     </ScrollView>
+
+    {/* Huggers Dropdown Modal */}
+    <Modal
+      visible={showHuggersDropdown}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowHuggersDropdown(false)}
+    >
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => setShowHuggersDropdown(false)}
+      >
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>People who hugged this post</Text>
+            <Pressable
+              onPress={() => setShowHuggersDropdown(false)}
+              style={styles.closeButton}
+            >
+              <Text style={styles.closeButtonText}>✕</Text>
+            </Pressable>
+          </View>
+
+          {loadingHuggers ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading huggers...</Text>
+            </View>
+          ) : huggersList.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No one has hugged this post yet</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={huggersList}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <View style={styles.huggerItem}>
+                  <View style={styles.huggerAvatar}>
+                    <Text style={styles.huggerEmoji}>🫂</Text>
+                  </View>
+                  <View style={styles.huggerInfo}>
+                    <Text style={styles.huggerName}>{item.name}</Text>
+                    <Text style={styles.huggerTimestamp}>
+                      {item.timestamp ? new Date(item.timestamp.toDate()).toLocaleDateString() : 'Recently'}
+                    </Text>
+                  </View>
+                </View>
+              )}
+              style={styles.huggersList}
+            />
+          )}
+
+          <View style={styles.modalActions}>
+            <Pressable
+              style={styles.hugButton}
+              onPress={() => {
+                setShowHuggersDropdown(false);
+                handleHug();
+              }}
+            >
+              <Text style={styles.hugButtonText}>
+                {hasHugged ? 'Remove Hug' : 'Add Hug'} 🫂
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Pressable>
+    </Modal>
+    </>
   );
 };
 
@@ -407,6 +528,108 @@ const styles = StyleSheet.create({
   },
   inactiveCount: {
     color: '#fff', // White for count = 0
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 0,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  closeButtonText: {
+    fontSize: 18,
+    color: '#fff',
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#ccc',
+    fontSize: 16,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#ccc',
+    fontSize: 16,
+  },
+  huggersList: {
+    maxHeight: 300,
+  },
+  huggerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  huggerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  huggerEmoji: {
+    fontSize: 20,
+  },
+  huggerInfo: {
+    flex: 1,
+  },
+  huggerName: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '500',
+  },
+  huggerTimestamp: {
+    fontSize: 12,
+    color: '#ccc',
+    marginTop: 2,
+  },
+  modalActions: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  hugButton: {
+    backgroundColor: '#ff4444',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  hugButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
 
