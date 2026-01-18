@@ -183,8 +183,12 @@ exports.onSplashCreate = onDocumentCreated('waves/{waveId}/splashes/{uid}', asyn
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
-  if (!wave.authorId) return;
-  if (wave.authorId === splashData.userUid) return; // Don't ping self
+  if (!wave.authorId && !wave.ownerUid) return;
+  const waveOwner = wave.authorId || wave.ownerUid;
+  if (waveOwner && splashData.userUid && String(waveOwner).trim() === String(splashData.userUid).trim()) {
+    console.log(`Blocking self-notification: wave owner ${waveOwner} hugged their own wave`);
+    return;
+  }
   
   const userName = splashData.userName || 'Drifter';
   const text = `/${userName} has hugged your vibe!`;
@@ -255,7 +259,7 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
   console.log(`Echo created: waveOwner=${waveOwnerUid}, echoSender=${echoSenderUid}, userName=${echo.userName}`);
   
   // IMMEDIATE SELF-NOTIFICATION CHECK - Don't send any notifications for self-actions
-  if (String(waveOwnerUid).trim() === String(echoSenderUid).trim()) {
+  if (waveOwnerUid && echoSenderUid && String(waveOwnerUid).trim() === String(echoSenderUid).trim()) {
     console.log(`Blocking self-notification: wave owner ${waveOwnerUid} echoed their own wave`);
     return;
   }
@@ -292,7 +296,7 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
   }
   
   // FINAL SELF-NOTIFICATION CHECK - Don't send notification if the echo sender is the notification target
-  if (String(notificationTargetUid).trim() === String(echoSenderUid).trim()) {
+  if (notificationTargetUid && echoSenderUid && String(notificationTargetUid).trim() === String(echoSenderUid).trim()) {
     console.log(`Blocking self-notification: echo sender ${echoSenderUid} is the notification target ${notificationTargetUid}`);
     return;
   }
