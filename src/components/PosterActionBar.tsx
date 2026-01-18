@@ -245,17 +245,22 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       >
       {/* Splashes Button */}
       <View style={styles.actionButton}>
-        <Pressable
-          onPress={handleHugPress}
-          style={styles.iconTouchable}
-          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-        >
-          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
-            🫂
+        <View style={styles.iconContainer}>
+          <Pressable
+            onPress={handleHugPress}
+            style={styles.iconTouchable}
+            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+            pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+          >
+            <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
+              🫂
+            </Text>
+          </Pressable>
+          <Text style={[styles.iconCount, Math.max(0, splashesCount) > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>
+            {Math.max(0, splashesCount)}
           </Text>
-        </Pressable>
+        </View>
         <Pressable
           onPress={handleHugAction}
           style={({ pressed }) => [
@@ -266,20 +271,20 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <View style={styles.buttonContent}>
-            <Text style={styles.actionLabel}>Hugs</Text>
-            <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
-              {Math.max(0, splashesCount)}
-            </Text>
-          </View>
+          <Text style={styles.actionLabel}>Hug</Text>
         </Pressable>
       </View>
 
       {/* Echoes Button */}
       <View style={styles.actionButton}>
-        <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
-          📣
-        </Text>
+        <View style={styles.iconContainer}>
+          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
+            📣
+          </Text>
+          <Text style={[styles.iconCount, echoesCount > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>
+            {echoesCount}
+          </Text>
+        </View>
         <Pressable
           onPress={handleEcho}
           style={({ pressed }) => [
@@ -290,12 +295,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <View style={styles.buttonContent}>
-            <Text style={styles.actionLabel}>Echoes</Text>
-            <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
-              {echoesCount}
-            </Text>
-          </View>
+          <Text style={styles.actionLabel}>Echo</Text>
         </Pressable>
       </View>
 
@@ -405,6 +405,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         onPress={() => setShowHuggersDropdown(false)}
       >
         <View style={styles.modalContent}>
+          <Pressable
+            onPress={() => setShowHuggersDropdown(false)}
+            style={styles.closeButton}
+          >
+            <Text style={styles.closeButtonText}>✕</Text>
+          </Pressable>
           {loadingHuggers ? (
             <View style={styles.loadingContainer}>
               <Text style={styles.loadingText}>Loading huggers...</Text>
@@ -463,7 +469,7 @@ const styles = StyleSheet.create({
     minHeight: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 4,
+    marginTop: 12, // Increased spacing for better accessibility
   },
   pressedButton: {
     opacity: 0.6,
@@ -506,6 +512,29 @@ const styles = StyleSheet.create({
   inactiveCount: {
     color: '#fff', // White for count = 0
   },
+  iconContainer: {
+    alignItems: 'center',
+    position: 'relative',
+  },
+  iconCount: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    fontSize: 10,
+    fontWeight: 'bold',
+    backgroundColor: '#333',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    minWidth: 16,
+    textAlign: 'center',
+  },
+  activeIconCount: {
+    color: '#00ff88', // Green for counts > 0
+  },
+  inactiveIconCount: {
+    color: '#ccc', // Grey for count = 0
+  },
   // Modal styles
   modalOverlay: {
     flex: 1,
@@ -535,7 +564,11 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   closeButton: {
-    padding: 4,
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    padding: 8,
+    zIndex: 1,
   },
   closeButtonText: {
     fontSize: 18,
