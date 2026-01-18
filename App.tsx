@@ -9361,7 +9361,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   🐬
                 </Text>
                 <Text style={styles.topLabel}>
-                  VIBES
+                  WAVES
                 </Text>
               </Pressable>
               {/* Toggle Button */}
@@ -9394,7 +9394,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   })}
                 >
                   <Text style={styles.dolphinIcon}>✨</Text>
-                  <Text style={styles.topLabel}>DROP A VIBE</Text>
+                  <Text style={styles.topLabel}>DROP A WAVE</Text>
                 </Pressable>
                 {/* VIBE ALERTS - Placeholder */}
                 <Pressable
