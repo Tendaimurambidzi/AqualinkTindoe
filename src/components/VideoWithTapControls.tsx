@@ -354,11 +354,11 @@ const VideoWithTapControls: React.FC<Props> = ({
             style={({ pressed }) => [
               styles.replayButton,
               pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
           >
             <Text style={styles.replaySymbol}>↺</Text>
           </Pressable>
@@ -375,11 +375,11 @@ const VideoWithTapControls: React.FC<Props> = ({
             style={({ pressed }) => [
               styles.seekButton,
               pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -393,11 +393,11 @@ const VideoWithTapControls: React.FC<Props> = ({
             style={({ pressed }) => [
               styles.playButton,
               pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
           >
             <View style={styles.playCircle}>
               <Text style={styles.playSymbol}>
@@ -412,11 +412,11 @@ const VideoWithTapControls: React.FC<Props> = ({
             style={({ pressed }) => [
               styles.seekButton,
               pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
@@ -430,11 +430,11 @@ const VideoWithTapControls: React.FC<Props> = ({
             style={({ pressed }) => [
               styles.muteButton,
               pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
               }
             ]}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
           </Pressable>

@@ -201,7 +201,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionLabel}>Hugs</Text>
@@ -223,7 +223,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionLabel}>Echoes</Text>
@@ -245,7 +245,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
         >
           <Text style={styles.actionLabel}>Gems</Text>
         </Pressable>
@@ -263,7 +263,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               styles.textButton,
               pressed && styles.pressedButton
             ]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
           >
             <Text style={styles.actionLabel}>Anchor</Text>
           </Pressable>
@@ -282,7 +282,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               styles.textButton,
               pressed && styles.pressedButton
             ]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
           >
             <Text style={styles.actionLabel}>Cast</Text>
           </Pressable>
@@ -297,7 +297,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
         >
           <Text style={styles.actionLabel}>Placeholder 1</Text>
         </Pressable>
@@ -311,7 +311,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
         >
           <Text style={styles.actionLabel}>Placeholder 2</Text>
         </Pressable>
@@ -354,8 +354,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   pressedButton: {
-    opacity: 0.7,
-    transform: [{ scale: 0.95 }],
+    opacity: 0.6,
+    transform: [{ scale: 0.9 }],
   },
   buttonContent: {
     flexDirection: 'row',
