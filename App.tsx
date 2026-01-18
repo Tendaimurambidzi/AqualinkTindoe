@@ -1567,8 +1567,8 @@ function AuthButton({
           transform: [{ scale: 0.98 }],
         }
       ]}
-      hitSlop={{ top: 50, bottom: 50, left: 50, right: 50 }}
-      pressRetentionOffset={{ top: 50, bottom: 50, left: 50, right: 50 }}
+      hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+      pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
       android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
     >
       <Text style={authStyles.btnText}>{title}</Text>
@@ -5957,8 +5957,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       loadPostEchoes(currentWave.id);
                     
       // Send ping notification to wave owner (if not self)
-      const currentUserUid = auth?.()?.currentUser?.uid;
-      if (ownerUid && currentUserUid && String(ownerUid) !== String(currentUserUid)) {
+      const currentUserUid = auth().currentUser?.uid;
+      if (ownerUid && currentUserUid && ownerUid !== currentUserUid) {
         try {
           // Fetch the actual username from the user's profile
           const fromUsername = await fetchUserUsername(currentUserUid);
@@ -8674,8 +8674,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 driftAlertTimerRef.current = null;
               }
             }}
-            hitSlop={{ top: 50, bottom: 50, left: 50, right: 50 }}
-            pressRetentionOffset={{ top: 50, bottom: 50, left: 50, right: 50 }}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Animated.View
@@ -8730,8 +8730,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }}
         delayPressIn={0}
         pointerEvents="box-none"
-        hitSlop={{ top: 100, bottom: 100, left: 100, right: 100 }}
-        pressRetentionOffset={{ top: 100, bottom: 100, left: 100, right: 100 }}
+        hitSlop={{ top: 50, bottom: 50, left: 50, right: 50 }}
+        pressRetentionOffset={{ top: 50, bottom: 50, left: 50, right: 50 }}
       >
         <View style={{ flex: 1 }}>
           {displayFeed.length === 0 ? (

@@ -201,8 +201,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 60, bottom: 60, left: 60, right: 60 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
@@ -225,8 +225,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 60, bottom: 60, left: 60, right: 60 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
@@ -249,8 +249,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 60, bottom: 60, left: 60, right: 60 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <Text style={styles.actionLabel}>Gems</Text>
@@ -269,8 +269,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               styles.textButton,
               pressed && styles.pressedButton
             ]}
-            hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
-            pressRetentionOffset={{ top: 60, bottom: 60, left: 60, right: 60 }}
+            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+            pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.actionLabel}>Anchor</Text>
@@ -290,8 +290,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               styles.textButton,
               pressed && styles.pressedButton
             ]}
-            hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
-            pressRetentionOffset={{ top: 60, bottom: 60, left: 60, right: 60 }}
+            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+            pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.actionLabel}>Cast</Text>
@@ -307,8 +307,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 60, bottom: 60, left: 60, right: 60 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <Text style={styles.actionLabel}>Placeholder 1</Text>
@@ -323,8 +323,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 60, bottom: 60, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 60, bottom: 60, left: 60, right: 60 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <Text style={styles.actionLabel}>Placeholder 2</Text>
