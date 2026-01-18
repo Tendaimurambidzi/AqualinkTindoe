@@ -19,10 +19,12 @@ export default function VideoTile({
   videoId,
   initialAutoPlay = false,
   uid,
+  isActive = true,
 }: {
   videoId: string;
   initialAutoPlay?: boolean;
   uid?: string;
+  isActive?: boolean;
 }) {
   const s = useDataSaver();
   const [r, setR] = useState<Renditions | null>(null);
@@ -66,12 +68,13 @@ export default function VideoTile({
     setIsMuted(true); // Reset to muted for new videos
   }, [videoId]);
 
-  // Unmute when video starts playing
+  // Pause video when it becomes inactive (user scrolled away)
   useEffect(() => {
-    if (play && !isBuffering) {
-      setIsMuted(false);
+    if (!isActive) {
+      setPlay(false);
+      setShowPoster(true);
     }
-  }, [play, isBuffering]);
+  }, [isActive]);
 
   // Check network status
   useEffect(() => {
@@ -192,18 +195,19 @@ export default function VideoTile({
   useEffect(() => {
     if (!r) return;
     if (!s.enabled) {
-      setPlay(initialAutoPlay);
+      setPlay(initialAutoPlay && isActive);
       return;
     }
     if (s.autoplayOnWifiOnly && s.cellular) {
       setPlay(false);
     } else {
-      setPlay(!s.thumbnailsOnlyInFeed && initialAutoPlay);
+      setPlay(!s.thumbnailsOnlyInFeed && initialAutoPlay && isActive);
     }
-  }, [r, s.enabled, s.autoplayOnWifiOnly, s.cellular, s.thumbnailsOnlyInFeed, initialAutoPlay]);
+  }, [r, s.enabled, s.autoplayOnWifiOnly, s.cellular, s.thumbnailsOnlyInFeed, initialAutoPlay, isActive]);
 
   const onTapPlay = () => {
     if (s.enabled && s.wifiOnlyDownloads && s.cellular) return;
+    if (!isActive) return; // Don't allow playing if video is not active
     setHadError(false);
     setShowPoster(true);
     setIsBuffering(true);
