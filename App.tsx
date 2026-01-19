@@ -4318,7 +4318,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
   const [isTopBarVisible, setIsTopBarVisible] = useState(true);
-  const hibernationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dragStartYRef = useRef(0);
   const dragStartTimeRef = useRef(0);
   const touchStartRef = useRef(0);
@@ -4326,12 +4325,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Hibernation logic for top bar
   const showTopBar = useCallback(() => {
     setIsTopBarVisible(true);
-    if (hibernationTimerRef.current) {
-      clearTimeout(hibernationTimerRef.current);
-    }
-    hibernationTimerRef.current = setTimeout(() => {
-      setIsTopBarVisible(false);
-    }, 7000);
   }, []);
                     
   // Initial visibility on app open
