@@ -2339,6 +2339,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastAvatar, setToastAvatar] = useState<any>(null);
   const toastTimerRef = useRef<any>(null);
+  const hibernationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Notifications state
   const [notifications, setNotifications] = useState<Array<{
