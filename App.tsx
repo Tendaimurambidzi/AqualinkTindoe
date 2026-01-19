@@ -3301,12 +3301,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     uid: string;
     name: string;
   } | null>(null);
-  // Removed pre-fill of echo editor so input clears after send and stays free for next echo
-  const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
+  const [messageAttachment, setMessageAttachment] = useState<Asset | null>(null);
   const [attachedAudio, setAttachedAudio] = useState<{
     uri: string;
     name?: string;
   } | null>(null);
+  const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
   const [audioUrlInput, setAudioUrlInput] = useState<string>('');
   const [transcoding, setTranscoding] = useState<boolean>(false);
@@ -5553,6 +5553,75 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
     try {
+      let attachmentUrl: string | null = null;
+      let attachmentType: string | null = null;
+      let attachmentName: string | null = null;
+
+      // Handle attachment upload if present
+      if (messageAttachment) {
+        const uid = user.uid;
+        const nameGuessRaw = messageAttachment.fileName || 'attachment';
+        const type = (messageAttachment.type || '').toLowerCase();
+        const sanitizedBase = nameGuessRaw
+          .replace(/[^A-Za-z0-9._-]/g, '_')
+          .replace(/_{2,}/g, '_');
+        const baseNoExt = sanitizedBase.includes('.')
+          ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+          : sanitizedBase;
+        const ext = sanitizedBase.includes('.')
+          ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
+          : type.startsWith('video/')
+          ? 'mp4'
+          : type.startsWith('image/')
+          ? 'jpg'
+          : type.startsWith('audio/')
+          ? 'm4a'
+          : 'dat';
+        const filePath = `messages/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+
+        // Normalize local URI for putFile
+        let localPath = String(messageAttachment.uri || '');
+        try {
+          localPath = decodeURI(localPath);
+        } catch {}
+        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+          localPath = localPath.replace('file://', '');
+        }
+        // Handle content:// URIs by copying to cache before upload
+        if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+          try {
+            const RNFS = require('react-native-fs');
+            const safeExt = (
+              ext || (type.startsWith('video/') ? 'mp4' : type.startsWith('audio/') ? 'm4a' : 'dat')
+            ).replace(/[^A-Za-z0-9]/g, '');
+            const copyDest = `${
+              RNFS.CachesDirectoryPath
+            }/msg_${Date.now()}.${safeExt}`;
+            await RNFS.copyFile(String(messageAttachment.uri), copyDest);
+            localPath = copyDest;
+          } catch (e) {
+            console.warn('Attachment content copy before upload failed', e);
+            Alert.alert('Upload Error', 'Could not access the selected file for upload.');
+            return;
+          }
+        }
+        if (!localPath) {
+          Alert.alert('Upload error', 'Could not resolve a local path for the selected media.');
+          return;
+        }
+
+        // Set contentType based on media type
+        const uploadContentType = type || (type.startsWith('video/') ? 'video/mp4' : type.startsWith('audio/') ? 'audio/m4a' : 'application/octet-stream');
+
+        await storageMod()
+          .ref(filePath)
+          .putFile(localPath, { contentType: uploadContentType });
+
+        attachmentUrl = await storageMod().ref(filePath).getDownloadURL();
+        attachmentType = type;
+        attachmentName = messageAttachment.fileName || null;
+      }
+
       // This collection is for the recipient's inbox view
       await firestore()
         .collection(`users/${messageRecipient.uid}/messages`)
@@ -5563,6 +5632,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           route: 'Pings',
           type: 'message',
           createdAt: firestore.FieldValue.serverTimestamp(),
+          attachmentUrl,
+          attachmentType,
+          attachmentName,
         });
       // This collection triggers the push notification via the onMentionCreate cloud function
       await firestore()
@@ -5575,13 +5647,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           route: 'Pings',
           createdAt: firestore.FieldValue.serverTimestamp(),
           type: 'message', // To distinguish from other mention types if needed
+          attachmentUrl,
+          attachmentType,
+          attachmentName,
         });
 
       // Send notification
       try {
         // Fetch the actual username from the user's profile
         const fromUsername = await fetchUserUsername(user.uid);
-        
+
         const addPingFn = functions().httpsCallable('addPing');
         await addPingFn({
           recipientUid: messageRecipient.uid,
@@ -5590,12 +5665,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromUid: user.uid,
           fromName: fromUsername,
           fromPhoto: user.photoURL || null,
+          attachmentUrl,
+          attachmentType,
         });
       } catch (error) {
         console.error('Error sending message notification:', error);
       }
-                    
+
       setShowSendMessage(false);
+      setMessageText('');
+      setMessageAttachment(null);
       notifySuccess('Ping sent!');
       showOceanDialog(
         'Message Sent',
@@ -8675,48 +8754,75 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             },
           ]}
         >
-          <Pressable
-            style={styles.driftAlertButton}
-            onPress={() => {
-              requestToDriftForLiveId(vibeAlert.liveId, vibeAlert.hostName);
-              setVibeAlert(null);
-              lastDriftHostRef.current = null;
-              if (driftAlertTimerRef.current) {
-                clearTimeout(driftAlertTimerRef.current);
-                driftAlertTimerRef.current = null;
-              }
-            }}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <Animated.View
-              style={[
-                styles.driftAlertSignal,
-                {
-                  opacity: flickerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.3, 1],
-                  }),
-                },
-              ]}
-            />
-            <View style={styles.driftAlertAvatar}>
-              {vibeAlert.hostPhoto ? (
-                <Image
-                  source={{ uri: vibeAlert.hostPhoto }}
-                  style={styles.driftAlertAvatarImage}
-                />
-              ) : (
-                <Text style={styles.driftAlertInitials}>
-                  {vibeAlert.hostName.charAt(0).toUpperCase()}
-                </Text>
-              )}
-            </View>
-            <Text style={styles.driftAlertText}>
-              Open Sea Vibe • {vibeAlert.hostName}
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable
+              style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
+              onPress={() => {
+                requestToDriftForLiveId(vibeAlert.liveId, vibeAlert.hostName);
+                setVibeAlert(null);
+                lastDriftHostRef.current = null;
+                if (driftAlertTimerRef.current) {
+                  clearTimeout(driftAlertTimerRef.current);
+                  driftAlertTimerRef.current = null;
+                }
+              }}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+            >
+              <Animated.View
+                style={[
+                  styles.driftAlertSignal,
+                  {
+                    opacity: flickerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.3, 1],
+                    }),
+                  },
+                ]}
+              />
+              <View style={styles.driftAlertAvatar}>
+                {vibeAlert.hostPhoto ? (
+                  <Image
+                    source={{ uri: vibeAlert.hostPhoto }}
+                    style={styles.driftAlertAvatarImage}
+                  />
+                ) : (
+                  <Text style={styles.driftAlertInitials}>
+                    {vibeAlert.hostName.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.driftAlertText}>
+                Open Sea Vibe • {vibeAlert.hostName}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.driftAlertButton, { width: 80, marginLeft: 8 }]}
+              onPress={() => {
+                setVibeAlert(null);
+                lastDriftHostRef.current = null;
+                if (driftAlertTimerRef.current) {
+                  clearTimeout(driftAlertTimerRef.current);
+                  driftAlertTimerRef.current = null;
+                }
+                setMessageRecipient({
+                  uid: vibeAlert.hostUid,
+                  name: vibeAlert.hostName,
+                });
+                setMessageText('');
+                setMessageAttachment(null);
+                setShowSendMessage(true);
+              }}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+            >
+              <Text style={[styles.driftAlertText, { fontSize: 14 }]}>
+                Reply
+              </Text>
+            </Pressable>
+          </View>
         </Animated.View>
       )}
       {/* Facebook-like Header */}
@@ -12888,9 +12994,130 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   multiline
                 />
+                
+                {/* Attachment Preview */}
+                {messageAttachment && (
+                  <View style={{ marginTop: 16, alignItems: 'center' }}>
+                    {messageAttachment.type?.startsWith('image/') ? (
+                      <Image
+                        source={{ uri: messageAttachment.uri }}
+                        style={{ width: 200, height: 200, borderRadius: 8 }}
+                        resizeMode="cover"
+                      />
+                    ) : messageAttachment.type?.startsWith('video/') ? (
+                      <View style={{ 
+                        width: 200, 
+                        height: 120, 
+                        backgroundColor: '#1a1a1a', 
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}>
+                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎥 Video</Text>
+                        <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                          {messageAttachment.fileName || 'Selected Video'}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ 
+                        width: 200, 
+                        height: 80, 
+                        backgroundColor: '#1a1a1a', 
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}>
+                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎵 Audio</Text>
+                        <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                          {messageAttachment.fileName || 'Selected Audio'}
+                        </Text>
+                      </View>
+                    )}
+                    <Pressable
+                      onPress={() => setMessageAttachment(null)}
+                      style={{ 
+                        marginTop: 8, 
+                        padding: 4, 
+                        backgroundColor: '#ff4444', 
+                        borderRadius: 4 
+                      }}
+                      android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 12 }}>Remove</Text>
+                    </Pressable>
+                  </View>
+                )}
+                
+                {/* Attachment Buttons */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        const result = await launchImageLibrary({
+                          mediaType: 'photo',
+                          quality: 0.8,
+                        });
+                        if (result.assets && result.assets[0]) {
+                          setMessageAttachment(result.assets[0]);
+                        }
+                      } catch (error) {
+                        console.error('Gallery error:', error);
+                      }
+                    }}
+                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                  >
+                    <Text style={styles.logbookActionText}>🖼️ Photo</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        const result = await launchImageLibrary({
+                          mediaType: 'video',
+                          quality: 0.8,
+                        });
+                        if (result.assets && result.assets[0]) {
+                          setMessageAttachment(result.assets[0]);
+                        }
+                      } catch (error) {
+                        console.error('Video gallery error:', error);
+                      }
+                    }}
+                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                  >
+                    <Text style={styles.logbookActionText}>🎥 Video</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        const result = await launchImageLibrary({
+                          mediaType: 'mixed',
+                          selectionLimit: 1,
+                        });
+                        if (result.assets && result.assets[0] && result.assets[0].type?.startsWith('audio/')) {
+                          setMessageAttachment(result.assets[0]);
+                        }
+                      } catch (error) {
+                        console.error('Audio gallery error:', error);
+                      }
+                    }}
+                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                  >
+                    <Text style={styles.logbookActionText}>🎵 Audio</Text>
+                  </Pressable>
+                </View>
+                
                 <Pressable
                   style={[styles.primaryBtn, { marginTop: 16 }]}
                   onPress={onSendMessage}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <Text style={styles.primaryBtnText}>Send</Text>
                 </Pressable>
