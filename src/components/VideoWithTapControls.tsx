@@ -59,6 +59,7 @@ type Props = {
   onTap?: () => void;
   onMaximize?: () => void; // New prop for maximizing video
   videoId?: string; // Add videoId prop to fetch poster
+  shouldPreload?: boolean; // New prop to control preloading
 };
 
 const VideoWithTapControls: React.FC<Props> = ({
@@ -89,6 +90,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   onTap,
   onMaximize, // New prop
   videoId,
+  shouldPreload = false,
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused

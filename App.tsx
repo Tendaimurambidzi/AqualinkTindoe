@@ -2201,11 +2201,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [preservedScrollPosition, setPreservedScrollPosition] = useState<number | null>(null); // Preserve scroll position when navigating to PostDetail
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+  const [preloadedVideoIds, setPreloadedVideoIds] = useState<Set<string>>(new Set()); // Videos to preload (adjacent to active)
+  const onViewableItemsChanged = useRef(({ viewableItems, changed }: any) => {
     if (viewableItems.length > 0) {
-      setActiveVideoId(viewableItems[0].item.id);
+      const newActiveId = viewableItems[0].item.id;
+      setActiveVideoId(newActiveId);
+      
+      // Preload adjacent videos (2 above and 2 below the active video)
+      const activeIndex = displayFeed.findIndex(item => item.id === newActiveId);
+      if (activeIndex !== -1) {
+        const preloadIds = new Set<string>();
+        
+        // Add videos adjacent to the active one
+        for (let i = Math.max(0, activeIndex - 2); i <= Math.min(displayFeed.length - 1, activeIndex + 2); i++) {
+          if (displayFeed[i].media && isVideoAsset(displayFeed[i].media)) {
+            preloadIds.add(displayFeed[i].id);
+          }
+        }
+        
+        setPreloadedVideoIds(preloadIds);
+      }
     } else {
       setActiveVideoId(null);
+      setPreloadedVideoIds(new Set());
     }
   });
   const handlePostPublished = useCallback(
@@ -8766,10 +8784,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
-                removeClippedSubviews={true}
-                maxToRenderPerBatch={5}
-                windowSize={5}
-                initialNumToRender={3}
+                removeClippedSubviews={false}
+                maxToRenderPerBatch={50}
+                windowSize={25}
+                initialNumToRender={20}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -8795,9 +8813,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
                   setCurrentIndex(newIndex);
                 }}
-                // TikTok-style viewability tracking - lower threshold for more responsive playback
+                // Ultra-aggressive instant playback - videos start immediately when any pixel is visible
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 30, // video must be at least 30% visible to play (reduced from 50% for faster switching)
+                  itemVisiblePercentThreshold: 0, // video starts playing when ANY pixel is visible
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
@@ -8847,6 +8865,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   !hasOverlayAudio ||
                   (overlayVideoReady && overlayState.audio === true);
                 const playSynced = shouldPlay && overlayPairReady && item.id === activeVideoId;
+                const shouldPreload = preloadedVideoIds.has(item.id) && overlayPairReady;
                 const near = Math.abs(index - currentIndex) <= 1;
                 const textOnlyStory = !item.media && !item.image;
                 const colors = ['#FFFFFF', '#FFFFFF'];
@@ -9041,11 +9060,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               playInBackground={false}
                               isActive={item.id === activeVideoId}
                               videoId={item.id}
+                              shouldPreload={shouldPreload}
                               bufferConfig={{
-                                minBufferMs: 15000,
-                                maxBufferMs: 45000,
-                                bufferForPlaybackMs: 1000,
-                                bufferForPlaybackAfterRebufferMs: 3000,
+                                minBufferMs: 0,
+                                maxBufferMs: 1000,
+                                bufferForPlaybackMs: 0,
+                                bufferForPlaybackAfterRebufferMs: 0,
                               }}
                               onPlay={() => {
                                 // Record video reach when video starts playing in feed

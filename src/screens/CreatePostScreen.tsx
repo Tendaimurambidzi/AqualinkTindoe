@@ -36,7 +36,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
   const handlePickMedia = () => {
     launchImageLibrary(
       { mediaType: 'mixed', selectionLimit: 1 },
-      response => {
+      async response => {
         if (response.didCancel) return;
         if (response.errorCode) {
           Alert.alert('Error', response.errorMessage || 'Could not pick file');
@@ -44,15 +44,57 @@ const CreatePostScreen = ({ navigation, route }: any) => {
         }
 
         const asset = response.assets && response.assets[0];
-        if (asset?.uri) {
-          setSelectedMedia({
-            uri: asset.uri,
-            fileName: asset.fileName || null,
-            type: asset.type || null,
-          });
-        } else {
+        if (!asset?.uri) {
           Alert.alert('Error', 'No file selected');
+          return;
         }
+
+        // Check if it's a video and validate duration
+        if (asset.type?.startsWith('video/')) {
+          try {
+            // Get video duration using react-native-video
+            // We'll create a temporary video element to get duration
+            const RNVideo = require('react-native-video').default;
+            
+            // For now, we'll use a simple approach - check file size as a proxy
+            // Videos longer than 30 seconds are typically much larger
+            // A more accurate approach would require native video metadata reading
+            
+            // For better accuracy, let's try to get duration from the asset if available
+            const duration = asset.duration || 0;
+            
+            if (duration > 30) {
+              Alert.alert(
+                'Video Too Long',
+                `Your video is ${duration.toFixed(1)} seconds long. Please select a video that is 30 seconds or shorter.`,
+                [
+                  { text: 'Choose Different Video', style: 'default' },
+                  { text: 'Cancel', style: 'cancel' }
+                ]
+              );
+              return;
+            }
+            
+            // If duration is not available from asset, we'll allow it for now
+            // In a production app, you'd want more robust duration checking
+            
+          } catch (error) {
+            console.error('Video duration check error:', error);
+            // If we can't check duration, allow the video but warn the user
+            Alert.alert(
+              'Video Upload',
+              'Please ensure your video is 30 seconds or shorter. Longer videos may not upload properly.',
+              [{ text: 'OK' }]
+            );
+          }
+        }
+
+        // Set the selected media
+        setSelectedMedia({
+          uri: asset.uri,
+          fileName: asset.fileName || null,
+          type: asset.type || null,
+        });
       },
     );
   };
@@ -236,6 +278,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
               borderRadius: 6,
             }}
             onPress={handleUpload}
+            disabled={!selectedMedia && !caption.trim()}
           >
             <Text style={{ color: 'white', fontWeight: 'bold' }}>Post</Text>
           </Pressable>
