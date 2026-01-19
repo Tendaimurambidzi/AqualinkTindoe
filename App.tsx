@@ -3303,6 +3303,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     name: string;
   } | null>(null);
   const [messageAttachment, setMessageAttachment] = useState<Asset | null>(null);
+  const [isSending, setIsSending] = useState<boolean>(false);
   const [attachedAudio, setAttachedAudio] = useState<{
     uri: string;
     name?: string;
@@ -5546,146 +5547,180 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
                     
   const onSendMessage = async () => {
-    const text = messageText.trim();
-    if (!text || !messageRecipient) return;
+    if (!messageText.trim() && !messageAttachment) return;
     const user = auth().currentUser;
     if (!user) {
       Alert.alert('Not signed in', 'You must be signed in to send messages.');
       return;
     }
+
+    // Set sending state for visual feedback
+    setIsSending(true);
+
+    let attachmentUrl: string | null = null;
+    let attachmentType: string | null = null;
+    let attachmentName: string | null = null;
+    let uploadedPath: string | null = null;
+    let storageMod: any = null;
+    let firestoreMod: any = null;
+    let authMod: any = null;
+
     try {
-      let attachmentUrl: string | null = null;
-      let attachmentType: string | null = null;
-      let attachmentName: string | null = null;
+      // Initialize Firebase modules
+      try {
+        storageMod = require('@react-native-firebase/storage').default;
+      } catch {}
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      try {
+        authMod = require('@react-native-firebase/auth').default;
+      } catch {}
 
-      // Handle attachment upload if present
-      if (messageAttachment) {
-        const uid = user.uid;
-        const nameGuessRaw = messageAttachment.fileName || 'attachment';
-        const type = (messageAttachment.type || '').toLowerCase();
-        const sanitizedBase = nameGuessRaw
-          .replace(/[^A-Za-z0-9._-]/g, '_')
-          .replace(/_{2,}/g, '_');
-        const baseNoExt = sanitizedBase.includes('.')
-          ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
-          : sanitizedBase;
-        const ext = sanitizedBase.includes('.')
-          ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
-          : type.startsWith('video/')
-          ? 'mp4'
-          : type.startsWith('image/')
-          ? 'jpg'
-          : type.startsWith('audio/')
-          ? 'm4a'
-          : 'dat';
-        const filePath = `messages/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
-
-        // Normalize local URI for putFile
-        let localPath = String(messageAttachment.uri || '');
-        try {
-          localPath = decodeURI(localPath);
-        } catch {}
-        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
-          localPath = localPath.replace('file://', '');
-        }
-        // Handle content:// URIs by copying to cache before upload
-        if (Platform.OS === 'android' && /^content:/.test(localPath)) {
-          try {
-            const RNFS = require('react-native-fs');
-            const safeExt = (
-              ext || (type.startsWith('video/') ? 'mp4' : type.startsWith('audio/') ? 'm4a' : 'dat')
-            ).replace(/[^A-Za-z0-9]/g, '');
-            const copyDest = `${
-              RNFS.CachesDirectoryPath
-            }/msg_${Date.now()}.${safeExt}`;
-            await RNFS.copyFile(String(messageAttachment.uri), copyDest);
-            localPath = copyDest;
-          } catch (e) {
-            console.warn('Attachment content copy before upload failed', e);
-            Alert.alert('Upload Error', 'Could not access the selected file for upload.');
-            return;
-          }
-        }
-        if (!localPath) {
-          Alert.alert('Upload error', 'Could not resolve a local path for the selected media.');
+      if (storageMod && firestoreMod && authMod) {
+        const a = authMod();
+        const uid = a.currentUser?.uid;
+        if (!uid) {
+          Alert.alert('Sign in required', 'Please sign in to send messages.');
+          setIsSending(false);
           return;
         }
 
-        // Set contentType based on media type
-        const uploadContentType = type || (type.startsWith('video/') ? 'video/mp4' : type.startsWith('audio/') ? 'audio/m4a' : 'application/octet-stream');
+        // Handle attachment upload if present (using same logic as onPostWave)
+        if (messageAttachment) {
+          const nameGuessRaw = messageAttachment.fileName || 'attachment';
+          const type = (messageAttachment.type || '').toLowerCase();
+          const sanitizedBase = nameGuessRaw
+            .replace(/[^A-Za-z0-9._-]/g, '_')
+            .replace(/_{2,}/g, '_');
+          const baseNoExt = sanitizedBase.includes('.')
+            ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+            : sanitizedBase;
+          const ext = sanitizedBase.includes('.')
+            ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
+            : type.startsWith('video/')
+            ? 'mp4'
+            : type.startsWith('image/')
+            ? 'jpg'
+            : type.startsWith('audio/')
+            ? 'm4a'
+            : 'dat';
+          const filePath = `messages/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
 
-        await storageMod()
-          .ref(filePath)
-          .putFile(localPath, { contentType: uploadContentType });
+          // Normalize local URI for putFile
+          let localPath = String(messageAttachment.uri || '');
+          try {
+            localPath = decodeURI(localPath);
+          } catch {}
+          if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+            localPath = localPath.replace('file://', '');
+          }
+          // Handle content:// URIs by copying to cache before upload
+          if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+            try {
+              const RNFS = require('react-native-fs');
+              const safeExt = (
+                ext || (type.startsWith('video/') ? 'mp4' : type.startsWith('audio/') ? 'm4a' : 'dat')
+              ).replace(/[^A-Za-z0-9]/g, '');
+              const copyDest = `${
+                RNFS.CachesDirectoryPath
+              }/msg_${Date.now()}.${safeExt}`;
+              await RNFS.copyFile(String(messageAttachment.uri), copyDest);
+              localPath = copyDest;
+            } catch (e) {
+              console.warn('Attachment content copy before upload failed', e);
+              Alert.alert('Upload Error', 'Could not access the selected file for upload.');
+              setIsSending(false);
+              return;
+            }
+          }
+          if (!localPath) {
+            Alert.alert('Upload error', 'Could not resolve a local path for the selected media.');
+            setIsSending(false);
+            return;
+          }
 
-        attachmentUrl = await storageMod().ref(filePath).getDownloadURL();
-        attachmentType = type;
-        attachmentName = messageAttachment.fileName || null;
+          // Set contentType based on media type
+          const uploadContentType = type || (type.startsWith('video/') ? 'video/mp4' : type.startsWith('audio/') ? 'audio/m4a' : 'application/octet-stream');
+
+          await storageMod()
+            .ref(filePath)
+            .putFile(localPath, { contentType: uploadContentType });
+
+          attachmentUrl = await storageMod().ref(filePath).getDownloadURL();
+          attachmentType = type;
+          attachmentName = messageAttachment.fileName || null;
+          uploadedPath = filePath;
+        }
+
+        // Send to recipient's inbox
+        await firestoreMod()
+          .collection(`users/${messageRecipient.uid}/messages`)
+          .add({
+            text: messageText.trim(),
+            fromUid: user.uid,
+            fromName: user.displayName || 'Anonymous',
+            route: 'Pings',
+            type: 'message',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            attachmentUrl,
+            attachmentType,
+            attachmentName,
+          });
+
+        // Send to recipient's mentions for push notifications
+        await firestoreMod()
+          .collection(`users/${messageRecipient.uid}/mentions`)
+          .add({
+            text: messageText.trim(),
+            fromUid: user.uid,
+            fromName: user.displayName || 'Anonymous',
+            fromPhoto: user.photoURL || null,
+            route: 'Pings',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            type: 'message',
+            attachmentUrl,
+            attachmentType,
+            attachmentName,
+          });
+
+        // Send push notification
+        try {
+          const fromUsername = await fetchUserUsername(user.uid);
+          const addPingFn = functions().httpsCallable('addPing');
+          await addPingFn({
+            recipientUid: messageRecipient.uid,
+            type: 'message',
+            text: messageText.trim(),
+            fromUid: user.uid,
+            fromName: fromUsername,
+            fromPhoto: user.photoURL || null,
+            attachmentUrl,
+            attachmentType,
+          });
+        } catch (error) {
+          console.error('Error sending message notification:', error);
+        }
+
+        // Success - reset form and show confirmation
+        setShowSendMessage(false);
+        setMessageText('');
+        setMessageAttachment(null);
+        setIsSending(false);
+        notifySuccess('Ping sent!');
+        showOceanDialog(
+          'Message Sent',
+          `Your message to ${messageRecipient.name} has been cast into the sea!`,
+        );
+      } else {
+        Alert.alert('Backend not ready', 'Firebase modules not available.');
+        setIsSending(false);
       }
-
-      // This collection is for the recipient's inbox view
-      await firestore()
-        .collection(`users/${messageRecipient.uid}/messages`)
-        .add({
-          text,
-          fromUid: user.uid,
-          fromName: user.displayName || 'Anonymous',
-          route: 'Pings',
-          type: 'message',
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          attachmentUrl,
-          attachmentType,
-          attachmentName,
-        });
-      // This collection triggers the push notification via the onMentionCreate cloud function
-      await firestore()
-        .collection(`users/${messageRecipient.uid}/mentions`)
-        .add({
-          text,
-          fromUid: user.uid,
-          fromName: user.displayName || 'Anonymous',
-          fromPhoto: user.photoURL || null,
-          route: 'Pings',
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          type: 'message', // To distinguish from other mention types if needed
-          attachmentUrl,
-          attachmentType,
-          attachmentName,
-        });
-
-      // Send notification
-      try {
-        // Fetch the actual username from the user's profile
-        const fromUsername = await fetchUserUsername(user.uid);
-
-        const addPingFn = functions().httpsCallable('addPing');
-        await addPingFn({
-          recipientUid: messageRecipient.uid,
-          type: 'message',
-          text: text,
-          fromUid: user.uid,
-          fromName: fromUsername,
-          fromPhoto: user.photoURL || null,
-          attachmentUrl,
-          attachmentType,
-        });
-      } catch (error) {
-        console.error('Error sending message notification:', error);
-      }
-
-      setShowSendMessage(false);
-      setMessageText('');
-      setMessageAttachment(null);
-      notifySuccess('Ping sent!');
-      showOceanDialog(
-        'Message Sent',
-        `Your message to ${messageRecipient.name} has been cast into the sea!`,
-      );
-    } catch (e) {
-      showOceanDialog(
-        'Error',
-        'Could not send message. The seas are rough right now.',
-      );
+    } catch (e: any) {
+      console.warn('Send message failed', e);
+      const msg = (e && (e.message || (typeof e === 'string' ? e : ''))) || 'Unknown error';
+      Alert.alert('Send failed', `Could not send your message. ${msg}`);
+      setIsSending(false);
     }
   };
                     
@@ -13115,12 +13150,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 </View>
                 
                 <Pressable
-                  style={[styles.primaryBtn, { marginTop: 16 }]}
+                  style={[
+                    styles.primaryBtn,
+                    { marginTop: 16 },
+                    isSending && {
+                      backgroundColor: '#0066CC', // Darker blue when sending
+                      opacity: 0.8
+                    }
+                  ]}
                   onPress={onSendMessage}
+                  disabled={isSending}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Text style={styles.primaryBtnText}>Send</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {isSending ? 'Sending...' : 'Send'}
+                  </Text>
                 </Pressable>
               </ScrollView>
             </View>
