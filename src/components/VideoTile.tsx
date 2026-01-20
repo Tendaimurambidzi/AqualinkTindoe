@@ -273,7 +273,7 @@ export default function VideoTile({
   }, []);
 
   return (
-    <View style={{ aspectRatio: 9 / 16, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', minHeight: 300, minWidth: 169, position: 'relative' }}>
+    <View style={{ aspectRatio: 9 / 16, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', minHeight: 315, minWidth: 169, position: 'relative' }}>
       {/* Split screen video thumbnail - permanent multi-section display */}
       {r?.low && (
         <>

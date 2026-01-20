@@ -79,6 +79,7 @@ import { removeSplash, ensureSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
+import MainFeedItem from './src/feed/MainFeedItem';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
                     
 
@@ -1696,11 +1697,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
 
         setNotifications(notificationsData);
-        const unreadCount = notificationsData.filter(n => !n.read).length;
-        setUnreadNotificationsCount(unreadCount);
+        const unreadNotifications = notificationsData.filter(n => !n.read).length;
+        
+        // Recalculate total unread alerts including messages
+        const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+        setUnreadAlertsCount(unreadNotifications + unreadMessages);
 
         // Detect new notifications and show popup/sound
-        if (unreadCount > previousUnreadCount && notificationsData.length > 0) {
+        if (unreadNotifications > previousUnreadCount && notificationsData.length > 0) {
           const newNotifications = notificationsData.filter(n => !n.read);
           if (newNotifications.length > 0) {
             const latestNewNotification = newNotifications[0];
@@ -1726,7 +1730,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         }
         
-        setPreviousUnreadCount(unreadCount);
+        setPreviousUnreadCount(unreadNotifications);
 
         // Show toast for new unread notifications
         const newUnreadNotifications = notificationsData.filter(n => !n.read);
@@ -2350,7 +2354,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     read: boolean;
     createdAt: any;
   }>>([]);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [unreadAlertsCount, setUnreadAlertsCount] = useState(0);
+  
+  // Messaging inbox state
+  const [messageThreads, setMessageThreads] = useState<Array<{
+    senderUid: string;
+    senderName: string;
+    senderAvatar: any;
+    lastMessage: string;
+    lastMessageTime: any;
+    unreadCount: number;
+    messages: Array<{
+      id: string;
+      text: string;
+      fromUid: string;
+      createdAt: any;
+      attachmentUrl?: string;
+      attachmentType?: string;
+      attachmentName?: string;
+    }>;
+  }>>([]);
+  
+  // Notification deletion state
+  const [selectedNotifications, setSelectedNotifications] = useState<Set<string>>(new Set());
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
+  const [showInbox, setShowInbox] = useState(false);
+  const [selectedThread, setSelectedThread] = useState<{
+    senderUid: string;
+    senderName: string;
+    senderAvatar: any;
+    messages: Array<any>;
+  } | null>(null);
                     
   // Update timestamps every second
   useEffect(() => {
@@ -2358,6 +2392,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setTimeTick(prev => prev + 1);
     }, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Load message threads on mount
+  useEffect(() => {
+    loadMessageThreads();
   }, []);
                     
   // Ocean Dialog state
@@ -4328,6 +4367,47 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const showTopBar = useCallback(() => {
     setIsTopBarVisible(true);
   }, []);
+                    
+  // Optimized button handlers for instant response
+  const handleDropWave = useCallback(() => {
+    showTopBar();
+    setShowMakeWaves(true);
+  }, [showTopBar]);
+                    
+  const handleVibeAlerts = useCallback(() => {
+    showTopBar();
+    setShowInbox(true);
+  }, [showTopBar]);
+                    
+  const handleVibeHunt = useCallback(() => {
+    showTopBar();
+    setShowDeepSearch(true);
+  }, [showTopBar]);
+                    
+  const handleMyAura = useCallback(() => {
+    showTopBar();
+    setShowProfile(true);
+  }, [showTopBar]);
+                    
+  const handleVibeOut = useCallback(() => {
+    showTopBar();
+    setShowExplore(true);
+  }, [showTopBar]);
+                    
+  const handleVibeMode = useCallback(() => {
+    showTopBar();
+    setShowSchoolMode(true);
+  }, [showTopBar]);
+                    
+  const handleAiAssistant = useCallback(() => {
+    showTopBar();
+    setShowAIModal(true);
+  }, [showTopBar]);
+                    
+  const handleVibeBoard = useCallback(() => {
+    showTopBar();
+    setShowNotice(true);
+  }, [showTopBar]);
                     
   // Initial visibility on app open
   useEffect(() => {
@@ -7116,8 +7196,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }>;
 
       setNotifications(notificationsData);
-      const unreadCount = notificationsData.filter(n => !n.read).length;
-      setUnreadNotificationsCount(unreadCount);
+      const unreadNotifications = notificationsData.filter(n => !n.read).length;
+      
+      // Recalculate total unread alerts
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+      setUnreadAlertsCount(unreadNotifications + unreadMessages);
     } catch (e) {
       console.error('Load notifications error:', e);
     }
@@ -7136,10 +7219,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
-      setUnreadNotificationsCount(prev => Math.max(0, prev - 1));
+      
+      // Recalculate total unread alerts
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+      const remainingUnreadNotifications = notifications.filter(n => n.id !== notificationId && !n.read).length;
+      setUnreadAlertsCount(remainingUnreadNotifications + unreadMessages);
+      
       // Clear app icon badge when notification is read
       try {
-        messaging().setBadgeCount(Math.max(0, unreadNotificationsCount - 1));
+        messaging().setBadgeCount(Math.max(0, remainingUnreadNotifications + unreadMessages));
       } catch (error) {
         console.warn('Failed to update badge count:', error);
       }
@@ -7168,15 +7256,129 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setNotifications(prev =>
         prev.map(n => ({ ...n, read: true }))
       );
-      setUnreadNotificationsCount(0);
+      
+      // Recalculate total unread alerts (only messages remain)
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+      setUnreadAlertsCount(unreadMessages);
+      
       // Clear app icon badge when all notifications are read
       try {
-        messaging().setBadgeCount(0);
+        messaging().setBadgeCount(unreadMessages);
       } catch (error) {
         console.warn('Failed to clear badge count:', error);
       }
     } catch (e) {
       console.error('Mark all notifications as read error:', e);
+    }
+  };
+
+  const loadMessageThreads = async () => {
+    try {
+      const user = auth().currentUser;
+      if (!user) return;
+
+      const messagesSnapshot = await firestore()
+        .collection(`users/${user.uid}/messages`)
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get();
+
+      const messages = messagesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Group messages by sender
+      const threadsMap = new Map<string, {
+        senderUid: string;
+        senderName: string;
+        senderAvatar: any;
+        lastMessage: string;
+        lastMessageTime: any;
+        unreadCount: number;
+        messages: Array<any>;
+      }>();
+
+      messages.forEach(message => {
+        const senderUid = message.fromUid;
+        if (!threadsMap.has(senderUid)) {
+          threadsMap.set(senderUid, {
+            senderUid,
+            senderName: message.fromName || 'Unknown User',
+            senderAvatar: getUserAvatar(senderUid, userData || {}),
+            lastMessage: message.text || 'Attachment',
+            lastMessageTime: message.createdAt,
+            unreadCount: 0, // We'll implement read status later
+            messages: [],
+          });
+        }
+        threadsMap.get(senderUid)!.messages.push(message);
+      });
+
+      const threads = Array.from(threadsMap.values()).sort((a, b) => {
+        const aTime = a.lastMessageTime?.toDate?.() || new Date(0);
+        const bTime = b.lastMessageTime?.toDate?.() || new Date(0);
+        return bTime.getTime() - aTime.getTime();
+      });
+
+      setMessageThreads(threads);
+
+      // Calculate total unread alerts (messages + notifications)
+      const unreadNotifications = notifications.filter(n => !n.read).length;
+      const unreadMessages = threads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+      setUnreadAlertsCount(unreadNotifications + unreadMessages);
+    } catch (e) {
+      console.error('Load message threads error:', e);
+    }
+  };
+
+  const deleteSelectedNotifications = async () => {
+    try {
+      const user = auth().currentUser;
+      if (!user) return;
+
+      const batch = firestore().batch();
+      selectedNotifications.forEach(notificationId => {
+        const notificationRef = firestore()
+          .collection(`users/${user.uid}/pings`)
+          .doc(notificationId);
+        batch.delete(notificationRef);
+      });
+
+      await batch.commit();
+
+      setNotifications(prev =>
+        prev.filter(n => !selectedNotifications.has(n.id))
+      );
+      
+      // Recalculate total unread alerts
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+      const remainingUnreadNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && !n.read).length;
+      setUnreadAlertsCount(remainingUnreadNotifications + unreadMessages);
+      
+      setSelectedNotifications(new Set());
+      setIsDeleteMode(false);
+    } catch (e) {
+      console.error('Delete notifications error:', e);
+      Alert.alert('Error', 'Failed to delete notifications');
+    }
+  };
+
+  const toggleNotificationSelection = (notificationId: string) => {
+    const newSelected = new Set(selectedNotifications);
+    if (newSelected.has(notificationId)) {
+      newSelected.delete(notificationId);
+    } else {
+      newSelected.add(notificationId);
+    }
+    setSelectedNotifications(newSelected);
+  };
+
+  const selectAllNotifications = () => {
+    if (selectedNotifications.size === notifications.length) {
+      setSelectedNotifications(new Set());
+    } else {
+      setSelectedNotifications(new Set(notifications.map(n => n.id)));
     }
   };
 
@@ -8902,15 +9104,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             </View>
           ) : (
             <>
-              <FlatList
+              <ErrorBoundary>
+                <FlatList
                 ref={feedRef}
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
-                removeClippedSubviews={false}
-                maxToRenderPerBatch={50}
-                windowSize={25}
-                initialNumToRender={20}
+                removeClippedSubviews={true}
+                maxToRenderPerBatch={10}
+                windowSize={21}
+                initialNumToRender={8}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -8958,585 +9161,68 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     });
                   }
                 }}
-                renderItem={({ item, index }) => {
-                // Only pause for modals that interfere with video/audio
-                const isAnyModalOpen =
-                  showMakeWaves ||
-                  showAudioModal ||
-                  !!capturedMedia ||
-                  showLive;
-                const shouldPlay =
-                  !isPaused &&
-                  allowPlayback &&
-                  !isAnyModalOpen;
-                const maxBr = isWifi
-                  ? 1_500_000
-                  : Math.min(
-                      bridge.dataSaverDefaultOnCell
-                        ? Math.min(
-                            bridge.cellularMaxBitrateH264,
-                            bridge.cellularMaxBitrateHEVC,
-                          )
-                        : bridge.cellularMaxBitrateH264,
-                      600_000,
-                    );
-                const overlayState = overlayReadyMap[item.id] || {};
-                const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl;
-                const overlayVideoReady =
-                  overlayState.video === true || !isVideoAsset(item.media);
-                const overlayPairReady =
-                  !hasOverlayAudio ||
-                  (overlayVideoReady && overlayState.audio === true);
-                const playSynced = shouldPlay && overlayPairReady && item.id === activeVideoId;
-                const shouldPreload = preloadedVideoIds.has(item.id) && overlayPairReady;
-                const near = Math.abs(index - currentIndex) <= 1;
-                const textOnlyStory = !item.media && !item.image;
-                const colors = ['#FFFFFF', '#FFFFFF'];
-                return (
-                  <Pressable>
-                    <View
-                      style={[
-                        { marginHorizontal: 0, marginVertical: 5, borderRadius: 0, padding: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-                      ]}
-                    >
-                    <View style={{ backgroundColor: '#FFFF00', marginHorizontal: -10, paddingHorizontal: 10, marginTop: -10, paddingTop: 10, marginBottom: -10, paddingBottom: 10 }}>
-                    {/* Post Header */}
-                    <View style={{ position: 'relative', alignItems: 'center', marginBottom: 10, paddingHorizontal: 10 }}>
-                      {/* Menu button positioned absolutely in top-right */}
-                      <View style={{ position: 'absolute', top: 0, right: 10 }}>
-                        <Pressable 
-                          onPress={() => openWaveOptions(item)} 
-                          style={({ pressed }) => [
-                            { padding: 5 },
-                            pressed && {
-                              opacity: 0.7,
-                              transform: [{ scale: 0.9 }],
-                            }
-                          ]}
-                          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
-                          delayPressIn={0}
-                          delayPressOut={0}
-                          activeOpacity={0.7}
-                          android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                        >
-                          <Text style={{ fontSize: 24 }}>⋮</Text>
-                        </Pressable>
-                      </View>
-                      
-                      {/* Centered Profile Info */}
-                      <View style={{ alignItems: 'center' }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                          {/* Connect/Disconnect Button */}
-                          {item.ownerUid !== myUid && (
-                            <Pressable
-                              onPress={() => handleToggleVibe(item.ownerUid, item.authorName || item.user?.displayName)}
-                              style={({ pressed }) => [
-                                {
-                                  paddingVertical: 6,
-                                  paddingHorizontal: 12,
-                                  borderRadius: 15,
-                                  borderWidth: 1,
-                                  borderColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
-                                  backgroundColor: isInUserCrew[item.ownerUid] ? '#ff4444' : '#00C2FF',
-                                  marginRight: 10,
-                                },
-                                pressed && {
-                                  opacity: 0.7,
-                                  transform: [{ scale: 0.95 }],
-                                }
-                              ]}
-                              hitSlop={{ top: 30, bottom: 30, left: 20, right: 20 }}
-                              delayPressIn={0}
-                              delayPressOut={0}
-                              activeOpacity={0.7}
-                              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-                            >
-                              <Text style={{
-                                color: 'white',
-                                fontSize: 12,
-                                fontWeight: '600',
-                              }}>
-                                {isInUserCrew[item.ownerUid] ? 'Leave Tide' : 'Join Tide'}
-                              </Text>
-                            </Pressable>
-                          )}
-                          
-                          {/* Profile Avatar */}
-                          <Pressable
-                            onPress={() => {
-                              if (item.ownerUid === myUid) {
-                                navigation.navigate('Profile');
-                              } else {
-                                // Navigate to user profile or show user modal
-                                console.log('Pressed user avatar for:', item.ownerUid);
-                              }
-                            }}
-                            style={({ pressed }) => [
-                              pressed && {
-                                opacity: 0.8,
-                                transform: [{ scale: 0.95 }],
-                              }
-                            ]}
-                            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
-                            delayPressIn={0}
-                            delayPressOut={0}
-                            activeOpacity={0.7}
-                            android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                          >
-                            <ProfileAvatarWithCrew
-                              key={item.ownerUid}
-                              userId={item.ownerUid}
-                              size={50}
-                              showCrewCount={true}
-                              showFleetCount={false}
-                              optimisticCrewCount={optimisticCrewCounts[item.ownerUid]}
-                            />
-                          </Pressable>
-                        </View>
-                        
-                        {/* Username and Bio directly under avatar */}
-                        <Text style={{ fontWeight: 'bold', fontSize: 14, textAlign: 'center', marginBottom: 2 }}>
-                          {(() => {
-                            const isCurrentUserPost = item.ownerUid === myUid;
-                            if (isCurrentUserPost) {
-                              return profileName || 'User';
-                            }
-                            const userInfo = userData[item.ownerUid];
-                            const displayName = userInfo?.name || item.authorName || 'User';
-                            console.log('Post display name for item', item.id, ':', {
-                              userDataName: userInfo?.name,
-                              itemAuthorName: item.authorName,
-                              finalDisplay: displayName
-                            });
-                            return displayName;
-                          })()}
-                        </Text>
-                        {(() => {
-                          const isCurrentUserPost = item.ownerUid === myUid;
-                          const bioToShow = isCurrentUserPost ? profileBio : userData[item.ownerUid]?.bio;
-                          return bioToShow ? (
-                            <Pressable
-                              onPress={() => {
-                                Share.share({
-                                  message: `Check out this bio: "${bioToShow}"`,
-                                }).catch(err => console.log('Share failed', err));
-                              }}
-                              style={({ pressed }) => [
-                                { marginTop: 2 },
-                                pressed && { opacity: 0.7 }
-                              ]}
-                              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                              delayPressIn={0}
-                              delayPressOut={0}
-                              activeOpacity={0.7}
-                              android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                            >
-                              <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', fontStyle: 'italic' }}>
-                                {bioToShow}
-                              </Text>
-                            </Pressable>
-                          ) : null;
-                        })()}
-                        <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center' }}>
-                          {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || new Date())}
-                        </Text>
-                      </View>
-                    </View>
-                    {/* Post Content - Text or Media */}
-                    {item.media ? (
-                      /* Posts with media */
-                      <>
-                        {/* Post Text (if any) */}
-                        {item.captionText && (
-                          <View style={{ marginBottom: 10 }}>
-                            <ClickableTextWithLinks
-                              text={
-                                expandedPosts[item.id]
-                                  ? item.captionText
-                                  : item.captionText.length > 500
-                                  ? item.captionText.substring(0, 500) + '...'
-                                  : item.captionText
-                              }
-                              style={{ fontSize: 16, lineHeight: 20 }}
-                            />
-                          </View>
-                        )}
-                        {/* Post Link (if any) */}
-                        {item.link && (
-                          <View style={{ marginBottom: 10 }}>
-                            <Pressable
-                              onPress={() => {
-                                Linking.openURL(item.link).catch(err => 
-                                  console.log('Failed to open link:', err)
-                                );
-                              }}
-                              style={{ 
-                                backgroundColor: '#E3F2FD', 
-                                padding: 8, 
-                                borderRadius: 4,
-                                borderWidth: 1,
-                                borderColor: '#2196F3'
-                              }}
-                            >
-                              <Text style={{ 
-                                color: '#1976D2', 
-                                fontSize: 16, 
-                                textDecorationLine: 'underline' 
-                              }}>
-                                {item.link}
-                              </Text>
-                            </Pressable>
-                          </View>
-                        )}
-                        {/* Post Media */}
-                        {isVideoAsset(item.media) ? (
-                          <View style={{ marginHorizontal: -10 }}>
-                            <VideoWithTapControls
-                              source={{ uri: item.media.uri }}
-                              style={videoStyleFor(item.id) as any}
-                              resizeMode={'cover'}
-                              paused={!playSynced}
-                              playInBackground={false}
-                              isActive={item.id === activeVideoId}
-                              videoId={item.id}
-                              shouldPreload={shouldPreload}
-                              bufferConfig={{
-                                minBufferMs: 0,
-                                maxBufferMs: 1000,
-                                bufferForPlaybackMs: 0,
-                                bufferForPlaybackAfterRebufferMs: 0,
-                              }}
-                              onPlay={() => {
-                                // Record video reach when video starts playing in feed
-                                recordVideoReach(item.id).catch(error => {
-                                  console.log('Video reach recording failed:', error.message);
-                                });
-                              }}
-                            />
-                          </View>
-                        ) : (
-                          <Pressable onPress={() => {
-                            if (!revealedImages.has(item.id)) {
-                              // Reveal the image
-                              setRevealedImages(prev => new Set(prev).add(item.id));
-                              // Record image reach when image is revealed
-                              recordImageReach(item.id).catch(error => {
-                                console.log('Image reach recording failed:', error.message);
-                              });
-                            }
-                            // Once revealed, no further action on tap
-                          }}>
-                            <View style={{ position: 'relative', marginHorizontal: -10 }}>
-                              <Image
-                                source={{ uri: item.media.uri }}
-                                style={videoStyleFor(item.id) as any}
-                                resizeMode="contain"
-                              />
-                              {!revealedImages.has(item.id) && (
-                                <View style={{
-                                  position: 'absolute',
-                                  top: 0,
-                                  left: 0,
-                                  right: 0,
-                                  bottom: 0,
-                                  backgroundColor: 'rgba(255, 255, 0, 0.3)', // Faded yellow overlay
-                                  justifyContent: 'center',
-                                  alignItems: 'center'
-                                }}>
-                                  <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
-                                    Tap to reveal
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                          </Pressable>
-                        )}
-                      </>
-                    ) : (
-                      /* Text-only posts - use same height as media, or expand when needed */
-                      <Pressable 
-                        onPress={() => {
-                          // Save current scroll position before navigating to full screen
-                          setPreservedScrollPosition(currentIndex);
-                          navigation.navigate('PostDetail', { post: item });
-                        }}
-                        style={[
-                          expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH) / (9/16)) * 0.5 } : videoStyleFor(item.id),
-                          expandedPosts[item.id] ? {} : { overflow: 'hidden' }
-                        ] as any}
-                      >
-                        <Text style={{ fontSize: 16, lineHeight: 20, flex: expandedPosts[item.id] ? 0 : 1 }}>
-                          {expandedPosts[item.id]
-                            ? item.captionText
-                            : item.captionText.length > 500
-                            ? item.captionText.substring(0, 500) + '... '
-                            : item.captionText}
-                          {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] && (
-                            <Text
-                              style={{ color: '#00C2FF', fontSize: 16, fontWeight: '600' }}
-                              onPress={() => setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] }))}
-                            >
-                              Read More
-                            </Text>
-                          )}
-                        </Text>
-                      </Pressable>
-                    )}
-                    {bufferingMap[item.id] && shouldPlay && (
-                      <View
-                        style={{
-                          position: 'absolute',
-                          left: 0,
-                          right: 0,
-                          top: 0,
-                          bottom: 0,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <ActivityIndicator size="large" color="#00C2FF" />
-                      </View>
-                    )}
-                    {/* Read More - positioned above footer */}
-                    {item.captionText && item.captionText.length > 500 && (
-                      <Pressable onPress={() => setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] })) } style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}>
-                        <Text style={{ color: 'blue', fontSize: 14 }}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
-                      </Pressable>
-                    )}
-                    </View>
-                    <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%', marginHorizontal: -20 }} />
-                    <PosterActionBar
-                      waveId={item.id}
-                      currentUserId={myUid || ''}
-                      splashesCount={item.counts?.splashes || 0}
-                      echoesCount={item.counts?.echoes || 0}
-                      pearlsCount={0}
-                      isAnchored={false}
-                      isCasted={false}
-                      creatorUserId={item.ownerUid}
-                      onAdd={() => {
-                        // IMMEDIATE UI UPDATE - no delay
-                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
-                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-
-                        // Database operation in background
-                        ensureSplash(item.id).catch((error) => {
-                          console.error('Error adding splash:', error);
-                          // Revert UI on error
-                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
-                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        });
-                      }}
-                      onRemove={() => {
-                        // IMMEDIATE UI UPDATE - no delay
-                        setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: Math.max(0, (w.counts?.splashes || 0) - 1) } } : w));
-                        setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-                        setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v));
-
-                        // Database operation in background
-                        removeSplash(item.id).catch((error) => {
-                          console.error('Error removing splash:', error);
-                          // Revert UI on error
-                          setWavesFeed(prev => prev.map(w => w.id === item.id ? { ...w, counts: { ...w.counts, splashes: (w.counts?.splashes || 0) + 1 } } : w));
-                          setVibesFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                          setPublicFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                          setPostFeed(prev => prev.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v));
-                        });
-                      }}
-                      onEcho={(waveId) => {
-                        setEchoWaveId(waveId);
-                        setCurrentIndex(index);
-                        setShowEchoes(true);
-                      }}
-                      onPearl={() => setShowPearls(true)}
-                      onAnchor={() => anchorWave(item)}
-                      onCast={() => onShareWave(item)}
-                    />
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
-                      <Pressable
-                        onPress={() => {
-                          recordVideoReach(item.id).catch(error => {
-                            console.log('Reach recording failed:', error.message);
-                          });
-                        }}
-                        style={{ flexDirection: 'row', marginRight: 20 }}
-                      >
-                       <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
-                       <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
-                       </Pressable>
-                      <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>💾 2.3MB</Text>
-                      {item.user?.displayName !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
-                    </ScrollView>
-                    <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
-                      {/* Echoes Section - Collapsible/Expandable */}
-                      {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
-                        <View style={{ marginTop: 10 }}>
-                          {/* Show echoes based on expansion state */}
-                          {expandedEchoes[item.id] ? (
-                            /* Expanded view - show echoes with lazy loading */
-                            (() => {
-                              try {
-                                const allEchoes = postEchoLists[item.id];
-                                const pageSize = echoesPageSize[item.id] || 5; // Default to 5 echoes
-                                const visibleEchoes = allEchoes.slice(0, pageSize);
-                                const hasMoreEchoes = allEchoes.length > pageSize;
-
-                                return (
-                                  <>
-                                    {visibleEchoes.map((echo, idx) => (
-                                      <View key={echo.id || idx} style={{
-                                        flexDirection: 'row',
-                                        marginBottom: 8,
-                                        padding: 8,
-                                        backgroundColor: 'rgba(255,255,255,0.8)',
-                                        borderRadius: 8,
-                                      }}>
-                                        <View style={{ flex: 1 }}>
-                                          <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                            {displayHandle(echo.uid, echo.userName || echo.uid)}
-                                          </Text>
-                                          <Text style={{ color: 'black', fontSize: 14 }}>
-                                            {echo.text}
-                                          </Text>
-                                          <Text style={{ color: 'gray', fontSize: 10 }}>
-                                            {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
-                                          </Text>
-                                        </View>
-                                      </View>
-                                    ))}
-
-                                    {/* Load more button if there are more echoes */}
-                                    {hasMoreEchoes && (
-                                      <Pressable
-                                        onPress={() => {
-                                          // Prevent multiple rapid clicks
-                                          if (echoExpansionInProgress[item.id]) return;
-                                          
-                                          try {
-                                            setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: true }));
-                                            setEchoesPageSize(prev => ({ ...prev, [item.id]: (prev[item.id] || 5) + 5 }));
-                                            
-                                            // Reset expansion progress after a short delay
-                                            setTimeout(() => {
-                                              setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
-                                            }, 200);
-                                          } catch (error) {
-                                            console.error('Error loading more echoes:', error);
-                                            setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
-                                          }
-                                        }}
-                                        style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}
-                                        hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
-                                        disabled={echoExpansionInProgress[item.id]}
-                                      >
-                                        <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
-                                          Load {Math.min(5, allEchoes.length - pageSize)} more echoes
-                                        </Text>
-                                      </Pressable>
-                                    )}
-                                  </>
-                                );
-                              } catch (error) {
-                                console.error('Error rendering expanded echoes:', error);
-                                return (
-                                  <View style={{ padding: 10, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 8, marginBottom: 10 }}>
-                                    <Text style={{ color: 'red', fontSize: 12 }}>Error loading echoes</Text>
-                                  </View>
-                                );
-                              }
-                            })()
-                          ) : (
-                            /* Collapsed view - show only most recent echo */
-                            (() => {
-                              try {
-                                const mostRecentEcho = postEchoLists[item.id][0];
-                                return (
-                                  <View style={{
-                                    flexDirection: 'row',
-                                    marginBottom: 8,
-                                    padding: 8,
-                                    backgroundColor: 'rgba(255,255,255,0.8)',
-                                    borderRadius: 8,
-                                  }}>
-                                    <View style={{ flex: 1 }}>
-                                      <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                                        {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
-                                      </Text>
-                                      <Text style={{ color: 'black', fontSize: 14 }}>
-                                        {mostRecentEcho.text}
-                                      </Text>
-                                      <Text style={{ color: 'gray', fontSize: 10 }}>
-                                        {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
-                                      </Text>
-                                    </View>
-                                  </View>
-                                );
-                              } catch (error) {
-                                console.error('Error rendering collapsed echo:', error);
-                                return (
-                                  <View style={{ padding: 8, backgroundColor: 'rgba(255,0,0,0.1)', borderRadius: 8, marginBottom: 8 }}>
-                                    <Text style={{ color: 'red', fontSize: 12 }}>Error loading echo preview</Text>
-                                  </View>
-                                );
-                              }
-                            })()
-                          )}
-
-                          {/* Toggle button - only show if there are more than 1 echo */}
-                          {postEchoLists[item.id].length > 1 && (
-                            <Pressable
-                              onPress={() => {
-                                // Prevent multiple rapid clicks
-                                if (echoExpansionInProgress[item.id]) return;
-                                
-                                try {
-                                  setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: true }));
-                                  setExpandedEchoes(prev => ({ ...prev, [item.id]: !prev[item.id] }));
-                                  
-                                  // Reset expansion progress after a short delay
-                                  setTimeout(() => {
-                                    setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
-                                  }, 300);
-                                } catch (error) {
-                                  console.error('Error toggling echo expansion:', error);
-                                  setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
-                                }
-                              }}
-                              style={{ marginTop: 5, alignSelf: 'flex-start' }}
-                              hitSlop={{top: 40, bottom: 40, left: 40, right: 40}}
-                              disabled={echoExpansionInProgress[item.id]}
-                            >
-                              <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
-                                {expandedEchoes[item.id] ? 'View less' : `View all ${postEchoLists[item.id].length} echoes`}
-                              </Text>
-                            </Pressable>
-                          )}
-                        </View>
-                      )}
-
-                      {/* No echoes message */}
-                      {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
-                        <Text style={{
-                          color: 'navy',
-                          fontSize: 12,
-                          textAlign: 'center',
-                          marginTop: 10,
-                          fontStyle: 'italic'
-                        }}>
-                          SPL@2026
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                  </Pressable>
-                );
-              }}
+                renderItem={({ item, index }) => (
+                  <MainFeedItem
+                    item={item}
+                    index={index}
+                    myUid={myUid}
+                    profileName={profileName}
+                    profileBio={profileBio}
+                    userData={userData}
+                    waveStats={waveStats}
+                    isInUserCrew={isInUserCrew}
+                    optimisticCrewCounts={optimisticCrewCounts}
+                    expandedPosts={expandedPosts}
+                    revealedImages={revealedImages}
+                    bufferingMap={bufferingMap}
+                    postEchoLists={postEchoLists}
+                    expandedEchoes={expandedEchoes}
+                    echoesPageSize={echoesPageSize}
+                    echoExpansionInProgress={echoExpansionInProgress}
+                    reachCounts={reachCounts}
+                    isPaused={isPaused}
+                    allowPlayback={allowPlayback}
+                    showMakeWaves={showMakeWaves}
+                    showAudioModal={showAudioModal}
+                    capturedMedia={capturedMedia}
+                    showLive={showLive}
+                    activeVideoId={activeVideoId}
+                    preloadedVideoIds={preloadedVideoIds}
+                    overlayReadyMap={overlayReadyMap}
+                    isWifi={isWifi}
+                    bridge={bridge}
+                    currentIndex={currentIndex}
+                    displayHandle={displayHandle}
+                    formatDefiniteTime={formatDefiniteTime}
+                    openWaveOptions={openWaveOptions}
+                    handleToggleVibe={handleToggleVibe}
+                    setExpandedPosts={setExpandedPosts}
+                    setRevealedImages={setRevealedImages}
+                    recordVideoReach={recordVideoReach}
+                    recordImageReach={recordImageReach}
+                    setPreservedScrollPosition={setPreservedScrollPosition}
+                    navigation={navigation}
+                    ensureSplash={ensureSplash}
+                    removeSplash={removeSplash}
+                    setWavesFeed={setWavesFeed}
+                    setVibesFeed={setVibesFeed}
+                    setPublicFeed={setPublicFeed}
+                    setPostFeed={setPostFeed}
+                    setEchoWaveId={setEchoWaveId}
+                    setCurrentIndex={setCurrentIndex}
+                    setShowEchoes={setShowEchoes}
+                    setShowPearls={setShowPearls}
+                    anchorWave={anchorWave}
+                    onShareWave={onShareWave}
+                    setEchoExpansionInProgress={setEchoExpansionInProgress}
+                    setExpandedEchoes={setExpandedEchoes}
+                    setEchoesPageSize={setEchoesPageSize}
+                    videoStyleFor={videoStyleFor}
+                    isVideoAsset={isVideoAsset}
+                  />
+                )}
             />
+              </ErrorBoundary>
             
             {/* Loading indicator for pagination */}
             {isLoadingMore && (
@@ -9604,10 +9290,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* MAKE WAVES */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowMakeWaves(true);
-                  }}
+                  onPress={handleDropWave}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.dolphinIcon}>✨</Text>
                   <Text style={styles.topLabel}>DROP A WAVE</Text>
@@ -9615,17 +9301,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* VIBE ALERTS - Placeholder */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowNotifications(true);
-                  }}
+                  onPress={handleVibeAlerts}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <View style={{ position: 'relative' }}>
                     <Text style={styles.pingsIcon}>📫</Text>
-                    {unreadNotificationsCount > 0 && (
+                    {unreadAlertsCount > 0 && (
                       <View style={styles.notificationBadge}>
                         <Text style={styles.notificationBadgeText}>
-                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                          {unreadAlertsCount > 99 ? '99+' : unreadAlertsCount}
                         </Text>
                       </View>
                     )}
@@ -9635,10 +9321,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* DEEP DIVE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowDeepSearch(true);
-                  }}
+                  onPress={handleVibeHunt}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.dolphinIcon}>🔎</Text>
                   <Text style={styles.topLabel}>VIBE HUNT</Text>
@@ -9647,10 +9333,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* MY SHORE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowProfile(true);
-                  }}
+                  onPress={handleMyAura}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.umbrellaIcon}>⛱️</Text>
                   <Text style={styles.topLabel}>MY AURA</Text>
@@ -9658,10 +9344,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* SET SAIL */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowExplore(true);
-                  }}
+                  onPress={handleVibeOut}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.boatIcon}>⛵</Text>
                   <Text style={styles.topLabel}>VIBE OUT</Text>
@@ -9669,10 +9355,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* SCHOOL MODE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowSchoolMode(true);
-                  }}
+                  onPress={handleVibeMode}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.schoolIcon}>🏫</Text>
                   <Text style={styles.topLabel}>VIBE MODE</Text>
@@ -9680,10 +9366,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* AI ASSISTANT */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowAIModal(true);
-                  }}
+                  onPress={handleAiAssistant}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.aiIcon}>🤖</Text>
                   <Text style={styles.topLabel}>AI ASSISTANT</Text>
@@ -9691,10 +9377,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* NOTICE BOARD */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowNotice(true);
-                  }}
+                  onPress={handleVibeBoard}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.noticeIcon}>📋</Text>
                   <Text style={styles.topLabel}>VIBE BOARD</Text>
@@ -9706,6 +9392,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     showTopBar();
                     setShowBridge(true);
                   }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.gearIcon}>⚙️</Text>
                   <Text style={styles.topLabel}>VIBE BRIDGE</Text>
@@ -9717,6 +9406,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     showTopBar();
                     Alert.alert('Placeholder', 'Reserved for future feature.');
                   }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.placeholderIcon}>🔮</Text>
                   <Text style={styles.topLabel}>PLACE HOLDER</Text>
@@ -9979,7 +9671,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showProfile}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowProfile(false)}
       >
         <View
@@ -10229,11 +9921,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         width: 12,
                         height: 12,
                         borderRadius: 6,
-                        backgroundColor: unreadNotificationsCount > 0 ? '#FF4444' : '#00C2FF',
+                        backgroundColor: unreadAlertsCount > 0 ? '#FF4444' : '#00C2FF',
                       }}
                     />
                     <Text style={[styles.logbookActionText, { fontSize: 16 }]}>Notifications</Text>
-                    {unreadNotificationsCount > 0 && (
+                    {unreadAlertsCount > 0 && (
                       <View style={{
                         backgroundColor: '#FF4444',
                         borderRadius: 10,
@@ -10244,7 +9936,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         paddingHorizontal: 6,
                       }}>
                         <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>
-                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                          {unreadAlertsCount > 99 ? '99+' : unreadAlertsCount}
                         </Text>
                       </View>
                     )}
@@ -10288,12 +9980,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </View>
       </Modal>
       
-      {/* NOTIFICATIONS MODAL */}
+      {/* MESSAGING INBOX MODAL */}
       <Modal
-        visible={showNotifications}
+        visible={showInbox}
         transparent
-        animationType="fade"
-        onRequestClose={() => setShowNotifications(false)}
+        animationType="none"
+        onRequestClose={() => {
+          setShowInbox(false);
+          setSelectedThread(null);
+          setIsDeleteMode(false);
+          setSelectedNotifications(new Set());
+        }}
       >
         <View
           style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
@@ -10312,91 +10009,70 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={{ flex: 1, padding: 16 }}>
-              <Text style={[styles.logbookTitle, { marginBottom: 16, textAlign: 'center' }]}>
-                Notifications
-              </Text>
-              
-              {notifications.length === 0 ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                  <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
-                    No notifications yet
-                  </Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
-                    When someone connects with your vibe, you'll see it here!
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView style={{ flex: 1 }}>
-                  {notifications.map((notification) => (
-                    <Pressable
-                      key={notification.id}
-                      style={{
-                        backgroundColor: notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(255,215,0,0.1)',
-                        borderRadius: 6,
-                        padding: 12,
-                        marginBottom: 8,
-                        borderLeftWidth: notification.read ? 0 : 3,
-                        borderLeftColor: '#FFD700',
-                      }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      delayPressIn={0}
-                      delayPressOut={0}
-                      activeOpacity={0.8}
-                      android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
-                      onPress={() => {
-                        if (!notification.read) {
-                          markNotificationAsRead(notification.id);
-                        }
-                        
-                        // For echo notifications, show action buttons instead of alert
-                        if (notification.type === 'echo') {
-                          if (notificationWithActions === notification.id) {
-                            // Clicking the same notification again closes actions
-                            setNotificationWithActions(null);
-                            setEchoReplyText('');
-                            setShowEchoReplyInput(false);
-                          } else {
-                            // Show actions for this notification
-                            setNotificationWithActions(notification.id);
-                            setEchoReplyText('');
-                            setShowEchoReplyInput(false);
-                          }
-                        } else if (notification.fromUid && (notification.fromName || userData?.[notification.fromUid])) {
-                          // For personal messages from other users, show reply option
-                          if (notificationWithActions === notification.id) {
-                            // Clicking the same notification again closes actions
-                            setNotificationWithActions(null);
-                          } else {
-                            // Show reply action for this notification
-                            setNotificationWithActions(notification.id);
-                          }
-                        } else {
-                          // Close any open action buttons
-                          setNotificationWithActions(null);
-                          setEchoReplyText('');
-                          setShowEchoReplyInput(false);
-                          
-                          // Show the actual message content in an alert for other types
-                          Alert.alert(
-                            'Message Details',
-                            notification.message || 'No additional details available',
-                            [{ text: 'OK' }]
-                          );
-                        }
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                        {/* Avatar */}
-                        {(() => {
-                          const avatar = userData ? getUserAvatar(notification.fromUid, userData) : null;
-                          return avatar ? (
-                            typeof avatar === 'object' && 'text' in avatar ? (
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <Text style={[styles.logbookTitle, { textAlign: 'center', flex: 1 }]}>
+                  {selectedThread ? selectedThread.senderName : 'VIBE ALERTS'}
+                </Text>
+                {selectedThread && (
+                  <Pressable
+                    onPress={() => setSelectedThread(null)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                  >
+                    <Text style={{ color: 'white', fontSize: 16 }}>←</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {!selectedThread ? (
+                // Inbox view - message threads
+                <>
+                  {messageThreads.length === 0 ? (
+                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                      <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
+                        No messages yet
+                      </Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
+                        When someone sends you a message, you'll see it here!
+                      </Text>
+                    </View>
+                  ) : (
+                    <ScrollView style={{ flex: 1 }}>
+                      {messageThreads.map((thread) => (
+                        <Pressable
+                          key={thread.senderUid}
+                          style={{
+                            backgroundColor: 'rgba(255,255,255,0.05)',
+                            borderRadius: 6,
+                            padding: 12,
+                            marginBottom: 8,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          delayPressIn={0}
+                          delayPressOut={0}
+                          activeOpacity={0.8}
+                          android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
+                          onPress={() => {
+                            setSelectedThread({
+                              senderUid: thread.senderUid,
+                              senderName: thread.senderName,
+                              senderAvatar: thread.senderAvatar,
+                              messages: thread.messages,
+                            });
+                          }}
+                        >
+                          {/* Avatar */}
+                          {thread.senderAvatar ? (
+                            typeof thread.senderAvatar === 'object' && 'text' in thread.senderAvatar ? (
                               // Text-based avatar (initials)
                               <View style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: 16,
-                                backgroundColor: avatar.backgroundColor,
+                                width: 40,
+                                height: 40,
+                                borderRadius: 20,
+                                backgroundColor: thread.senderAvatar.backgroundColor,
                                 justifyContent: 'center',
                                 alignItems: 'center',
                                 marginRight: 12,
@@ -10404,281 +10080,357 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 borderColor: 'rgba(255,255,255,0.2)',
                               }}>
                                 <Text style={{
-                                  fontSize: 14,
+                                  fontSize: 16,
                                   fontWeight: 'bold',
-                                  color: avatar.color
+                                  color: thread.senderAvatar.color
                                 }}>
-                                  {avatar.text}
+                                  {thread.senderAvatar.text}
                                 </Text>
                               </View>
                             ) : (
                               // Image-based avatar
                               <Image
-                                source={avatar}
+                                source={thread.senderAvatar}
                                 style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 16,
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 20,
                                   marginRight: 12,
                                   borderWidth: 1,
                                   borderColor: 'rgba(255,255,255,0.2)',
                                 }}
                               />
                             )
-                          ) : null;
-                        })()}
-                        
-                        <Text style={{
-                          color: 'white',
-                          fontSize: 16,
-                          fontWeight: notification.read ? 'normal' : 'bold',
-                          flex: 1,
-                        }}>
-                          {formatNotificationMessage(notification, userData || {})}
-                        </Text>
-                      </View>
-                      <Text style={{
-                        color: 'rgba(255,255,255,0.6)',
-                        fontSize: 12,
-                      }}>
-                        {notification.createdAt?.toDate ? 
-                          formatDefiniteTime(notification.createdAt.toDate()) : 
-                          'Unknown time'}
-                      </Text>
-                      
-                      {/* Action buttons for echo notifications */}
-                      {notificationWithActions === notification.id && notification.type === 'echo' && (
-                        <View style={{ marginTop: 12 }}>
-                          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.1)',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 8,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                                flex: 1,
-                              }}
-                              onPress={async () => {
-                                try {
-                                  // Send hug back to the wave that was echoed
-                                  if (notification.waveId) {
-                                    await ensureSplash(notification.waveId);
-                                    Alert.alert('Success', 'Hug sent! 🫂');
-                                  } else {
-                                    Alert.alert('Error', 'Could not find the wave to hug');
-                                  }
-                                } catch (error) {
-                                  console.error('Error sending hug:', error);
-                                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                                  Alert.alert('Error', `Failed to add hug: ${errorMessage}`);
-                                }
-                                setNotificationWithActions(null);
-                              }}
-                            >
-                              <Text style={{ fontSize: 16 }}>🫂</Text>
-                              <Text style={{ color: 'white', fontSize: 14 }}>Hug</Text>
-                            </Pressable>
-                            
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.1)',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 8,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                                flex: 1,
-                              }}
-                              onPress={() => {
-                                setShowEchoReplyInput(!showEchoReplyInput);
-                              }}
-                            >
-                              <Text style={{ fontSize: 16 }}>📣</Text>
-                              <Text style={{ color: 'white', fontSize: 14 }}>Echo back</Text>
-                            </Pressable>
+                          ) : (
+                            <View style={{
+                              width: 40,
+                              height: 40,
+                              borderRadius: 20,
+                              backgroundColor: 'rgba(255,255,255,0.2)',
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                              marginRight: 12,
+                            }}>
+                              <Text style={{ fontSize: 16, color: 'white' }}>👤</Text>
+                            </View>
+                          )}
+
+                          <View style={{ flex: 1 }}>
+                            <Text style={{
+                              color: 'white',
+                              fontSize: 16,
+                              fontWeight: 'bold',
+                              marginBottom: 2,
+                            }}>
+                              {thread.senderName}
+                            </Text>
+                            <Text style={{
+                              color: 'rgba(255,255,255,0.7)',
+                              fontSize: 14,
+                              numberOfLines: 1,
+                            }}>
+                              {thread.lastMessage}
+                            </Text>
                           </View>
-                          
+
+                          <Text style={{
+                            color: 'rgba(255,255,255,0.6)',
+                            fontSize: 12,
+                          }}>
+                            {thread.lastMessageTime?.toDate ?
+                              formatDefiniteTime(thread.lastMessageTime.toDate()) :
+                              'Unknown time'}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  )}
+
+                  {/* Notifications section */}
+                  {notifications.length > 0 && (
+                    <View style={{ marginTop: 16 }}>
+                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
+                          Notifications ({notifications.length})
+                        </Text>
+                        <Pressable
+                          onPress={() => setIsDeleteMode(!isDeleteMode)}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          delayPressIn={0}
+                          delayPressOut={0}
+                        >
+                          <Text style={{ color: isDeleteMode ? '#FF6B6B' : '#FFD700', fontSize: 14 }}>
+                            {isDeleteMode ? 'Cancel' : 'Delete'}
+                          </Text>
+                        </Pressable>
+                      </View>
+
+                      {isDeleteMode && (
+                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
                           <Pressable
                             style={{
-                              backgroundColor: 'rgba(255,255,255,0.1)',
+                              backgroundColor: selectedNotifications.size === notifications.length ? '#FF6B6B' : 'rgba(255,255,255,0.1)',
                               borderRadius: 6,
                               paddingHorizontal: 12,
                               paddingVertical: 6,
-                              alignSelf: 'flex-start',
+                              flex: 1,
                             }}
-                            onPress={() => {
-                              setNotificationWithActions(null);
-                              setEchoReplyText('');
-                              setShowEchoReplyInput(false);
-                            }}
+                            onPress={selectAllNotifications}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            delayPressIn={0}
+                            delayPressOut={0}
                           >
-                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Close</Text>
+                            <Text style={{ color: 'white', fontSize: 12, textAlign: 'center' }}>
+                              SELECT ALL
+                            </Text>
                           </Pressable>
-                        </View>
-                      )}
-                      
-                      {/* Echo reply input */}
-                      {notificationWithActions === notification.id && showEchoReplyInput && (
-                        <View style={{ marginTop: 8 }}>
-                          <TextInput
-                            style={{
-                              backgroundColor: 'rgba(255,255,255,0.1)',
-                              borderRadius: 6,
-                              padding: 8,
-                              color: 'white',
-                              fontSize: 14,
-                              marginBottom: 8,
-                            }}
-                            placeholder="Type your echo reply..."
-                            placeholderTextColor="rgba(255,255,255,0.5)"
-                            value={echoReplyText}
-                            onChangeText={setEchoReplyText}
-                            multiline
-                            maxLength={280}
-                          />
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
+                          {selectedNotifications.size > 0 && (
                             <Pressable
                               style={{
-                                backgroundColor: '#007AFF',
+                                backgroundColor: '#FF6B6B',
                                 borderRadius: 6,
                                 paddingHorizontal: 12,
                                 paddingVertical: 6,
                                 flex: 1,
                               }}
-                              onPress={async () => {
-                                if (!echoReplyText.trim()) {
-                                  Alert.alert('Error', 'Please enter a reply');
-                                  return;
-                                }
-                                
-                                try {
-                                  // Send echo reply to the wave that was echoed
-                                  if (notification.waveId) {
-                                    await sendEcho(notification.waveId, echoReplyText);
-                                    Alert.alert('Success', 'Echo sent! 📣');
-                                  } else {
-                                    Alert.alert('Error', 'Could not find the wave to echo');
-                                  }
-                                } catch (error) {
-                                  console.error('Error sending echo:', error);
-                                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                                  Alert.alert('Error', `Couldn't send echo: ${errorMessage}`);
-                                }
-                                
-                                setNotificationWithActions(null);
-                                setEchoReplyText('');
-                                setShowEchoReplyInput(false);
-                              }}
-                            >
-                              <Text style={{ color: 'white', fontSize: 14, textAlign: 'center' }}>Send Echo</Text>
-                            </Pressable>
-                            
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.2)',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 6,
-                              }}
-                              onPress={() => {
-                                setShowEchoReplyInput(false);
-                                setEchoReplyText('');
-                              }}
-                            >
-                              <Text style={{ color: 'white', fontSize: 14 }}>Cancel</Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      )}
-                      
-                      {/* Action buttons for personal messages */}
-                      {notificationWithActions === notification.id && notification.fromUid && (notification.fromName || userData?.[notification.fromUid]) && notification.type !== 'echo' && (
-                        <View style={{ marginTop: 12 }}>
-                          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.1)',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 8,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                                flex: 1,
-                              }}
-                              onPress={() => {
-                                // Set recipient and open send message modal
-                                setMessageRecipient({
-                                  uid: notification.fromUid,
-                                  name: notification.fromName,
-                                });
-                                setMessageText('');
-                                setMessageAttachment(null);
-                                setShowSendMessage(true);
-                                setShowNotifications(false);
-                                setNotificationWithActions(null);
-                              }}
+                              onPress={deleteSelectedNotifications}
                               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                               delayPressIn={0}
                               delayPressOut={0}
-                              activeOpacity={0.7}
-                              android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                             >
-                              <Text style={{ fontSize: 16 }}>💬</Text>
-                              <Text style={{ color: 'white', fontSize: 14 }}>Reply</Text>
+                              <Text style={{ color: 'white', fontSize: 12, textAlign: 'center' }}>
+                                DELETE ({selectedNotifications.size})
+                              </Text>
                             </Pressable>
-                          </View>
-                          
+                          )}
+                        </View>
+                      )}
+
+                      <ScrollView style={{ maxHeight: 200 }}>
+                        {notifications.map((notification) => (
                           <Pressable
+                            key={notification.id}
                             style={{
-                              backgroundColor: 'rgba(255,255,255,0.1)',
+                              backgroundColor: selectedNotifications.has(notification.id) ?
+                                'rgba(255,107,107,0.2)' :
+                                notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(255,215,0,0.1)',
                               borderRadius: 6,
-                              paddingHorizontal: 12,
-                              paddingVertical: 6,
-                              alignSelf: 'flex-start',
-                            }}
-                            onPress={() => {
-                              setNotificationWithActions(null);
+                              padding: 8,
+                              marginBottom: 4,
+                              borderLeftWidth: notification.read ? 0 : 3,
+                              borderLeftColor: '#FFD700',
+                              flexDirection: 'row',
+                              alignItems: 'center',
                             }}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             delayPressIn={0}
                             delayPressOut={0}
-                            activeOpacity={0.7}
-                            android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                            activeOpacity={0.8}
+                            android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
+                            onPress={() => {
+                              if (isDeleteMode) {
+                                toggleNotificationSelection(notification.id);
+                              } else {
+                                if (!notification.read) {
+                                  markNotificationAsRead(notification.id);
+                                }
+                                Alert.alert(
+                                  'Notification',
+                                  formatNotificationMessage(notification, userData || {}),
+                                  [{ text: 'OK' }]
+                                );
+                              }
+                            }}
                           >
-                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Close</Text>
+                            {isDeleteMode && (
+                              <View style={{
+                                width: 20,
+                                height: 20,
+                                borderRadius: 10,
+                                borderWidth: 2,
+                                borderColor: 'white',
+                                marginRight: 8,
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                backgroundColor: selectedNotifications.has(notification.id) ? '#FF6B6B' : 'transparent',
+                              }}>
+                                {selectedNotifications.has(notification.id) && (
+                                  <Text style={{ color: 'white', fontSize: 12 }}>✓</Text>
+                                )}
+                              </View>
+                            )}
+                            <Text style={{
+                              color: 'white',
+                              fontSize: 12,
+                              fontWeight: notification.read ? 'normal' : 'bold',
+                              flex: 1,
+                            }}>
+                              {formatNotificationMessage(notification, userData || {})}
+                            </Text>
                           </Pressable>
+                        ))}
+                      </ScrollView>
+
+                      {!isDeleteMode && notifications.length > 0 && (
+                        <Pressable
+                          style={[styles.primaryBtn, { marginTop: 8 }]}
+                          onPress={markAllNotificationsAsRead}
+                          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                          delayPressIn={0}
+                          delayPressOut={0}
+                          activeOpacity={0.7}
+                          android_ripple={{ color: 'rgba(0, 212, 255, 0.3)', borderless: false }}
+                        >
+                          <Text style={styles.primaryBtnText}>Mark All Read</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  )}
+                </>
+              ) : (
+                // Thread view - individual conversation
+                <ScrollView style={{ flex: 1 }}>
+                  {selectedThread.messages.map((message, index) => (
+                    <View
+                      key={message.id || index}
+                      style={{
+                        flexDirection: 'row',
+                        marginBottom: 12,
+                        alignItems: 'flex-start',
+                      }}
+                    >
+                      {/* Avatar */}
+                      {selectedThread.senderAvatar ? (
+                        typeof selectedThread.senderAvatar === 'object' && 'text' in selectedThread.senderAvatar ? (
+                          // Text-based avatar (initials)
+                          <View style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: selectedThread.senderAvatar.backgroundColor,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 8,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.2)',
+                          }}>
+                            <Text style={{
+                              fontSize: 12,
+                              fontWeight: 'bold',
+                              color: selectedThread.senderAvatar.color
+                            }}>
+                              {selectedThread.senderAvatar.text}
+                            </Text>
+                          </View>
+                        ) : (
+                          // Image-based avatar
+                          <Image
+                            source={selectedThread.senderAvatar}
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              marginRight: 8,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.2)',
+                            }}
+                          />
+                        )
+                      ) : (
+                        <View style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          backgroundColor: 'rgba(255,255,255,0.2)',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 8,
+                        }}>
+                          <Text style={{ fontSize: 12, color: 'white' }}>👤</Text>
                         </View>
                       )}
-                    </Pressable>
+
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                          <Text style={{
+                            color: 'white',
+                            fontSize: 12,
+                            fontWeight: 'bold',
+                            marginRight: 8,
+                          }}>
+                            {selectedThread.senderName}
+                          </Text>
+                          <Text style={{
+                            color: 'rgba(255,255,255,0.6)',
+                            fontSize: 10,
+                          }}>
+                            {message.createdAt?.toDate ?
+                              formatDefiniteTime(message.createdAt.toDate()) :
+                              'Unknown time'}
+                          </Text>
+                        </View>
+                        <Text style={{
+                          color: 'white',
+                          fontSize: 13,
+                          lineHeight: 18,
+                        }}>
+                          {message.text}
+                        </Text>
+                        {message.attachmentUrl && (
+                          <Text style={{
+                            color: 'rgba(255,255,255,0.7)',
+                            fontSize: 11,
+                            marginTop: 4,
+                            fontStyle: 'italic',
+                          }}>
+                            📎 Attachment
+                          </Text>
+                        )}
+                      </View>
+                    </View>
                   ))}
-                </ScrollView>
-              )}
-              
-              {notifications.length > 0 && (
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
+
+                  {/* Reply button */}
                   <Pressable
-                    style={[styles.primaryBtn, { flex: 1 }]}
-                    onPress={markAllNotificationsAsRead}
-                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                    style={{
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      borderRadius: 6,
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      marginTop: 16,
+                      alignSelf: 'flex-start',
+                    }}
+                    onPress={() => {
+                      setMessageRecipient({
+                        uid: selectedThread.senderUid,
+                        name: selectedThread.senderName,
+                      });
+                      setMessageText('');
+                      setMessageAttachment(null);
+                      setShowSendMessage(true);
+                      setShowInbox(false);
+                      setSelectedThread(null);
+                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     delayPressIn={0}
                     delayPressOut={0}
                     activeOpacity={0.7}
-                    android_ripple={{ color: 'rgba(0, 212, 255, 0.3)', borderless: false }}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                   >
-                    <Text style={styles.primaryBtnText}>Mark All Read</Text>
+                    <Text style={{ color: 'white', fontSize: 14 }}>💬 Reply</Text>
                   </Pressable>
-                </View>
+                </ScrollView>
               )}
             </View>
           </View>
           <Pressable
             style={styles.dismissBtn}
-            onPress={() => setShowNotifications(false)}
+            onPress={() => {
+              setShowInbox(false);
+              setSelectedThread(null);
+              setIsDeleteMode(false);
+              setSelectedNotifications(new Set());
+            }}
           >
             <Text style={styles.dismissText}>Close</Text>
           </Pressable>
@@ -10924,7 +10676,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showMakeWaves}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowMakeWaves(false)}
       >
         <View
@@ -11352,7 +11104,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showExplore}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowExplore(false)}
       >
         <View
@@ -11411,7 +11163,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showNotice}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowNotice(false)}
       >
         <View
@@ -11495,7 +11247,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showSchoolMode}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowSchoolMode(false)}
       >
         <View
@@ -11536,7 +11288,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     desc: 'View your learning profile',
                     action: () => {
                       setShowSchoolMode(false);
-                      setTimeout(() => setShowProfile(true), 300);
+                      setShowProfile(true);
                     },
                   },
                   {
@@ -11551,7 +11303,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     desc: 'Earn learning points',
                     action: () => {
                       setShowSchoolMode(false);
-                      setTimeout(() => setShowPearls(true), 300);
+                      setShowPearls(true);
                     },
                   },
                   {
@@ -11651,7 +11403,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showBridge}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowBridge(false)}
       >
         <View
@@ -12103,7 +11855,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showAIModal}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowAIModal(false)}
       >
         <View
@@ -12332,7 +12084,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showDeepSearch}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowDeepSearch(false)}
       >
         <View

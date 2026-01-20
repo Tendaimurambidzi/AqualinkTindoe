@@ -1,5 +1,5 @@
 // Import necessary components and hooks
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, memo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Pressable, Modal, FlatList } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
@@ -60,8 +60,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   onCast,
   creatorUserId,
 }) => {
-  const [hasHugged, setHasHugged] = useState(false);
-  const [hasEchoed, setHasEchoed] = useState(false);
+  const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
+  const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
   const [hugActionInProgress, setHugActionInProgress] = useState(false);
   const [hugInitialized, setHugInitialized] = useState(false);
 
@@ -138,14 +138,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     // Handle action based on connectivity - fire and forget
     if (isOnline) {
       // Call the parent callback for immediate sync
-      if (hasHugged) {
-        onRemove();
-      } else {
+      if (newHasHugged) {
+        // We just hugged, so this was an add action
         onAdd();
+      } else {
+        // We just unhugged, so this was a remove action
+        onRemove();
       }
     } else {
       // Queue action for offline processing
-      const actionType = hasHugged ? 'unsplash' : 'splash';
+      const actionType = newHasHugged ? 'splash' : 'unsplash';
       offlineQueueService.addAction(actionType, waveId);
     }
 
@@ -206,8 +208,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   };
 
   const handleHugPress = () => {
-    // Always show the dropdown when the hugs icon is clicked
-    fetchHuggers();
+    // INSTANT ACTION: Perform the hug action immediately
+    handleHug();
   };
 
   const handleHugAction = () => {
@@ -252,6 +254,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
             pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+            delayPressIn={0}
+            delayPressOut={0}
           >
             <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
               🫂
@@ -270,6 +274,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
           pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+          delayPressIn={0}
+          delayPressOut={0}
         >
           <Text style={styles.actionLabel}>Hug</Text>
         </Pressable>
@@ -294,6 +300,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
           pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+          delayPressIn={0}
+          delayPressOut={0}
         >
           <Text style={styles.actionLabel}>Echo</Text>
         </Pressable>
