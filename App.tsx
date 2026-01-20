@@ -5605,7 +5605,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             : type.startsWith('audio/')
             ? 'm4a'
             : 'dat';
-          const filePath = `messages/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+          const filePath = `users/${uid}/messages/${Date.now()}_${baseNoExt}.${ext}`;
 
           // Normalize local URI for putFile
           let localPath = String(messageAttachment.uri || '');
@@ -6821,7 +6821,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .get();
         if (doc.exists) {
           const data = doc.data();
-          return { waveId, reach: data?.reach || 0 };
+          return { waveId, reach: data?.reachCount || 0 };
         }
         return { waveId, reach: 0 };
       });
@@ -8936,9 +8936,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
                   setCurrentIndex(newIndex);
                 }}
-                // Ultra-aggressive instant playback - videos start immediately when any pixel is visible
+                // Ultra-aggressive instant playback - videos start playing when 50% visible
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 0, // video starts playing when ANY pixel is visible
+                  itemVisiblePercentThreshold: 50, // video starts playing when 50% pixel is visible
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
@@ -9540,6 +9540,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           )}
         </View>
       </Pressable>
+                );
+                },
+                },
                     
       {/* Top function bar with toggle */}
       <Pressable
@@ -10317,6 +10320,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             setEchoReplyText('');
                             setShowEchoReplyInput(false);
                           }
+                        } else if (notification.fromUid && (notification.fromName || userData?.[notification.fromUid])) {
+                          // For personal messages from other users, show reply option
+                          if (notificationWithActions === notification.id) {
+                            // Clicking the same notification again closes actions
+                            setNotificationWithActions(null);
+                          } else {
+                            // Show reply action for this notification
+                            setNotificationWithActions(notification.id);
+                          }
                         } else {
                           // Close any open action buttons
                           setNotificationWithActions(null);
@@ -10539,6 +10551,56 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               <Text style={{ color: 'white', fontSize: 14 }}>Cancel</Text>
                             </Pressable>
                           </View>
+                        </View>
+                      )}
+                      
+                      {/* Action buttons for personal messages */}
+                      {notificationWithActions === notification.id && notification.fromUid && (notification.fromName || userData?.[notification.fromUid]) && notification.type !== 'echo' && (
+                        <View style={{ marginTop: 12 }}>
+                          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                            <Pressable
+                              style={{
+                                backgroundColor: 'rgba(255,255,255,0.1)',
+                                borderRadius: 6,
+                                paddingHorizontal: 12,
+                                paddingVertical: 8,
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 6,
+                                flex: 1,
+                              }}
+                              onPress={() => {
+                                // Set recipient and open send message modal
+                                setMessageRecipient({
+                                  uid: notification.fromUid,
+                                  name: notification.fromName,
+                                });
+                                setMessageText('');
+                                setMessageAttachment(null);
+                                setShowSendMessage(true);
+                                setShowNotifications(false);
+                                setNotificationWithActions(null);
+                              }}
+                            >
+                              <Text style={{ fontSize: 16 }}>💬</Text>
+                              <Text style={{ color: 'white', fontSize: 14 }}>Reply</Text>
+                            </Pressable>
+                          </View>
+                          
+                          <Pressable
+                            style={{
+                              backgroundColor: 'rgba(255,255,255,0.1)',
+                              borderRadius: 6,
+                              paddingHorizontal: 12,
+                              paddingVertical: 6,
+                              alignSelf: 'flex-start',
+                            }}
+                            onPress={() => {
+                              setNotificationWithActions(null);
+                            }}
+                          >
+                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Close</Text>
+                          </Pressable>
                         </View>
                       )}
                     </Pressable>
@@ -11144,6 +11206,66 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             Message
                           </Text>
                         </Pressable>
+                      )}
+                      {p.type === 'joined_tide' && (p as any).fromUid && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 8 }}>
+                          <Pressable
+                            style={[styles.pingButton, { flex: 1, marginRight: 4 }]}
+                            onPress={() => {
+                              setShowPings(false);
+                              setMessageRecipient({
+                                uid: (p as any).fromUid,
+                                name: displayHandle(
+                                  (p as any).fromUid,
+                                  p.actorName,
+                                ),
+                              });
+                              setMessageText('');
+                              setShowSendMessage(true);
+                            }}
+                          >
+                            <Text style={{ color: '#00C2FF', fontWeight: '700', fontSize: 12 }}>
+                              Message
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.pingButton, { flex: 1, marginLeft: 4, backgroundColor: '#ff4444' }]}
+                            onPress={() => {
+                              // Reject: remove from crew
+                              Alert.alert(
+                                'Reject Join',
+                                `Remove ${p.actorName || 'this user'} from your tide?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Reject',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      try {
+                                        await firestore()
+                                          .collection('users')
+                                          .doc(myUid)
+                                          .collection('crew')
+                                          .doc((p as any).fromUid)
+                                          .delete();
+                                        // Update local state if needed
+                                        setUnreadPingsCount(prev => Math.max(0, prev - 1));
+                                        setPings(prev => prev.filter(ping => ping.id !== p.id));
+                                      } catch (e) {
+                                        console.error('Error rejecting crew join', e);
+                                        Alert.alert('Error', 'Could not reject the join request.');
+                                      }
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontWeight: '700', fontSize: 12 }}>
+                              Reject
+                            </Text>
+                          </Pressable>
+                        </View>
                       )}
                     </View>
                   ))

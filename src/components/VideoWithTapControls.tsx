@@ -105,28 +105,23 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
 
-  // Strictly follow isActive to control playback and audio – prevents background playback
   useEffect(() => {
-    if (isActive) {
-      setInternalPaused(false);
-      setIsMuted(false);
-    } else {
+    setInternalPaused(paused);
+  }, [paused]);
+
+  useEffect(() => {
+    if (!isActive) {
       setInternalPaused(true);
       setIsMuted(true);
     }
   }, [isActive]);
 
-  // Keep paused prop as a soft override only when active state does not explicitly control it
-  useEffect(() => {
-    if (isActive) {
-      setInternalPaused(paused === true);
-    }
-  }, [paused, isActive]);
-
-  // Unmute when video starts playing and is active
+  // Unmute immediately when video becomes active and is playing
   useEffect(() => {
     if (!internalPaused && !videoCompleted && isActive) {
       setIsMuted(false);
+    } else if (!isActive) {
+      setIsMuted(true);
     }
   }, [internalPaused, videoCompleted, isActive]);
 
@@ -336,9 +331,9 @@ const VideoWithTapControls: React.FC<Props> = ({
         poster={initialPoster || fetchedPoster}
         posterResizeMode={posterResizeMode}
         disableFocus={disableFocus}
-        playInBackground={false}
-        playWhenInactive={false}
-        ignoreSilentSwitch={ignoreSilentSwitch || 'ignore'}
+        playInBackground={playInBackground}
+        playWhenInactive={playWhenInactive}
+        ignoreSilentSwitch={ignoreSilentSwitch}
         controls={controls}
         muted={isMuted}
         preload="auto"
