@@ -10133,13 +10133,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       renderItem={({ item }) => {
                         const getAvatarLetter = (name: string) => {
                           if (!name || name.trim() === '') return '?';
-                          const parts = name.trim().split(' ');
+                          const cleanName = name.trim();
+                          const parts = cleanName.split(/\s+/); // Split on any whitespace
+                          
                           if (parts.length >= 2) {
                             // Use first letter of first name + first letter of last name
-                            return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+                            const firstInitial = parts[0].charAt(0).toUpperCase();
+                            const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+                            return firstInitial + lastInitial;
+                          } else if (parts.length === 1 && parts[0].length >= 2) {
+                            // Single word name with at least 2 characters
+                            return parts[0].substring(0, 2).toUpperCase();
+                          } else if (parts.length === 1 && parts[0].length === 1) {
+                            // Single character name
+                            return parts[0].charAt(0).toUpperCase() + parts[0].charAt(0).toUpperCase();
                           } else {
-                            // Single name, use first two letters or just first if only one character
-                            return name.charAt(0).toUpperCase() + (name.length > 1 ? name.charAt(1).toLowerCase() : '');
+                            return '?';
                           }
                         };
 
@@ -10357,15 +10366,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       )}
 
                       <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
-                          <Text style={{
-                            color: 'white',
-                            fontSize: 12,
-                            fontWeight: 'bold',
-                            marginRight: 8,
-                          }}>
-                            {selectedThread.senderName}
-                          </Text>
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 2 }}>
                           <Text style={{
                             color: 'rgba(255,255,255,0.6)',
                             fontSize: 10,
