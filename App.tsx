@@ -7196,11 +7196,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }>;
 
       setNotifications(notificationsData);
-      const unreadNotifications = notificationsData.filter(n => !n.read).length;
+      
+      // Separate system notifications from individual messages
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotifications = notificationsData.filter(n => systemNotificationTypes.includes(n.type));
+      const individualMessageNotifications = notificationsData.filter(n => !systemNotificationTypes.includes(n.type));
+      
+      const unreadSystemNotifications = systemNotifications.filter(n => !n.read).length;
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           individualMessageNotifications.filter(n => !n.read).length;
       
       // Recalculate total unread alerts
-      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
-      setUnreadAlertsCount(unreadNotifications + unreadMessages);
+      setUnreadAlertsCount(unreadSystemNotifications + unreadMessages);
     } catch (e) {
       console.error('Load notifications error:', e);
     }
@@ -7221,9 +7228,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       
       // Recalculate total unread alerts
-      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
-      const remainingUnreadNotifications = notifications.filter(n => n.id !== notificationId && !n.read).length;
-      setUnreadAlertsCount(remainingUnreadNotifications + unreadMessages);
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotifications = notifications.filter(n => systemNotificationTypes.includes(n.type));
+      const individualMessageNotifications = notifications.filter(n => !systemNotificationTypes.includes(n.type));
+      
+      const remainingUnreadSystemNotifications = systemNotifications.filter(n => n.id !== notificationId && !n.read).length;
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           individualMessageNotifications.filter(n => !n.read).length;
+      
+      setUnreadAlertsCount(remainingUnreadSystemNotifications + unreadMessages);
       
       // Clear app icon badge when notification is read
       try {
@@ -7258,7 +7271,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       
       // Recalculate total unread alerts (only messages remain)
-      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const individualMessageNotifications = notifications.filter(n => !systemNotificationTypes.includes(n.type));
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           individualMessageNotifications.filter(n => !n.read).length;
       setUnreadAlertsCount(unreadMessages);
       
       // Clear app icon badge when all notifications are read
@@ -7323,10 +7339,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       setMessageThreads(threads);
 
-      // Calculate total unread alerts (messages + notifications)
-      const unreadNotifications = notifications.filter(n => !n.read).length;
+      // Calculate total unread alerts (messages + system notifications)
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotifications = notifications.filter(n => systemNotificationTypes.includes(n.type));
+      const unreadSystemNotifications = systemNotifications.filter(n => !n.read).length;
       const unreadMessages = threads.reduce((sum, thread) => sum + thread.unreadCount, 0);
-      setUnreadAlertsCount(unreadNotifications + unreadMessages);
+      setUnreadAlertsCount(unreadSystemNotifications + unreadMessages);
     } catch (e) {
       console.error('Load message threads error:', e);
     }
@@ -7352,9 +7370,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       
       // Recalculate total unread alerts
-      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
-      const remainingUnreadNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && !n.read).length;
-      setUnreadAlertsCount(remainingUnreadNotifications + unreadMessages);
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const remainingSystemNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && systemNotificationTypes.includes(n.type));
+      const remainingIndividualMessageNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && !systemNotificationTypes.includes(n.type));
+      
+      const remainingUnreadSystemNotifications = remainingSystemNotifications.filter(n => !n.read).length;
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           remainingIndividualMessageNotifications.filter(n => !n.read).length;
+      
+      setUnreadAlertsCount(remainingUnreadSystemNotifications + unreadMessages);
       
       setSelectedNotifications(new Set());
       setIsDeleteMode(false);
@@ -10021,6 +10045,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               {!selectedThread ? (
                 // Unified notifications view
                 (() => {
+                  // Define system notification types that should show with letter avatars
+                  const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+                  
+                  // Separate notifications into system notifications and individual messages
+                  const systemNotifications = notifications.filter(notification => 
+                    systemNotificationTypes.includes(notification.type)
+                  );
+                  
+                  const individualMessages = notifications.filter(notification => 
+                    !systemNotificationTypes.includes(notification.type)
+                  );
+                  
+                  // Convert individual messages to thread format
+                  const messageThreadsFromNotifications = individualMessages.map(notification => ({
+                    senderUid: notification.fromUid || 'unknown',
+                    senderName: notification.fromUserHandle || 'Unknown User',
+                    senderAvatar: null, // Will be handled by avatar logic
+                    lastMessage: notification.message,
+                    lastMessageTime: notification.createdAt,
+                    unreadCount: notification.read ? 0 : 1,
+                    messages: [{
+                      id: notification.id,
+                      text: notification.message,
+                      fromUid: notification.fromUid || 'unknown',
+                      createdAt: notification.createdAt,
+                      attachmentUrl: null,
+                      attachmentType: null,
+                      attachmentName: null,
+                    }],
+                  }));
+                  
                   const unifiedNotifications = [
                     ...messageThreads.map(thread => ({
                       id: `thread_${thread.senderUid}`,
@@ -10032,7 +10087,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       unread: thread.unreadCount > 0,
                       threadData: thread,
                     })),
-                    ...notifications.map(notification => ({
+                    ...messageThreadsFromNotifications.map(thread => ({
+                      id: `thread_from_notification_${thread.senderUid}_${Date.now()}`,
+                      type: 'thread' as const,
+                      senderName: thread.senderName,
+                      senderAvatar: null,
+                      message: thread.lastMessage,
+                      timestamp: thread.lastMessageTime,
+                      unread: thread.unreadCount > 0,
+                      threadData: thread,
+                    })),
+                    ...systemNotifications.map(notification => ({
                       id: `notification_${notification.id}`,
                       type: 'notification' as const,
                       senderName: notification.fromUserHandle || 'System',
