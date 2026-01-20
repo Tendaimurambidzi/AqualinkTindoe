@@ -5818,6 +5818,72 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
                     
+  const sendMessage = async (recipientUid: string, messageText: string) => {
+    const user = auth().currentUser;
+    if (!user) {
+      throw new Error('User not signed in');
+    }
+
+    let firestoreMod: any = null;
+    let functionsMod: any = null;
+
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+      functionsMod = require('@react-native-firebase/functions').default;
+    } catch {}
+
+    if (!firestoreMod || !functionsMod) {
+      throw new Error('Firebase modules not available');
+    }
+
+    // Send to recipient's inbox
+    await firestoreMod()
+      .collection(`users/${recipientUid}/messages`)
+      .add({
+        text: messageText,
+        fromUid: user.uid,
+        fromName: user.displayName || 'Anonymous',
+        route: 'Pings',
+        type: 'message',
+        createdAt: firestoreMod.FieldValue.serverTimestamp(),
+        attachmentUrl: null,
+        attachmentType: null,
+        attachmentName: null,
+      });
+
+    // Send to recipient's mentions for push notifications
+    await firestoreMod()
+      .collection(`users/${recipientUid}/mentions`)
+      .add({
+        text: messageText,
+        fromUid: user.uid,
+        fromName: user.displayName || 'Anonymous',
+        fromPhoto: user.photoURL || null,
+        route: 'Pings',
+        createdAt: firestoreMod.FieldValue.serverTimestamp(),
+        type: 'message',
+        attachmentUrl: null,
+        attachmentType: null,
+        attachmentName: null,
+      });
+
+    // Send push notification
+    try {
+      const fromUsername = user.displayName || 'Someone';
+      const addPingFn = functionsMod().httpsCallable('addPing');
+      await addPingFn({
+        recipientUid: recipientUid,
+        type: 'message',
+        text: `${fromUsername} has echoed back your echo`,
+        fromUid: user.uid,
+        fromName: fromUsername,
+        fromPhoto: user.photoURL || null,
+      });
+    } catch (error) {
+      console.error('Error sending message notification:', error);
+    }
+  };
+                    
   const formatTime = (secs: number) => {
     const s = Math.max(0, Math.floor(secs || 0));
     const m = Math.floor(s / 60);
@@ -10049,7 +10115,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   VIBE ALERTS
                 </Text>
                 <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
-                  NOTIFICATIONS({notifications.length + messageThreads.length})
+                  <Text style={{ color: '#FF4444' }}>NOTIFICATIONS</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length})</Text>
                 </Text>
               </View>
 
@@ -10295,7 +10361,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 // Thread view - individual conversation
                 <>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                    <Text style={[styles.logbookTitle, { textAlign: 'center', flex: 1 }]}>
+                    <Text style={[styles.logbookTitle, { textAlign: 'left', flex: 1 }]}>
                       {selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}
                     </Text>
                     <Pressable
