@@ -10013,7 +10013,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Text style={[styles.logbookTitle, { textAlign: 'center', marginBottom: 8 }]}>
                   VIBE ALERTS
                 </Text>
-                <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
                   NOTIFICATIONS({notifications.length + messageThreads.length})
                 </Text>
               </View>
@@ -10067,7 +10067,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       keyExtractor={(item) => item.id}
                       renderItem={({ item }) => {
                         const getAvatarLetter = (name: string) => {
-                          return name.charAt(0).toUpperCase();
+                          if (!name || name.trim() === '') return '?';
+                          const parts = name.trim().split(' ');
+                          if (parts.length >= 2) {
+                            // Use first letter of first name + first letter of last name
+                            return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+                          } else {
+                            // Single name, use first two letters or just first if only one character
+                            return name.charAt(0).toUpperCase() + (name.length > 1 ? name.charAt(1).toLowerCase() : '');
+                          }
                         };
 
                         const getAvatarColor = (name: string) => {
@@ -10211,7 +10219,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                     <Text style={[styles.logbookTitle, { textAlign: 'center', flex: 1 }]}>
-                      VIBE ALERTS
+                      {selectedThread.senderName}
                     </Text>
                     <Pressable
                       onPress={() => setSelectedThread(null)}
