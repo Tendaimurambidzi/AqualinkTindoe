@@ -1882,6 +1882,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
   const [quickReplyText, setQuickReplyText] = useState<string>('');
+  const [selectedMessageForReply, setSelectedMessageForReply] = useState<any>(null);
   const myUid = auth?.()?.currentUser?.uid || null;
                     
   // Clear user-specific state when user changes
@@ -2028,15 +2029,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, [myUid, normalizeUserHandle]);
 
-  // Auto-focus reply input when thread is opened
+  // Auto-focus reply input when a message is selected for reply
   useEffect(() => {
-    if (selectedThread && replyInputRef.current) {
+    if (selectedMessageForReply && replyInputRef.current) {
       // Small delay to ensure the input is rendered
       setTimeout(() => {
         replyInputRef.current?.focus();
       }, 100);
     }
-  }, [selectedThread]);
+  }, [selectedMessageForReply]);
 
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
@@ -10301,7 +10302,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       {selectedThread.senderName}
                     </Text>
                     <Pressable
-                      onPress={() => setSelectedThread(null)}
+                      onPress={() => {
+                        setSelectedThread(null);
+                        setSelectedMessageForReply(null);
+                      }}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       delayPressIn={0}
                       delayPressOut={0}
@@ -10318,12 +10322,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         marginBottom: 12,
                         alignItems: 'flex-start',
                         padding: 8,
-                        backgroundColor: index < selectedThread.messages.length - 1 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                        backgroundColor: selectedMessageForReply === message ? 'rgba(255,215,0,0.1)' : index < selectedThread.messages.length - 1 ? 'rgba(255,255,255,0.02)' : 'transparent',
                         borderRadius: 6,
+                        borderWidth: selectedMessageForReply === message ? 2 : 0,
+                        borderColor: '#FFD700',
                       }}
                       onPress={() => {
-                        // Mark message as read when tapped (Facebook-like behavior)
-                        // For now, we'll just show visual feedback
+                        // Select message for reply
+                        setSelectedMessageForReply(message);
+                        setQuickReplyText('');
                       }}
                     >
                       {/* Read/Unread indicator */}
@@ -10419,107 +10426,110 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Pressable>
                   ))}
 
-                  {/* Quick Reply Input - Always visible like Facebook */}
-                  <View style={{
-                    marginTop: 16,
-                    backgroundColor: 'rgba(255,255,255,0.05)',
-                    borderRadius: 8,
-                    padding: 12,
-                  }}>
-                    <Text style={{
-                      color: 'rgba(255,255,255,0.8)',
-                      fontSize: 12,
-                      marginBottom: 8,
-                      fontWeight: 'bold',
+                  {/* Quick Reply Input - Only visible when a message is selected */}
+                  {selectedMessageForReply && (
+                    <View style={{
+                      marginTop: 16,
+                      backgroundColor: 'rgba(255,255,255,0.05)',
+                      borderRadius: 8,
+                      padding: 12,
                     }}>
-                      Reply to {selectedThread.senderName}
-                    </Text>
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                      <TextInput
-                        ref={replyInputRef}
-                        style={{
-                          flex: 1,
-                          backgroundColor: 'rgba(255,255,255,0.1)',
-                          borderRadius: 6,
-                          paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          color: 'white',
-                          fontSize: 14,
-                          marginRight: 8,
-                        }}
-                        placeholder="Type a message..."
-                        placeholderTextColor="rgba(255,255,255,0.5)"
-                        value={quickReplyText}
-                        onChangeText={setQuickReplyText}
-                        multiline
-                        maxLength={500}
-                        autoFocus={true}
-                      />
-                      <Pressable
-                        style={{
-                          backgroundColor: quickReplyText.trim() ? '#FFD700' : 'rgba(255,255,255,0.2)',
-                          borderRadius: 6,
-                          paddingHorizontal: 12,
-                          paddingVertical: 8,
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                        }}
-                        onPress={async () => {
-                          if (!quickReplyText.trim()) return;
+                      <Text style={{
+                        color: 'rgba(255,255,255,0.8)',
+                        fontSize: 12,
+                        marginBottom: 8,
+                        fontWeight: 'bold',
+                      }}>
+                        Reply to {selectedThread.senderName}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TextInput
+                          ref={replyInputRef}
+                          style={{
+                            flex: 1,
+                            backgroundColor: 'rgba(255,255,255,0.1)',
+                            borderRadius: 6,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            color: 'white',
+                            fontSize: 14,
+                            marginRight: 8,
+                          }}
+                          placeholder="Type a message..."
+                          placeholderTextColor="rgba(255,255,255,0.5)"
+                          value={quickReplyText}
+                          onChangeText={setQuickReplyText}
+                          multiline
+                          maxLength={500}
+                          autoFocus={true}
+                        />
+                        <Pressable
+                          style={{
+                            backgroundColor: quickReplyText.trim() ? '#FFD700' : 'rgba(255,255,255,0.2)',
+                            borderRadius: 6,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                          }}
+                          onPress={async () => {
+                            if (!quickReplyText.trim()) return;
 
-                          try {
-                            const messageData = {
-                              text: quickReplyText.trim(),
-                              createdAt: new Date(),
-                              senderUid: userData?.uid || '',
-                              senderName: userData?.handle || 'You',
-                              read: false,
-                            };
+                            try {
+                              const messageData = {
+                                text: quickReplyText.trim(),
+                                createdAt: new Date(),
+                                senderUid: userData?.uid || '',
+                                senderName: userData?.handle || 'You',
+                                read: false,
+                              };
 
-                            // Add to local thread
-                            const updatedThread = {
-                              ...selectedThread,
-                              messages: [...selectedThread.messages, messageData],
-                            };
-                            setSelectedThread(updatedThread);
+                              // Add to local thread
+                              const updatedThread = {
+                                ...selectedThread,
+                                messages: [...selectedThread.messages, messageData],
+                              };
+                              setSelectedThread(updatedThread);
 
-                            // Update threads state
-                            setMessageThreads(prev => prev.map(thread =>
-                              thread.senderUid === selectedThread.senderUid
-                                ? updatedThread
-                                : thread
-                            ));
+                              // Update threads state
+                              setMessageThreads(prev => prev.map(thread =>
+                                thread.senderUid === selectedThread.senderUid
+                                  ? updatedThread
+                                  : thread
+                              ));
 
-                            // Send to Firebase
-                            await sendMessage(selectedThread.senderUid, quickReplyText.trim());
+                              // Send to Firebase
+                              await sendMessage(selectedThread.senderUid, quickReplyText.trim());
 
-                            // Clear input
-                            setQuickReplyText('');
+                              // Clear input and selection
+                              setQuickReplyText('');
+                              setSelectedMessageForReply(null);
 
-                            // Show success feedback
-                            Alert.alert('Sent!', 'Your reply has been sent.');
-                          } catch (error) {
-                            console.error('Error sending quick reply:', error);
-                            Alert.alert('Error', 'Failed to send message. Please try again.');
-                          }
-                        }}
-                        disabled={!quickReplyText.trim()}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        delayPressIn={0}
-                        delayPressOut={0}
-                        activeOpacity={0.7}
-                        android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
-                      >
-                        <Text style={{
-                          color: quickReplyText.trim() ? '#000' : 'rgba(255,255,255,0.5)',
-                          fontSize: 12,
-                          fontWeight: 'bold',
-                        }}>
-                          Send
-                        </Text>
-                      </Pressable>
+                              // Show success feedback
+                              Alert.alert('Sent!', 'Your reply has been sent.');
+                            } catch (error) {
+                              console.error('Error sending quick reply:', error);
+                              Alert.alert('Error', 'Failed to send message. Please try again.');
+                            }
+                          }}
+                          disabled={!quickReplyText.trim()}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          delayPressIn={0}
+                          delayPressOut={0}
+                          activeOpacity={0.7}
+                          android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
+                        >
+                          <Text style={{
+                            color: quickReplyText.trim() ? '#000' : 'rgba(255,255,255,0.5)',
+                            fontSize: 12,
+                            fontWeight: 'bold',
+                          }}>
+                            Send
+                          </Text>
+                        </Pressable>
+                      </View>
                     </View>
-                  </View>
+                  )}
                 </ScrollView>
                 </>
               )}
@@ -10530,6 +10540,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             onPress={() => {
               setShowInbox(false);
               setSelectedThread(null);
+              setSelectedMessageForReply(null);
               setIsDeleteMode(false);
               setSelectedNotifications(new Set());
             }}
