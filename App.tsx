@@ -433,10 +433,6 @@ function useAppVersionInfo() {
                     
 const waveOptionMenu = [
   {
-    label: 'Connect SplashLine',
-    description: 'Connect with this user to see their splashlines in your feed.',
-  },
-  {
     label: 'Save to device',
     description: 'Download a copy of this splashline for offline viewing.',
   },
@@ -609,24 +605,25 @@ const styles = StyleSheet.create({
   waveOptionsMenu: {
     backgroundColor: 'rgba(11,18,36,0.95)',
     borderRadius: 16,
-    paddingVertical: 4,
+    paddingVertical: 8,
     overflow: 'hidden',
+    minWidth: 280,
   },
   waveOptionsItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   waveOptionsItemTitle: {
     color: 'white',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 18,
     textAlign: 'center',
   },
   waveOptionsItemDescription: {
     color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
+    fontSize: 14,
     textAlign: 'center',
     marginTop: 4,
   },
@@ -5824,6 +5821,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       throw new Error('User not signed in');
     }
 
+    // Don't send if we don't have a proper username
+    const senderName = userData?.handle || user.displayName;
+    if (!senderName || senderName === 'You' || senderName === 'Anonymous') {
+      throw new Error('Username not available');
+    }
+
     let firestoreMod: any = null;
     let functionsMod: any = null;
 
@@ -5842,7 +5845,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .add({
         text: messageText,
         fromUid: user.uid,
-        fromName: user.displayName || 'Anonymous',
+        fromName: senderName,
         route: 'Pings',
         type: 'message',
         createdAt: firestoreMod.FieldValue.serverTimestamp(),
@@ -5857,7 +5860,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .add({
         text: messageText,
         fromUid: user.uid,
-        fromName: user.displayName || 'Anonymous',
+        fromName: senderName,
         fromPhoto: user.photoURL || null,
         route: 'Pings',
         createdAt: firestoreMod.FieldValue.serverTimestamp(),
@@ -5869,14 +5872,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
     // Send push notification
     try {
-      const fromUsername = user.displayName || 'Someone';
       const addPingFn = functionsMod().httpsCallable('addPing');
       await addPingFn({
         recipientUid: recipientUid,
         type: 'message',
-        text: `${fromUsername} has echoed back your echo`,
+        text: `${senderName} has echoed back your echo`,
         fromUid: user.uid,
-        fromName: fromUsername,
+        fromName: senderName,
         fromPhoto: user.photoURL || null,
       });
     } catch (error) {
@@ -10135,7 +10137,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   );
                   
                   // Convert individual messages to thread format
-                  const messageThreadsFromNotifications = individualMessages.map(notification => ({
+                  const messageThreadsFromNotifications = individualMessages
+                    .filter(notification => {
+                      // Filter out notifications with unknown/placeholder usernames
+                      const senderName = notification.fromUserHandle || 'Unknown User';
+                      return senderName !== 'Unknown User' && senderName !== 'unknown' && senderName !== 'Unknown';
+                    })
+                    .map(notification => ({
                     senderUid: notification.fromUid || 'unknown',
                     senderName: notification.fromUserHandle || 'Unknown User',
                     senderAvatar: null, // Will be handled by avatar logic
@@ -10174,7 +10182,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       unread: thread.unreadCount > 0,
                       threadData: thread,
                     })),
-                    ...systemNotifications.map(notification => ({
+                    ...systemNotifications
+                      .filter(notification => {
+                        // Filter out system notifications with unknown/placeholder usernames
+                        const senderName = notification.fromUserHandle || 'System';
+                        return senderName !== 'Unknown User' && senderName !== 'unknown' && senderName !== 'Unknown';
+                      })
+                      .map(notification => ({
                       id: `notification_${notification.id}`,
                       type: 'notification' as const,
                       senderName: notification.fromUserHandle || 'System',
@@ -13618,17 +13632,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           onPress={() => setWaveOptionsTarget(null)}
         >
           <View style={styles.waveOptionsMenu}>
-            {/* Gem option - show on public vibes and my vibes for development */}
-            <Pressable
-              style={styles.waveOptionsItem}
-              onPress={() => handleWaveOptionSelect('Gem')}
-            >
-              <Text style={styles.waveOptionsItemTitle}>Gem</Text>
-              <Text style={styles.waveOptionsItemDescription}>
-                Send a gem to support this creator.
-              </Text>
-            </Pressable>
-            
             {/* Other existing options - filter out Connect Vibe and Gem from the static list */}
             {waveOptionMenu
               .filter(option => option.label !== 'Connect Vibe' && option.label !== 'Gem')

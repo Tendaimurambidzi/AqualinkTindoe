@@ -297,7 +297,7 @@ export default function VideoTile({
               paused={false}
               resizeMode="cover"
               repeat={true}
-              muted={isMuted}ed}ed}
+              muted={isMuted}
               controls={false}
               posterResizeMode="cover"
               bufferConfig={{
