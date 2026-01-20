@@ -1906,6 +1906,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
+  const replyInputRef = useRef<TextInput>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
                     
   // Video controls and loading state
@@ -2026,6 +2027,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       cancelled = true;
     };
   }, [myUid, normalizeUserHandle]);
+
+  // Auto-focus reply input when thread is opened
+  useEffect(() => {
+    if (selectedThread && replyInputRef.current) {
+      // Small delay to ensure the input is rendered
+      setTimeout(() => {
+        replyInputRef.current?.focus();
+      }, 100);
+    }
+  }, [selectedThread]);
+
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
@@ -10424,6 +10436,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                       <TextInput
+                        ref={replyInputRef}
                         style={{
                           flex: 1,
                           backgroundColor: 'rgba(255,255,255,0.1)',
@@ -10440,6 +10453,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         onChangeText={setQuickReplyText}
                         multiline
                         maxLength={500}
+                        autoFocus={true}
                       />
                       <Pressable
                         style={{
