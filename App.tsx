@@ -9280,9 +9280,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           )}
         </View>
       </Pressable>
-                );
-                },
-                },
                     
       {/* Top function bar with toggle */}
       <Pressable
@@ -10299,7 +10296,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
                     <Text style={[styles.logbookTitle, { textAlign: 'center', flex: 1 }]}>
-                      {selectedThread.senderName}
+                      {selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}
                     </Text>
                     <Pressable
                       onPress={() => {
@@ -10440,7 +10437,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         marginBottom: 8,
                         fontWeight: 'bold',
                       }}>
-                        Reply to {selectedThread.senderName}
+                        Reply to {selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}
                       </Text>
                       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                         <TextInput
