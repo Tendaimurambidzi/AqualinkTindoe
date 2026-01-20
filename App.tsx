@@ -9013,7 +9013,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               transform: [{ scale: 0.9 }],
                             }
                           ]}
-                          hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                          hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
+                          delayPressIn={0}
+                          delayPressOut={0}
+                          activeOpacity={0.7}
+                          android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                         >
                           <Text style={{ fontSize: 24 }}>⋮</Text>
                         </Pressable>
@@ -9042,6 +9046,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 }
                               ]}
                               hitSlop={{ top: 30, bottom: 30, left: 20, right: 20 }}
+                              delayPressIn={0}
+                              delayPressOut={0}
+                              activeOpacity={0.7}
+                              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
                             >
                               <Text style={{
                                 color: 'white',
@@ -9069,7 +9077,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 transform: [{ scale: 0.95 }],
                               }
                             ]}
-                            hitSlop={{ top: 20, bottom: 20, left: 15, right: 15 }}
+                            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
+                            delayPressIn={0}
+                            delayPressOut={0}
+                            activeOpacity={0.7}
+                            android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                           >
                             <ProfileAvatarWithCrew
                               key={item.ownerUid}
@@ -9113,7 +9125,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 { marginTop: 2 },
                                 pressed && { opacity: 0.7 }
                               ]}
-                              hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                              delayPressIn={0}
+                              delayPressOut={0}
+                              activeOpacity={0.7}
+                              android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                             >
                               <Text style={{ color: 'gray', fontSize: 12, textAlign: 'center', fontStyle: 'italic' }}>
                                 {bioToShow}
@@ -10147,6 +10163,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowMyWaves(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -10168,6 +10189,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowTreasure(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -10189,6 +10215,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowNotifications(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -10225,6 +10256,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowTreasure(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -10302,6 +10338,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         borderLeftWidth: notification.read ? 0 : 3,
                         borderLeftColor: '#FFD700',
                       }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      delayPressIn={0}
+                      delayPressOut={0}
+                      activeOpacity={0.8}
+                      android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
                       onPress={() => {
                         if (!notification.read) {
                           markNotificationAsRead(notification.id);
@@ -10581,6 +10622,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 setShowNotifications(false);
                                 setNotificationWithActions(null);
                               }}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                              delayPressIn={0}
+                              delayPressOut={0}
+                              activeOpacity={0.7}
+                              android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                             >
                               <Text style={{ fontSize: 16 }}>💬</Text>
                               <Text style={{ color: 'white', fontSize: 14 }}>Reply</Text>
@@ -10598,6 +10644,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             onPress={() => {
                               setNotificationWithActions(null);
                             }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            delayPressIn={0}
+                            delayPressOut={0}
+                            activeOpacity={0.7}
+                            android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                           >
                             <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Close</Text>
                           </Pressable>
@@ -10613,6 +10664,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Pressable
                     style={[styles.primaryBtn, { flex: 1 }]}
                     onPress={markAllNotificationsAsRead}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
+                    android_ripple={{ color: 'rgba(0, 212, 255, 0.3)', borderless: false }}
                   >
                     <Text style={styles.primaryBtnText}>Mark All Read</Text>
                   </Pressable>
@@ -10890,10 +10946,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
-                <Pressable style={styles.logbookAction} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}>
+                <Pressable style={styles.logbookAction} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
                   <Text style={styles.logbookActionText}>Say Something</Text>
                 </Pressable>
-                <Pressable style={styles.logbookAction} onPress={goDrift}>
+                <Pressable style={styles.logbookAction} onPress={goDrift}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
                   <View
                     style={{
                       flexDirection: 'row',
@@ -13225,7 +13291,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     }}
                     style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.logbookActionText}>🖼️ Photo</Text>
                   </Pressable>
@@ -13245,7 +13314,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     }}
                     style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.logbookActionText}>🎥 Video</Text>
                   </Pressable>
@@ -13265,7 +13337,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     }}
                     style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                    hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
                   >
                     <Text style={styles.logbookActionText}>🎵 Audio</Text>
                   </Pressable>
@@ -13283,7 +13358,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={onSendMessage}
                   disabled={isSending}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
                 >
                   <Text style={styles.primaryBtnText}>
                     {isSending ? 'Sending...' : 'Send'}
