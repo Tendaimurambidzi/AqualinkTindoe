@@ -346,7 +346,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               <Pressable
                 onPress={() => openWaveOptions(item)}
                 style={({ pressed }) => [
-                  { padding: 5 },
+                  { padding: 8 },
                   pressed && {
                     opacity: 0.7,
                     transform: [{ scale: 0.9 }],
@@ -358,7 +358,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 activeOpacity={0.7}
                 android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
               >
-                <Text style={{ fontSize: 24 }}>⋮</Text>
+                <Text style={{ fontSize: 28 }}>✉️</Text>
               </Pressable>
             </View>
 
