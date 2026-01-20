@@ -13692,7 +13692,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       setShowSendMessage(true);
                     }}
                   >
-                    <Text style={styles.waveOptionsItemTitle}>Echo Vibe</Text>
+                    <Text style={styles.waveOptionsItemTitle}>✉️ Echo Vibe</Text>
                     <Text style={styles.waveOptionsItemDescription}>
                       Send an echo vibe to this vibe master
                     </Text>
