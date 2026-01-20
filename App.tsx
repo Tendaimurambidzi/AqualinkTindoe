@@ -1881,6 +1881,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [profilePhoto]);
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
+  const [quickReplyText, setQuickReplyText] = useState<string>('');
   const myUid = auth?.()?.currentUser?.uid || null;
                     
   // Clear user-specific state when user changes
@@ -10256,21 +10257,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             )}
 
                             <View style={{ flex: 1 }}>
-                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
                                 <Text style={{
                                   color: 'white',
                                   fontSize: 16,
                                   fontWeight: item.unread ? 'bold' : 'normal',
                                 }}>
                                   {item.senderName}
-                                </Text>
-                                <Text style={{
-                                  color: 'rgba(255,255,255,0.6)',
-                                  fontSize: 12,
-                                }}>
-                                  {item.timestamp?.toDate ?
-                                    timeAgo(item.timestamp.toDate()) :
-                                    'Unknown time'}
                                 </Text>
                               </View>
                               <Text style={{
@@ -10306,14 +10299,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                   <ScrollView style={{ flex: 1 }}>
                   {selectedThread.messages.map((message, index) => (
-                    <View
+                    <Pressable
                       key={message.id || index}
                       style={{
                         flexDirection: 'row',
                         marginBottom: 12,
                         alignItems: 'flex-start',
+                        padding: 8,
+                        backgroundColor: index < selectedThread.messages.length - 1 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                        borderRadius: 6,
+                      }}
+                      onPress={() => {
+                        // Mark message as read when tapped (Facebook-like behavior)
+                        // For now, we'll just show visual feedback
                       }}
                     >
+                      {/* Read/Unread indicator */}
+                      <View style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: index < selectedThread.messages.length - 1 ? 'rgba(255,255,255,0.3)' : '#FFD700',
+                        marginRight: 8,
+                        marginTop: 4,
+                      }} />
+                      
                       {/* Avatar */}
                       {selectedThread.senderAvatar ? (
                         typeof selectedThread.senderAvatar === 'object' && 'text' in selectedThread.senderAvatar ? (
@@ -10394,38 +10404,108 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           </Text>
                         )}
                       </View>
-                    </View>
+                    </Pressable>
                   ))}
 
-                  {/* Reply button */}
-                  <Pressable
-                    style={{
-                      backgroundColor: 'rgba(255,255,255,0.1)',
-                      borderRadius: 6,
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                      marginTop: 16,
-                      alignSelf: 'flex-start',
-                    }}
-                    onPress={() => {
-                      setMessageRecipient({
-                        uid: selectedThread.senderUid,
-                        name: selectedThread.senderName,
-                      });
-                      setMessageText('');
-                      setMessageAttachment(null);
-                      setShowSendMessage(true);
-                      setShowInbox(false);
-                      setSelectedThread(null);
-                    }}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    delayPressIn={0}
-                    delayPressOut={0}
-                    activeOpacity={0.7}
-                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                  >
-                    <Text style={{ color: 'white', fontSize: 14 }}>💬 Reply</Text>
-                  </Pressable>
+                  {/* Quick Reply Input - Always visible like Facebook */}
+                  <View style={{
+                    marginTop: 16,
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    borderRadius: 8,
+                    padding: 12,
+                  }}>
+                    <Text style={{
+                      color: 'rgba(255,255,255,0.8)',
+                      fontSize: 12,
+                      marginBottom: 8,
+                      fontWeight: 'bold',
+                    }}>
+                      Reply to {selectedThread.senderName}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TextInput
+                        style={{
+                          flex: 1,
+                          backgroundColor: 'rgba(255,255,255,0.1)',
+                          borderRadius: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          color: 'white',
+                          fontSize: 14,
+                          marginRight: 8,
+                        }}
+                        placeholder="Type a message..."
+                        placeholderTextColor="rgba(255,255,255,0.5)"
+                        value={quickReplyText}
+                        onChangeText={setQuickReplyText}
+                        multiline
+                        maxLength={500}
+                      />
+                      <Pressable
+                        style={{
+                          backgroundColor: quickReplyText.trim() ? '#FFD700' : 'rgba(255,255,255,0.2)',
+                          borderRadius: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                        onPress={async () => {
+                          if (!quickReplyText.trim()) return;
+
+                          try {
+                            const messageData = {
+                              text: quickReplyText.trim(),
+                              createdAt: new Date(),
+                              senderUid: userData?.uid || '',
+                              senderName: userData?.handle || 'You',
+                              read: false,
+                            };
+
+                            // Add to local thread
+                            const updatedThread = {
+                              ...selectedThread,
+                              messages: [...selectedThread.messages, messageData],
+                            };
+                            setSelectedThread(updatedThread);
+
+                            // Update threads state
+                            setMessageThreads(prev => prev.map(thread =>
+                              thread.senderUid === selectedThread.senderUid
+                                ? updatedThread
+                                : thread
+                            ));
+
+                            // Send to Firebase
+                            await sendMessage(selectedThread.senderUid, quickReplyText.trim());
+
+                            // Clear input
+                            setQuickReplyText('');
+
+                            // Show success feedback
+                            Alert.alert('Sent!', 'Your reply has been sent.');
+                          } catch (error) {
+                            console.error('Error sending quick reply:', error);
+                            Alert.alert('Error', 'Failed to send message. Please try again.');
+                          }
+                        }}
+                        disabled={!quickReplyText.trim()}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        delayPressIn={0}
+                        delayPressOut={0}
+                        activeOpacity={0.7}
+                        android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
+                      >
+                        <Text style={{
+                          color: quickReplyText.trim() ? '#000' : 'rgba(255,255,255,0.5)',
+                          fontSize: 12,
+                          fontWeight: 'bold',
+                        }}>
+                          Send
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
                 </ScrollView>
                 </>
               )}
