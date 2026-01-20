@@ -10009,70 +10009,154 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={{ flex: 1, padding: 16 }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <Text style={[styles.logbookTitle, { textAlign: 'center', flex: 1 }]}>
-                  {selectedThread ? selectedThread.senderName : 'VIBE ALERTS'}
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[styles.logbookTitle, { textAlign: 'center', marginBottom: 8 }]}>
+                  VIBE ALERTS
                 </Text>
-                {selectedThread && (
-                  <Pressable
-                    onPress={() => setSelectedThread(null)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    delayPressIn={0}
-                    delayPressOut={0}
-                  >
-                    <Text style={{ color: 'white', fontSize: 16 }}>←</Text>
-                  </Pressable>
-                )}
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'center' }}>
+                  NOTIFICATIONS({notifications.length + messageThreads.length})
+                </Text>
               </View>
 
               {!selectedThread ? (
-                // Inbox view - message threads
-                <>
-                  {messageThreads.length === 0 ? (
-                    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                      <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
-                        No messages yet
-                      </Text>
-                      <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
-                        When someone sends you a message, you'll see it here!
-                      </Text>
-                    </View>
-                  ) : (
-                    <ScrollView style={{ flex: 1 }}>
-                      {messageThreads.map((thread) => (
-                        <Pressable
-                          key={thread.senderUid}
-                          style={{
-                            backgroundColor: 'rgba(255,255,255,0.05)',
-                            borderRadius: 6,
-                            padding: 12,
-                            marginBottom: 8,
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                          }}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          delayPressIn={0}
-                          delayPressOut={0}
-                          activeOpacity={0.8}
-                          android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
-                          onPress={() => {
-                            setSelectedThread({
-                              senderUid: thread.senderUid,
-                              senderName: thread.senderName,
-                              senderAvatar: thread.senderAvatar,
-                              messages: thread.messages,
-                            });
-                          }}
-                        >
-                          {/* Avatar */}
-                          {thread.senderAvatar ? (
-                            typeof thread.senderAvatar === 'object' && 'text' in thread.senderAvatar ? (
-                              // Text-based avatar (initials)
+                // Unified notifications view
+                (() => {
+                  const unifiedNotifications = [
+                    ...messageThreads.map(thread => ({
+                      id: `thread_${thread.senderUid}`,
+                      type: 'thread' as const,
+                      senderName: thread.senderName,
+                      senderAvatar: thread.senderAvatar,
+                      message: thread.lastMessage,
+                      timestamp: thread.lastMessageTime,
+                      unread: thread.unreadCount > 0,
+                      threadData: thread,
+                    })),
+                    ...notifications.map(notification => ({
+                      id: `notification_${notification.id}`,
+                      type: 'notification' as const,
+                      senderName: notification.fromUserHandle || 'System',
+                      senderAvatar: null, // Will use letter avatar
+                      message: notification.message,
+                      timestamp: notification.createdAt,
+                      unread: !notification.read,
+                      notificationData: notification,
+                    })),
+                  ].sort((a, b) => {
+                    const timeA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+                    const timeB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+                    return timeB.getTime() - timeA.getTime(); // Most recent first
+                  });
+
+                  if (unifiedNotifications.length === 0) {
+                    return (
+                      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                        <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
+                          No notifications yet
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
+                          When you receive messages or notifications, they'll appear here!
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <FlatList
+                      data={unifiedNotifications}
+                      keyExtractor={(item) => item.id}
+                      renderItem={({ item }) => {
+                        const getAvatarLetter = (name: string) => {
+                          return name.charAt(0).toUpperCase();
+                        };
+
+                        const getAvatarColor = (name: string) => {
+                          const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+                          const index = name.length % colors.length;
+                          return colors[index];
+                        };
+
+                        return (
+                          <Pressable
+                            style={{
+                              backgroundColor: item.unread ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
+                              borderRadius: 6,
+                              padding: 12,
+                              marginBottom: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              borderLeftWidth: item.unread ? 3 : 0,
+                              borderLeftColor: '#FFD700',
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            delayPressIn={0}
+                            delayPressOut={0}
+                            activeOpacity={0.8}
+                            android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
+                            onPress={() => {
+                              if (item.type === 'thread') {
+                                setSelectedThread({
+                                  senderUid: item.threadData.senderUid,
+                                  senderName: item.threadData.senderName,
+                                  senderAvatar: item.threadData.senderAvatar,
+                                  messages: item.threadData.messages,
+                                });
+                              } else {
+                                if (!item.notificationData.read) {
+                                  markNotificationAsRead(item.notificationData.id);
+                                }
+                                Alert.alert(
+                                  'Notification',
+                                  formatNotificationMessage(item.notificationData, userData || {}),
+                                  [{ text: 'OK' }]
+                                );
+                              }
+                            }}
+                          >
+                            {/* Avatar */}
+                            {item.type === 'thread' && item.senderAvatar ? (
+                              typeof item.senderAvatar === 'object' && 'text' in item.senderAvatar ? (
+                                // Text-based avatar (initials)
+                                <View style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 20,
+                                  backgroundColor: item.senderAvatar.backgroundColor,
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                  marginRight: 12,
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(255,255,255,0.2)',
+                                }}>
+                                  <Text style={{
+                                    fontSize: 16,
+                                    fontWeight: 'bold',
+                                    color: item.senderAvatar.color
+                                  }}>
+                                    {item.senderAvatar.text}
+                                  </Text>
+                                </View>
+                              ) : (
+                                // Image-based avatar
+                                <Image
+                                  source={item.senderAvatar}
+                                  style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 20,
+                                    marginRight: 12,
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.2)',
+                                  }}
+                                />
+                              )
+                            ) : (
+                              // Letter avatar for notifications or missing avatars
                               <View style={{
                                 width: 40,
                                 height: 40,
                                 borderRadius: 20,
-                                backgroundColor: thread.senderAvatar.backgroundColor,
+                                backgroundColor: getAvatarColor(item.senderName),
                                 justifyContent: 'center',
                                 alignItems: 'center',
                                 marginRight: 12,
@@ -10082,214 +10166,63 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 <Text style={{
                                   fontSize: 16,
                                   fontWeight: 'bold',
-                                  color: thread.senderAvatar.color
+                                  color: 'white'
                                 }}>
-                                  {thread.senderAvatar.text}
+                                  {getAvatarLetter(item.senderName)}
                                 </Text>
                               </View>
-                            ) : (
-                              // Image-based avatar
-                              <Image
-                                source={thread.senderAvatar}
-                                style={{
-                                  width: 40,
-                                  height: 40,
-                                  borderRadius: 20,
-                                  marginRight: 12,
-                                  borderWidth: 1,
-                                  borderColor: 'rgba(255,255,255,0.2)',
-                                }}
-                              />
-                            )
-                          ) : (
-                            <View style={{
-                              width: 40,
-                              height: 40,
-                              borderRadius: 20,
-                              backgroundColor: 'rgba(255,255,255,0.2)',
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              marginRight: 12,
-                            }}>
-                              <Text style={{ fontSize: 16, color: 'white' }}>👤</Text>
-                            </View>
-                          )}
-
-                          <View style={{ flex: 1 }}>
-                            <Text style={{
-                              color: 'white',
-                              fontSize: 16,
-                              fontWeight: 'bold',
-                              marginBottom: 2,
-                            }}>
-                              {thread.senderName}
-                            </Text>
-                            <Text style={{
-                              color: 'rgba(255,255,255,0.7)',
-                              fontSize: 14,
-                              numberOfLines: 1,
-                            }}>
-                              {thread.lastMessage}
-                            </Text>
-                          </View>
-
-                          <Text style={{
-                            color: 'rgba(255,255,255,0.6)',
-                            fontSize: 12,
-                          }}>
-                            {thread.lastMessageTime?.toDate ?
-                              formatDefiniteTime(thread.lastMessageTime.toDate()) :
-                              'Unknown time'}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  )}
-
-                  {/* Notifications section */}
-                  {notifications.length > 0 && (
-                    <View style={{ marginTop: 16 }}>
-                      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
-                          Notifications ({notifications.length})
-                        </Text>
-                        <Pressable
-                          onPress={() => setIsDeleteMode(!isDeleteMode)}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          delayPressIn={0}
-                          delayPressOut={0}
-                        >
-                          <Text style={{ color: isDeleteMode ? '#FF6B6B' : '#FFD700', fontSize: 14 }}>
-                            {isDeleteMode ? 'Cancel' : 'Delete'}
-                          </Text>
-                        </Pressable>
-                      </View>
-
-                      {isDeleteMode && (
-                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                          <Pressable
-                            style={{
-                              backgroundColor: selectedNotifications.size === notifications.length ? '#FF6B6B' : 'rgba(255,255,255,0.1)',
-                              borderRadius: 6,
-                              paddingHorizontal: 12,
-                              paddingVertical: 6,
-                              flex: 1,
-                            }}
-                            onPress={selectAllNotifications}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                            delayPressIn={0}
-                            delayPressOut={0}
-                          >
-                            <Text style={{ color: 'white', fontSize: 12, textAlign: 'center' }}>
-                              SELECT ALL
-                            </Text>
-                          </Pressable>
-                          {selectedNotifications.size > 0 && (
-                            <Pressable
-                              style={{
-                                backgroundColor: '#FF6B6B',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 6,
-                                flex: 1,
-                              }}
-                              onPress={deleteSelectedNotifications}
-                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                              delayPressIn={0}
-                              delayPressOut={0}
-                            >
-                              <Text style={{ color: 'white', fontSize: 12, textAlign: 'center' }}>
-                                DELETE ({selectedNotifications.size})
-                              </Text>
-                            </Pressable>
-                          )}
-                        </View>
-                      )}
-
-                      <ScrollView style={{ maxHeight: 200 }}>
-                        {notifications.map((notification) => (
-                          <Pressable
-                            key={notification.id}
-                            style={{
-                              backgroundColor: selectedNotifications.has(notification.id) ?
-                                'rgba(255,107,107,0.2)' :
-                                notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(255,215,0,0.1)',
-                              borderRadius: 6,
-                              padding: 8,
-                              marginBottom: 4,
-                              borderLeftWidth: notification.read ? 0 : 3,
-                              borderLeftColor: '#FFD700',
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                            }}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                            delayPressIn={0}
-                            delayPressOut={0}
-                            activeOpacity={0.8}
-                            android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
-                            onPress={() => {
-                              if (isDeleteMode) {
-                                toggleNotificationSelection(notification.id);
-                              } else {
-                                if (!notification.read) {
-                                  markNotificationAsRead(notification.id);
-                                }
-                                Alert.alert(
-                                  'Notification',
-                                  formatNotificationMessage(notification, userData || {}),
-                                  [{ text: 'OK' }]
-                                );
-                              }
-                            }}
-                          >
-                            {isDeleteMode && (
-                              <View style={{
-                                width: 20,
-                                height: 20,
-                                borderRadius: 10,
-                                borderWidth: 2,
-                                borderColor: 'white',
-                                marginRight: 8,
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                backgroundColor: selectedNotifications.has(notification.id) ? '#FF6B6B' : 'transparent',
-                              }}>
-                                {selectedNotifications.has(notification.id) && (
-                                  <Text style={{ color: 'white', fontSize: 12 }}>✓</Text>
-                                )}
-                              </View>
                             )}
-                            <Text style={{
-                              color: 'white',
-                              fontSize: 12,
-                              fontWeight: notification.read ? 'normal' : 'bold',
-                              flex: 1,
-                            }}>
-                              {formatNotificationMessage(notification, userData || {})}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
 
-                      {!isDeleteMode && notifications.length > 0 && (
-                        <Pressable
-                          style={[styles.primaryBtn, { marginTop: 8 }]}
-                          onPress={markAllNotificationsAsRead}
-                          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                          delayPressIn={0}
-                          delayPressOut={0}
-                          activeOpacity={0.7}
-                          android_ripple={{ color: 'rgba(0, 212, 255, 0.3)', borderless: false }}
-                        >
-                          <Text style={styles.primaryBtnText}>Mark All Read</Text>
-                        </Pressable>
-                      )}
-                    </View>
-                  )}
-                </>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
+                                <Text style={{
+                                  color: 'white',
+                                  fontSize: 16,
+                                  fontWeight: item.unread ? 'bold' : 'normal',
+                                }}>
+                                  {item.senderName}
+                                </Text>
+                                <Text style={{
+                                  color: 'rgba(255,255,255,0.6)',
+                                  fontSize: 12,
+                                }}>
+                                  {item.timestamp?.toDate ?
+                                    timeAgo(item.timestamp.toDate()) :
+                                    'Unknown time'}
+                                </Text>
+                              </View>
+                              <Text style={{
+                                color: 'rgba(255,255,255,0.7)',
+                                fontSize: 14,
+                                numberOfLines: 1,
+                              }}>
+                                {item.message}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        );
+                      }}
+                      showsVerticalScrollIndicator={false}
+                    />
+                  );
+                })()
               ) : (
                 // Thread view - individual conversation
-                <ScrollView style={{ flex: 1 }}>
+                <>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <Text style={[styles.logbookTitle, { textAlign: 'center', flex: 1 }]}>
+                      VIBE ALERTS
+                    </Text>
+                    <Pressable
+                      onPress={() => setSelectedThread(null)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      delayPressIn={0}
+                      delayPressOut={0}
+                    >
+                      <Text style={{ color: 'white', fontSize: 16 }}>←</Text>
+                    </Pressable>
+                  </View>
+                  <ScrollView style={{ flex: 1 }}>
                   {selectedThread.messages.map((message, index) => (
                     <View
                       key={message.id || index}
@@ -10420,6 +10353,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Text style={{ color: 'white', fontSize: 14 }}>💬 Reply</Text>
                   </Pressable>
                 </ScrollView>
+                </>
               )}
             </View>
           </View>
