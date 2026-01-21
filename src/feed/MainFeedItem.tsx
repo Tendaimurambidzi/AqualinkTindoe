@@ -30,9 +30,9 @@ type Vibe = {
   };
 };
 
-type Asset = {
-  uri: string;
-  type?: string;
+type UserStatus = {
+  type: 'here' | 'away' | 'composing';
+  time?: string;
 };
 
 interface MainFeedItemProps {
@@ -654,6 +654,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
+          <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>Away since:12:09pm</Text>
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
         </ScrollView>
 
