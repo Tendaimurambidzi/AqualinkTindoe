@@ -2059,7 +2059,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
-  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null }>>({});
+  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date }>>({});
 
   // Helper function to ensure user data is available for a given user ID
   const ensureUserData = async (userId: string) => {
@@ -2080,7 +2080,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         name: data?.name || data?.displayName || data?.username || 'User',
         avatar: data?.avatar || data?.userPhoto || '',
         bio: data?.bio || '',
-        lastSeen: data?.lastSeen ? data.lastSeen.toDate() : null,
+        lastSeen: data?.lastSeen ? data.lastSeen.toDate() : new Date(Date.now() - 3600000), // Default to 1 hour ago if no lastSeen
       };
       setUserData(prev => ({ ...prev, [userId]: userInfo }));
       return userInfo;
@@ -9296,6 +9296,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     profileName={profileName}
                     profileBio={profileBio}
                     userData={userData}
+                    ensureUserData={ensureUserData}
                     waveStats={waveStats}
                     isInUserCrew={isInUserCrew}
                     optimisticCrewCounts={optimisticCrewCounts}

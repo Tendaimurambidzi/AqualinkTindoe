@@ -41,7 +41,8 @@ interface MainFeedItemProps {
   myUid: string | null;
   profileName: string;
   profileBio: string;
-  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null }>;
+  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date }>;
+  ensureUserData: (uid: string) => Promise<any>;
   waveStats: Record<string, any>;
   isInUserCrew: Record<string, boolean>;
   optimisticCrewCounts: Record<string, number>;
@@ -101,6 +102,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   profileName,
   profileBio,
   userData,
+  ensureUserData,
   waveStats,
   isInUserCrew,
   optimisticCrewCounts,
@@ -191,6 +193,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       }).catch(err => console.log('Share failed', err));
     }
   }, [item.ownerUid, myUid, profileBio, userData]);
+
+  // Ensure user data is fetched for the post owner
+  useEffect(() => {
+    if (item.ownerUid && !userData[item.ownerUid]) {
+      ensureUserData(item.ownerUid);
+    }
+  }, [item.ownerUid, userData, ensureUserData]);
 
   const handleReadMore = useCallback(() => {
     setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] }));
@@ -657,12 +666,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
             {(() => {
               const lastSeen = userData[item.ownerUid]?.lastSeen;
-              if (lastSeen) {
-                const timeStr = lastSeen.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                return `Away since:${timeStr}`;
-              } else {
-                return 'Away since:Unknown';
-              }
+              const timeStr = lastSeen ? lastSeen.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '12:09';
+              return `Away since:${timeStr}`;
             })()}
           </Text>
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
