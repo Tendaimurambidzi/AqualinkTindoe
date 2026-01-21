@@ -1606,6 +1606,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const navigation = useNavigation();
   // Get current user for ocean features
   const [user, setUser] = useState<any>(null);
+  const [isCurrentUserOnline, setIsCurrentUserOnline] = useState<boolean>(false);
   const [authCompleted, setAuthCompleted] = useState<boolean>(false);
                     
   // Belt-and-suspenders: even if the user somehow gets to this screen
@@ -1618,6 +1619,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!authMod) return;
     const sub = authMod().onAuthStateChanged((u: any) => {
       setUser(u);
+      setIsCurrentUserOnline(!!u);
       if (!u) {
         console.warn(
           'InnerApp mounted without a user. This indicates a routing issue.',
@@ -1906,21 +1908,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Update lastSeen when app goes to background
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (myUid && (nextAppState === 'inactive' || nextAppState === 'background')) {
-        const updateLastSeen = async () => {
-          try {
-            let firestoreMod: any = null;
+      if (myUid) {
+        if (nextAppState === 'inactive' || nextAppState === 'background') {
+          setIsCurrentUserOnline(false);
+          const updateLastSeen = async () => {
             try {
-              firestoreMod = require('@react-native-firebase/firestore').default;
-            } catch {}
-            if (firestoreMod) {
-              await firestoreMod().doc(`users/${myUid}`).set({ lastSeen: firestoreMod.Timestamp.now() }, { merge: true });
+              let firestoreMod: any = null;
+              try {
+                firestoreMod = require('@react-native-firebase/firestore').default;
+              } catch {}
+              if (firestoreMod) {
+                await firestoreMod().doc(`users/${myUid}`).set({ lastSeen: firestoreMod.Timestamp.now() }, { merge: true });
+              }
+            } catch (error) {
+              console.warn('Failed to update lastSeen on background:', error);
             }
-          } catch (error) {
-            console.warn('Failed to update lastSeen on background:', error);
-          }
-        };
-        updateLastSeen();
+          };
+          updateLastSeen();
+        } else if (nextAppState === 'active') {
+          setIsCurrentUserOnline(true);
+        }
       }
     });
 
@@ -9378,6 +9385,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         optimisticCrewCounts={optimisticCrewCounts}
                         expandedPosts={expandedPosts}
                         revealedImages={revealedImages}
+                        isCurrentUserOnline={isCurrentUserOnline}
                         bufferingMap={bufferingMap}
                         postEchoLists={postEchoLists}
                         expandedEchoes={expandedEchoes}

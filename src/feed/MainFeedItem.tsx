@@ -48,6 +48,7 @@ interface MainFeedItemProps {
   optimisticCrewCounts: Record<string, number>;
   expandedPosts: Record<string, boolean>;
   revealedImages: Set<string>;
+  isCurrentUserOnline: boolean;
   bufferingMap: Record<string, boolean>;
   postEchoLists: Record<string, any[]>;
   expandedEchoes: Record<string, boolean>;
@@ -108,6 +109,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   optimisticCrewCounts,
   expandedPosts,
   revealedImages,
+  isCurrentUserOnline,
   bufferingMap,
   postEchoLists,
   expandedEchoes,
@@ -663,7 +665,21 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
-          {item.ownerUid !== myUid && (
+          {item.ownerUid === myUid ? (
+            <Text style={{ fontSize: 14, color: isCurrentUserOnline ? 'green' : 'grey', marginRight: 20 }}>
+              {isCurrentUserOnline ? 'Here now!' : (() => {
+                // For current user when offline, show away since current time
+                const displayTime = new Date();
+                const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+                const localeOptions = Intl.DateTimeFormat().resolvedOptions();
+                if (localeOptions.hour12) {
+                  options.hour12 = true;
+                }
+                const timeStr = displayTime.toLocaleTimeString([], options);
+                return `Away since:${timeStr}`;
+              })()}
+            </Text>
+          ) : (
             <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
               {(() => {
                 let displayTime: Date;
