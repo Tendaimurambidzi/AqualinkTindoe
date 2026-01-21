@@ -1902,6 +1902,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [myUid]);
                     
+  // Update lastSeen when user logs in
+  useEffect(() => {
+    if (myUid) {
+      const updateLastSeen = async () => {
+        try {
+          let firestoreMod: any = null;
+          try {
+            firestoreMod = require('@react-native-firebase/firestore').default;
+          } catch {}
+          if (firestoreMod) {
+            await firestoreMod().doc(`users/${myUid}`).update({ lastSeen: firestoreMod.Timestamp.now() });
+          }
+        } catch (error) {
+          console.warn('Failed to update lastSeen:', error);
+        }
+      };
+      updateLastSeen();
+    }
+  }, [myUid]);
+                    
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
   const replyInputRef = useRef<TextInput>(null);
@@ -2039,7 +2059,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
-  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string }>>({});
+  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null }>>({});
 
   // Helper function to ensure user data is available for a given user ID
   const ensureUserData = async (userId: string) => {
@@ -2060,6 +2080,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         name: data?.name || data?.displayName || data?.username || 'User',
         avatar: data?.avatar || data?.userPhoto || '',
         bio: data?.bio || '',
+        lastSeen: data?.lastSeen ? data.lastSeen.toDate() : null,
       };
       setUserData(prev => ({ ...prev, [userId]: userInfo }));
       return userInfo;

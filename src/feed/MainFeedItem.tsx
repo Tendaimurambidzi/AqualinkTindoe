@@ -41,7 +41,7 @@ interface MainFeedItemProps {
   myUid: string | null;
   profileName: string;
   profileBio: string;
-  userData: Record<string, { name: string; avatar: string; bio: string }>;
+  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null }>;
   waveStats: Record<string, any>;
   isInUserCrew: Record<string, boolean>;
   optimisticCrewCounts: Record<string, number>;
@@ -654,7 +654,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
-          <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>Away since:12:09pm</Text>
+          <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
+            {(() => {
+              const lastSeen = userData[item.ownerUid]?.lastSeen;
+              if (lastSeen) {
+                const timeStr = lastSeen.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                return `Away since:${timeStr}`;
+              } else {
+                return 'Away since:Unknown';
+              }
+            })()}
+          </Text>
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
         </ScrollView>
 
