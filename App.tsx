@@ -2080,7 +2080,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         name: data?.name || data?.displayName || data?.username || 'User',
         avatar: data?.avatar || data?.userPhoto || '',
         bio: data?.bio || '',
-        lastSeen: data?.lastSeen ? data.lastSeen.toDate() : new Date(Date.now() - 3600000), // Default to 1 hour ago if no lastSeen
+        lastSeen: data?.lastSeen ? data.lastSeen.toDate() : null,
       };
       setUserData(prev => ({ ...prev, [userId]: userInfo }));
       return userInfo;

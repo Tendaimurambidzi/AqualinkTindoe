@@ -666,8 +666,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
             {(() => {
               const lastSeen = userData[item.ownerUid]?.lastSeen;
-              const timeStr = lastSeen ? lastSeen.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '12:09';
-              return `Away since:${timeStr}`;
+              if (lastSeen) {
+                const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+                const localeOptions = Intl.DateTimeFormat().resolvedOptions();
+                if (localeOptions.hour12) {
+                  options.hour12 = true;
+                }
+                const timeStr = lastSeen.toLocaleTimeString([], options);
+                return `Away since:${timeStr}`;
+              } else {
+                return 'Away since: Unknown';
+              }
             })()}
           </Text>
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
