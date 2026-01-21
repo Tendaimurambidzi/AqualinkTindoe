@@ -663,22 +663,27 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
-          <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
-            {(() => {
-              const lastSeen = userData[item.ownerUid]?.lastSeen;
-              if (lastSeen) {
-                const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-                const localeOptions = Intl.DateTimeFormat().resolvedOptions();
-                if (localeOptions.hour12) {
-                  options.hour12 = true;
+          {item.ownerUid !== myUid && (
+            <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
+              {(() => {
+                const lastSeen = userData[item.ownerUid]?.lastSeen;
+                const now = new Date();
+                const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+                
+                if (!lastSeen || lastSeen > fiveMinutesAgo) {
+                  return 'Here now';
+                } else {
+                  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+                  const localeOptions = Intl.DateTimeFormat().resolvedOptions();
+                  if (localeOptions.hour12) {
+                    options.hour12 = true;
+                  }
+                  const timeStr = lastSeen.toLocaleTimeString([], options);
+                  return `Away since:${timeStr}`;
                 }
-                const timeStr = lastSeen.toLocaleTimeString([], options);
-                return `Away since:${timeStr}`;
-              } else {
-                return 'Away since: Unknown';
-              }
-            })()}
-          </Text>
+              })()}
+            </Text>
+          )}
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
         </ScrollView>
 

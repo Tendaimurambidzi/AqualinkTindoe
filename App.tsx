@@ -1902,24 +1902,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [myUid]);
                     
-  // Update lastSeen when user logs in
+  // Update lastSeen when app goes to background
   useEffect(() => {
-    if (myUid) {
-      const updateLastSeen = async () => {
-        try {
-          let firestoreMod: any = null;
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (myUid && (nextAppState === 'inactive' || nextAppState === 'background')) {
+        const updateLastSeen = async () => {
           try {
-            firestoreMod = require('@react-native-firebase/firestore').default;
-          } catch {}
-          if (firestoreMod) {
-            await firestoreMod().doc(`users/${myUid}`).update({ lastSeen: firestoreMod.Timestamp.now() });
+            let firestoreMod: any = null;
+            try {
+              firestoreMod = require('@react-native-firebase/firestore').default;
+            } catch {}
+            if (firestoreMod) {
+              await firestoreMod().doc(`users/${myUid}`).set({ lastSeen: firestoreMod.Timestamp.now() }, { merge: true });
+            }
+          } catch (error) {
+            console.warn('Failed to update lastSeen on background:', error);
           }
-        } catch (error) {
-          console.warn('Failed to update lastSeen:', error);
-        }
-      };
-      updateLastSeen();
-    }
+        };
+        updateLastSeen();
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
   }, [myUid]);
                     
   // Sound effect player ref to handle audio playback
@@ -2080,9 +2086,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         name: data?.name || data?.displayName || data?.username || 'User',
         avatar: data?.avatar || data?.userPhoto || '',
         bio: data?.bio || '',
-        lastSeen: data?.lastSeen ? data.lastSeen.toDate() : null,
+        lastSeen: data?.lastSeen && typeof data.lastSeen.toDate === 'function' ? data.lastSeen.toDate() : null,
       };
-      setUserData(prev => ({ ...prev, [userId]: userInfo }));
+      setUserData(prev => {
+        const existing = prev[userId];
+        const updatedUserInfo = { ...userInfo };
+        if (existing && existing.lastSeen && !updatedUserInfo.lastSeen) {
+          updatedUserInfo.lastSeen = existing.lastSeen;
+        }
+        return { ...prev, [userId]: updatedUserInfo };
+      });
       return userInfo;
     } catch (error) {
       console.warn('Failed to fetch user data for', userId, error);
