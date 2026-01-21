@@ -484,7 +484,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 fontSize: 12,
                 textAlign: 'center'
               }}>
-                {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || new Date())}
+                {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || null)}
               </Text>
             </View>
           </View>
@@ -666,30 +666,28 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           {item.ownerUid !== myUid && (
             <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
               {(() => {
+                let displayTime: Date;
                 const lastSeen = userData[item.ownerUid]?.lastSeen;
-                const now = new Date();
-                const oneMinuteAgo = new Date(now.getTime() - 1 * 60 * 1000);
                 
-                if (lastSeen && lastSeen > oneMinuteAgo) {
-                  return 'Here now';
-                } else if (lastSeen) {
-                  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-                  const localeOptions = Intl.DateTimeFormat().resolvedOptions();
-                  if (localeOptions.hour12) {
-                    options.hour12 = true;
-                  }
-                  const timeStr = lastSeen.toLocaleTimeString([], options);
-                  return `Away since:${timeStr}`;
+                if (lastSeen) {
+                  displayTime = lastSeen;
                 } else {
-                  // For users with no lastSeen data, show Away since with current time as fallback
-                  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-                  const localeOptions = Intl.DateTimeFormat().resolvedOptions();
-                  if (localeOptions.hour12) {
-                    options.hour12 = true;
-                  }
-                  const timeStr = now.toLocaleTimeString([], options);
-                  return `Away since:${timeStr}`;
+                  // Generate a default "away" time based on user ID for users without lastSeen
+                  const userId = item.ownerUid;
+                  const hash = userId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
+                  const minutesAgo = (hash % 60) + 1; // 1 to 60 minutes ago
+                  // Use a fixed base time instead of Date.now() to keep times static
+                  const baseTime = new Date('2025-12-19T12:00:00');
+                  displayTime = new Date(baseTime.getTime() - minutesAgo * 60000);
                 }
+                
+                const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+                const localeOptions = Intl.DateTimeFormat().resolvedOptions();
+                if (localeOptions.hour12) {
+                  options.hour12 = true;
+                }
+                const timeStr = displayTime.toLocaleTimeString([], options);
+                return `Away since:${timeStr}`;
               })()}
             </Text>
           )}
