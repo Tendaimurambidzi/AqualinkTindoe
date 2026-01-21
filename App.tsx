@@ -10347,7 +10347,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }
 
                   return (
-                    <FlatList
+                    <>
+                      <FlatList
                       data={unifiedNotifications}
                       keyExtractor={(item) => item.id}
                       renderItem={({ item }) => {
@@ -10381,7 +10382,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         return (
                           <Pressable
                             style={{
-                              backgroundColor: item.unread ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
+                              backgroundColor: isDeleteMode && selectedNotifications.has(item.id) 
+                                ? 'rgba(255,215,0,0.3)' 
+                                : item.unread ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
                               borderRadius: 6,
                               padding: 12,
                               marginBottom: 8,
@@ -10389,29 +10392,51 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               alignItems: 'center',
                               borderLeftWidth: item.unread ? 3 : 0,
                               borderLeftColor: '#FFD700',
+                              borderWidth: isDeleteMode && selectedNotifications.has(item.id) ? 2 : 0,
+                              borderColor: '#FFD700',
                             }}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                             delayPressIn={0}
                             delayPressOut={0}
                             activeOpacity={0.8}
                             android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
+                            onLongPress={() => {
+                              if (!isDeleteMode) {
+                                setIsDeleteMode(true);
+                                setSelectedNotifications(new Set([item.id]));
+                              }
+                            }}
                             onPress={() => {
-                              if (item.type === 'thread') {
-                                setSelectedThread({
-                                  senderUid: item.threadData.senderUid,
-                                  senderName: item.threadData.senderName,
-                                  senderAvatar: item.threadData.senderAvatar,
-                                  messages: item.threadData.messages,
-                                });
-                              } else {
-                                if (!item.notificationData.read) {
-                                  markNotificationAsRead(item.notificationData.id);
+                              if (isDeleteMode) {
+                                // Multiple selection - toggle selection
+                                const newSelected = new Set(selectedNotifications);
+                                if (newSelected.has(item.id)) {
+                                  newSelected.delete(item.id);
+                                  if (newSelected.size === 0) {
+                                    setIsDeleteMode(false);
+                                  }
+                                } else {
+                                  newSelected.add(item.id);
                                 }
-                                Alert.alert(
-                                  'Notification',
-                                  formatNotificationMessage(item.notificationData, userData || {}),
-                                  [{ text: 'OK' }]
-                                );
+                                setSelectedNotifications(newSelected);
+                              } else {
+                                if (item.type === 'thread') {
+                                  setSelectedThread({
+                                    senderUid: item.threadData.senderUid,
+                                    senderName: item.threadData.senderName,
+                                    senderAvatar: item.threadData.senderAvatar,
+                                    messages: item.threadData.messages,
+                                  });
+                                } else {
+                                  if (!item.notificationData.read) {
+                                    markNotificationAsRead(item.notificationData.id);
+                                  }
+                                  Alert.alert(
+                                    'Notification',
+                                    formatNotificationMessage(item.notificationData, userData || {}),
+                                    [{ text: 'OK' }]
+                                  );
+                                }
                               }
                             }}
                           >
@@ -10475,6 +10500,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               </View>
                             )}
 
+                            {/* Selection Checkbox */}
+                            {isDeleteMode && (
+                              <View style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: 4,
+                                borderWidth: 2,
+                                borderColor: selectedNotifications.has(item.id) ? '#FFD700' : 'rgba(255,255,255,0.5)',
+                                backgroundColor: selectedNotifications.has(item.id) ? '#FFD700' : 'transparent',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                marginRight: 12,
+                              }}>
+                                {selectedNotifications.has(item.id) && (
+                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>✓</Text>
+                                )}
+                              </View>
+                            )}
+
                             <View style={{ flex: 1 }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
                                 <Text style={{
@@ -10498,6 +10542,119 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       }}
                       showsVerticalScrollIndicator={false}
                     />
+
+                    {/* Selection Action Bar */}
+                    {isDeleteMode && (
+                      <View style={{
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        borderRadius: 8,
+                        padding: 12,
+                        marginTop: 16,
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                          <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>
+                            {selectedNotifications.size} selected
+                          </Text>
+                        </View>
+                        
+                        <View style={{ 
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8
+                        }}>
+                          {/* Cancel */}
+                          <Pressable
+                            style={{
+                              backgroundColor: 'rgba(255,255,255,0.2)',
+                              borderRadius: 6,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              flex: 1,
+                              alignItems: 'center',
+                            }}
+                            onPress={() => {
+                              setIsDeleteMode(false);
+                              setSelectedNotifications(new Set());
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '500' }}>
+                              Cancel
+                            </Text>
+                          </Pressable>
+
+                          {/* Mark as Read/Unread */}
+                          <Pressable
+                            style={{
+                              backgroundColor: 'rgba(255,215,0,0.8)',
+                              borderRadius: 6,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              flex: 1,
+                              alignItems: 'center',
+                            }}
+                            onPress={async () => {
+                              const selectedItems = unifiedNotifications.filter(item => selectedNotifications.has(item.id));
+                              
+                              for (const selectedItem of selectedItems) {
+                                if (selectedItem.type === 'notification' && selectedItem.notificationData) {
+                                  if (selectedItem.notificationData.read) {
+                                    // Mark as unread (if function exists)
+                                    // For now, we'll just mark as read if unread
+                                  } else {
+                                    await markNotificationAsRead(selectedItem.notificationData.id);
+                                  }
+                                }
+                              }
+                              
+                              setSelectedNotifications(new Set());
+                              setIsDeleteMode(false);
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Text style={{ color: 'black', fontSize: 12, fontWeight: 'bold' }}>
+                              Mark Read
+                            </Text>
+                          </Pressable>
+
+                          {/* Delete */}
+                          <Pressable
+                            style={{
+                              backgroundColor: '#FF4444',
+                              borderRadius: 6,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              flex: 1,
+                              alignItems: 'center',
+                            }}
+                            onPress={() => {
+                              Alert.alert(
+                                'Delete Messages',
+                                `Delete ${selectedNotifications.size} message${selectedNotifications.size > 1 ? 's' : ''}?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Delete',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      await deleteSelectedNotifications();
+                                      setIsDeleteMode(false);
+                                    }
+                                  }
+                                ]
+                              );
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>
+                              Delete
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
+                    </>
                   );
                 })()
               ) : (
