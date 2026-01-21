@@ -66,7 +66,7 @@ import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import storage from '@react-native-firebase/storage';
 import messaging from '@react-native-firebase/messaging';
-                    
+import database from '@react-native-firebase/database';
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
 import {
@@ -1927,6 +1927,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           updateLastSeen();
         } else if (nextAppState === 'active') {
           setIsCurrentUserOnline(true);
+          // Clear lastSeen when coming back online
+          const clearLastSeen = async () => {
+            try {
+              let firestoreMod: any = null;
+              try {
+                firestoreMod = require('@react-native-firebase/firestore').default;
+              } catch {}
+              if (firestoreMod) {
+                await firestoreMod().doc(`users/${myUid}`).update({ lastSeen: firestoreMod.FieldValue.delete() });
+              }
+            } catch (error) {
+              console.warn('Failed to clear lastSeen on active:', error);
+            }
+          };
+          clearLastSeen();
         }
       }
     });
@@ -18407,6 +18422,8 @@ const App: React.FC = () => {
     loadAuthStatus();
   }, []);
                     
+  const previousUidRef = useRef<string | null>(null);
+                    
   useEffect(() => {
     let unsub: any = null;
     try {
@@ -18433,6 +18450,25 @@ const App: React.FC = () => {
         }
         setUser(u);
         if (initializing) setInitializing(false);
+        
+        // Handle presence in RTDB
+        if (u) {
+          const uid = u.uid;
+          if (uid !== previousUidRef.current) {
+            if (previousUidRef.current) {
+              database().ref(`/presence/${previousUidRef.current}`).set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+            }
+            const presenceRef = database().ref(`/presence/${uid}`);
+            presenceRef.set({ online: true, lastSeen: null });
+            presenceRef.onDisconnect().set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+            previousUidRef.current = uid;
+          }
+        } else {
+          if (previousUidRef.current) {
+            database().ref(`/presence/${previousUidRef.current}`).set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+            previousUidRef.current = null;
+          }
+        }
       });
     } catch (e) {
       setNativeInitError('Native module error: ' + (e && e.message ? e.message : String(e)));

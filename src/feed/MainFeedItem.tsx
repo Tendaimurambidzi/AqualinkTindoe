@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect } from 'react';
+import React, { memo, useCallback, useEffect, useState } from 'react';
 import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -6,6 +6,7 @@ import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
 import PosterActionBar from '../components/PosterActionBar';
 import VideoWithTapControls from '../components/VideoWithTapControls';
 import ClickableTextWithLinks from '../components/ClickableTextWithLinks';
+import database from '@react-native-firebase/database';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -156,6 +157,33 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   videoStyleFor,
   isVideoAsset,
 }) => {
+  const [status, setStatus] = useState<string>('');
+
+  useEffect(() => {
+    if (item.ownerUid !== myUid) {
+      const presenceRef = database().ref(`/presence/${item.ownerUid}`);
+      const unsubscribe = presenceRef.on('value', (snapshot) => {
+        if (!snapshot) return;
+        const presence = snapshot.val();
+        if (presence?.online) {
+          setStatus('Here now!');
+        } else if (presence?.lastSeen) {
+          const displayTime = new Date(presence.lastSeen);
+          const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+          const localeOptions = Intl.DateTimeFormat().resolvedOptions();
+          if (localeOptions.hour12) {
+            options.hour12 = true;
+          }
+          const timeStr = displayTime.toLocaleTimeString([], options);
+          setStatus(`Away since:${timeStr}`);
+        } else {
+          setStatus('');
+        }
+      });
+      return unsubscribe;
+    }
+  }, [item.ownerUid, myUid]);
+
   // Calculate play conditions
   const isAnyModalOpen = showMakeWaves || showAudioModal || !!capturedMedia || showLive;
   const shouldPlay = !isPaused && allowPlayback && !isAnyModalOpen;
@@ -665,48 +693,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
-          {item.ownerUid === myUid ? (
-            <Text style={{ fontSize: 14, color: isCurrentUserOnline ? 'green' : 'grey', marginRight: 20 }}>
-              {isCurrentUserOnline ? 'Here now!' : (() => {
-                // For current user when offline, show away since current time
-                const displayTime = new Date();
-                const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-                const localeOptions = Intl.DateTimeFormat().resolvedOptions();
-                if (localeOptions.hour12) {
-                  options.hour12 = true;
-                }
-                const timeStr = displayTime.toLocaleTimeString([], options);
-                return `Away since:${timeStr}`;
-              })()}
-            </Text>
-          ) : (
-            <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>
-              {(() => {
-                let displayTime: Date;
-                const lastSeen = userData[item.ownerUid]?.lastSeen;
-                
-                if (lastSeen) {
-                  displayTime = lastSeen;
-                } else {
-                  // Generate a default "away" time based on user ID for users without lastSeen
-                  const userId = item.ownerUid;
-                  const hash = userId.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
-                  const minutesAgo = (hash % 60) + 1; // 1 to 60 minutes ago
-                  // Use a fixed base time instead of Date.now() to keep times static
-                  const baseTime = new Date('2025-12-19T12:00:00');
-                  displayTime = new Date(baseTime.getTime() - minutesAgo * 60000);
-                }
-                
-                const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-                const localeOptions = Intl.DateTimeFormat().resolvedOptions();
-                if (localeOptions.hour12) {
-                  options.hour12 = true;
-                }
-                const timeStr = displayTime.toLocaleTimeString([], options);
-                return `Away since:${timeStr}`;
-              })()}
-            </Text>
-          )}
+          {status && <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>{status}</Text>}
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
         </ScrollView>
 
