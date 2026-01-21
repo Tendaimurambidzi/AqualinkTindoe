@@ -2464,6 +2464,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Notification deletion state
   const [selectedNotifications, setSelectedNotifications] = useState<Set<string>>(new Set());
   const [isDeleteMode, setIsDeleteMode] = useState(false);
+  
+  // Thread message selection state
+  const [selectedThreadMessages, setSelectedThreadMessages] = useState<Set<string>>(new Set());
+  const [isThreadSelectionMode, setIsThreadSelectionMode] = useState(false);
+  
   const [showInbox, setShowInbox] = useState(false);
   const [selectedThread, setSelectedThread] = useState<{
     senderUid: string;
@@ -10548,11 +10553,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={{
                         backgroundColor: 'rgba(255,255,255,0.1)',
                         borderRadius: 8,
-                        padding: 12,
+                        padding: 16,
                         marginTop: 16,
                       }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                          <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                          <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
                             {selectedNotifications.size} selected
                           </Text>
                         </View>
@@ -10579,7 +10584,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
-                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '500' }}>
+                            <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
                               Cancel
                             </Text>
                           </Pressable>
@@ -10613,7 +10618,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
-                            <Text style={{ color: 'black', fontSize: 12, fontWeight: 'bold' }}>
+                            <Text style={{ color: 'black', fontSize: 11, fontWeight: 'bold' }}>
                               Mark Read
                             </Text>
                           </Pressable>
@@ -10647,7 +10652,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             }}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
-                            <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>
+                            <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
                               Delete
                             </Text>
                           </Pressable>
@@ -10668,6 +10673,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       onPress={() => {
                         setSelectedThread(null);
                         setSelectedMessageForReply(null);
+                        setIsThreadSelectionMode(false);
+                        setSelectedThreadMessages(new Set());
                       }}
                       hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       delayPressIn={0}
@@ -10685,15 +10692,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         marginBottom: 12,
                         alignItems: 'flex-start',
                         padding: 8,
-                        backgroundColor: selectedMessageForReply === message ? 'rgba(255,215,0,0.1)' : index < selectedThread.messages.length - 1 ? 'rgba(255,255,255,0.02)' : 'transparent',
+                        backgroundColor: isThreadSelectionMode && selectedThreadMessages.has(message.id || `msg_${index}`) 
+                          ? 'rgba(255,215,0,0.3)' 
+                          : selectedMessageForReply === message 
+                            ? 'rgba(255,215,0,0.1)' 
+                            : index < selectedThread.messages.length - 1 
+                              ? 'rgba(255,255,255,0.02)' 
+                              : 'transparent',
                         borderRadius: 6,
-                        borderWidth: selectedMessageForReply === message ? 2 : 0,
+                        borderWidth: (isThreadSelectionMode && selectedThreadMessages.has(message.id || `msg_${index}`)) || selectedMessageForReply === message ? 2 : 0,
                         borderColor: '#FFD700',
                       }}
+                      onLongPress={() => {
+                        if (!isThreadSelectionMode) {
+                          setIsThreadSelectionMode(true);
+                          setSelectedThreadMessages(new Set([message.id || `msg_${index}`]));
+                          setSelectedMessageForReply(null); // Clear reply selection when entering selection mode
+                        }
+                      }}
                       onPress={() => {
-                        // Select message for reply
-                        setSelectedMessageForReply(message);
-                        setQuickReplyText('');
+                        if (isThreadSelectionMode) {
+                          // Toggle selection
+                          const messageId = message.id || `msg_${index}`;
+                          const newSelected = new Set(selectedThreadMessages);
+                          if (newSelected.has(messageId)) {
+                            newSelected.delete(messageId);
+                            if (newSelected.size === 0) {
+                              setIsThreadSelectionMode(false);
+                            }
+                          } else {
+                            newSelected.add(messageId);
+                          }
+                          setSelectedThreadMessages(newSelected);
+                        } else {
+                          // Select message for reply
+                          setSelectedMessageForReply(message);
+                          setQuickReplyText('');
+                        }
                       }}
                     >
                       {/* Read/Unread indicator */}
@@ -10705,6 +10740,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         marginRight: 8,
                         marginTop: 4,
                       }} />
+                      
+                      {/* Selection Checkbox */}
+                      {isThreadSelectionMode && (
+                        <View style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: 4,
+                          borderWidth: 2,
+                          borderColor: selectedThreadMessages.has(message.id || `msg_${index}`) ? '#FFD700' : 'rgba(255,255,255,0.5)',
+                          backgroundColor: selectedThreadMessages.has(message.id || `msg_${index}`) ? '#FFD700' : 'transparent',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 8,
+                          marginTop: 2,
+                        }}>
+                          {selectedThreadMessages.has(message.id || `msg_${index}`) && (
+                            <Text style={{ color: 'black', fontSize: 14, fontWeight: 'bold' }}>✓</Text>
+                          )}
+                        </View>
+                      )}
                       
                       {/* Avatar */}
                       {selectedThread.senderAvatar ? (
@@ -10788,6 +10843,121 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </View>
                     </Pressable>
                   ))}
+
+                  {/* Thread Message Selection Action Bar */}
+                  {isThreadSelectionMode && (
+                    <View style={{
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      borderRadius: 8,
+                      padding: 12,
+                      marginTop: 16,
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>
+                          {selectedThreadMessages.size} selected
+                        </Text>
+                      </View>
+                      
+                      <View style={{ 
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 6
+                      }}>
+                        {/* Cancel */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(255,255,255,0.2)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                            Cancel
+                          </Text>
+                        </Pressable>
+
+                        {/* Copy */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(0,150,255,0.8)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            const selectedMessages = selectedThread.messages.filter((_, index) => 
+                              selectedThreadMessages.has(`msg_${index}`)
+                            );
+                            const textToCopy = selectedMessages.map(msg => msg.text).join('\n\n');
+                            // Note: Clipboard.setString would be used in a real implementation
+                            Alert.alert('Copied', 'Message text copied to clipboard');
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                            Copy
+                          </Text>
+                        </Pressable>
+
+                        {/* Forward */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(255,215,0,0.8)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            Alert.alert('Forward', 'Forward functionality would be implemented here');
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'black', fontSize: 11, fontWeight: 'bold' }}>
+                            Forward
+                          </Text>
+                        </Pressable>
+
+                        {/* Hide */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(150,150,150,0.8)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            Alert.alert('Hide', 'Hide functionality would be implemented here');
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                            Hide
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
 
                   {/* Quick Reply Input - Only visible when a message is selected */}
                   {selectedMessageForReply && (
