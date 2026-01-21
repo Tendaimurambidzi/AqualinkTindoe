@@ -668,17 +668,26 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               {(() => {
                 const lastSeen = userData[item.ownerUid]?.lastSeen;
                 const now = new Date();
-                const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+                const oneMinuteAgo = new Date(now.getTime() - 1 * 60 * 1000);
                 
-                if (!lastSeen || lastSeen > fiveMinutesAgo) {
+                if (lastSeen && lastSeen > oneMinuteAgo) {
                   return 'Here now';
-                } else {
+                } else if (lastSeen) {
                   const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
                   const localeOptions = Intl.DateTimeFormat().resolvedOptions();
                   if (localeOptions.hour12) {
                     options.hour12 = true;
                   }
                   const timeStr = lastSeen.toLocaleTimeString([], options);
+                  return `Away since:${timeStr}`;
+                } else {
+                  // For users with no lastSeen data, show Away since with current time as fallback
+                  const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
+                  const localeOptions = Intl.DateTimeFormat().resolvedOptions();
+                  if (localeOptions.hour12) {
+                    options.hour12 = true;
+                  }
+                  const timeStr = now.toLocaleTimeString([], options);
                   return `Away since:${timeStr}`;
                 }
               })()}

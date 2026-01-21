@@ -2082,17 +2082,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       const doc = await firestoreMod().doc(`users/${userId}`).get();
       const data = doc.data();
+      let lastSeen = null;
+      if (data?.lastSeen) {
+        if (typeof data.lastSeen.toDate === 'function') {
+          lastSeen = data.lastSeen.toDate();
+        } else if (typeof data.lastSeen === 'number') {
+          lastSeen = new Date(data.lastSeen);
+        } else if (typeof data.lastSeen === 'string') {
+          lastSeen = new Date(data.lastSeen);
+        }
+      }
       const userInfo = {
         name: data?.name || data?.displayName || data?.username || 'User',
         avatar: data?.avatar || data?.userPhoto || '',
         bio: data?.bio || '',
-        lastSeen: data?.lastSeen && typeof data.lastSeen.toDate === 'function' ? data.lastSeen.toDate() : null,
+        lastSeen: lastSeen,
       };
       setUserData(prev => {
         const existing = prev[userId];
         const updatedUserInfo = { ...userInfo };
-        if (existing && existing.lastSeen && !updatedUserInfo.lastSeen) {
-          updatedUserInfo.lastSeen = existing.lastSeen;
+        if (existing) {
+          if (existing.lastSeen && updatedUserInfo.lastSeen) {
+            // Use the more recent lastSeen
+            updatedUserInfo.lastSeen = updatedUserInfo.lastSeen > existing.lastSeen ? updatedUserInfo.lastSeen : existing.lastSeen;
+          } else if (existing.lastSeen && !updatedUserInfo.lastSeen) {
+            // Keep existing if new is null
+            updatedUserInfo.lastSeen = existing.lastSeen;
+          }
+          // If existing is null, use updated (which may be null or set)
         }
         return { ...prev, [userId]: updatedUserInfo };
       });
