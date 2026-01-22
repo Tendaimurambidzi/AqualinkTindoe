@@ -1680,9 +1680,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
         console.log(`🎉 Reach recorded for post ${postId}, new count: ${(reachCounts[postId] || 0) + 1}`);
 
-        // Show success feedback
-        Alert.alert('View Recorded', `Post view counted! Reach: ${(reachCounts[postId] || 0) + 1}`);
-
         // Refresh reach counts from server after a short delay
         setTimeout(() => {
           loadReachCounts([postId]);
