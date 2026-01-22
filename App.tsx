@@ -3155,6 +3155,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showPearls, setShowPearls] = useState<boolean>(false);
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
   const [echoWaveId, setEchoWaveId] = useState<string | null>(null);
+  const [echoPostData, setEchoPostData] = useState<Vibe | null>(null);
   const [mainEchoSending, setMainEchoSending] = useState<boolean>(false);
   const [postEchoTexts, setPostEchoTexts] = useState<{[postId: string]: string}>({});
   const [postEchoLists, setPostEchoLists] = useState<{[postId: string]: any[]}>({});
@@ -3574,7 +3575,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleAIEchoSuggest = useCallback(async () => {
     setIsAIEchoSuggesting(true);
     try {
-      const suggestion = await generateEchoSuggestion();
+      // Build post context for AI
+      const postContext = echoPostData ? {
+        captionText: echoPostData.captionText,
+        mediaType: echoPostData.media?.type,
+        authorName: echoPostData.authorName,
+        hasImage: !!(echoPostData.image || (echoPostData.media?.type?.startsWith('image/'))),
+        hasVideo: !!(echoPostData.playbackUrl || (echoPostData.media?.type?.startsWith('video/')))
+      } : undefined;
+
+      const suggestion = await generateEchoSuggestion(postContext);
       updateEchoText(suggestion);
     } catch (error) {
       console.error('AI echo suggest failed', error);
@@ -3582,7 +3592,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } finally {
       setIsAIEchoSuggesting(false);
     }
-  }, [notifyError, updateEchoText]);
+  }, [notifyError, updateEchoText, echoPostData]);
   const [echoList, setEchoList] = useState<
     Array<{
       id?: string;
@@ -4126,6 +4136,42 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
                     
     loadEchoes();
+  }, [showEchoes, echoWaveId]);
+                    
+  // Load post data when echo modal opens
+  useEffect(() => {
+    if (!showEchoes || !echoWaveId) {
+      setEchoPostData(null);
+      return;
+    }
+                    
+    const loadPostData = async () => {
+      try {
+        const waveDoc = await firestore().collection('waves').doc(echoWaveId).get();
+        if (waveDoc.exists) {
+          const data = waveDoc.data();
+          const postData: Vibe = {
+            id: waveDoc.id,
+            captionText: data?.caption || '',
+            media: data?.media || null,
+            audio: data?.audio || null,
+            playbackUrl: data?.playbackUrl || null,
+            muxStatus: data?.muxStatus || null,
+            authorName: data?.authorName || null,
+            ownerUid: data?.ownerUid || null,
+            user: data?.user || null,
+            image: data?.image || null,
+            counts: data?.counts || { splashes: 0, echoes: 0 },
+          };
+          setEchoPostData(postData);
+        }
+      } catch (error) {
+        console.error('Error loading post data for echo:', error);
+        setEchoPostData(null);
+      }
+    };
+                    
+    loadPostData();
   }, [showEchoes, echoWaveId]);
                     
   // Adjust right-side bubble vertical anchor to fit up to 3 stacks
@@ -6523,19 +6569,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setVibesFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       setPublicFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       setPostFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      
-      // Update Firestore echo count
-      try {
-        await firestore().doc(`waves/${echoWaveId}`).update({
-          'counts.echoes': firestore.FieldValue.increment(1)
-        });
-      } catch (error) {
-        console.error('Error updating echo count:', error);
-        // Revert local state on error
-        setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
-        setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
-        setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
-      }
       
       // Reload echoes list
       loadPostEchoes(currentWave.id);
@@ -11686,7 +11719,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.logbookActionText}>🖼️ Gallery</Text>
                 </Pressable>
               </View>
-              
+
               {/* Send/Cancel Buttons */}
               <View style={styles.textComposerButtonRow}>
                 <Pressable
@@ -11712,6 +11745,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   )}
                 </Pressable>
               </View>
+              
             </View>
           </View>
         </View>

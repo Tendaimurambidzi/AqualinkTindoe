@@ -12,16 +12,16 @@ import {
   Pressable,
 } from 'react-native';
 import { launchImageLibrary, Asset } from 'react-native-image-picker';
-import { uploadPost } from '../services/uploadPost';
-import type { SimpleMedia } from '../services/uploadPost';
-import auth from '@react-native-firebase/auth';
+import { generateImageWithGrok, editImageWithGrok, generateVideoScriptWithGrok, generateVideoConceptWithGrok } from '../services/aiService';
 
 const mediaEditorItems = [
-  { id: 'music', icon: 'dYZæ', label: 'Music' },
-  { id: 'filters', icon: 'dYZ"', label: 'Filters' },
-  { id: 'overlays', icon: 'dY-¬‹,?', label: 'Overlays' },
-  { id: 'trim', icon: 'ƒo,‹,?', label: 'Trim' },
-  { id: 'comment', icon: 'dY\'ª', label: 'Comment' },
+  { id: 'music', icon: '🎵', label: 'Music' },
+  { id: 'filters', icon: '🎨', label: 'Filters' },
+  { id: 'overlays', icon: '📱', label: 'Overlays' },
+  { id: 'trim', icon: '✂️', label: 'Trim' },
+  { id: 'comment', icon: '💬', label: 'Comment' },
+  { id: 'ai_edit_image', icon: '🤖🖼️', label: 'AI Edit Image' },
+  { id: 'ai_create_video', icon: '🤖🎥', label: 'AI Create Video' },
 ];
 
 const CreatePostScreen = ({ navigation, route }: any) => {
@@ -30,8 +30,53 @@ const CreatePostScreen = ({ navigation, route }: any) => {
   const [selectedMedia, setSelectedMedia] = useState<SimpleMedia | null>(null);
   const [uploading, setUploading] = useState(false);
   const [showLinkInput, setShowLinkInput] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResponse, setAiResponse] = useState<string>('');
   const onPostPublished: ((wave: any) => void) | undefined =
     route?.params?.onPostPublished;
+
+  const handleAIMediaEditor = async (itemId: string) => {
+    setAiLoading(true);
+    try {
+      let prompt = '';
+      let result = '';
+
+      switch (itemId) {
+        case 'ai_edit_image':
+          if (!selectedMedia) {
+            Alert.alert('No Media', 'Please select an image first.');
+            return;
+          }
+          prompt = await new Promise<string>((resolve) => {
+            Alert.prompt('Edit Image', 'Describe how you want to edit this image:', (text) => resolve(text || ''));
+          });
+          if (prompt) {
+            result = await editImageWithGrok(`An image of ${selectedMedia.type}`, prompt);
+          }
+          break;
+        case 'ai_create_video':
+          prompt = await new Promise<string>((resolve) => {
+            Alert.prompt('Create Video', 'Describe the video concept:', (text) => resolve(text || ''));
+          });
+          if (prompt) {
+            result = await generateVideoConceptWithGrok(prompt);
+          }
+          break;
+        default:
+          Alert.alert(itemId, 'AI feature coming soon.');
+          return;
+      }
+
+      if (result) {
+        setAiResponse(result);
+        Alert.alert('GROK AI Result', result);
+      }
+    } catch (error) {
+      Alert.alert('AI Error', 'Failed to generate content. Please try again.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   const handlePickMedia = () => {
     launchImageLibrary(
@@ -252,9 +297,13 @@ const CreatePostScreen = ({ navigation, route }: any) => {
               <Pressable
                 key={item.id}
                 style={styles.mediaEditorItem}
-                onPress={() =>
-                  Alert.alert(item.label, 'Media editor coming soon.')
-                }
+                onPress={() => {
+                  if (item.id.startsWith('ai_')) {
+                    handleAIMediaEditor(item.id);
+                  } else {
+                    Alert.alert(item.label, 'Media editor coming soon.');
+                  }
+                }}
               >
                 <Text style={styles.mediaEditorIcon}>{item.icon}</Text>
                 <Text style={styles.mediaEditorLabel}>{item.label}</Text>
@@ -267,7 +316,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
       )}
 
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-        {uploading ? (
+        {uploading || aiLoading ? (
           <ActivityIndicator />
         ) : (
           <Pressable
@@ -280,7 +329,9 @@ const CreatePostScreen = ({ navigation, route }: any) => {
             onPress={handleUpload}
             disabled={!selectedMedia && !caption.trim()}
           >
-            <Text style={{ color: 'white', fontWeight: 'bold' }}>Post</Text>
+            <Text style={{ color: 'white', fontWeight: 'bold' }}>
+              {selectedMedia ? 'Post with Media' : 'Post Text'}
+            </Text>
           </Pressable>
         )}
       </View>

@@ -591,7 +591,6 @@ exports.deleteEcho = onCall({ region: 'us-central1' }, async (req) => {
     const authorUid = echoSnap.get('userUid');
     if (authorUid !== uid) throw new HttpsError('permission-denied', 'You can only delete your own echo');
     tx.delete(echoRef);
-    tx.update(waveRef, { 'counts.echoes': FieldValue.increment(-1) });
   });
 
   return { status: 'deleted' };

@@ -38,8 +38,38 @@ export async function generateSearchSuggestion(): Promise<string> {
   return await generateText(prompt);
 }
 
-export async function generateEchoSuggestion(): Promise<string> {
-  const prompt = 'Generate a thoughtful and positive echo (comment) for a social media post.';
+export async function generateEchoSuggestion(postContext?: {
+  captionText?: string;
+  mediaType?: string;
+  authorName?: string;
+  hasImage?: boolean;
+  hasVideo?: boolean;
+}): Promise<string> {
+  let prompt = 'Generate a thoughtful and positive echo (comment) for a social media post.';
+
+  if (postContext) {
+    const { captionText, mediaType, authorName, hasImage, hasVideo } = postContext;
+
+    // Build context-aware prompt
+    let contextInfo = '';
+    if (captionText && captionText.trim()) {
+      contextInfo += `The post text is: "${captionText}". `;
+    }
+    if (hasImage) {
+      contextInfo += 'The post includes an image. ';
+    }
+    if (hasVideo) {
+      contextInfo += 'The post includes a video. ';
+    }
+    if (authorName) {
+      contextInfo += `Posted by ${authorName}. `;
+    }
+
+    if (contextInfo.trim()) {
+      prompt = `Generate a thoughtful and positive echo (comment) for this social media post. ${contextInfo}Make the echo relevant to the content and engaging.`;
+    }
+  }
+
   return await generateText(prompt);
 }
 
@@ -103,5 +133,28 @@ export async function analyzeAndSuggest(content: string, analysisType: 'improvem
   };
 
   const prompt = analysisPrompts[analysisType] || `Analyze this content: "${content}"`;
+  return await generateText(prompt);
+}
+
+// GROK AI Media Creation and Editing Features
+export async function generateImageWithGrok(prompt: string): Promise<string> {
+  // Note: GROK can generate images via xAI API, but implementation requires image generation endpoint
+  // For now, return a descriptive prompt that can be used with image generation tools
+  const enhancedPrompt = `Create a detailed image generation prompt based on: "${prompt}". Include style, colors, composition, and mood.`;
+  return await generateText(enhancedPrompt);
+}
+
+export async function editImageWithGrok(imageDescription: string, editRequest: string): Promise<string> {
+  const prompt = `Given this image description: "${imageDescription}", suggest how to edit it for: "${editRequest}". Provide specific editing instructions, filters, or modifications.`;
+  return await generateText(prompt);
+}
+
+export async function generateVideoScriptWithGrok(theme: string, duration: string = '30 seconds'): Promise<string> {
+  const prompt = `Create a video script for a ${duration} video about "${theme}". Include scene descriptions, voiceover text, and visual suggestions. Structure it with timestamps.`;
+  return await generateText(prompt);
+}
+
+export async function generateVideoConceptWithGrok(prompt: string): Promise<string> {
+  const enhancedPrompt = `Develop a complete video concept based on: "${prompt}". Include theme, style, target audience, key scenes, music suggestions, and production notes.`;
   return await generateText(prompt);
 }
