@@ -2283,6 +2283,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
   const [echoExpansionInProgress, setEchoExpansionInProgress] = useState<Record<string, boolean>>({});
   const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
+  // View tracking state
+  const [viewTimers, setViewTimers] = useState<Record<string, NodeJS.Timeout>>({});
+  const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
   // Public feed toggle and data
                     
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
@@ -2292,6 +2295,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
   const [preloadedVideoIds, setPreloadedVideoIds] = useState<Set<string>>(new Set()); // Videos to preload (adjacent to active)
   const onViewableItemsChanged = useRef(({ viewableItems, changed }: any) => {
+    // Handle video playback logic
     if (viewableItems.length > 0) {
       const newActiveId = viewableItems[0].item.id;
       setActiveVideoId(newActiveId);
@@ -2314,7 +2318,85 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setActiveVideoId(null);
       setPreloadedVideoIds(new Set());
     }
+
+    // Handle view tracking for reach counting
+    const currentlyViewableIds = new Set(viewableItems.map((item: any) => item.item.id));
+    
+    // Clear timers for items that are no longer viewable
+    setViewTimers(prevTimers => {
+      const newTimers = { ...prevTimers };
+      Object.keys(newTimers).forEach(postId => {
+        if (!currentlyViewableIds.has(postId)) {
+          clearTimeout(newTimers[postId]);
+          delete newTimers[postId];
+        }
+      });
+      return newTimers;
+    });
+
+    // Start timers for newly viewable items
+    viewableItems.forEach((viewableItem: any) => {
+      const postId = viewableItem.item.id;
+      
+      setViewTimers(prevTimers => {
+        // Don't start a new timer if one already exists
+        if (prevTimers[postId]) {
+          return prevTimers;
+        }
+
+        // Start 10-second view timer
+        const timer = setTimeout(() => {
+          recordAutomaticReach(postId);
+          // Remove timer after it fires
+          setViewTimers(prev => {
+            const newTimers = { ...prev };
+            delete newTimers[postId];
+            return newTimers;
+          });
+        }, 10000); // 10 seconds
+
+        return {
+          ...prevTimers,
+          [postId]: timer
+        };
+      });
+    });
   });
+
+  // Cleanup view timers on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all active view timers
+      setViewTimers(prevTimers => {
+        Object.values(prevTimers).forEach(timer => clearTimeout(timer));
+        return {};
+      });
+    };
+  }, []);
+
+  // Load viewed posts from AsyncStorage on mount
+  useEffect(() => {
+    const loadViewedPosts = async () => {
+      try {
+        if (!myUid) return;
+        
+        const keys = await AsyncStorage.getAllKeys();
+        const viewedKeys = keys.filter(key => key.startsWith('viewed_') && key.includes(`_${myUid}`));
+        
+        const viewedPostIds = viewedKeys.map(key => {
+          const parts = key.split('_');
+          return parts[1]; // Extract postId from 'viewed_{postId}_{userId}'
+        });
+        
+        setViewedPosts(new Set(viewedPostIds));
+      } catch (error) {
+        console.error('Error loading viewed posts:', error);
+      }
+    };
+
+    loadViewedPosts();
+  }, [myUid]);
+
   const handlePostPublished = useCallback(
     (wave: Vibe) => {
       setPostFeed(prev => {
@@ -7215,6 +7297,42 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.error('Record Image Reach function error:', error);
       // Don't crash - just return a safe response
       return { success: false, error: 'Function not available' };
+    }
+  };
+
+  // Automatic view tracking with 10-second dwell time
+  const recordAutomaticReach = async (postId: string) => {
+    try {
+      // Check if already viewed in this session
+      if (viewedPosts.has(postId)) {
+        return;
+      }
+
+      // Check AsyncStorage for previous views
+      const viewedKey = `viewed_${postId}_${myUid}`;
+      const hasViewed = await AsyncStorage.getItem(viewedKey);
+      if (hasViewed) {
+        setViewedPosts(prev => new Set(prev).add(postId));
+        return;
+      }
+
+      // Record the reach
+      const recordReachFn = functions().httpsCallable('recordReach');
+      const result = await recordReachFn({ postId, userId: myUid });
+
+      // Mark as viewed
+      await AsyncStorage.setItem(viewedKey, Date.now().toString());
+      setViewedPosts(prev => new Set(prev).add(postId));
+
+      // Update local reach count
+      setReachCounts(prev => ({
+        ...prev,
+        [postId]: (prev[postId] || 0) + 1
+      }));
+
+      console.log(`Reach recorded for post ${postId}`);
+    } catch (error) {
+      console.error('Automatic reach recording error:', error);
     }
   };
 
