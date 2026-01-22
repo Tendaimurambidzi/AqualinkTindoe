@@ -389,6 +389,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   pressed && {
                     opacity: 0.7,
                     transform: [{ scale: 0.9 }],
+                    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Add dark background when pressed
                   }
                 ]}
                 hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
