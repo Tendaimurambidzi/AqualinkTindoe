@@ -76,6 +76,7 @@ interface MainFeedItemProps {
   setRevealedImages: React.Dispatch<React.SetStateAction<Set<string>>>;
   recordVideoReach: (id: string) => Promise<void>;
   recordImageReach: (id: string) => Promise<void>;
+  onRefreshReach?: (postId: string) => void;
   setPreservedScrollPosition: (index: number) => void;
   navigation: any;
   ensureSplash: (id: string) => Promise<void>;
@@ -137,6 +138,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   setRevealedImages,
   recordVideoReach,
   recordImageReach,
+  onRefreshReach,
   setPreservedScrollPosition,
   navigation,
   ensureSplash,
@@ -326,6 +328,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       console.log('Reach recording failed:', error.message);
     });
   }, [item.id, recordVideoReach]);
+
+  const handleRefreshReach = useCallback(() => {
+    // This will be passed as a prop to refresh reach counts
+    if (onRefreshReach) {
+      onRefreshReach(item.id);
+    }
+  }, [item.id, onRefreshReach]);
 
   const handleEchoToggle = useCallback(() => {
     if (echoExpansionInProgress[item.id]) return;
@@ -692,6 +701,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           >
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
+          </Pressable>
+          <Pressable
+            onPress={handleRefreshReach}
+            style={{ flexDirection: 'row', marginRight: 20 }}
+          >
+            <Text style={{ fontSize: 14, color: 'blue' }}>🔄 Refresh</Text>
           </Pressable>
           {status && <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>{status}</Text>}
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}

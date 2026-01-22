@@ -1608,6 +1608,95 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [user, setUser] = useState<any>(null);
   const [isCurrentUserOnline, setIsCurrentUserOnline] = useState<boolean>(false);
   const [authCompleted, setAuthCompleted] = useState<boolean>(false);
+  const myUid = user?.uid || null;
+  
+  // Debug logging for myUid changes
+  useEffect(() => {
+    console.log('🔍 InnerApp myUid changed:', myUid);
+  }, [myUid]);
+
+  // Automatic view tracking with 10-second dwell time
+  const recordAutomaticReach = async (postId: string) => {
+    try {
+      console.log(`📊 Starting automatic reach recording for post ${postId}`);
+      console.log(`🔍 Current user state:`, user);
+      console.log(`🔍 Current myUid:`, myUid);
+
+      // Check authentication - use both state and direct auth check
+      let currentUser = user;
+      if (!currentUser) {
+        try {
+          const authMod = require('@react-native-firebase/auth').default;
+          currentUser = authMod().currentUser;
+          console.log(`🔍 Direct auth check - currentUser:`, currentUser);
+        } catch (error) {
+          console.log(`❌ Could not get auth module:`, error);
+        }
+      }
+
+      const currentUid = currentUser?.uid || null;
+      console.log(`🔍 Final uid check:`, currentUid);
+
+      // Check authentication first
+      if (!currentUid) {
+        console.log(`❌ No user authentication for reach recording`);
+        Alert.alert('Authentication Required', 'Please sign in to track post views.');
+        return;
+      }
+
+      // Check if already viewed in this session
+      if (viewedPosts.has(postId)) {
+        console.log(`❌ Post ${postId} already viewed in this session`);
+        return;
+      }
+
+      // Check AsyncStorage for previous views
+      const viewedKey = `viewed_${postId}_${currentUid}`;
+      const hasViewed = await AsyncStorage.getItem(viewedKey);
+      if (hasViewed) {
+        console.log(`❌ Post ${postId} already viewed previously`);
+        setViewedPosts(prev => new Set(prev).add(postId));
+        return;
+      }
+
+      console.log(`✅ Recording reach for post ${postId}`);
+
+      // Record the reach
+      const recordReachFn = functions().httpsCallable('recordVideoReach');
+      const result = await recordReachFn({ postId });
+
+      console.log(`📈 Reach recording result:`, result.data);
+
+      if (result.data && result.data.success) {
+        // Mark as viewed
+        await AsyncStorage.setItem(viewedKey, Date.now().toString());
+        setViewedPosts(prev => new Set(prev).add(postId));
+
+        // Update local reach count
+        setReachCounts(prev => ({
+          ...prev,
+          [postId]: (prev[postId] || 0) + 1
+        }));
+
+        console.log(`🎉 Reach recorded for post ${postId}, new count: ${(reachCounts[postId] || 0) + 1}`);
+
+        // Show success feedback
+        Alert.alert('View Recorded', `Post view counted! Reach: ${(reachCounts[postId] || 0) + 1}`);
+
+        // Refresh reach counts from server after a short delay
+        setTimeout(() => {
+          loadReachCounts([postId]);
+        }, 1000);
+      } else {
+        console.log(`❌ Reach recording failed:`, result.data);
+        Alert.alert('View Recording Failed', 'Could not record post view. Please try again.');
+      }
+
+    } catch (error) {
+      console.error('❌ Automatic reach recording error:', error);
+      Alert.alert('Error', `Failed to record view: ${error.message || 'Unknown error'}`);
+    }
+  };
                     
   // Belt-and-suspenders: even if the user somehow gets to this screen
   // without being logged in, reset them to the sign-up flow.
@@ -1618,6 +1707,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
     if (!authMod) return;
     const sub = authMod().onAuthStateChanged((u: any) => {
+      console.log('🔐 InnerApp auth state changed:', u ? `User: ${u.uid}` : 'No user');
       setUser(u);
       setIsCurrentUserOnline(!!u);
       if (!u) {
@@ -1631,10 +1721,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
   // Set up notifications listener
   useEffect(() => {
-    if (!myUid) return;
+    if (!user?.uid) return;
 
     const unsubscribe = firestore()
-      .collection(`users/${myUid}/pings`)
+      .collection(`users/${user.uid}/pings`)
       .orderBy('createdAt', 'desc')
       .onSnapshot((snapshot) => {
         if (!snapshot) {
@@ -1749,7 +1839,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
 
     return unsubscribe;
-  }, [myUid]);
+  }, [user?.uid]);
 
   const insets = useSafeAreaInsets();
   // Development safeguard (disabled): if you need to skip uploads in debug Android,
@@ -1798,6 +1888,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     type: string;
     avatar: any;
   }>({ visible: false, message: '', fromName: '', type: '', avatar: null });
+  
+  // View tracking state
+  const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
+  const [viewTimers, setViewTimers] = useState<Record<string, NodeJS.Timeout>>({});
+  const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
   
   // Notification sound player
   const [notificationSound, setNotificationSound] = useState<Sound | null>(null);
@@ -1883,12 +1978,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     useState<string>('');
   const [quickReplyText, setQuickReplyText] = useState<string>('');
   const [selectedMessageForReply, setSelectedMessageForReply] = useState<any>(null);
-  const myUid = auth?.()?.currentUser?.uid || null;
                     
   // Clear user-specific state when user changes
   useEffect(() => {
-    console.log('User change detected, myUid:', myUid);
-    if (!myUid) {
+    console.log('User change detected, myUid:', user?.uid || null);
+    if (!user?.uid) {
       // User signed out - clear all user data
       console.log('Clearing user data');
       setProfileName('');
@@ -1903,12 +1997,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setProfilePhoto(null);
       setAccountCreationHandle('');
     }
-  }, [myUid]);
+  }, [user?.uid]);
                     
   // Update lastSeen when app goes to background
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
-      if (myUid) {
+      if (user?.uid) {
         if (nextAppState === 'inactive' || nextAppState === 'background') {
           setIsCurrentUserOnline(false);
           const updateLastSeen = async () => {
@@ -1918,7 +2012,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 firestoreMod = require('@react-native-firebase/firestore').default;
               } catch {}
               if (firestoreMod) {
-                await firestoreMod().doc(`users/${myUid}`).set({ lastSeen: firestoreMod.Timestamp.now() }, { merge: true });
+                await firestoreMod().doc(`users/${user?.uid}`).set({ lastSeen: firestoreMod.Timestamp.now() }, { merge: true });
               }
             } catch (error) {
               console.warn('Failed to update lastSeen on background:', error);
@@ -1935,7 +2029,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 firestoreMod = require('@react-native-firebase/firestore').default;
               } catch {}
               if (firestoreMod) {
-                await firestoreMod().doc(`users/${myUid}`).update({ lastSeen: firestoreMod.FieldValue.delete() });
+                await firestoreMod().doc(`users/${user?.uid}`).update({ lastSeen: firestoreMod.FieldValue.delete() });
               }
             } catch (error) {
               console.warn('Failed to clear lastSeen on active:', error);
@@ -1949,7 +2043,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => {
       subscription?.remove();
     };
-  }, [myUid]);
+  }, [user?.uid]);
                     
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
@@ -2073,7 +2167,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => {
       cancelled = true;
     };
-  }, [myUid, normalizeUserHandle]);
+  }, [user?.uid, normalizeUserHandle]);
 
   // Auto-focus reply input when a message is selected for reply
   useEffect(() => {
@@ -2282,10 +2376,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
   const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
   const [echoExpansionInProgress, setEchoExpansionInProgress] = useState<Record<string, boolean>>({});
-  const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
-  // View tracking state
-  const [viewTimers, setViewTimers] = useState<Record<string, NodeJS.Timeout>>({});
-  const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
   // Public feed toggle and data
                     
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
@@ -2295,6 +2385,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
   const [preloadedVideoIds, setPreloadedVideoIds] = useState<Set<string>>(new Set()); // Videos to preload (adjacent to active)
   const onViewableItemsChanged = useRef(({ viewableItems, changed }: any) => {
+    console.log(`👁️ Viewable items changed:`, viewableItems.map((item: any) => item.item.id));
+
     // Handle video playback logic
     if (viewableItems.length > 0) {
       const newActiveId = viewableItems[0].item.id;
@@ -2327,6 +2419,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const newTimers = { ...prevTimers };
       Object.keys(newTimers).forEach(postId => {
         if (!currentlyViewableIds.has(postId)) {
+          console.log(`⏰ Clearing timer for non-viewable post ${postId}`);
           clearTimeout(newTimers[postId]);
           delete newTimers[postId];
         }
@@ -2337,15 +2430,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Start timers for newly viewable items
     viewableItems.forEach((viewableItem: any) => {
       const postId = viewableItem.item.id;
+      console.log(`👁️ Post ${postId} became viewable`);
       
       setViewTimers(prevTimers => {
         // Don't start a new timer if one already exists
         if (prevTimers[postId]) {
+          console.log(`⏰ Timer already exists for post ${postId}`);
           return prevTimers;
         }
 
+        console.log(`⏰ Starting 10-second view timer for post ${postId}`);
+
         // Start 10-second view timer
         const timer = setTimeout(() => {
+          console.log(`🎯 10-second view timer fired for post ${postId}`);
           recordAutomaticReach(postId);
           // Remove timer after it fires
           setViewTimers(prev => {
@@ -2395,7 +2493,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
 
     loadViewedPosts();
-  }, [myUid]);
+  }, [user?.uid]);
 
   const handlePostPublished = useCallback(
     (wave: Vibe) => {
@@ -6347,7 +6445,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Continue without profile data
     }
                     
-    const createEchoFn = functions().httpsCallable('createEcho', { region: 'us-central1' });
+    const createEchoFn = functions().httpsCallable('createEcho');
     await createEchoFn({
       waveId,
       text: trimmed,
@@ -7090,7 +7188,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Continue without profile data
       }
                     
-      const createEchoFn = functions().httpsCallable('createEcho', { region: 'us-central1' });
+      const createEchoFn = functions().httpsCallable('createEcho');
       await createEchoFn({
         waveId,
         text,
@@ -7297,42 +7395,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.error('Record Image Reach function error:', error);
       // Don't crash - just return a safe response
       return { success: false, error: 'Function not available' };
-    }
-  };
-
-  // Automatic view tracking with 10-second dwell time
-  const recordAutomaticReach = async (postId: string) => {
-    try {
-      // Check if already viewed in this session
-      if (viewedPosts.has(postId)) {
-        return;
-      }
-
-      // Check AsyncStorage for previous views
-      const viewedKey = `viewed_${postId}_${myUid}`;
-      const hasViewed = await AsyncStorage.getItem(viewedKey);
-      if (hasViewed) {
-        setViewedPosts(prev => new Set(prev).add(postId));
-        return;
-      }
-
-      // Record the reach
-      const recordReachFn = functions().httpsCallable('recordReach');
-      const result = await recordReachFn({ postId, userId: myUid });
-
-      // Mark as viewed
-      await AsyncStorage.setItem(viewedKey, Date.now().toString());
-      setViewedPosts(prev => new Set(prev).add(postId));
-
-      // Update local reach count
-      setReachCounts(prev => ({
-        ...prev,
-        [postId]: (prev[postId] || 0) + 1
-      }));
-
-      console.log(`Reach recorded for post ${postId}`);
-    } catch (error) {
-      console.error('Automatic reach recording error:', error);
     }
   };
 
@@ -9550,6 +9612,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setRevealedImages={setRevealedImages}
                         recordVideoReach={recordVideoReach}
                         recordImageReach={recordImageReach}
+                        onRefreshReach={(postId) => loadReachCounts([postId])}
                         setPreservedScrollPosition={setPreservedScrollPosition}
                         navigation={navigation}
                         ensureSplash={ensureSplash}
@@ -18873,6 +18936,7 @@ const App: React.FC = () => {
     let unsub: any = null;
     try {
       unsub = auth().onAuthStateChanged(async (u) => {
+        console.log('🔐 Auth state changed:', u ? `User: ${u.uid}` : 'No user');
         // Force sign out on first install to ensure sign-up/sign-in is required
         if (u) {
           try {

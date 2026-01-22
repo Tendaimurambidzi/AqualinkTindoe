@@ -1085,14 +1085,13 @@ exports.migrateBoardingToFollowing = onRequest({ region: 'us-central1' }, async 
 });
 
 // Connect Vibe Cloud Function
-exports.connectVibe = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.connectVibe = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const fromUserId = context.auth.uid;
-    const toUserId = data.toUserId;
+  const fromUserId = req.auth.uid;
+  const toUserId = req.data.toUserId;
 
     if (fromUserId === toUserId) {
       throw new functions.https.HttpsError(
@@ -1169,14 +1168,13 @@ exports.connectVibe = functions.https.onCall(
 );
 
 // Disconnect Vibe Cloud Function
-exports.disconnectVibe = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.disconnectVibe = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const fromUserId = context.auth.uid;
-    const toUserId = data.toUserId;
+  const fromUserId = req.auth.uid;
+  const toUserId = req.data.toUserId;
 
     // Remove from crew collection (follower)
     await admin.firestore()
@@ -1233,14 +1231,13 @@ exports.disconnectVibe = functions.https.onCall(
 );
 
 // Record Video Reach Cloud Function
-exports.recordVideoReach = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.recordVideoReach = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const viewerId = context.auth.uid;
-    const postId = data.postId;
+  const viewerId = req.auth.uid;
+  const postId = req.data.postId;
 
     const postRef = admin.firestore().collection("waves").doc(postId);
     const reachRef = postRef.collection("reach").doc(viewerId);
@@ -1274,14 +1271,13 @@ exports.recordVideoReach = functions.https.onCall(
 );
 
 // Record Image Reach Cloud Function
-exports.recordImageReach = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.recordImageReach = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const viewerId = context.auth.uid;
-    const postId = data.postId;
+  const viewerId = req.auth.uid;
+  const postId = req.data.postId;
 
     const postRef = admin.firestore().collection("waves").doc(postId);
     const reachRef = postRef.collection("reach").doc(viewerId);
@@ -1315,14 +1311,13 @@ exports.recordImageReach = functions.https.onCall(
 );
 
 // Record Text Reach Cloud Function
-exports.recordTextReach = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.recordTextReach = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const viewerId = context.auth.uid;
-    const postId = data.postId;
+  const viewerId = req.auth.uid;
+  const postId = req.data.postId;
 
     const postRef = admin.firestore().collection("waves").doc(postId);
     const reachRef = postRef.collection("reach").doc(viewerId);
@@ -1355,17 +1350,16 @@ exports.recordTextReach = functions.https.onCall(
   }
 );
 
-exports.generateAIResponse = onCall(async (data, context) => {
-  // Temporarily disable auth check for testing
-  // if (!context.auth) {
-  //   throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
-  // }
+exports.generateAIResponse = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
+  }
 
-  console.log('Received data:', data);
-  console.log('Data type:', typeof data);
-  console.log('Data keys:', Object.keys(data));
+  console.log('Received data:', req.data);
+  console.log('Data type:', typeof req.data);
+  console.log('Data keys:', Object.keys(req.data));
 
-  const { prompt } = data;
+  const { prompt } = req.data;
   console.log('Extracted prompt:', prompt);
   console.log('Prompt type:', typeof prompt);
   console.log('Prompt length:', prompt ? prompt.length : 'undefined');

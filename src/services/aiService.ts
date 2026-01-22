@@ -12,7 +12,7 @@ export async function generateText(prompt: string): Promise<string> {
     }
 
     // Use us-central1 region explicitly
-    const result = await functions().httpsCallable('generateAIResponse', { region: 'us-central1' })({ prompt });
+    const result = await functions().httpsCallable('generateAIResponse')({ prompt });
     return result.data.response;
   } catch (error: any) {
     console.error('AI generation error:', error);
