@@ -9609,7 +9609,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setRevealedImages={setRevealedImages}
                         recordVideoReach={recordVideoReach}
                         recordImageReach={recordImageReach}
-                        onRefreshReach={(postId) => loadReachCounts([postId])}
                         setPreservedScrollPosition={setPreservedScrollPosition}
                         navigation={navigation}
                         ensureSplash={ensureSplash}
