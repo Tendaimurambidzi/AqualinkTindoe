@@ -9707,34 +9707,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       >
         <View style={styles.topBarWrapper}>
           {isTopBarVisible && (
-            <>
-              {/* VIBES - always visible */}
-              <Pressable
-                style={styles.topItem}
-                onPress={() => {
-                  showTopBar();
-                  setCurrentIndex(0);
-                  try {
-                    feedRef.current?.scrollToOffset({ offset: 0, animated: false });
-                  } catch {}
-                }}
-              >
-                <Text style={[styles.compassIcon, { color: 'red' }]}>
-                  🐬
-                </Text>
-                <Text style={styles.topLabel}>
-                  WAVES
-                </Text>
-              </Pressable>
-            </>
-          )}
-          {isTopBarVisible && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.scrollRow}
             >
-                {/* MAKE WAVES */}
+                {/* DROP A WAVE - Now First Button */}
                 <Pressable
                   style={styles.topItem}
                   onPress={handleDropWave}
@@ -9742,7 +9720,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.dolphinIcon}>✨</Text>
+                  <Text style={styles.dolphinIcon}>🐬</Text>
                   <Text style={styles.topLabel}>DROP A WAVE</Text>
                 </Pressable>
                 {/* VIBE ALERTS - Placeholder */}
