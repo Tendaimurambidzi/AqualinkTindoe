@@ -113,6 +113,8 @@ const VideoWithTapControls: React.FC<Props> = ({
     if (!isActive) {
       setInternalPaused(true);
       setIsMuted(true);
+      // Reset the onPlay flag when video becomes inactive
+      hasCalledOnPlay.current = false;
     }
   }, [isActive]);
 
@@ -302,9 +304,9 @@ const VideoWithTapControls: React.FC<Props> = ({
   }, [controlsVisible, internalPaused, videoCompleted]);
 
   // Removed: Clear auto-hide timer when video is paused to keep controls visible
-  // Detect when video starts playing and call onPlay callback
+  // Detect when video starts playing and call onPlay callback - ONLY when video is visible and active
   useEffect(() => {
-    if (currentTime > 0 && !internalPaused && !hasCalledOnPlay.current) {
+    if (currentTime > 0 && !internalPaused && !hasCalledOnPlay.current && isActive) {
       hasCalledOnPlay.current = true;
       onPlay?.();
       // Hide controls when video starts playing
@@ -315,7 +317,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         hideControls();
       }, hideTimeout);
     }
-  }, [currentTime, internalPaused, onPlay, hideTimeout, hideControls]);
+  }, [currentTime, internalPaused, onPlay, hideTimeout, hideControls, isActive]);
   return (
     <View style={[styles.container, style]}>
       <Video
