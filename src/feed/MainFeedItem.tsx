@@ -169,13 +169,34 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           setStatus('Here now!');
         } else if (presence?.lastSeen) {
           const displayTime = new Date(presence.lastSeen);
+          const now = new Date();
+          const diffMs = now.getTime() - displayTime.getTime();
+          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          
+          let timeStr: string;
           const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
           const localeOptions = Intl.DateTimeFormat().resolvedOptions();
           if (localeOptions.hour12) {
             options.hour12 = true;
           }
-          const timeStr = displayTime.toLocaleTimeString([], options);
-          setStatus(`Away since:${timeStr}`);
+          
+          if (diffDays === 0) {
+            // Today - just show time
+            timeStr = displayTime.toLocaleTimeString([], options);
+          } else if (diffDays === 1) {
+            // Yesterday
+            timeStr = `yesterday ${displayTime.toLocaleTimeString([], options)}`;
+          } else if (diffDays < 7) {
+            // This week - use abbreviated day name
+            const dayName = displayTime.toLocaleDateString([], { weekday: 'short' });
+            timeStr = `${dayName} ${displayTime.toLocaleTimeString([], options)}`;
+          } else {
+            // Older - show date and time
+            const dateStr = displayTime.toLocaleDateString([], { month: 'short', day: 'numeric' });
+            timeStr = `${dateStr} ${displayTime.toLocaleTimeString([], options)}`;
+          }
+          
+          setStatus(`Away since ${timeStr}`);
         } else {
           setStatus('');
         }
