@@ -339,43 +339,39 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           </View>
         </Pressable>
 
-        {/* Anchor Wave Button - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <Pressable
-            onPress={handleAnchor}
-            style={({ pressed }) => [
-              styles.textButton,
-              pressed && styles.pressedButton
-            ]}
-            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-            pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <View style={styles.buttonContent}>
-              <Text style={[styles.buttonIcon, isAnchored && styles.activeAction]}>⚓</Text>
-              <Text style={styles.actionLabel}>Anchor</Text>
-            </View>
-          </Pressable>
-        )}
+        {/* Anchor Wave Button */}
+        <Pressable
+          onPress={handleAnchor}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+        >
+          <View style={styles.buttonContent}>
+            <Text style={[styles.buttonIcon, isAnchored && styles.activeAction]}>⚓</Text>
+            <Text style={styles.actionLabel}>Anchor</Text>
+          </View>
+        </Pressable>
 
-        {/* Cast Wave Button - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <Pressable
-            onPress={handleCast}
-            style={({ pressed }) => [
-              styles.textButton,
-              pressed && styles.pressedButton
-            ]}
-            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-            pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <View style={styles.buttonContent}>
-              <Text style={[styles.buttonIcon, isCasted && styles.activeAction]}>📡</Text>
-              <Text style={styles.actionLabel}>Cast</Text>
-            </View>
-          </Pressable>
-        )}
+        {/* Cast Wave Button */}
+        <Pressable
+          onPress={handleCast}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+        >
+          <View style={styles.buttonContent}>
+            <Text style={[styles.buttonIcon, isCasted && styles.activeAction]}>📡</Text>
+            <Text style={styles.actionLabel}>Cast</Text>
+          </View>
+        </Pressable>
 
         {/* Placeholder Button 1 */}
         <Pressable
