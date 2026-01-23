@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'grey',
     borderRadius: 0,
     marginHorizontal: -10,
-    marginBottom: 5, // Reduced margin since we have text buttons below
+    marginBottom: 1, // Reduced margin since we have text buttons below
   },
   textButtonsBar: {
     paddingVertical: 5,
