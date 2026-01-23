@@ -279,41 +279,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             </Text>
           </View>
         </View>
-
-        {/* Gems Icon */}
-        <View style={styles.iconButton}>
-          <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
-            💎
-          </Text>
-        </View>
-
-        {/* Anchor Wave Icon - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <View style={styles.iconButton}>
-            <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
-              ⚓
-            </Text>
-          </View>
-        )}
-
-        {/* Cast Wave Icon - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <View style={styles.iconButton}>
-            <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
-              📡
-            </Text>
-          </View>
-        )}
-
-        {/* Placeholder 1 Icon */}
-        <View style={styles.iconButton}>
-          <Text style={styles.actionIcon}>🔱</Text>
-        </View>
-
-        {/* Placeholder 2 Icon */}
-        <View style={styles.iconButton}>
-          <Text style={styles.actionIcon}>🐚</Text>
-        </View>
       </ScrollView>
 
       {/* Text Buttons Row */}
@@ -368,7 +333,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <Text style={styles.actionLabel}>Gems</Text>
+          <View style={styles.buttonContent}>
+            <Text style={[styles.buttonIcon, pearlsCount > 0 && styles.pearlActive]}>💎</Text>
+            <Text style={styles.actionLabel}>Gems</Text>
+          </View>
         </Pressable>
 
         {/* Anchor Wave Button - Only show for other users' posts */}
@@ -383,7 +351,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
-            <Text style={styles.actionLabel}>Anchor</Text>
+            <View style={styles.buttonContent}>
+              <Text style={[styles.buttonIcon, isAnchored && styles.activeAction]}>⚓</Text>
+              <Text style={styles.actionLabel}>Anchor</Text>
+            </View>
           </Pressable>
         )}
 
@@ -399,7 +370,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
-            <Text style={styles.actionLabel}>Cast</Text>
+            <View style={styles.buttonContent}>
+              <Text style={[styles.buttonIcon, isCasted && styles.activeAction]}>📡</Text>
+              <Text style={styles.actionLabel}>Cast</Text>
+            </View>
           </Pressable>
         )}
 
@@ -413,7 +387,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <Text style={styles.actionLabel}>Placeholder 1</Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.buttonIcon}>🔱</Text>
+            <Text style={styles.actionLabel}>Placeholder 1</Text>
+          </View>
         </Pressable>
 
         {/* Placeholder Button 2 */}
@@ -426,7 +403,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressRetentionOffset={{ top: 10, bottom: 10, left: 5, right: 5 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <Text style={styles.actionLabel}>Placeholder 2</Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.buttonIcon}>🐚</Text>
+            <Text style={styles.actionLabel}>Placeholder 2</Text>
+          </View>
         </Pressable>
       </ScrollView>
 
@@ -534,6 +514,11 @@ const styles = StyleSheet.create({
     fontSize: 32, // Enlarged icons for better touch targets
     color: '#fff',
     fontWeight: 'bold',
+  },
+  buttonIcon: {
+    fontSize: 16, // Smaller icons for text buttons to fit without increasing size
+    color: '#fff',
+    marginRight: 6, // Space between icon and text
   },
   activeAction: {
     color: '#00ff88', // Highlight active interactions
