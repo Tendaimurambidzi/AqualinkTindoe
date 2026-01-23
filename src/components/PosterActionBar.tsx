@@ -327,10 +327,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       >
         {/* Splashes Button */}
         <Pressable
-          onPress={() => {
-            handleHugAction();
-            fetchHuggers(); // Immediately show huggers
-          }}
+          onPress={handleHugAction} // Only update the hugs count - no list display
           style={({ pressed }) => [
             styles.textButton,
             pressed && styles.pressedButton
