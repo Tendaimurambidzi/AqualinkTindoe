@@ -180,10 +180,16 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             options.hour12 = true;
           }
           
-          if (diffDays === 0) {
+          // Check if the away time is before current time today
+          const today = new Date(now);
+          today.setHours(displayTime.getHours(), displayTime.getMinutes(), displayTime.getSeconds(), displayTime.getMilliseconds());
+          const isBeforeToday = displayTime <= now && diffDays === 0;
+          const isYesterday = diffDays === 1 || (diffDays === 0 && displayTime > now);
+          
+          if (isBeforeToday) {
             // Today - just show time
             timeStr = displayTime.toLocaleTimeString([], options);
-          } else if (diffDays === 1) {
+          } else if (isYesterday) {
             // Yesterday
             timeStr = `yesterday ${displayTime.toLocaleTimeString([], options)}`;
           } else if (diffDays < 7) {
