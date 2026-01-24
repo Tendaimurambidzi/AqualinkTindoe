@@ -1,0 +1,24 @@
+[build]
+  # Build command (empty since we have static files)
+  command = ""
+
+  # Directory to publish (relative to root of repo)
+  publish = "splashline-landing"
+
+  # Ignore the entire project except the landing page
+  ignore = "git diff --quiet HEAD^ HEAD -- . ':!splashline-landing'"
+
+[build.environment]
+  # Skip npm install since we don't need Node.js dependencies for static files
+  SKIP_DEPENDENCY_INSTALL = "true"
+
+# Redirect rules for SPA (if needed)
+[[redirects]]
+  from = "/api/*"
+  to = "/api/:splat"
+  status = 200
+
+[[redirects]]
+  from = "/app/*"
+  to = "/app/:splat"
+  status = 200
