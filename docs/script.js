@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Android download handler
     androidDownloadBtn.addEventListener('click', function(e) {
         // Check if APK exists
-        fetch('./splashline.apk', { method: 'HEAD' })
+        fetch('https://www.dropbox.com/scl/fi/4cxcu4m3brtelumhvb811/splashline.apk?rlkey=nlukc3fd96ppkzseuoswrio0i&st=ygnms06w&dl=1', { method: 'HEAD' })
             .then(response => {
                 if (response.ok) {
                     // APK exists, proceed with download
