@@ -1,0 +1,17 @@
+PLACE YOUR APK FILE HERE
+
+Instructions:
+1. Build your Android APK from the main project
+2. Copy the APK file to this directory
+3. Rename it to: splashline.apk
+4. Remove this text file
+
+Example command:
+cp ../android/app/build/outputs/apk/release/app-universal-release.apk ./splashline.apk
+
+The landing page expects the APK to be named exactly "splashline.apk"
+
+Note: If your APK is larger than 100MB, you may need to:
+- Use Git LFS (Large File Storage) for GitHub
+- Host the APK on a separate file hosting service
+- Update the download link in index.html and script.js

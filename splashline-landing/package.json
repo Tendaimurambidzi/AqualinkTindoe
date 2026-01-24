@@ -1,0 +1,28 @@
+{
+  "name": "splashline-landing",
+  "version": "1.0.0",
+  "description": "Landing page for SplashLine - Connect Through Ocean Adventures",
+  "main": "index.html",
+  "scripts": {
+    "start": "python -m http.server 8000",
+    "deploy": "./deploy.sh"
+  },
+  "keywords": [
+    "landing-page",
+    "mobile-app",
+    "ocean",
+    "splashline",
+    "android"
+  ],
+  "author": "SplashLine Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tendaimurambidzi/AqualinkTindoe"
+  },
+  "homepage": "https://splashline.netlify.app",
+  "devDependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
