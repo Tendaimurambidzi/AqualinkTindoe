@@ -30,3 +30,44 @@ export const formatDefiniteTime = (timestamp) => {
     hour12: true
   });
 };
+
+export const formatAwaySince = (timestamp) => {
+  if (!timestamp) return "";
+
+  let date: Date;
+  if (timestamp.toDate) {
+    date = timestamp.toDate();
+  } else if (typeof timestamp === 'number') {
+    const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp;
+    date = new Date(ms);
+  } else {
+    date = new Date(timestamp);
+  }
+
+  if (isNaN(date.getTime())) return "";
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfToday.getDate() - 1);
+
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  });
+
+  if (date >= startOfToday) {
+    return `today at ${timeStr}`;
+  }
+  if (date >= startOfYesterday) {
+    return `yesterday at ${timeStr}`;
+  }
+
+  const dateStr = date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+  return `${dateStr} at ${timeStr}`;
+};

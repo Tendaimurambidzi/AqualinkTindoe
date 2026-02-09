@@ -7,6 +7,7 @@ import PosterActionBar from '../components/PosterActionBar';
 import VideoWithTapControls from '../components/VideoWithTapControls';
 import ClickableTextWithLinks from '../components/ClickableTextWithLinks';
 import database from '@react-native-firebase/database';
+import { formatAwaySince } from '../services/timeUtils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -168,14 +169,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         if (presence?.online) {
           setStatus('Here now!');
         } else if (presence?.lastSeen) {
-          const displayTime = new Date(presence.lastSeen);
-          const options: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
-          const localeOptions = Intl.DateTimeFormat().resolvedOptions();
-          if (localeOptions.hour12) {
-            options.hour12 = true;
-          }
-          const timeStr = displayTime.toLocaleTimeString([], options);
-          setStatus(`Away since:${timeStr}`);
+          const awayStr = formatAwaySince(presence.lastSeen);
+          setStatus(awayStr ? `Away since ${awayStr}` : '');
         } else {
           setStatus('');
         }
