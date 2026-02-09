@@ -70,6 +70,10 @@ class DBHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME, null
         return writableDatabase.delete(TABLE_SAMPLES, "$COL_ID = ?", arrayOf(id.toString()))
     }
 
+    fun clearAllSamples(): Int {
+        return writableDatabase.delete(TABLE_SAMPLES, null, null)
+    }
+
     fun getSample(id: Long): Sample? {
         val cursor = readableDatabase.query(
             TABLE_SAMPLES,

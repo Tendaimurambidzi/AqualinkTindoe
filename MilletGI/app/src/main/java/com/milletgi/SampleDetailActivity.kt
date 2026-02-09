@@ -53,7 +53,15 @@ class SampleDetailActivity : AppCompatActivity() {
         }
 
         btnPredict.setOnClickListener {
-            Toast.makeText(this, "Model not installed yet", Toast.LENGTH_SHORT).show()
+            if (ModelManager.isModelInstalled(this)) {
+                val predicted = FakeModel.predict(sample)
+                val updated = sample.copy(giPredicted = predicted, modelVersion = "FAKE_MODEL_v1")
+                db.updateSample(updated)
+                detailText.text = buildDetailText(updated)
+                Toast.makeText(this, "Predicted GI: ${"%.1f".format(predicted)}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Model not installed yet", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

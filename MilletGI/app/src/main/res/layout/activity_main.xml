@@ -33,4 +33,18 @@
         android:layout_marginTop="12dp"
         android:text="Export Data" />
 
+    <Button
+        android:id="@+id/btnClearData"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Clear Data" />
+
+    <Button
+        android:id="@+id/btnModelStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:text="Model Status" />
+
 </LinearLayout>

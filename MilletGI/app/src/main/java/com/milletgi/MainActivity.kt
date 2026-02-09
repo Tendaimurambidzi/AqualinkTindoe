@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 
 class MainActivity : AppCompatActivity() {
 
@@ -13,6 +14,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         seedMockDataIfNeeded()
+        ModelManager.ensureFakeModelInstalled(this)
 
         findViewById<Button>(R.id.btnNewSample).setOnClickListener {
             startActivity(Intent(this, NewSampleActivity::class.java))
@@ -29,8 +31,33 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "No samples to export", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
-            val file = ExportUtils.exportToCsv(this, samples)
-            Toast.makeText(this, "Exported: ${file.absolutePath}", Toast.LENGTH_LONG).show()
+            val location = ExportUtils.exportToCsv(this, samples)
+            Toast.makeText(this, "Exported: $location", Toast.LENGTH_LONG).show()
+        }
+
+        findViewById<Button>(R.id.btnClearData).setOnClickListener {
+            AlertDialog.Builder(this)
+                .setTitle("Clear all data")
+                .setMessage("This will delete all samples. Continue?")
+                .setPositiveButton("Clear") { _, _ ->
+                    val db = DBHelper(this)
+                    db.clearAllSamples()
+                    val prefs = getSharedPreferences("milletgi_prefs", MODE_PRIVATE)
+                    prefs.edit().putBoolean("mock_seeded", true).apply()
+                    Toast.makeText(this, "All data cleared", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        findViewById<Button>(R.id.btnModelStatus).setOnClickListener {
+            val installed = ModelManager.isModelInstalled(this)
+            val msg = if (installed) {
+                "Model installed: ${ModelManager.modelFile(this).name}"
+            } else {
+                "No model installed"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
     }
 
