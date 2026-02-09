@@ -12,6 +12,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        seedMockDataIfNeeded()
+
         findViewById<Button>(R.id.btnNewSample).setOnClickListener {
             startActivity(Intent(this, NewSampleActivity::class.java))
         }
@@ -30,5 +32,109 @@ class MainActivity : AppCompatActivity() {
             val file = ExportUtils.exportToCsv(this, samples)
             Toast.makeText(this, "Exported: ${file.absolutePath}", Toast.LENGTH_LONG).show()
         }
+    }
+
+    private fun seedMockDataIfNeeded() {
+        val prefs = getSharedPreferences("milletgi_prefs", MODE_PRIVATE)
+        if (prefs.getBoolean("mock_seeded", false)) return
+
+        val db = DBHelper(this)
+        val now = "2026-02-09"
+
+        val samples = listOf(
+            Sample(
+                sampleId = "MOCK-001",
+                varietyName = "Finger Millet A",
+                batchId = "BATCH-1",
+                replicate = 1,
+                dateMeasured = now,
+                moisture = 9.8,
+                protein = 7.5,
+                fat = 1.3,
+                ash = 2.6,
+                fiber = 3.9,
+                carbohydrate = 74.9,
+                phytate = 0.52,
+                tannins = 0.21,
+                oxalate = 0.12,
+                otherAntinutrients = "",
+                totalPhenolics = 1.8,
+                flavonoids = 0.44,
+                otherBioactives = "",
+                iron = 3.4,
+                zinc = 1.9,
+                calcium = 310.0,
+                magnesium = 120.0,
+                otherMinerals = "",
+                processingMethod = "milled",
+                notes = "mock sample",
+                giMeasured = 52.0,
+                giPredicted = null,
+                modelVersion = null
+            ),
+            Sample(
+                sampleId = "MOCK-002",
+                varietyName = "Finger Millet B",
+                batchId = "BATCH-1",
+                replicate = 2,
+                dateMeasured = now,
+                moisture = 10.2,
+                protein = 8.1,
+                fat = 1.6,
+                ash = 2.4,
+                fiber = 4.2,
+                carbohydrate = 73.5,
+                phytate = 0.60,
+                tannins = 0.18,
+                oxalate = 0.15,
+                otherAntinutrients = "",
+                totalPhenolics = 2.1,
+                flavonoids = 0.50,
+                otherBioactives = "",
+                iron = 3.1,
+                zinc = 2.0,
+                calcium = 280.0,
+                magnesium = 110.0,
+                otherMinerals = "",
+                processingMethod = "cooked",
+                notes = "mock sample",
+                giMeasured = 55.0,
+                giPredicted = null,
+                modelVersion = null
+            ),
+            Sample(
+                sampleId = "MOCK-003",
+                varietyName = "Finger Millet C",
+                batchId = "BATCH-2",
+                replicate = 3,
+                dateMeasured = now,
+                moisture = 9.4,
+                protein = 7.9,
+                fat = 1.4,
+                ash = 2.7,
+                fiber = 4.0,
+                carbohydrate = 74.6,
+                phytate = 0.48,
+                tannins = 0.25,
+                oxalate = 0.10,
+                otherAntinutrients = "",
+                totalPhenolics = 1.9,
+                flavonoids = 0.47,
+                otherBioactives = "",
+                iron = 3.6,
+                zinc = 1.8,
+                calcium = 295.0,
+                magnesium = 115.0,
+                otherMinerals = "",
+                processingMethod = "fermented",
+                notes = "mock sample",
+                giMeasured = 49.0,
+                giPredicted = null,
+                modelVersion = null
+            )
+        )
+
+        samples.forEach { db.insertSample(it) }
+        prefs.edit().putBoolean("mock_seeded", true).apply()
     }
 }
