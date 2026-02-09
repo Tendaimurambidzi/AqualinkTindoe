@@ -1393,7 +1393,7 @@ const editorStyles = StyleSheet.create({
   liveCommentBubble: {
     flexDirection: 'row',
     alignSelf: 'flex-start', // Keep bubbles aligned to the left
-    backgroundColor: 'rgba(0,0,0,0.6)', // Slightly darker for better contrast
+    backgroundColor: 'rgba(255, 235, 59, 0.95)', // Yellow comment background
     borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1411,12 +1411,78 @@ const editorStyles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.2)',
   },
   liveCommentText: {
-    color: 'white',
+    color: '#000',
   },
   liveCommentAuthor: {
-    color: 'white',
+    color: '#000',
     fontWeight: '700',
     marginRight: 6, // Space between author and text
+  },
+  liveCommentHeader: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+  },
+  commentActions: {
+    flexDirection: 'row',
+    marginTop: 6,
+    gap: 12,
+  },
+  commentActionBtn: {
+    backgroundColor: 'rgba(255, 235, 59, 0.95)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  commentActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  commentActionInactive: {
+    color: '#d32f2f', // red for Hug
+  },
+  commentActionActive: {
+    color: '#1e88e5', // blue for Hugged
+  },
+  commentActionEcho: {
+    color: '#555',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  commentThread: {
+    marginTop: 6,
+    backgroundColor: 'rgba(255,255,255,0.65)',
+    borderRadius: 10,
+    padding: 8,
+  },
+  commentThreadText: {
+    color: '#000',
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  commentReplyInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  commentReplyInput: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    color: '#000',
+  },
+  commentReplySend: {
+    marginLeft: 8,
+    backgroundColor: '#1976d2',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  commentReplySendText: {
+    color: '#fff',
+    fontWeight: '700',
   },
   commentSplashContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -14625,7 +14691,15 @@ const LiveStreamModal = ({
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [liveComments, setLiveComments] = useState<
-    Array<{ id: string; text: string; from?: string; ts: number }>
+    Array<{
+      id: string;
+      text: string;
+      from?: string;
+      fromUid?: string;
+      createdAt?: any;
+      hugs?: number;
+      huggedBy?: Record<string, boolean>;
+    }>
   >([]);
   const [hostName, setHostName] = useState<string>('');
   const [hostPhoto, setHostPhoto] = useState<string | null>(null);
@@ -14638,13 +14712,157 @@ const LiveStreamModal = ({
     text: string;
   } | null>(null);
   const splashAnim = useRef(new Animated.Value(0)).current;
+  const [currentUserUid, setCurrentUserUid] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string>('You');
+  const [activeReplyCommentId, setActiveReplyCommentId] = useState<string | null>(null);
+  const [activeCommentActionId, setActiveCommentActionId] = useState<string | null>(null);
+  const [commentReplyText, setCommentReplyText] = useState<string>('');
+  const [commentReplies, setCommentReplies] = useState<Record<string, any[]>>({});
+  const [commentReplyLoading, setCommentReplyLoading] = useState<Record<string, boolean>>({});
+  const [commentReplySending, setCommentReplySending] = useState<Record<string, boolean>>({});
                     
-  // Placeholder functions for comment interactions
-  const onSplashComment = (commentId: string) => {
-    Alert.alert('Splash Comment', `Splashed comment ${commentId}`);
+  const resolveAuthUser = () => {
+    try {
+      const authMod = require('@react-native-firebase/auth').default;
+      const u = authMod?.().currentUser;
+      return {
+        uid: u?.uid || null,
+        name: u?.displayName || (u?.email ? u.email.split('@')[0] : 'You'),
+      };
+    } catch {
+      return { uid: null, name: 'You' };
+    }
   };
-  const onEchoBack = (comment: { id: string; from?: string; text: string }) => {
-    Alert.alert('Echo Back', `Replying to ${comment.from}: "${comment.text}"`);
+
+  useEffect(() => {
+    const u = resolveAuthUser();
+    setCurrentUserUid(u.uid);
+    setCurrentUserName(u.name || 'You');
+  }, [visible]);
+
+  const onSplashComment = async (comment: {
+    id: string;
+    huggedBy?: Record<string, boolean>;
+    hugs?: number;
+  }) => {
+    const uid = currentUserUid || resolveAuthUser().uid;
+    if (!uid) {
+      Alert.alert('Sign in required', 'Please sign in to hug comments.');
+      return;
+    }
+
+    const alreadyHugged = !!comment?.huggedBy?.[uid];
+    const delta = alreadyHugged ? -1 : 1;
+
+    // Optimistic update
+    setLiveComments(prev =>
+      prev.map(c =>
+        c.id === comment.id
+          ? {
+              ...c,
+              hugs: Math.max(0, Number(c.hugs || 0) + delta),
+              huggedBy: alreadyHugged
+                ? Object.fromEntries(
+                    Object.entries(c.huggedBy || {}).filter(([k]) => k !== uid),
+                  )
+                : { ...(c.huggedBy || {}), [uid]: true },
+            }
+          : c,
+      ),
+    );
+
+    try {
+      const firestoreMod = require('@react-native-firebase/firestore').default;
+      if (!firestoreMod || !liveDocId) return;
+      const ref = firestoreMod()
+        .collection(`live/${liveDocId}/comments`)
+        .doc(comment.id);
+      if (alreadyHugged) {
+        await ref.update({
+          hugs: firestoreMod.FieldValue.increment(-1),
+          [`huggedBy.${uid}`]: firestoreMod.FieldValue.delete(),
+        });
+      } else {
+        await ref.set(
+          {
+            hugs: firestoreMod.FieldValue.increment(1),
+            huggedBy: { [uid]: true },
+          },
+          { merge: true },
+        );
+      }
+    } catch {}
+  };
+
+  const loadCommentReplies = async (commentId: string) => {
+    if (!liveDocId || !commentId) return;
+    setCommentReplyLoading(prev => ({ ...prev, [commentId]: true }));
+    try {
+      const firestoreMod = require('@react-native-firebase/firestore').default;
+      if (!firestoreMod) return;
+      const snap = await firestoreMod()
+        .collection(`live/${liveDocId}/comments`)
+        .doc(commentId)
+        .collection('replies')
+        .orderBy('createdAt', 'asc')
+        .limit(50)
+        .get();
+      const items = (snap?.docs || []).map((d: any) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+      setCommentReplies(prev => ({ ...prev, [commentId]: items }));
+    } catch {
+    } finally {
+      setCommentReplyLoading(prev => ({ ...prev, [commentId]: false }));
+    }
+  };
+
+  const onEchoBack = async (comment: { id: string }) => {
+    if (!comment?.id) return;
+    const nextId = activeReplyCommentId === comment.id ? null : comment.id;
+    setActiveReplyCommentId(nextId);
+    setCommentReplyText('');
+    if (nextId) {
+      await loadCommentReplies(nextId);
+    }
+  };
+
+  const sendCommentReply = async (commentId: string) => {
+    const txt = (commentReplyText || '').trim();
+    if (!txt) return;
+    if (!liveDocId) return;
+    const u = resolveAuthUser();
+    if (!u.uid) {
+      Alert.alert('Sign in required', 'Please sign in to reply.');
+      return;
+    }
+    setCommentReplySending(prev => ({ ...prev, [commentId]: true }));
+    try {
+      const firestoreMod = require('@react-native-firebase/firestore').default;
+      if (!firestoreMod) return;
+      const reply = {
+        text: txt,
+        fromUid: u.uid,
+        from: u.name || 'You',
+        createdAt: firestoreMod.FieldValue?.serverTimestamp
+          ? firestoreMod.FieldValue.serverTimestamp()
+          : new Date(),
+      };
+      await firestoreMod()
+        .collection(`live/${liveDocId}/comments`)
+        .doc(commentId)
+        .collection('replies')
+        .add(reply);
+      setCommentReplies(prev => ({
+        ...prev,
+        [commentId]: [...(prev[commentId] || []), reply],
+      }));
+      setCommentReplyText('');
+      setActiveReplyCommentId(null); // close after sending
+    } catch {} finally {
+      setCommentReplySending(prev => ({ ...prev, [commentId]: false }));
+    }
   };
                     
   // --- Enhanced Live Controls state (safe stubs) ---
@@ -16805,36 +17023,110 @@ const LiveStreamModal = ({
             showsVerticalScrollIndicator={false}
           >
             <View>
-              {liveComments.map(c => (
-                <Pressable
-                  key={c.id}
-                  onLongPress={() => {
-                    Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, [
-                      {
-                        text: 'Splash 💧',
-                        onPress: () => onSplashComment(c.id),
-                      },
-                      {
-                        text: 'Echo Back 📣',
-                        onPress: () => onEchoBack(c as any),
-                      },
-                      { text: 'Cancel', style: 'cancel' },
-                    ]);
-                  }}
-                >
-                  <View style={editorStyles.liveCommentBubble}>
-                    <Text style={editorStyles.liveCommentAuthor}>
-                      {(c as any).fromUid
-                        ? displayHandle((c as any).fromUid, c.from)
-                        : c.from === 'You'
-                        ? '/You'
-                        : formatHandle(c.from)}
-                      :
-                    </Text>
-                    <Text style={editorStyles.liveCommentText}>{c.text}</Text>
+              {liveComments.map(c => {
+                const hugsCount = Math.max(0, Number(c.hugs || 0));
+                const hasHuggedComment =
+                  !!currentUserUid && !!c.huggedBy?.[currentUserUid];
+                const isReplyOpen = activeReplyCommentId === c.id;
+                const replies = commentReplies[c.id] || [];
+                return (
+                  <View key={c.id} style={editorStyles.liveCommentBubble}>
+                    <Pressable
+                      onPress={() =>
+                        setActiveCommentActionId(prev =>
+                          prev === c.id ? null : c.id,
+                        )
+                      }
+                    >
+                      <View style={editorStyles.liveCommentHeader}>
+                        <Text style={editorStyles.liveCommentAuthor}>
+                          {(c as any).fromUid
+                            ? displayHandle((c as any).fromUid, c.from)
+                            : c.from === 'You'
+                            ? '/You'
+                            : formatHandle(c.from)}
+                          :
+                        </Text>
+                        <Text style={editorStyles.liveCommentText}>
+                          {c.text}
+                        </Text>
+                      </View>
+                    </Pressable>
+                    {activeCommentActionId === c.id && (
+                      <View style={editorStyles.commentActions}>
+                        <Pressable
+                          style={editorStyles.commentActionBtn}
+                          onPress={() => onSplashComment(c as any)}
+                        >
+                          <Text
+                            style={[
+                              editorStyles.commentActionText,
+                              hasHuggedComment
+                                ? editorStyles.commentActionActive
+                                : editorStyles.commentActionInactive,
+                            ]}
+                          >
+                            {hasHuggedComment
+                              ? `Hugged (${hugsCount})`
+                              : `Hug (${hugsCount})`}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={editorStyles.commentActionBtn}
+                          onPress={() => onEchoBack(c as any)}
+                        >
+                          <Text style={editorStyles.commentActionEcho}>
+                            Echo
+                          </Text>
+                        </Pressable>
+                      </View>
+                    )}
+                    {isReplyOpen && (
+                      <View style={editorStyles.commentThread}>
+                        {commentReplyLoading[c.id] ? (
+                          <Text style={editorStyles.commentThreadText}>
+                            Loading replies...
+                          </Text>
+                        ) : replies.length === 0 ? (
+                          <Text style={editorStyles.commentThreadText}>
+                            No replies yet.
+                          </Text>
+                        ) : (
+                          replies.map((r: any, idx: number) => (
+                            <View key={r.id || `${c.id}-r-${idx}`}>
+                              <Text style={editorStyles.commentThreadText}>
+                                {(r.fromUid &&
+                                r.fromUid === currentUserUid)
+                                  ? '/You'
+                                  : formatHandle(r.from || 'User')}
+                                : {r.text}
+                              </Text>
+                            </View>
+                          ))
+                        )}
+                        <View style={editorStyles.commentReplyInputRow}>
+                          <TextInput
+                            value={commentReplyText}
+                            onChangeText={setCommentReplyText}
+                            placeholder="Reply..."
+                            placeholderTextColor="rgba(0,0,0,0.5)"
+                            style={editorStyles.commentReplyInput}
+                          />
+                          <Pressable
+                            style={editorStyles.commentReplySend}
+                            onPress={() => sendCommentReply(c.id)}
+                            disabled={!!commentReplySending[c.id]}
+                          >
+                            <Text style={editorStyles.commentReplySendText}>
+                              {commentReplySending[c.id] ? '...' : 'Send'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
                   </View>
-                </Pressable>
-              ))}
+                );
+              })}
             </View>
           </ScrollView>
         )}

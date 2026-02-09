@@ -75,6 +75,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
   // Connectivity state
   const [isOnline, setIsOnline] = useState(true);
+  const hugsCount = Math.max(0, splashesCount);
 
   // Fetch user data for the creator of the post
   useEffect(() => {
@@ -304,7 +305,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           delayPressIn={0}
           delayPressOut={0}
         >
-          <Text style={styles.actionLabel}>Hugs</Text>
+          <Text style={[styles.actionLabel, hasHugged && styles.huggedLabel]}>
+            {hasHugged ? 'Hugged' : 'Hugs'}
+          </Text>
         </Pressable>
 
         {/* Echoes Button */}
@@ -536,6 +539,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ccc',
     marginRight: 4, // Space between text and count
+  },
+  huggedLabel: {
+    color: '#1e88e5',
   },
   actionIconSmall: {
     fontSize: 14,
