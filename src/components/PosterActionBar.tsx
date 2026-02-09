@@ -280,41 +280,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           </View>
         </View>
 
-        {/* Gems Icon */}
-        <View style={styles.iconButton}>
-          <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
-            💎
-          </Text>
-        </View>
-
-        {/* Anchor Wave Icon - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <View style={styles.iconButton}>
-            <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
-              ⚓
-            </Text>
-          </View>
-        )}
-
-        {/* Cast Wave Icon - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <View style={styles.iconButton}>
-            <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
-              📡
-            </Text>
-          </View>
-        )}
-
-        {/* Placeholder 1 Icon */}
-        <View style={styles.iconButton}>
-          <Text style={styles.actionIcon}>🔱</Text>
-        </View>
-
-        {/* Placeholder 2 Icon */}
-        <View style={styles.iconButton}>
-          <Text style={styles.actionIcon}>🐚</Text>
-        </View>
-      </ScrollView>
+        </ScrollView>
 
       {/* Text Buttons Row */}
       <ScrollView 
@@ -332,8 +298,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           delayPressIn={0}
           delayPressOut={0}
@@ -348,14 +314,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           delayPressIn={0}
           delayPressOut={0}
         >
           <Text style={styles.actionLabel}>Echoes</Text>
         </Pressable>
+        {currentUserId !== creatorUserId && (
+          <>
 
         {/* Gems Button */}
         <Pressable
@@ -364,11 +332,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
-          pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <Text style={styles.actionLabel}>Gems</Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionIconSmall}>💎</Text>
+            <Text style={styles.actionLabel}>Gems</Text>
+          </View>
         </Pressable>
 
         {/* Anchor Wave Button - Only show for other users' posts */}
@@ -379,11 +350,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               styles.textButton,
               pressed && styles.pressedButton
             ]}
-            hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
-            pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
+            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+            pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
-            <Text style={styles.actionLabel}>Anchor</Text>
+            <View style={styles.buttonContent}>
+              <Text style={styles.actionIconSmall}>⚓</Text>
+              <Text style={styles.actionLabel}>Anchor</Text>
+            </View>
           </Pressable>
         )}
 
@@ -395,11 +369,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
               styles.textButton,
               pressed && styles.pressedButton
             ]}
-            hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
-            pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
+            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+            pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
-            <Text style={styles.actionLabel}>Cast</Text>
+            <View style={styles.buttonContent}>
+              <Text style={styles.actionIconSmall}>📡</Text>
+              <Text style={styles.actionLabel}>Cast</Text>
+            </View>
           </Pressable>
         )}
 
@@ -409,11 +386,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 60, bottom: 60, left: 40, right: 40 }}
-          pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <Text style={styles.actionLabel}>Placeholder 1</Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionIconSmall}>🍴</Text>
+            <Text style={styles.actionLabel}>Placeholder 1</Text>
+          </View>
         </Pressable>
 
         {/* Placeholder Button 2 */}
@@ -422,12 +402,17 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
-          hitSlop={{ top: 60, bottom: 60, left: 40, right: 40 }}
-          pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <Text style={styles.actionLabel}>Placeholder 2</Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionIconSmall}>🐚</Text>
+            <Text style={styles.actionLabel}>Placeholder 2</Text>
+          </View>
         </Pressable>
+          </>
+        )}
       </ScrollView>
 
     {/* Huggers Dropdown Modal */}
@@ -551,6 +536,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#ccc',
     marginRight: 4, // Space between text and count
+  },
+  actionIconSmall: {
+    fontSize: 14,
+    color: '#fff',
+    marginRight: 6,
   },
   actionCount: {
     fontSize: 12,
@@ -694,3 +684,6 @@ const styles = StyleSheet.create({
 });
 
 export default PosterActionBar;
+
+
+
