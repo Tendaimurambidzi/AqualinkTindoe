@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MilletGI</string>
+    <string name="new_sample">New Sample</string>
+    <string name="all_samples">All Samples</string>
+    <string name="export_data">Export Data</string>
+    <string name="settings">Settings</string>
+</resources>

@@ -1,0 +1,33 @@
+﻿package com.milletgi
+
+data class Sample(
+    val id: Long = 0,
+    val sampleId: String,
+    val varietyName: String,
+    val batchId: String?,
+    val replicate: Int?,
+    val dateMeasured: String?,
+    val moisture: Double?,
+    val protein: Double?,
+    val fat: Double?,
+    val ash: Double?,
+    val fiber: Double?,
+    val carbohydrate: Double?,
+    val phytate: Double?,
+    val tannins: Double?,
+    val oxalate: Double?,
+    val otherAntinutrients: String?,
+    val totalPhenolics: Double?,
+    val flavonoids: Double?,
+    val otherBioactives: String?,
+    val iron: Double?,
+    val zinc: Double?,
+    val calcium: Double?,
+    val magnesium: Double?,
+    val otherMinerals: String?,
+    val processingMethod: String?,
+    val notes: String?,
+    val giMeasured: Double?,
+    val giPredicted: Double?,
+    val modelVersion: String?
+)

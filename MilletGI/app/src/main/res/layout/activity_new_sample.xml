@@ -1,0 +1,133 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sample Identity"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <EditText
+            android:id="@+id/inputSampleId"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Sample ID" />
+
+        <EditText
+            android:id="@+id/inputVariety"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Variety Name" />
+
+        <EditText
+            android:id="@+id/inputBatch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Batch ID" />
+
+        <EditText
+            android:id="@+id/inputReplicate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Replicate (1-3)"
+            android:inputType="number" />
+
+        <EditText
+            android:id="@+id/inputDate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Date Measured (YYYY-MM-DD)" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Proximate Composition"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <EditText android:id="@+id/inputMoisture" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Moisture" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputProtein" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Protein" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputFat" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Fat" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputAsh" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Ash" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputFiber" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Fiber" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputCarb" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Carbohydrate" android:inputType="numberDecimal" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Antinutrients"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <EditText android:id="@+id/inputPhytate" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Phytate" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputTannins" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Tannins" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputOxalate" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Oxalate" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputOtherAntinutrients" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Other Antinutrients" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Bioactive Compounds"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <EditText android:id="@+id/inputPhenolics" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Total Phenolics" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputFlavonoids" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Flavonoids" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputOtherBioactives" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Other Bioactives" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Minerals"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <EditText android:id="@+id/inputIron" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Iron" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputZinc" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Zinc" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputCalcium" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Calcium" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputMagnesium" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Magnesium" android:inputType="numberDecimal" />
+        <EditText android:id="@+id/inputOtherMinerals" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Other Minerals" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Processing"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <EditText android:id="@+id/inputProcessing" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Processing Method" />
+        <EditText android:id="@+id/inputNotes" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Notes" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="GI"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <EditText android:id="@+id/inputGI" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Measured GI" android:inputType="numberDecimal" />
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="Save" />
+
+    </LinearLayout>
+</ScrollView>
