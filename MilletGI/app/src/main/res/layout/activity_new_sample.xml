@@ -75,6 +75,18 @@
         <EditText android:id="@+id/inputOxalate" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Oxalate" android:inputType="numberDecimal" />
         <EditText android:id="@+id/inputOtherAntinutrients" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Other Antinutrients" />
 
+        <Button
+            android:id="@+id/btnAddAntinutrient"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Add Antinutrient" />
+
+        <LinearLayout
+            android:id="@+id/containerAntinutrients"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -86,6 +98,18 @@
         <EditText android:id="@+id/inputPhenolics" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Total Phenolics" android:inputType="numberDecimal" />
         <EditText android:id="@+id/inputFlavonoids" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Flavonoids" android:inputType="numberDecimal" />
         <EditText android:id="@+id/inputOtherBioactives" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Other Bioactives" />
+
+        <Button
+            android:id="@+id/btnAddBioactive"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Add Bioactive" />
+
+        <LinearLayout
+            android:id="@+id/containerBioactives"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -100,6 +124,38 @@
         <EditText android:id="@+id/inputCalcium" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Calcium" android:inputType="numberDecimal" />
         <EditText android:id="@+id/inputMagnesium" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Magnesium" android:inputType="numberDecimal" />
         <EditText android:id="@+id/inputOtherMinerals" android:layout_width="match_parent" android:layout_height="wrap_content" android:hint="Other Minerals" />
+
+        <Button
+            android:id="@+id/btnAddMineral"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Add Mineral" />
+
+        <LinearLayout
+            android:id="@+id/containerMinerals"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Additional Parameters"
+            android:textStyle="bold"
+            android:textSize="18sp" />
+
+        <Button
+            android:id="@+id/btnAddAdditional"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="+ Add Parameter" />
+
+        <LinearLayout
+            android:id="@+id/containerAdditional"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
 
         <TextView
             android:layout_width="wrap_content"
@@ -127,6 +183,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="24dp"
+            android:backgroundTint="@color/btn_primary"
             android:text="Save" />
 
     </LinearLayout>

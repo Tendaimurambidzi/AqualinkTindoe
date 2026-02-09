@@ -4,4 +4,8 @@
     <color name="millet_green">#4F6B2A</color>
     <color name="millet_cream">#F5EADB</color>
     <color name="millet_dark">#2F2416</color>
+    <color name="btn_primary">#2E6B3D</color>
+    <color name="btn_secondary">#2F5D8A</color>
+    <color name="btn_export">#C88A1A</color>
+    <color name="btn_danger">#B00020</color>
 </resources>
