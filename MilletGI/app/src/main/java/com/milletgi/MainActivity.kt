@@ -4,8 +4,10 @@ import android.content.Intent
 import android.os.Bundle
 import android.widget.Button
 import android.widget.Toast
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AlertDialog
+import com.milletgi.BuildConfig
 
 class MainActivity : AppCompatActivity() {
 
@@ -15,6 +17,8 @@ class MainActivity : AppCompatActivity() {
 
         seedMockDataIfNeeded()
         ModelManager.ensureFakeModelInstalled(this)
+
+        findViewById<TextView>(R.id.textVersion).text = "Version ${BuildConfig.VERSION_NAME}"
 
         findViewById<Button>(R.id.btnNewSample).setOnClickListener {
             startActivity(Intent(this, NewSampleActivity::class.java))
