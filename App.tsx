@@ -18506,20 +18506,16 @@ function PostDetailScreen({ route, navigation }: any) {
               }}
             />
           ) : hasImage ? (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ flex: 1, backgroundColor: 'black' }}>
               <Image
                 source={{ uri: post.media.uri }}
-                style={{
-                  width: SCREEN_WIDTH,
-                  height: SCREEN_WIDTH / (9/16), // Default 16:9 aspect ratio, will be adjusted when dimensions are known
-                  resizeMode: 'contain'
-                }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="contain"
                 onLoad={(event) => {
                   // Record image reach when image loads in post detail view
                   recordImageReach(post.id).catch(error => {
                     console.log('Image reach recording failed:', error.message);
                   });
-                  
                   // Optionally adjust aspect ratio based on actual image dimensions
                   const { width, height } = event.nativeEvent.source;
                   if (width && height) {

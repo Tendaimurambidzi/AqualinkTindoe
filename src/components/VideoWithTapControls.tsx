@@ -541,18 +541,20 @@ const styles = StyleSheet.create({
   },
   timeContainer: {
     position: 'absolute',
-    bottom: 10,
-    left: 20,
-    right: 20,
-    width: 'auto',
-    maxWidth: '90%',
+    bottom: 12,
+    // Push right by 5mm (approx 19px at 96dpi, but use PixelRatio for accuracy if needed)
+    left: SCREEN_WIDTH * 0.18 + 19 + 11, // 11px ≈ 3mm more (total 8mm)
+    width: SCREEN_WIDTH * 0.45, // ~to 3/4 of Gems button (adjust as needed)
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    minHeight: 28,
+    maxHeight: 32,
+    zIndex: 10,
   },
   muteButton: {
     padding: 4,
