@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking } from 'react-native';
+import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
@@ -7,6 +7,7 @@ import PosterActionBar from '../components/PosterActionBar';
 import VideoWithTapControls from '../components/VideoWithTapControls';
 import ClickableTextWithLinks from '../components/ClickableTextWithLinks';
 import database from '@react-native-firebase/database';
+import firestore from '@react-native-firebase/firestore';
 import { formatAwaySince } from '../services/timeUtils';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -159,6 +160,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   isVideoAsset,
 }) => {
   const [status, setStatus] = useState<string>('');
+  const [activeEchoActionId, setActiveEchoActionId] = useState<string | null>(null);
+  const [activeReplyEchoId, setActiveReplyEchoId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState<string>('');
+  const [replyLists, setReplyLists] = useState<Record<string, any[]>>({});
+  const [replyLoading, setReplyLoading] = useState<Record<string, boolean>>({});
+  const [replySending, setReplySending] = useState<Record<string, boolean>>({});
+  const [localEchoHugs, setLocalEchoHugs] = useState<Record<string, { hugs: number; hugged: boolean }>>({});
 
   useEffect(() => {
     if (item.ownerUid !== myUid) {
@@ -343,6 +351,218 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
     }, 200);
   }, [item.id, echoExpansionInProgress, setEchoExpansionInProgress, setEchoesPageSize]);
+
+  const getEchoHugState = useCallback((echo: any) => {
+    const local = echo?.id ? localEchoHugs[echo.id] : null;
+    if (local) {
+      return { hugs: Math.max(0, local.hugs), hugged: !!local.hugged };
+    }
+    const hugs = Math.max(0, Number(echo?.hugs || 0));
+    const hugged = !!(myUid && echo?.huggedBy && echo.huggedBy[myUid]);
+    return { hugs, hugged };
+  }, [localEchoHugs, myUid]);
+
+  const toggleEchoHug = useCallback(async (echo: any) => {
+    if (!echo?.id || !myUid) return;
+    const { hugs, hugged } = getEchoHugState(echo);
+    const nextHugs = Math.max(0, hugs + (hugged ? -1 : 1));
+    setLocalEchoHugs(prev => ({
+      ...prev,
+      [echo.id]: { hugs: nextHugs, hugged: !hugged },
+    }));
+
+    try {
+      const ref = firestore()
+        .collection(`waves/${item.id}/echoes`)
+        .doc(echo.id);
+      const FieldValue = (firestore as any).FieldValue;
+      if (hugged) {
+        await ref.update({
+          hugs: FieldValue.increment(-1),
+          [`huggedBy.${myUid}`]: FieldValue.delete(),
+        });
+      } else {
+        await ref.set(
+          {
+            hugs: FieldValue.increment(1),
+            huggedBy: { [myUid]: true },
+          },
+          { merge: true },
+        );
+      }
+    } catch (e) {
+      // best-effort; UI already updated
+    }
+  }, [getEchoHugState, item.id, myUid]);
+
+  const loadEchoReplies = useCallback(async (echoId: string) => {
+    if (!echoId) return;
+    setReplyLoading(prev => ({ ...prev, [echoId]: true }));
+    try {
+      const snap = await firestore()
+        .collection(`waves/${item.id}/echoes`)
+        .doc(echoId)
+        .collection('replies')
+        .orderBy('createdAt', 'asc')
+        .limit(50)
+        .get();
+      const replies = (snap?.docs || []).map(doc => ({ id: doc.id, ...doc.data() }));
+      setReplyLists(prev => ({ ...prev, [echoId]: replies }));
+    } catch (e) {
+    } finally {
+      setReplyLoading(prev => ({ ...prev, [echoId]: false }));
+    }
+  }, [item.id]);
+
+  const openEchoReplies = useCallback(async (echo: any) => {
+    if (!echo?.id) return;
+    const nextId = activeReplyEchoId === echo.id ? null : echo.id;
+    setActiveReplyEchoId(nextId);
+    setReplyText('');
+    if (nextId) {
+      await loadEchoReplies(nextId);
+    }
+  }, [activeReplyEchoId, loadEchoReplies]);
+
+  const sendEchoReply = useCallback(async (echo: any) => {
+    if (!echo?.id || !myUid) return;
+    const text = (replyText || '').trim();
+    if (!text) return;
+    setReplySending(prev => ({ ...prev, [echo.id]: true }));
+    try {
+      const reply = {
+        text,
+        fromUid: myUid,
+        from: profileName || 'You',
+        createdAt: firestore.FieldValue?.serverTimestamp
+          ? firestore.FieldValue.serverTimestamp()
+          : new Date(),
+      };
+      await firestore()
+        .collection(`waves/${item.id}/echoes`)
+        .doc(echo.id)
+        .collection('replies')
+        .add(reply);
+      setReplyLists(prev => ({
+        ...prev,
+        [echo.id]: [...(prev[echo.id] || []), reply],
+      }));
+      setReplyText('');
+      setActiveReplyEchoId(null);
+    } catch (e) {
+    } finally {
+      setReplySending(prev => ({ ...prev, [echo.id]: false }));
+    }
+  }, [item.id, myUid, profileName, replyText]);
+
+  const renderEchoItem = useCallback((echo: any, idx: number) => {
+    const { hugs, hugged } = getEchoHugState(echo);
+    const showActions = activeEchoActionId === echo.id;
+    const showReplies = activeReplyEchoId === echo.id;
+    const replies = replyLists[echo.id] || [];
+    return (
+      <View
+        key={echo.id || idx}
+        style={{
+          marginBottom: 8,
+          padding: 8,
+          backgroundColor: 'rgba(255,235,59,0.95)',
+          borderRadius: 8,
+        }}
+      >
+        <Pressable
+          onPress={() =>
+            setActiveEchoActionId(prev => (prev === echo.id ? null : echo.id))
+          }
+        >
+          <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
+            {displayHandle(echo.uid, echo.userName || echo.uid)}
+          </Text>
+          <Text style={{ color: 'black', fontSize: 14 }}>
+            {echo.text}
+          </Text>
+          <Text style={{ color: 'gray', fontSize: 10 }}>
+            {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
+          </Text>
+        </Pressable>
+
+        {showActions && (
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
+            <Pressable
+              onPress={() => toggleEchoHug(echo)}
+              style={{
+                backgroundColor: 'rgba(255,235,59,0.95)',
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: hugged ? '#1e88e5' : '#d32f2f' }}>
+                {hugged ? `Hugged (${hugs})` : `Hug (${hugs})`}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => openEchoReplies(echo)}
+              style={{
+                backgroundColor: 'rgba(255,235,59,0.95)',
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 8,
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#000' }}>
+                Echo
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {showReplies && (
+          <View style={{ marginTop: 6, backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: 8, padding: 8 }}>
+            {replyLoading[echo.id] ? (
+              <Text style={{ color: '#000', fontSize: 12 }}>Loading replies...</Text>
+            ) : replies.length === 0 ? (
+              <Text style={{ color: '#000', fontSize: 12 }}>No replies yet.</Text>
+            ) : (
+              replies.map((r: any, rIdx: number) => (
+                <Text key={r.id || `${echo.id}-r-${rIdx}`} style={{ color: '#000', fontSize: 12, marginBottom: 4 }}>
+                  {(r.fromUid && r.fromUid === myUid)
+                    ? '/You'
+                    : (r.fromUid ? displayHandle(r.fromUid, r.from) : (r.from || 'User'))}
+                  : {r.text}
+                </Text>
+              ))
+            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+              <TextInput
+                value={replyText}
+                onChangeText={setReplyText}
+                placeholder="Reply..."
+                placeholderTextColor="rgba(0,0,0,0.5)"
+                style={{
+                  flex: 1,
+                  backgroundColor: '#fff',
+                  borderRadius: 8,
+                  paddingHorizontal: 8,
+                  paddingVertical: 6,
+                  color: '#000',
+                }}
+              />
+              <Pressable
+                style={{ marginLeft: 8, backgroundColor: '#1976d2', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
+                onPress={() => sendEchoReply(echo)}
+                disabled={!!replySending[echo.id]}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>
+                  {replySending[echo.id] ? '...' : 'Send'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  }, [activeEchoActionId, activeReplyEchoId, getEchoHugState, myUid, openEchoReplies, replyLists, replyLoading, replySending, replyText, sendEchoReply, setReplyText, toggleEchoHug, formatDefiniteTime, displayHandle]);
 
   return (
     <Pressable>
@@ -706,27 +926,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
                   return (
                     <>
-                      {visibleEchoes.map((echo, idx) => (
-                        <View key={echo.id || idx} style={{
-                          flexDirection: 'row',
-                          marginBottom: 8,
-                          padding: 8,
-                          backgroundColor: 'rgba(255,255,255,0.8)',
-                          borderRadius: 8,
-                        }}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                              {displayHandle(echo.uid, echo.userName || echo.uid)}
-                            </Text>
-                            <Text style={{ color: 'black', fontSize: 14 }}>
-                              {echo.text}
-                            </Text>
-                            <Text style={{ color: 'gray', fontSize: 10 }}>
-                              {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
-                            </Text>
-                          </View>
-                        </View>
-                      ))}
+                      {visibleEchoes.map((echo, idx) => renderEchoItem(echo, idx))}
 
                       {hasMoreEchoes && (
                         <Pressable
@@ -746,27 +946,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               ) : (
                 (() => {
                   const mostRecentEcho = postEchoLists[item.id][0];
-                  return (
-                    <View style={{
-                      flexDirection: 'row',
-                      marginBottom: 8,
-                      padding: 8,
-                      backgroundColor: 'rgba(255,255,255,0.8)',
-                      borderRadius: 8,
-                    }}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
-                          {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
-                        </Text>
-                        <Text style={{ color: 'black', fontSize: 14 }}>
-                          {mostRecentEcho.text}
-                        </Text>
-                        <Text style={{ color: 'gray', fontSize: 10 }}>
-                          {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
-                        </Text>
-                      </View>
-                    </View>
-                  );
+                  return renderEchoItem(mostRecentEcho, 0);
                 })()
               )}
 
