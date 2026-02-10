@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  upperRow: { height: 48, justifyContent: 'center', alignItems: 'center' },
+  upperRow: { height: 28, justifyContent: 'center', alignItems: 'center' },
   profileButton: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   umbrellaIcon: { fontSize: 20, textAlign: 'center' },
   profileLabel: { color: 'white', fontWeight: '700', letterSpacing: 1.2 },
                     
-  lowerRow: { height: 64 },
+  lowerRow: { height: 32 },
   scrollRow: { alignItems: 'center', gap: 18, paddingHorizontal: 12 },
                     
   topItem: {
@@ -710,7 +710,7 @@ const styles = StyleSheet.create({
   posterName: {
     color: 'white',
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 2,
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowRadius: 4,
   },
@@ -842,9 +842,9 @@ const styles = StyleSheet.create({
                     
   // Profile-specific styles for the logbook
   avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#2ec7ff',
     borderWidth: 2,
     borderColor: 'white',
@@ -852,12 +852,13 @@ const styles = StyleSheet.create({
   profileName: {
     color: 'white',
     fontWeight: '800',
-    fontSize: 16,
-    marginTop: 8,
+    fontSize: 14,
+    marginTop: 2,
   },
   profileBio: {
     color: 'rgba(255,255,255,0.8)',
-    marginTop: 4,
+    marginTop: 2,
+    fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   statsOverlay: {
@@ -11727,7 +11728,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Image
                       source={{ uri: unifiedPostMedia.uri }}
                       style={{ width: 200, height: 200, borderRadius: 8 }}
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                   ) : (
                     <View style={{ 
@@ -13111,7 +13112,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <Image
                               source={{ uri: result.extra.photoURL }}
                               style={{ width: 56, height: 56 }}
-                              resizeMode="cover"
+                              resizeMode="contain"
                             />
                           ) : (
                             <Text style={{ fontSize: 28, color: 'white' }}>
@@ -13901,7 +13902,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <Image
                         source={{ uri: messageAttachment.uri }}
                         style={{ width: 200, height: 200, borderRadius: 8 }}
-                        resizeMode="cover"
+                              resizeMode="contain"
                       />
                     ) : messageAttachment.type?.startsWith('video/') ? (
                       <View style={{ 
@@ -14087,7 +14088,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         StyleSheet.absoluteFillObject as any,
                         { backgroundColor: 'black' },
                       ]}
-                      resizeMode={'cover'}
+                      resizeMode={'contain'}
                       repeat
                       paused={isPaused || !editorPlaying}
                       muted={true} // Mute video preview by default

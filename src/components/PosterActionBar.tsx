@@ -14,7 +14,7 @@ const fetchUserData = async (userId: string) => {
       .doc(userId)
       .get();
 
-    if (userDoc.exists) {
+    if (userDoc.exists()) {
       const userData = userDoc.data();
       return userData;
     }
@@ -67,11 +67,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
   // State for huggers dropdown
   const [showHuggersDropdown, setShowHuggersDropdown] = useState(false);
-  const [huggersList, setHuggersList] = useState([]);
+  type Hugger = { id: string; name: string; photo: string; timestamp: any };
+  const [huggersList, setHuggersList] = useState<Hugger[]>([]);
   const [loadingHuggers, setLoadingHuggers] = useState(false);
 
   // State for creator user data
-  const [creatorUserData, setCreatorUserData] = useState(null);
+  const [creatorUserData, setCreatorUserData] = useState<any>(null);
 
   // Connectivity state
   const [isOnline, setIsOnline] = useState(true);
@@ -237,98 +238,54 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const creatorProfilePicture = creatorUserData?.userPhoto || creatorUserData?.photoURL || 'https://via.placeholder.com/100x100.png?text=No+Photo';
 
   return (
+
     <>
-      {/* Icons Row */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        style={styles.actionBar}
-        keyboardShouldPersistTaps="handled"
-        scrollEnabled={true}
-        contentContainerStyle={{ flexDirection: 'row' }}
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.textButtonsBar}
+      keyboardShouldPersistTaps="handled"
+      scrollEnabled={true}
+      contentContainerStyle={{ flexDirection: 'row' }}
+    >
+      {/* Hugs Button (with icon and count) */}
+      <Pressable
+        onPress={handleHugAction}
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
       >
-        {/* Splashes Icon */}
-        <View style={styles.iconButton}>
-          <View style={styles.iconContainer}>
-            <Pressable
-              onPress={handleHugPress}
-              style={styles.iconTouchable}
-              hitSlop={{ top: 80, bottom: 80, left: 60, right: 60 }}
-              pressRetentionOffset={{ top: 40, bottom: 40, left: 25, right: 25 }}
-              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-              delayPressIn={0}
-              delayPressOut={0}
-            >
-              <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
-                🫂
-              </Text>
-            </Pressable>
-            <Text style={[styles.iconCount, Math.max(0, splashesCount) > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>
-              {Math.max(0, splashesCount)}
-            </Text>
-          </View>
+        <View style={styles.buttonContent}>
+          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>🫂</Text>
+          <Text style={[styles.actionLabel, hasHugged && styles.huggedLabel]}>{hasHugged ? 'Hugged' : 'Hugs'}</Text>
+          <Text style={[styles.iconCount, Math.max(0, splashesCount) > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>{Math.max(0, splashesCount)}</Text>
         </View>
+      </Pressable>
 
-        {/* Echoes Icon */}
-        <View style={styles.iconButton}>
-          <View style={styles.iconContainer}>
-            <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
-              📣
-            </Text>
-            <Text style={[styles.iconCount, echoesCount > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>
-              {echoesCount}
-            </Text>
-          </View>
-        </View>
-
-        </ScrollView>
-
-      {/* Text Buttons Row */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false} 
-        style={styles.textButtonsBar}
-        keyboardShouldPersistTaps="handled"
-        scrollEnabled={true}
-        contentContainerStyle={{ flexDirection: 'row' }}
+      {/* Echoes Button (with icon and count) */}
+      <Pressable
+        onPress={handleEcho}
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
       >
-        {/* Splashes Button */}
-        <Pressable
-          onPress={handleHugAction}
-          style={({ pressed }) => [
-            styles.textButton,
-            pressed && styles.pressedButton
-          ]}
-          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          delayPressIn={0}
-          delayPressOut={0}
-        >
-          <Text style={[styles.actionLabel, hasHugged && styles.huggedLabel]}>
-            {hasHugged ? 'Hugged' : 'Hugs'}
-          </Text>
-        </Pressable>
-
-        {/* Echoes Button */}
-        <Pressable
-          onPress={handleEcho}
-          style={({ pressed }) => [
-            styles.textButton,
-            pressed && styles.pressedButton
-          ]}
-          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          delayPressIn={0}
-          delayPressOut={0}
-        >
+        <View style={styles.buttonContent}>
+          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>📣</Text>
           <Text style={styles.actionLabel}>Echoes</Text>
-        </Pressable>
-        {currentUserId !== creatorUserId && (
-          <>
+          <Text style={[styles.iconCount, echoesCount > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>{echoesCount}</Text>
+        </View>
+      </Pressable>
 
-        {/* Gems Button */}
+      {/* Gems Button */}
+      {currentUserId !== creatorUserId && (
         <Pressable
           onPress={handlePearl}
           style={({ pressed }) => [
@@ -344,47 +301,12 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             <Text style={styles.actionLabel}>Gems</Text>
           </View>
         </Pressable>
+      )}
 
-        {/* Anchor Wave Button - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <Pressable
-            onPress={handleAnchor}
-            style={({ pressed }) => [
-              styles.textButton,
-              pressed && styles.pressedButton
-            ]}
-            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-            pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <View style={styles.buttonContent}>
-              <Text style={styles.actionIconSmall}>⚓</Text>
-              <Text style={styles.actionLabel}>Anchor</Text>
-            </View>
-          </Pressable>
-        )}
-
-        {/* Cast Wave Button - Only show for other users' posts */}
-        {currentUserId !== creatorUserId && (
-          <Pressable
-            onPress={handleCast}
-            style={({ pressed }) => [
-              styles.textButton,
-              pressed && styles.pressedButton
-            ]}
-            hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-            pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <View style={styles.buttonContent}>
-              <Text style={styles.actionIconSmall}>📡</Text>
-              <Text style={styles.actionLabel}>Cast</Text>
-            </View>
-          </Pressable>
-        )}
-
-        {/* Placeholder Button 1 */}
+      {/* Anchor Wave Button - Only show for other users' posts */}
+      {currentUserId !== creatorUserId && (
         <Pressable
+          onPress={handleAnchor}
           style={({ pressed }) => [
             styles.textButton,
             pressed && styles.pressedButton
@@ -394,13 +316,16 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>🍴</Text>
-            <Text style={styles.actionLabel}>Placeholder 1</Text>
+            <Text style={styles.actionIconSmall}>⚓</Text>
+            <Text style={styles.actionLabel}>Anchor</Text>
           </View>
         </Pressable>
+      )}
 
-        {/* Placeholder Button 2 */}
+      {/* Cast Wave Button - Only show for other users' posts */}
+      {currentUserId !== creatorUserId && (
         <Pressable
+          onPress={handleCast}
           style={({ pressed }) => [
             styles.textButton,
             pressed && styles.pressedButton
@@ -410,13 +335,44 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>🐚</Text>
-            <Text style={styles.actionLabel}>Placeholder 2</Text>
+            <Text style={styles.actionIconSmall}>📡</Text>
+            <Text style={styles.actionLabel}>Cast</Text>
           </View>
         </Pressable>
-          </>
-        )}
-      </ScrollView>
+      )}
+
+      {/* Placeholder Button 1 */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+      >
+        <View style={styles.buttonContent}>
+          <Text style={styles.actionIconSmall}>🍴</Text>
+          <Text style={styles.actionLabel}>Placeholder 1</Text>
+        </View>
+      </Pressable>
+
+      {/* Placeholder Button 2 */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+      >
+        <View style={styles.buttonContent}>
+          <Text style={styles.actionIconSmall}>🐚</Text>
+          <Text style={styles.actionLabel}>Placeholder 2</Text>
+        </View>
+      </Pressable>
+    </ScrollView>
 
     {/* Huggers Dropdown Modal */}
     <Modal
@@ -469,20 +425,26 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 // Styles
 const styles = StyleSheet.create({
   actionBar: {
-    paddingVertical: 5,
+    paddingVertical: 0,
     paddingHorizontal: 0,
     backgroundColor: 'grey',
     borderRadius: 0,
-    marginHorizontal: -10,
-    marginBottom: 5, // Reduced margin since we have text buttons below
+    marginHorizontal: 0,
+    marginBottom: 0,
+    minHeight: 8,
+    height: 22,
+    width: '100%',
   },
   textButtonsBar: {
-    paddingVertical: 5,
+    paddingVertical: 0,
     paddingHorizontal: 0,
     backgroundColor: 'grey',
     borderRadius: 0,
-    marginHorizontal: -10,
-    marginBottom: 10,
+    marginHorizontal: 0,
+    marginBottom: 0,
+    minHeight: 8,
+    height: 22,
+    width: '100%',
   },
   actionButton: {
     alignItems: 'center',
@@ -499,15 +461,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   textButton: {
-    backgroundColor: '#ff4444', // Red background like Facebook buttons
-    borderRadius: 20, // Smooth curved corners
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    minWidth: 80,
-    minHeight: 36,
+    backgroundColor: '#ff4444',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    minWidth: 28,
+    minHeight: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 10, // Add horizontal margin between buttons
+    marginHorizontal: 2,
   },
   pressedButton: {
     opacity: 0.6,
@@ -517,9 +479,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 1,
   },
   actionIcon: {
-    fontSize: 24, // Enlarged icons
+    fontSize: 12,
     color: '#fff',
     fontWeight: 'bold',
   },
@@ -536,17 +499,17 @@ const styles = StyleSheet.create({
     color: '#ff0088', // Red for pearls/gems
   },
   actionLabel: {
-    fontSize: 12,
+    fontSize: 7,
     color: '#ccc',
-    marginRight: 4, // Space between text and count
+    marginRight: 1,
   },
   huggedLabel: {
     color: '#1e88e5',
   },
   actionIconSmall: {
-    fontSize: 14,
+    fontSize: 8,
     color: '#fff',
-    marginRight: 6,
+    marginRight: 1,
   },
   actionCount: {
     fontSize: 12,
@@ -564,15 +527,15 @@ const styles = StyleSheet.create({
   },
   iconCount: {
     position: 'absolute',
-    top: -8,
-    right: -8,
-    fontSize: 10,
+    top: -3,
+    right: -3,
+    fontSize: 6,
     fontWeight: 'bold',
     backgroundColor: '#333',
-    borderRadius: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    minWidth: 16,
+    borderRadius: 3,
+    paddingHorizontal: 1,
+    paddingVertical: 0,
+    minWidth: 7,
     textAlign: 'center',
   },
   activeIconCount: {

@@ -564,7 +564,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   <VideoWithTapControls
                     source={{ uri: item.media.uri }}
                     style={videoStyleFor(item.id)}
-                    resizeMode={'cover'}
+                    resizeMode={'contain'}
                     paused={!playSynced}
                     playInBackground={false}
                     isActive={item.id === activeVideoId}
