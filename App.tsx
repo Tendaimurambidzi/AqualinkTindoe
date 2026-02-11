@@ -9709,51 +9709,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         <View style={styles.topBarWrapper}>
           {isTopBarVisible && (
             <>
-              {/* VIBES - always visible */}
-              <Pressable
-                style={styles.topItem}
-                onPress={() => {
-                  showTopBar();
-                  setCurrentIndex(0);
-                  try {
-                    feedRef.current?.scrollToOffset({ offset: 0, animated: false });
-                  } catch {}
-                }}
-              >
-                <Text style={[styles.compassIcon, { color: 'red' }]}>
-                  🐬
-                </Text>
-                <Text style={styles.topLabel}>
-                  WAVES
-                </Text>
-              </Pressable>
+              <View>
+                {/* ...existing code... */}
+              </View>
             </>
           )}
-          {isTopBarVisible && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.scrollRow}
-            >
-                {/* MAKE WAVES */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleDropWave}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.dolphinIcon}>✨</Text>
-                  <Text style={styles.topLabel}>DROP A WAVE</Text>
-                </Pressable>
-                {/* VIBE ALERTS - Placeholder */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeAlerts}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+          </View>
+        </View>
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
+                    <Text style={styles.dolphinIcon}>✨</Text>
+                    <Text style={styles.topLabel}>DROP A WAVE</Text>
+                  </Pressable>
+                  {/* VIBE ALERTS - Placeholder */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={handleVibeAlerts}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <View style={{ position: 'relative' }}>
                     <Text style={styles.pingsIcon}>📫</Text>
                     {unreadAlertsCount > 0 && (
@@ -9764,107 +9740,105 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.topLabel}>VIBE ALERTS</Text>
-                </Pressable>
-                {/* DEEP DIVE */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeHunt}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>VIBE ALERTS</Text>
+                  </Pressable>
+                  {/* DEEP DIVE */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={handleVibeHunt}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.dolphinIcon}>🔎</Text>
-                  <Text style={styles.topLabel}>VIBE HUNT</Text>
-                </Pressable>
-                    
-                {/* MY SHORE */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleMyAura}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>VIBE HUNT</Text>
+                  </Pressable>
+                  {/* MY SHORE */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={handleMyAura}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.umbrellaIcon}>⛱️</Text>
-                  <Text style={styles.topLabel}>MY AURA</Text>
-                </Pressable>
-                {/* SET SAIL */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeOut}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>MY AURA</Text>
+                  </Pressable>
+                  {/* SET SAIL */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={handleVibeOut}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.boatIcon}>⛵</Text>
-                  <Text style={styles.topLabel}>VIBE OUT</Text>
-                </Pressable>
-                {/* SCHOOL MODE */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeMode}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>VIBE OUT</Text>
+                  </Pressable>
+                  {/* SCHOOL MODE */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={handleVibeMode}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.schoolIcon}>🏫</Text>
-                  <Text style={styles.topLabel}>VIBE MODE</Text>
-                </Pressable>
-                {/* AI ASSISTANT */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleAiAssistant}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>VIBE MODE</Text>
+                  </Pressable>
+                  {/* AI ASSISTANT */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={handleAiAssistant}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.aiIcon}>🤖</Text>
-                  <Text style={styles.topLabel}>AI ASSISTANT</Text>
-                </Pressable>
-                {/* NOTICE BOARD */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeBoard}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>AI ASSISTANT</Text>
+                  </Pressable>
+                  {/* NOTICE BOARD */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={handleVibeBoard}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.noticeIcon}>📋</Text>
-                  <Text style={styles.topLabel}>VIBE BOARD</Text>
-                </Pressable>
-                {/* THE BRIDGE */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    setShowBridge(true);
-                  }}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>VIBE BOARD</Text>
+                  </Pressable>
+                  {/* THE BRIDGE */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={() => {
+                      showTopBar();
+                      setShowBridge(true);
+                    }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.gearIcon}>⚙️</Text>
-                  <Text style={styles.topLabel}>VIBE BRIDGE</Text>
-                </Pressable>
-                {/* PLACE HOLDER */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    Alert.alert('Placeholder', 'Reserved for future feature.');
-                  }}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
+                    <Text style={styles.topLabel}>VIBE BRIDGE</Text>
+                  </Pressable>
+                  {/* PLACE HOLDER */}
+                  <Pressable
+                    style={styles.topItem}
+                    onPress={() => {
+                      showTopBar();
+                      Alert.alert('Placeholder', 'Reserved for future feature.');
+                    }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  >
                   <Text style={styles.placeholderIcon}>🔮</Text>
-                  <Text style={styles.topLabel}>PLACE HOLDER</Text>
-                </Pressable>
-              </ScrollView>
-            )}
-          </View>
-        </Pressable>
+                    <Text style={styles.topLabel}>PLACE HOLDER</Text>
+                  </Pressable>
+
+                </ScrollView>
+              </View>
                     
     
                     
@@ -10135,56 +10109,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               },
             ]}
           >
-            {paperTexture && (
-              <Image source={paperTexture} style={styles.logbookBg} />
-            )}
-            {/* Profile and actions at the top, stats tab below them above close button */}
-            <View style={{ flex: 1, flexDirection: 'column', marginTop: 16 }}>
-              {/* Centered Profile Avatar */}
-              <View style={{ alignItems: 'center', marginBottom: 16 }}>
-                <EditableProfileAvatar
-                  initialPhotoUrl={profilePhoto}
-                  onPhotoChanged={async (newUri) => {
-                    // Photo is already uploaded to Firebase Storage and Firestore updated in EditableProfileAvatar
-                    // Just update local state
-                    setProfilePhoto(newUri);
-                    
-                    // Also update userData state for immediate UI updates
-                    const currentUser = auth()?.currentUser;
-                    if (currentUser) {
-                      setUserData(prev => ({
-                        ...prev,
-                        [currentUser.uid]: {
-                          ...prev[currentUser.uid],
-                          avatar: newUri || '',
-                          name: prev[currentUser.uid]?.name || 'User',
-                          bio: prev[currentUser.uid]?.bio || '',
-                        }
-                      }));
-                    }
-                    
-                    try {
-                      let firestoreMod: any = null;
-                      let authMod: any = null;
-                      try {
-                        firestoreMod = require('@react-native-firebase/firestore').default;
-                      } catch {}
-                      try {
-                        authMod = require('@react-native-firebase/auth').default;
-                      } catch {}
-                      const uid = authMod?.()?.currentUser?.uid;
-                      if (firestoreMod && uid) {
-                        await firestoreMod().doc(`users/${uid}`).update({
-                          userPhoto: newUri || null,
-                        });
-                      }
-                    } catch (e) {
-                      // Optionally show error
-                    }
-                  }}
-                />
-                <View
-                  style={{
+            <View
+              style={{
                     flexDirection: 'row',
                     alignItems: 'center',
                     marginTop: 8,
@@ -10416,34 +10342,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Treasure</Text>
                   </View>
                 </Pressable>
-              </View>
+              <Pressable
+                style={styles.dismissBtn}
+                onPress={() => setShowProfile(false)}
+              >
+                <Text style={styles.dismissText}>Close</Text>
+              </Pressable>
             </View>
           </View>
-          <Pressable
-            style={styles.dismissBtn}
-            onPress={() => setShowProfile(false)}
-          >
-            <Text style={styles.dismissText}>Close</Text>
-          </Pressable>
-        </View>
-      </Modal>
-      
-      {/* MESSAGING INBOX MODAL */}
-      <Modal
-        visible={showInbox}
-        transparent
-        animationType="none"
-        onRequestClose={() => {
-          setShowInbox(false);
-          setSelectedThread(null);
-          setIsDeleteMode(false);
-          setSelectedNotifications(new Set());
-        }}
-      >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
-        >
-          <View
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.scrollRow}
+            >
             style={[
               styles.logbookContainer,
               {
@@ -11275,7 +11186,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </View>
                   )}
                 </ScrollView>
-                </>
               )}
             </View>
           </View>
@@ -11356,9 +11266,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             )}
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>My Vibes</Text>
-              <ScrollView>
-                {vibesFeed.filter(w => w.ownerUid === myUid).length === 0 ? (
-                  <Text style={styles.hint}>
+                </ScrollView>
+              )}
                     No vibes yet. Post from Make Vibes.
                   </Text>
                 ) : (
@@ -11879,22 +11788,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           }}
                         >
                           <Text style={{ color: '#00C2FF', fontWeight: '700' }}>
-                            Message
-                          </Text>
-                        </Pressable>
-                      )}
-                      {p.type === 'joined_tide' && (p as any).fromUid && (
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 8 }}>
-                          <Pressable
-                            style={[styles.pingButton, { flex: 1, marginRight: 4 }]}
-                            onPress={() => {
-                              setShowPings(false);
-                              setMessageRecipient({
-                                uid: (p as any).fromUid,
-                                name: displayHandle(
-                                  (p as any).fromUid,
-                                  p.actorName,
-                                ),
+                            <Pressable
+                              style={styles.topItem}
+                              onPress={() => {
+                                showTopBar();
+                                Alert.alert('Placeholder', 'Reserved for future feature.');
+                              }}
+                              delayPressIn={0}
+                              delayPressOut={0}
+                              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                            >
+                              <Text style={styles.placeholderIcon}>🔮</Text>
+                              <Text style={styles.topLabel}>PLACE HOLDER</Text>
+                            </Pressable>
+
+                              </ScrollView>
+                            </View>
+                          </>
                               });
                               setMessageText('');
                               setShowSendMessage(true);
