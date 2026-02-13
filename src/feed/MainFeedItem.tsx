@@ -1,5 +1,6 @@
-import React, { memo, useCallback, useEffect, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput } from 'react-native';
+import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking } from 'react-native';
+import ReplyInput from '../components/ReplyInput';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
@@ -163,10 +164,19 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [activeEchoActionId, setActiveEchoActionId] = useState<string | null>(null);
   const [activeReplyEchoId, setActiveReplyEchoId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState<string>('');
+<<<<<<< HEAD
   const [replyLists, setReplyLists] = useState<Record<string, any[]>>({});
   const [replyLoading, setReplyLoading] = useState<Record<string, boolean>>({});
   const [replySending, setReplySending] = useState<Record<string, boolean>>({});
   const [localEchoHugs, setLocalEchoHugs] = useState<Record<string, { hugs: number; hugged: boolean }>>({});
+=======
+  const [replies, setReplies] = useState<Record<string, any[]>>({});
+  const [showReplies, setShowReplies] = useState<Set<string>>(new Set());
+  const rootEchoes = useMemo(
+    () => (postEchoLists[item.id] || []).filter(e => !e.replyToEchoId),
+    [item.id, postEchoLists]
+  );
+>>>>>>> cb7acc76 (backup: Aqua391 snapshot)
 
   useEffect(() => {
     if (item.ownerUid !== myUid) {
@@ -187,6 +197,59 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
   }, [item.ownerUid, myUid]);
 
+<<<<<<< HEAD
+=======
+  // Load reply threads from shared backend so they are visible across devices.
+  useEffect(() => {
+    const loadRepliesFromEchoes = async () => {
+      try {
+        if (rootEchoes.length === 0) {
+          setReplies({});
+          setReplyCounts({});
+          return;
+        }
+
+        const nextReplies: Record<string, any[]> = {};
+        const nextReplyCounts: Record<string, number> = {};
+
+        await Promise.all(
+          rootEchoes.map(async echo => {
+            const echoId = echo.id;
+            if (!echoId) return;
+            const snap = await firestore()
+              .collection('waves')
+              .doc(item.id)
+              .collection('echoes')
+              .where('replyToEchoId', '==', echoId)
+              .limit(50)
+              .get();
+
+            const rows = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            rows.sort((a, b) => {
+              const toMillis = (v: any) => {
+                if (!v) return 0;
+                if (typeof v?.toMillis === 'function') return v.toMillis();
+                const dt = new Date(v);
+                return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+              };
+              return toMillis(a.createdAt) - toMillis(b.createdAt);
+            });
+
+            nextReplies[echoId] = rows;
+            nextReplyCounts[echoId] = rows.length;
+          })
+        );
+
+        setReplies(nextReplies);
+        setReplyCounts(nextReplyCounts);
+      } catch (error) {
+        console.error('Error loading comment data:', error);
+      }
+    };
+    loadRepliesFromEchoes();
+  }, [item.id, rootEchoes]);
+
+>>>>>>> cb7acc76 (backup: Aqua391 snapshot)
   // Calculate play conditions
   const isAnyModalOpen = showMakeWaves || showAudioModal || !!capturedMedia || showLive;
   const shouldPlay = !isPaused && allowPlayback && !isAnyModalOpen;
@@ -266,81 +329,36 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     setWavesFeed(updateFeeds);
     setVibesFeed(updateFeeds);
     setPublicFeed(updateFeeds);
-    setPostFeed(updateFeeds);
-
-    // Database operation in background
-    ensureSplash(item.id).catch((error) => {
-      console.error('Error adding splash:', error);
-      // Revert UI on error
-      const revertFeeds = (feed: Vibe[]) =>
-        feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v);
-
-      setWavesFeed(revertFeeds);
-      setVibesFeed(revertFeeds);
-      setPublicFeed(revertFeeds);
-      setPostFeed(revertFeeds);
-    });
-  }, [item.id, ensureSplash, setWavesFeed, setVibesFeed, setPublicFeed, setPostFeed]);
-
-  const handleRemoveSplash = useCallback(() => {
-    // IMMEDIATE UI UPDATE - no delay
-    const updateFeeds = (feed: Vibe[]) =>
-      feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v);
-
-    setWavesFeed(updateFeeds);
-    setVibesFeed(updateFeeds);
-    setPublicFeed(updateFeeds);
-    setPostFeed(updateFeeds);
-
-    // Database operation in background
-    removeSplash(item.id).catch((error) => {
-      console.error('Error removing splash:', error);
-      // Revert UI on error
-      const revertFeeds = (feed: Vibe[]) =>
-        feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v);
-
-      setWavesFeed(revertFeeds);
-      setVibesFeed(revertFeeds);
-      setPublicFeed(revertFeeds);
-      setPostFeed(revertFeeds);
-    });
-  }, [item.id, removeSplash, setWavesFeed, setVibesFeed, setPublicFeed, setPostFeed]);
-
-  const handleEcho = useCallback(() => {
-    setEchoWaveId(item.id);
-    setCurrentIndex(index);
-    setShowEchoes(true);
-  }, [item.id, index, setEchoWaveId, setCurrentIndex, setShowEchoes]);
-
-  const handlePearl = useCallback(() => {
-    setShowPearls(true);
-  }, [setShowPearls]);
-
-  const handleAnchor = useCallback(() => {
-    anchorWave(item);
-  }, [item, anchorWave]);
-
-  const handleCast = useCallback(() => {
-    onShareWave(item);
-  }, [item, onShareWave]);
-
-  const handleReachPress = useCallback(() => {
-    recordVideoReach(item.id).catch(error => {
-      console.log('Reach recording failed:', error.message);
-    });
-  }, [item.id, recordVideoReach]);
-
-  const handleEchoToggle = useCallback(() => {
-    if (echoExpansionInProgress[item.id]) return;
-
-    setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: true }));
-    setExpandedEchoes(prev => ({ ...prev, [item.id]: !prev[item.id] }));
-
-    setTimeout(() => {
-      setEchoExpansionInProgress(prev => ({ ...prev, [item.id]: false }));
-    }, 300);
-  }, [item.id, echoExpansionInProgress, setEchoExpansionInProgress, setExpandedEchoes]);
-
+      const sendEchoReply = useCallback(async (echo: any) => {
+        if (!echo?.id || !myUid) return;
+        const text = (replyText || '').trim();
+        if (!text) return;
+        setReplySending(prev => ({ ...prev, [echo.id]: true }));
+        try {
+          const reply = {
+            text,
+            fromUid: myUid,
+            from: profileName || 'You',
+            createdAt: firestore.FieldValue?.serverTimestamp
+              ? firestore.FieldValue.serverTimestamp()
+              : new Date(),
+          };
+          await firestore()
+            .collection(`waves/${item.id}/echoes`)
+            .doc(echo.id)
+            .collection('replies')
+            .add(reply);
+          setReplyLists(prev => ({
+            ...prev,
+            [echo.id]: [...(prev[echo.id] || []), reply],
+          }));
+          setReplyText('');
+          setActiveReplyEchoId(null);
+        } catch (e) {
+        } finally {
+          setReplySending(prev => ({ ...prev, [echo.id]: false }));
+        }
+      }, [item.id, myUid, profileName, replyText]);
   const handleLoadMoreEchoes = useCallback(() => {
     if (echoExpansionInProgress[item.id]) return;
 
@@ -424,6 +442,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
   }, [activeReplyEchoId, loadEchoReplies]);
 
+<<<<<<< HEAD
   const sendEchoReply = useCallback(async (echo: any) => {
     if (!echo?.id || !myUid) return;
     const text = (replyText || '').trim();
@@ -452,6 +471,48 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     } catch (e) {
     } finally {
       setReplySending(prev => ({ ...prev, [echo.id]: false }));
+=======
+  const handleSendReply = useCallback(async (commentId: string) => {
+    const trimmedReply = replyText.trim();
+    if (trimmedReply && myUid) {
+      const newReply = {
+        text: trimmedReply,
+        uid: myUid,
+        userName: profileName,
+        createdAt: new Date().toISOString(),
+      };
+      try {
+        // Reuse the same backend path as working "Dive in" echo flow.
+        const createEchoFn = functions().httpsCallable('createEcho');
+        await createEchoFn({
+          waveId: item.id,
+          text: trimmedReply,
+          fromName: profileName || null,
+          fromPhoto: null,
+          replyToEchoId: commentId,
+        });
+
+        const replyWithId = { ...newReply, id: `reply-${Date.now()}` };
+        setReplies(prev => ({
+          ...prev,
+          [commentId]: [...(prev[commentId] || []), replyWithId]
+        }));
+        setReplyCounts(prev => ({ ...prev, [commentId]: (prev[commentId] || 0) + 1 }));
+        setReplyText('');
+        setReplyMode(null);
+      } catch (error) {
+        console.error('Error sending reply:', error);
+        Alert.alert('Reply Error', 'Failed to send reply. Please check your connection and try again.');
+      }
+    } else {
+      if (!myUid) {
+        console.error('Reply failed: myUid is null');
+        Alert.alert('Reply Error', 'User ID not found. Please log in again.');
+      } else if (!replyText.trim()) {
+        console.error('Reply failed: replyText is empty');
+        Alert.alert('Reply Error', 'Reply text cannot be empty.');
+      }
+>>>>>>> cb7acc76 (backup: Aqua391 snapshot)
     }
   }, [item.id, myUid, profileName, replyText]);
 
@@ -915,18 +976,155 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
         <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
           {/* Echoes Section */}
-          {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
+          {rootEchoes.length > 0 && (
             <View style={{ marginTop: 10 }}>
               {expandedEchoes[item.id] ? (
                 (() => {
-                  const allEchoes = postEchoLists[item.id];
+                  const allEchoes = rootEchoes;
                   const pageSize = echoesPageSize[item.id] || 5;
                   const visibleEchoes = allEchoes.slice(0, pageSize);
                   const hasMoreEchoes = allEchoes.length > pageSize;
 
                   return (
                     <>
+<<<<<<< HEAD
                       {visibleEchoes.map((echo, idx) => renderEchoItem(echo, idx))}
+=======
+                      {visibleEchoes.map((echo, idx) => {
+                        const echoId = echo.id || `echo-${idx}`;
+                        const isSelected = selectedCommentId === echoId;
+                        
+                        return (
+                          <View key={echoId}>
+                            <Pressable 
+                              onPress={() => handleCommentPress(echoId)}
+                              style={{
+                                flexDirection: 'row',
+                                marginBottom: 8,
+                                padding: 8,
+                                backgroundColor: 'yellow',
+                                borderRadius: 8,
+                              }}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Pressable onPress={() => handleProfilePress(echo.uid)}>
+                                  <Text style={{ color: 'blue', fontSize: 12, fontWeight: '600', marginBottom: 2, textDecorationLine: 'underline' }}>
+                                    {displayHandle(echo.uid, echo.userName || echo.uid)}
+                                  </Text>
+                                </Pressable>
+                                <ClickableTextWithLinks
+                                  text={echo.text}
+                                  style={{ color: 'black', fontSize: 14 }}
+                                  onHashtagPress={onHashtagPress}
+                                />
+                                <Text style={{ color: 'black', fontSize: 10 }}>
+                                  {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
+                                </Text>
+                              </View>
+                            </Pressable>
+                            
+                            {isSelected && (
+                              <View style={{
+                                flexDirection: 'row',
+                                justifyContent: 'flex-start',
+                                marginBottom: 8,
+                                paddingVertical: 4,
+                                paddingHorizontal: 8,
+                              }}>
+                                <Pressable 
+                                  onPress={() => handleHugComment(echoId)}
+                                  style={{ marginRight: 16 }}
+                                >
+                                  <Text style={{ 
+                                    color: huggedComments.has(echoId) ? 'navy' : 'red', 
+                                    fontSize: 14, 
+                                    fontWeight: '600' 
+                                  }}>
+                                    {huggedComments.has(echoId) ? 'Hugged' : 'Hug'}
+                                    {hugCounts[echoId] > 0 && ` (${hugCounts[echoId]})`}
+                                  </Text>
+                                </Pressable>
+                                <Pressable 
+                                  onPress={() => handleDiveInComment(echoId)}
+                                  style={{ marginRight: 16 }}
+                                >
+                                  <Text style={{ color: 'red', fontSize: 14, fontWeight: '600' }}>
+                                    Dive in{replyCounts[echoId] > 0 && ` (${replyCounts[echoId]})`}
+                                  </Text>
+                                </Pressable>
+                              </View>
+                            )}
+
+                            {replyMode === echoId && (
+                              <ReplyInput
+                                value={replyText}
+                                onChange={setReplyText}
+                                onSend={() => handleSendReply(echoId)}
+                                onCancel={() => {
+                                  setReplyText('');
+                                  setReplyMode(null);
+                                }}
+                                placeholder="Write a reply..."
+                              />
+                            )}
+
+                            {showReplies.has(echoId) && replies[echoId] && replies[echoId].length > 0 && (
+                              <View style={{
+                                marginLeft: 16,
+                                marginBottom: 8,
+                                padding: 8,
+                                backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                                borderRadius: 6,
+                                borderLeftWidth: 3,
+                                borderLeftColor: '#00C2FF',
+                              }}>
+                                <Pressable
+                                  onPress={() => handleToggleReplies(echoId)}
+                                  style={{
+                                    position: 'absolute',
+                                    top: 4,
+                                    right: 4,
+                                    paddingHorizontal: 8,
+                                    paddingVertical: 4,
+                                    backgroundColor: 'rgba(255, 0, 0, 0.8)',
+                                    borderRadius: 12,
+                                    zIndex: 1,
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 14, color: 'white', fontWeight: 'bold' }}>✕</Text>
+                                </Pressable>
+                                {replies[echoId].map((reply, replyIdx) => (
+                                  <View key={reply.id || replyIdx} style={{ marginBottom: replyIdx < replies[echoId].length - 1 ? 8 : 0 }}>
+                                    <Text style={{ color: 'blue', fontSize: 11, fontWeight: '600', marginBottom: 2 }}>
+                                      {displayHandle(reply.uid, reply.userName || reply.uid)}
+                                    </Text>
+                                    <Text style={{ color: 'black', fontSize: 13 }}>
+                                      {reply.text}
+                                    </Text>
+                                    <Text style={{ color: 'gray', fontSize: 9 }}>
+                                      {reply.createdAt ? formatDefiniteTime(reply.createdAt) : 'just now'}
+                                    </Text>
+                                  </View>
+                                ))}
+                                <Pressable 
+                                  onPress={() => handleReplyToComment(echoId)}
+                                  style={{
+                                    marginTop: 8,
+                                    paddingVertical: 4,
+                                    paddingHorizontal: 8,
+                                    backgroundColor: 'rgba(0, 194, 255, 0.2)',
+                                    borderRadius: 4,
+                                    alignSelf: 'flex-start',
+                                  }}
+                                >
+                                  <Text style={{ color: '#00C2FF', fontSize: 12, fontWeight: '600' }}>Reply</Text>
+                                </Pressable>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+>>>>>>> cb7acc76 (backup: Aqua391 snapshot)
 
                       {hasMoreEchoes && (
                         <Pressable
@@ -945,12 +1143,148 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 })()
               ) : (
                 (() => {
+<<<<<<< HEAD
                   const mostRecentEcho = postEchoLists[item.id][0];
                   return renderEchoItem(mostRecentEcho, 0);
+=======
+                  const mostRecentEcho = rootEchoes[0];
+                  const echoId = mostRecentEcho.id || 'most-recent-echo';
+                  const isSelected = selectedCommentId === echoId;
+                  
+                  return (
+                    <View>
+                      <Pressable 
+                        onPress={() => handleCommentPress(echoId)}
+                        style={{
+                          flexDirection: 'row',
+                          marginBottom: 8,
+                          padding: 8,
+                          backgroundColor: 'yellow',
+                          borderRadius: 8,
+                        }}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Pressable onPress={() => handleProfilePress(mostRecentEcho.uid)}>
+                            <Text style={{ color: 'blue', fontSize: 12, fontWeight: '600', marginBottom: 2, textDecorationLine: 'underline' }}>
+                              {displayHandle(mostRecentEcho.uid, mostRecentEcho.userName || mostRecentEcho.uid)}
+                            </Text>
+                          </Pressable>
+                          <ClickableTextWithLinks
+                            text={mostRecentEcho.text}
+                            style={{ color: 'black', fontSize: 14 }}
+                            onHashtagPress={onHashtagPress}
+                          />
+                          <Text style={{ color: 'black', fontSize: 10 }}>
+                            {mostRecentEcho.createdAt ? formatDefiniteTime(mostRecentEcho.createdAt) : 'just now'}
+                          </Text>
+                        </View>
+                      </Pressable>
+                      
+                      {isSelected && (
+                        <View style={{
+                          flexDirection: 'row',
+                          justifyContent: 'flex-start',
+                          marginBottom: 8,
+                          paddingVertical: 4,
+                          paddingHorizontal: 8,
+                        }}>
+                          <Pressable 
+                            onPress={() => handleHugComment(echoId)}
+                            style={{ marginRight: 16 }}
+                          >
+                            <Text style={{ 
+                              color: huggedComments.has(echoId) ? 'navy' : 'red', 
+                              fontSize: 14, 
+                              fontWeight: '600' 
+                            }}>
+                              {huggedComments.has(echoId) ? 'Hugged' : 'Hug'}
+                              {hugCounts[echoId] > 0 && ` (${hugCounts[echoId]})`}
+                            </Text>
+                          </Pressable>
+                          <Pressable 
+                            onPress={() => handleDiveInComment(echoId)}
+                            style={{ marginRight: 16 }}
+                          >
+                            <Text style={{ color: 'red', fontSize: 14, fontWeight: '600' }}>
+                              Dive in{replyCounts[echoId] > 0 && ` (${replyCounts[echoId]})`}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      )}
+
+                      {replyMode === echoId && (
+                        <ReplyInput
+                          value={replyText}
+                          onChange={setReplyText}
+                          onSend={() => handleSendReply(echoId)}
+                          onCancel={() => {
+                            setReplyText('');
+                            setReplyMode(null);
+                          }}
+                          placeholder="Write a reply..."
+                        />
+                      )}
+
+                      {showReplies.has(echoId) && replies[echoId] && replies[echoId].length > 0 && (
+                        <View style={{
+                          marginLeft: 16,
+                          marginBottom: 8,
+                          padding: 8,
+                          backgroundColor: 'rgba(255, 255, 255, 0.8)',
+                          borderRadius: 6,
+                          borderLeftWidth: 3,
+                          borderLeftColor: '#00C2FF',
+                        }}>
+                          <Pressable
+                            onPress={() => handleToggleReplies(echoId)}
+                            style={{
+                              position: 'absolute',
+                              top: 4,
+                              right: 4,
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              backgroundColor: 'rgba(255, 0, 0, 0.8)',
+                              borderRadius: 12,
+                              zIndex: 1,
+                            }}
+                          >
+                            <Text style={{ fontSize: 14, color: 'white', fontWeight: 'bold' }}>✕</Text>
+                          </Pressable>
+                          {replies[echoId].map((reply, replyIdx) => (
+                            <View key={reply.id || replyIdx} style={{ marginBottom: replyIdx < replies[echoId].length - 1 ? 8 : 0 }}>
+                              <Text style={{ color: 'blue', fontSize: 11, fontWeight: '600', marginBottom: 2 }}>
+                                {displayHandle(reply.uid, reply.userName || reply.uid)}
+                              </Text>
+                              <Text style={{ color: 'black', fontSize: 13 }}>
+                                {reply.text}
+                              </Text>
+                              <Text style={{ color: 'gray', fontSize: 9 }}>
+                                {reply.createdAt ? formatDefiniteTime(reply.createdAt) : 'just now'}
+                              </Text>
+                            </View>
+                          ))}
+                          <Pressable 
+                            onPress={() => handleReplyToComment(echoId)}
+                            style={{
+                              marginTop: 8,
+                              paddingVertical: 4,
+                              paddingHorizontal: 8,
+                              backgroundColor: 'rgba(0, 194, 255, 0.2)',
+                              borderRadius: 4,
+                              alignSelf: 'flex-start',
+                            }}
+                          >
+                            <Text style={{ color: '#00C2FF', fontSize: 12, fontWeight: '600' }}>Reply</Text>
+                          </Pressable>
+                        </View>
+                      )}
+                    </View>
+                  );
+>>>>>>> cb7acc76 (backup: Aqua391 snapshot)
                 })()
               )}
 
-              {postEchoLists[item.id].length > 1 && (
+              {rootEchoes.length > 1 && (
                 <Pressable
                   onPress={handleEchoToggle}
                   style={{ marginTop: 5, alignSelf: 'flex-start' }}
@@ -958,14 +1292,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   disabled={echoExpansionInProgress[item.id]}
                 >
                   <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
-                    {expandedEchoes[item.id] ? 'View less' : `View all ${postEchoLists[item.id].length} echoes`}
+                    {expandedEchoes[item.id] ? 'View less' : `View all ${rootEchoes.length} echoes`}
                   </Text>
                 </Pressable>
               )}
             </View>
           )}
 
-          {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
+          {rootEchoes.length === 0 && (
             <Text style={{
               color: 'navy',
               fontSize: 12,
