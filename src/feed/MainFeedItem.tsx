@@ -459,8 +459,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 borderRadius: 8,
               }}
             >
-              <Text style={{ fontSize: 12, fontWeight: '700', color: '#000' }}>
-                Echo
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#1e88e5' }}>
+                Echo ({echo.replyCount || 0})
               </Text>
             </Pressable>
           </View>
