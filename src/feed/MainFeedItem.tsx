@@ -161,11 +161,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 }) => {
   const [status, setStatus] = useState<string>('');
   const [activeEchoActionId, setActiveEchoActionId] = useState<string | null>(null);
-  const [activeReplyEchoId, setActiveReplyEchoId] = useState<string | null>(null);
-  const [replyText, setReplyText] = useState<string>('');
-  const [replyLists, setReplyLists] = useState<Record<string, any[]>>({});
-  const [replyLoading, setReplyLoading] = useState<Record<string, boolean>>({});
-  const [replySending, setReplySending] = useState<Record<string, boolean>>({});
   const [localEchoHugs, setLocalEchoHugs] = useState<Record<string, { hugs: number; hugged: boolean }>>({});
 
   useEffect(() => {
@@ -390,76 +385,30 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           { merge: true },
         );
       }
+      console.log('Hug state persisted successfully');
     } catch (e) {
-      // best-effort; UI already updated
+      console.log('Hug persistence error:', e);
+      // Revert UI on error
+      setLocalEchoHugs(prev => ({
+        ...prev,
+        [echo.id]: { hugs, hugged },
+      }));
     }
   }, [getEchoHugState, item.id, myUid]);
 
-  const loadEchoReplies = useCallback(async (echoId: string) => {
-    if (!echoId) return;
-    setReplyLoading(prev => ({ ...prev, [echoId]: true }));
-    try {
-      const snap = await firestore()
-        .collection(`waves/${item.id}/echoes`)
-        .doc(echoId)
-        .collection('replies')
-        .orderBy('createdAt', 'asc')
-        .limit(50)
-        .get();
-      const replies = (snap?.docs || []).map(doc => ({ id: doc.id, ...doc.data() }));
-      setReplyLists(prev => ({ ...prev, [echoId]: replies }));
-    } catch (e) {
-    } finally {
-      setReplyLoading(prev => ({ ...prev, [echoId]: false }));
-    }
-  }, [item.id]);
-
-  const openEchoReplies = useCallback(async (echo: any) => {
-    if (!echo?.id) return;
-    const nextId = activeReplyEchoId === echo.id ? null : echo.id;
-    setActiveReplyEchoId(nextId);
-    setReplyText('');
-    if (nextId) {
-      await loadEchoReplies(nextId);
-    }
-  }, [activeReplyEchoId, loadEchoReplies]);
-
-  const sendEchoReply = useCallback(async (echo: any) => {
-    if (!echo?.id || !myUid) return;
-    const text = (replyText || '').trim();
-    if (!text) return;
-    setReplySending(prev => ({ ...prev, [echo.id]: true }));
-    try {
-      const reply = {
-        text,
-        fromUid: myUid,
-        from: profileName || 'You',
-        createdAt: firestore.FieldValue?.serverTimestamp
-          ? firestore.FieldValue.serverTimestamp()
-          : new Date(),
-      };
-      await firestore()
-        .collection(`waves/${item.id}/echoes`)
-        .doc(echo.id)
-        .collection('replies')
-        .add(reply);
-      setReplyLists(prev => ({
-        ...prev,
-        [echo.id]: [...(prev[echo.id] || []), reply],
-      }));
-      setReplyText('');
-      setActiveReplyEchoId(null);
-    } catch (e) {
-    } finally {
-      setReplySending(prev => ({ ...prev, [echo.id]: false }));
-    }
-  }, [item.id, myUid, profileName, replyText]);
+  const handleEchoReply = useCallback((echo: any) => {
+    // Open the main echo modal, but pass context that this is a reply
+    // The modal will handle saving to the replies subcollection
+    setEchoWaveId(item.id);
+    setCurrentIndex(index);
+    // Store the echo ID we're replying to in a way the modal can access
+    // For now, we'll use the same modal but the logic will be in App.tsx
+    setShowEchoes(true);
+  }, [item.id, index, setEchoWaveId, setCurrentIndex, setShowEchoes]);
 
   const renderEchoItem = useCallback((echo: any, idx: number) => {
     const { hugs, hugged } = getEchoHugState(echo);
     const showActions = activeEchoActionId === echo.id;
-    const showReplies = activeReplyEchoId === echo.id;
-    const replies = replyLists[echo.id] || [];
     return (
       <View
         key={echo.id || idx}
@@ -502,7 +451,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               </Text>
             </Pressable>
             <Pressable
-              onPress={() => openEchoReplies(echo)}
+              onPress={() => handleEchoReply(echo)}
               style={{
                 backgroundColor: 'rgba(255,235,59,0.95)',
                 paddingHorizontal: 8,
@@ -516,53 +465,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             </Pressable>
           </View>
         )}
-
-        {showReplies && (
-          <View style={{ marginTop: 6, backgroundColor: 'rgba(255,255,255,0.65)', borderRadius: 8, padding: 8 }}>
-            {replyLoading[echo.id] ? (
-              <Text style={{ color: '#000', fontSize: 12 }}>Loading replies...</Text>
-            ) : replies.length === 0 ? (
-              <Text style={{ color: '#000', fontSize: 12 }}>No replies yet.</Text>
-            ) : (
-              replies.map((r: any, rIdx: number) => (
-                <Text key={r.id || `${echo.id}-r-${rIdx}`} style={{ color: '#000', fontSize: 12, marginBottom: 4 }}>
-                  {(r.fromUid && r.fromUid === myUid)
-                    ? '/You'
-                    : (r.fromUid ? displayHandle(r.fromUid, r.from) : (r.from || 'User'))}
-                  : {r.text}
-                </Text>
-              ))
-            )}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-              <TextInput
-                value={replyText}
-                onChangeText={setReplyText}
-                placeholder="Reply..."
-                placeholderTextColor="rgba(0,0,0,0.5)"
-                style={{
-                  flex: 1,
-                  backgroundColor: '#fff',
-                  borderRadius: 8,
-                  paddingHorizontal: 8,
-                  paddingVertical: 6,
-                  color: '#000',
-                }}
-              />
-              <Pressable
-                style={{ marginLeft: 8, backgroundColor: '#1976d2', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}
-                onPress={() => sendEchoReply(echo)}
-                disabled={!!replySending[echo.id]}
-              >
-                <Text style={{ color: '#fff', fontWeight: '700' }}>
-                  {replySending[echo.id] ? '...' : 'Send'}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
       </View>
     );
-  }, [activeEchoActionId, activeReplyEchoId, getEchoHugState, myUid, openEchoReplies, replyLists, replyLoading, replySending, replyText, sendEchoReply, setReplyText, toggleEchoHug, formatDefiniteTime, displayHandle]);
+  }, [activeEchoActionId, getEchoHugState, handleEchoReply, toggleEchoHug, formatDefiniteTime, displayHandle]);
 
   return (
     <Pressable>

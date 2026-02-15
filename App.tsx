@@ -328,6 +328,8 @@ const formatNotificationMessage = (notification: {
       return `${cleanUsername} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
+    case 'echo_reply':
+      return notification.text || `${username} replied to your echo`;
     case 'system_message':
     default:
       return notification.message;
@@ -10449,7 +10451,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 // Unified notifications view
                 (() => {
                   // Define system notification types that should show with letter avatars
-                  const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+                  const systemNotificationTypes = ['hug', 'echo', 'echo_reply', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
                   
                   // Separate notifications into system notifications and individual messages
                   const systemNotifications = notifications.filter(notification => 
@@ -10626,11 +10628,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   if (!item.notificationData.read) {
                                     markNotificationAsRead(item.notificationData.id);
                                   }
-                                  Alert.alert(
-                                    'Notification',
-                                    formatNotificationMessage(item.notificationData, userData || {}),
-                                    [{ text: 'OK' }]
-                                  );
+                                  // Handle echo_reply navigation
+                                  if (item.notificationData.type === 'echo_reply' && item.notificationData.waveId) {
+                                    const waveIndex = vibesFeed.findIndex(w => w.id === item.notificationData.waveId);
+                                    if (waveIndex !== -1) {
+                                      setCurrentIndex(waveIndex);
+                                      setShowVibeAlerts(false);
+                                      setExpandedEchoes(prev => ({ ...prev, [item.notificationData.waveId]: true }));
+                                    } else {
+                                      Alert.alert(
+                                        'Echo Reply',
+                                        formatNotificationMessage(item.notificationData, userData || {}),
+                                        [{ text: 'OK' }]
+                                      );
+                                    }
+                                  } else {
+                                    Alert.alert(
+                                      'Notification',
+                                      formatNotificationMessage(item.notificationData, userData || {}),
+                                      [{ text: 'OK' }]
+                                    );
+                                  }
                                 }
                               }
                             }}
