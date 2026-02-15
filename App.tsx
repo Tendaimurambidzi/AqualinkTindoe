@@ -9707,28 +9707,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         onPress={() => showTopBar()}
       >
         <View style={styles.topBarWrapper}>
-          {isTopBarVisible && (
-            <>
-              {/* VIBES - always visible */}
-              <Pressable
-                style={styles.topItem}
-                onPress={() => {
-                  showTopBar();
-                  setCurrentIndex(0);
-                  try {
-                    feedRef.current?.scrollToOffset({ offset: 0, animated: false });
-                  } catch {}
-                }}
-              >
-                <Text style={[styles.compassIcon, { color: 'red' }]}>
-                  🐬
-                </Text>
-                <Text style={styles.topLabel}>
-                  WAVES
-                </Text>
-              </Pressable>
-            </>
-          )}
+
           {isTopBarVisible && (
             <ScrollView
               horizontal
