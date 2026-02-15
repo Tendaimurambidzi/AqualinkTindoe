@@ -9777,7 +9777,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.boatIcon}>⛵</Text>
-                  <Text style={styles.topLabel}>VIBE OUT</Text>
+                  <Text style={styles.topLabel}>ADVENTURE SPACE</Text>
                 </Pressable>
                 {/* SCHOOL MODE */}
                 <Pressable
@@ -9788,7 +9788,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.schoolIcon}>🏫</Text>
-                  <Text style={styles.topLabel}>VIBE MODE</Text>
+                  <Text style={styles.topLabel}>STUDY HUB</Text>
                 </Pressable>
                 {/* AI ASSISTANT */}
                 <Pressable
@@ -9810,7 +9810,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.noticeIcon}>📋</Text>
-                  <Text style={styles.topLabel}>VIBE BOARD</Text>
+                  <Text style={styles.topLabel}>BULLETIN BOARD</Text>
                 </Pressable>
                 {/* THE BRIDGE */}
                 <Pressable
@@ -9824,7 +9824,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.gearIcon}>⚙️</Text>
-                  <Text style={styles.topLabel}>VIBE BRIDGE</Text>
+                  <Text style={styles.topLabel}>COMMAND CENTRE</Text>
                 </Pressable>
                 {/* PLACE HOLDER */}
                 <Pressable
