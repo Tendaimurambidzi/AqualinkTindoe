@@ -6929,8 +6929,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .get();
           
         const echoes: any[] = [];
-        echoListSnap.forEach((doc: any) => {
+        for (const doc of echoListSnap.docs) {
           const data = doc.data();
+          
+          // Count replies to this echo
+          const repliesSnap = await firestore()
+            .collection('waves')
+            .doc(currentWave.id)
+            .collection('echoes')
+            .where('replyToEchoId', '==', doc.id)
+            .get();
+          
           echoes.push({
             id: doc.id,
             uid: data?.userUid,
@@ -6938,8 +6947,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             userName: data?.userName,
             userPhoto: data?.userPhoto,
             createdAt: data?.createdAt,
+            replyCount: repliesSnap.size,
           });
-        });
+        }
         setEchoList(echoes);
       } catch {
         setEchoList([]);
@@ -10643,6 +10653,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                     if (waveIndex !== -1) {
                                       setCurrentIndex(waveIndex);
                                       setWaveKey(Date.now());
+                                      // Open echoes modal for echo and echo_reply notifications
+                                      const notifType = item.notificationData.type;
+                                      if (notifType === 'echo' || notifType === 'echo_reply') {
+                                        setEchoWaveId(item.notificationData.waveId);
+                                        setTimeout(() => setShowEchoes(true), 300);
+                                      }
                                     }
                                   } else {
                                     Alert.alert(
@@ -13748,28 +13764,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <Text> </Text>
                             <Text>{e.text}</Text>
                           </Text>
-                          {e.createdAt && (
-                            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
-                              {(() => {
-                                try {
-                                  const date = e.createdAt?.toDate ? e.createdAt.toDate() : new Date(e.createdAt);
-                                  const now = new Date();
-                                  const diffMs = now.getTime() - date.getTime();
-                                  const diffMins = Math.floor(diffMs / (1000 * 60));
-                                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                                  
-                                  if (diffMins < 1) return 'just now';
-                                  if (diffMins < 60) return `${diffMins}m ago`;
-                                  if (diffHours < 24) return `${diffHours}h ago`;
-                                  if (diffDays < 7) return `${diffDays}d ago`;
-                                  return date.toLocaleDateString();
-                                } catch {
-                                  return '';
-                                }
-                              })()}
+                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+                            {e.createdAt && (
+                              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                                {(() => {
+                                  try {
+                                    const date = e.createdAt?.toDate ? e.createdAt.toDate() : new Date(e.createdAt);
+                                    const now = new Date();
+                                    const diffMs = now.getTime() - date.getTime();
+                                    const diffMins = Math.floor(diffMs / (1000 * 60));
+                                    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                                    
+                                    if (diffMins < 1) return 'just now';
+                                    if (diffMins < 60) return `${diffMins}m ago`;
+                                    if (diffHours < 24) return `${diffHours}h ago`;
+                                    if (diffDays < 7) return `${diffDays}d ago`;
+                                    return date.toLocaleDateString();
+                                  } catch {
+                                    return '';
+                                  }
+                                })()}
+                              </Text>
+                            )}
+                            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginLeft: 8 }}>
+                              Echo ({e.replyCount || 0})
                             </Text>
-                          )}
+                          </View>
                         </View>
                       </Pressable>
                     ))

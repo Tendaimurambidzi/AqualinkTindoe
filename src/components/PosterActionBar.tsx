@@ -262,7 +262,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <View style={styles.buttonContent}>
           <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>🫂</Text>
           <Text style={[styles.actionLabel, hasHugged && styles.huggedLabel]}>{hasHugged ? 'Hugged' : 'Hugs'}</Text>
-          <Text style={[styles.iconCount, Math.max(0, splashesCount) > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>{Math.max(0, splashesCount)}</Text>
+          <Text style={styles.actionLabel}>({Math.max(0, splashesCount)})</Text>
         </View>
       </Pressable>
 
@@ -279,8 +279,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       >
         <View style={styles.buttonContent}>
           <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>📣</Text>
-          <Text style={styles.actionLabel}>Echoes</Text>
-          <Text style={[styles.iconCount, echoesCount > 0 ? styles.activeIconCount : styles.inactiveIconCount]}>{echoesCount}</Text>
+          <Text style={[styles.actionLabel, (hasEchoed || echoesCount > 0) && styles.greenCount]}>Echoes ({echoesCount})</Text>
         </View>
       </Pressable>
 
@@ -505,6 +504,9 @@ const styles = StyleSheet.create({
   },
   huggedLabel: {
     color: '#1e88e5',
+  },
+  greenCount: {
+    color: '#00ff88',
   },
   actionIconSmall: {
     fontSize: 16,

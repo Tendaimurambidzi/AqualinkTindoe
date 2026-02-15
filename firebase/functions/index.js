@@ -307,6 +307,7 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
     type: notificationType,
     text: notificationText,
     waveId,
+    echoId: event.params.echoId,
     fromUid: echoSenderUid,
     fromName: echo.userName,
   });
