@@ -283,7 +283,7 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
           // Notify the original echo author
           notificationTargetUid = originalEchoAuthorUid;
           notificationType = 'echo_reply';
-          notificationText = `💬 ${echo.userName || 'Someone'} replied to your echo: ${echo.text?.slice(0, 60) || ''}`;
+          notificationText = `${echo.userName || 'Someone'} has replied to your comment`;
         } else {
           console.log(`Blocking self-reply notification: ${echoSenderUid} replied to their own echo`);
           return;
@@ -326,6 +326,59 @@ exports.onEchoDelete = onDocumentDeleted('waves/{waveId}/echoes/{echoId}', async
       tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
     }
   });
+});
+
+// Notify when someone replies to an echo
+exports.onEchoReplyCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}/replies/{replyId}', async (event) => {
+  const snap = event.data;
+  const waveId = event.params.waveId;
+  const echoId = event.params.echoId;
+  const reply = snap.data() || {};
+  const replySenderUid = reply.fromUid;
+  const replySenderName = reply.from || 'Someone';
+  
+  if (!replySenderUid) {
+    console.log(`No reply sender UID found for reply in wave ${waveId}, echo ${echoId}`);
+    return;
+  }
+  
+  try {
+    // Get the original echo to find its author
+    const originalEchoSnap = await db.collection('waves').doc(waveId).collection('echoes').doc(echoId).get();
+    if (!originalEchoSnap.exists) {
+      console.log(`Original echo ${echoId} not found`);
+      return;
+    }
+    
+    const originalEcho = originalEchoSnap.data() || {};
+    const originalEchoAuthorUid = originalEcho.userUid;
+    
+    if (!originalEchoAuthorUid) {
+      console.log(`No author UID found for original echo ${echoId}`);
+      return;
+    }
+    
+    // Don't notify if replying to own echo
+    if (String(originalEchoAuthorUid).trim() === String(replySenderUid).trim()) {
+      console.log(`Blocking self-reply notification: ${replySenderUid} replied to their own echo`);
+      return;
+    }
+    
+    const notificationText = `${replySenderName} has replied to your comment`;
+    
+    console.log(`Sending echo reply notification to ${originalEchoAuthorUid}: ${notificationText}`);
+    
+    await addPing(originalEchoAuthorUid, {
+      type: 'echo_reply',
+      text: notificationText,
+      waveId,
+      echoId,
+      fromUid: replySenderUid,
+      fromName: replySenderName,
+    });
+  } catch (error) {
+    console.error('Error sending echo reply notification:', error);
+  }
 });
 
 exports.onMentionCreate = onDocumentCreated('users/{targetUid}/mentions/{id}', async (event) => {

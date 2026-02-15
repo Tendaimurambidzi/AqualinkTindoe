@@ -318,8 +318,12 @@ const formatNotificationMessage = (notification: {
   // Format based on notification type with username included and no icons
   switch (notification.type) {
     case 'echo':
+      return notification.text || `${username} echoed your post`;
+    case 'echo_reply':
+      return notification.text || `${username} replied to your comment`;
     case 'splash':
     case 'octopus_hug':
+      return notification.text || `${username} hugged your vibe`;
     case 'follow':
     case 'CONNECT_VIBE':
     case 'joined_tide':
@@ -328,8 +332,6 @@ const formatNotificationMessage = (notification: {
       return `${cleanUsername} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
-    case 'echo_reply':
-      return notification.text || `${username} replied to your echo`;
     case 'system_message':
     default:
       return notification.message;
@@ -8788,8 +8790,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleNotificationNavigation = useCallback(
     (data: any) => {
       if (data?.waveId) {
-        const waveIndex = vibesFeed.findIndex(w => w.id === data.waveId);
+        // Close any open modals first
+        setShowInbox(false);
+        setShowNotifications(false);
+        
+        // Find the wave in the feed
+        const waveIndex = displayFeed.findIndex(w => w.id === data.waveId);
         if (waveIndex !== -1) {
+          // Navigate to the wave
           setCurrentIndex(waveIndex);
           setWaveKey(Date.now());
         }
@@ -8797,7 +8805,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowPings(true);
       }
     },
-    [vibesFeed],
+    [displayFeed],
   );
                     
   const handleForegroundRemoteMessage = useCallback(
@@ -10628,19 +10636,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   if (!item.notificationData.read) {
                                     markNotificationAsRead(item.notificationData.id);
                                   }
-                                  // Handle echo_reply navigation
-                                  if (item.notificationData.type === 'echo_reply' && item.notificationData.waveId) {
-                                    const waveIndex = vibesFeed.findIndex(w => w.id === item.notificationData.waveId);
+                                  // Handle navigation for notifications with waveId
+                                  if (item.notificationData.waveId) {
+                                    setShowInbox(false);
+                                    const waveIndex = displayFeed.findIndex(w => w.id === item.notificationData.waveId);
                                     if (waveIndex !== -1) {
                                       setCurrentIndex(waveIndex);
-                                      setShowVibeAlerts(false);
-                                      setExpandedEchoes(prev => ({ ...prev, [item.notificationData.waveId]: true }));
-                                    } else {
-                                      Alert.alert(
-                                        'Echo Reply',
-                                        formatNotificationMessage(item.notificationData, userData || {}),
-                                        [{ text: 'OK' }]
-                                      );
+                                      setWaveKey(Date.now());
                                     }
                                   } else {
                                     Alert.alert(
