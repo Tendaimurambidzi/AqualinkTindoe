@@ -6,6 +6,8 @@ import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
 import PosterActionBar from '../components/PosterActionBar';
 import VideoWithTapControls from '../components/VideoWithTapControls';
 import ClickableTextWithLinks from '../components/ClickableTextWithLinks';
+import OnlineUsersList from '../components/OnlineUsersList';
+import ProfilePreviewModal from '../components/ProfilePreviewModal';
 import database from '@react-native-firebase/database';
 import firestore from '@react-native-firebase/firestore';
 import { formatAwaySince } from '../services/timeUtils';
@@ -165,6 +167,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
   const [echoReplies, setEchoReplies] = useState<Record<string, any[]>>({});
   const [replyPreviews, setReplyPreviews] = useState<Record<string, any>>({});
+  const [showProfilePreview, setShowProfilePreview] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (item.ownerUid !== myUid) {
@@ -215,6 +219,33 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       console.log('Pressed user avatar for:', item.ownerUid);
     }
   }, [item.ownerUid, myUid, navigation]);
+
+  const handleOnlineUserPress = useCallback((user: { uid: string; name: string }) => {
+    setSelectedUserId(user.uid);
+    setShowProfilePreview(true);
+  }, []);
+
+  const handleChatWithUser = useCallback(async (userId: string, userName: string) => {
+    // Open inbox and set the selected thread
+    try {
+      // Fetch user avatar
+      const userRef = database().ref(`/users/${userId}`);
+      const snapshot = await userRef.once('value');
+      const userData = snapshot.val();
+      
+      // Navigate to inbox with this user's thread
+      // This will be handled by the parent component (App.tsx)
+      // For now, we'll just log it
+      console.log('Opening chat with:', userId, userName);
+      
+      // You'll need to pass a callback from App.tsx to handle this
+      // For now, let's just show an alert
+      Alert.alert('Chat', `Opening chat with ${userName}`);
+    } catch (error) {
+      console.log('Error opening chat:', error);
+      Alert.alert('Error', 'Could not open chat');
+    }
+  }, []);
 
   const handleBioPress = useCallback(() => {
     const bioToShow = item.ownerUid === myUid ? profileBio : userData[item.ownerUid]?.bio;
@@ -605,6 +636,21 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           elevation: 3,
         }}
       >
+        {/* Online Users List - Only show on video posts */}
+        {item.media && isVideoAsset(item.media) && (
+          <OnlineUsersList
+            myUid={myUid}
+            onUserPress={handleOnlineUserPress}
+          />
+        )}
+
+        {/* Profile Preview Modal */}
+        <ProfilePreviewModal
+          visible={showProfilePreview}
+          userId={selectedUserId}
+          onClose={() => setShowProfilePreview(false)}
+          onChat={handleChatWithUser}
+        />
         <View style={{
           backgroundColor: 'transparent',
           marginHorizontal: 0,

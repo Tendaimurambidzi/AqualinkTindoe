@@ -2042,12 +2042,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       subscription?.remove();
     };
   }, [user?.uid]);
-                    
+
+  // Heartbeat to keep user online status updated every 30 seconds
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const heartbeatInterval = setInterval(() => {
+      if (isCurrentUserOnline) {
+        database().ref(`/presence/${user.uid}`).update({ 
+          online: true, 
+          lastSeen: null,
+          lastHeartbeat: database.ServerValue.TIMESTAMP 
+        }).catch(err => console.log('Heartbeat update failed:', err));
+      }
+    }, 30000); // Update every 30 seconds
+
+    return () => clearInterval(heartbeatInterval);
+  }, [user?.uid, isCurrentUserOnline]);
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
   const replyInputRef = useRef<TextInput>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
-                    
   // Video controls and loading state
   const [videoControlsVisible, setVideoControlsVisible] = useState<{[key: string]: boolean}>({});
   const [videoLoading, setVideoLoading] = useState<{[key: string]: boolean}>({});
