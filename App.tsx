@@ -1,3 +1,4 @@
+
 import React, {
   useEffect,
   useMemo,
@@ -1845,18 +1846,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const DEV_SKIP_STORAGE_UPLOAD = false;
   const versionInfo = useAppVersionInfo();
                     
-  const editorTools = useMemo(
-    () => [
-      { icon: '🎵', label: 'Ocean melodies' },
-      { icon: '🎨', label: 'Ocean Tones' },
-      { icon: '🖼️', label: 'Hull & Canvas' },
-      { icon: '✂️', label: 'Cut the Wake' },
-      { icon: '🌀', label: 'Riptide' },
-      { icon: '✨', label: 'Ripples & Foam' },
-      { icon: '🛟', label: 'Buoys' },
-    ],
-    [],
-  );
+  const editorTools = useMemo(() => [{ icon: '\u2702\ufe0f', label: 'Cut the Wake' }, { icon: '\ud83c\udfa8', label: 'Ocean Tones' }], []);
                     
   const [splashes, setSplashes] = useState<number>(0);
   const [echoes, setEchoes] = useState<number>(0);
@@ -3071,6 +3061,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const res = await launchImageLibrary({
               mediaType: 'photo',
               selectionLimit: 1,
+              includeBase64: false,
+              presentationStyle: 'fullScreen',
             });
             console.log('Image library response:', res);
             const a = res?.assets?.[0];
@@ -8315,6 +8307,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const res = await launchImageLibrary({
         mediaType: 'photo',
         selectionLimit: 1,
+        includeBase64: false,
+        presentationStyle: 'fullScreen',
       });
       const asset = res.assets?.[0];
       if (asset?.uri) setProfilePhoto(asset.uri);
@@ -8515,7 +8509,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
                     
   const fromGallery = () => {
-    launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, handleMediaSelect);
+    launchImageLibrary({ 
+      mediaType: 'mixed', 
+      quality: 0.8,
+      presentationStyle: 'fullScreen',
+    }, handleMediaSelect);
   };
                     
   const pickAudioFromDevice = () => {
@@ -8557,7 +8555,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
     const startPick = () =>
       launchImageLibrary(
-        { mediaType: 'mixed', selectionLimit: 1 },
+        { 
+          mediaType: 'mixed', 
+          selectionLimit: 1,
+          presentationStyle: 'fullScreen',
+        },
         async response => {
           if (response.didCancel) return;
           if (response.errorCode) {
@@ -8647,14 +8649,199 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
   };
   
-  const handleUnifiedGallerySelect = () => {
-    launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, response => {
+  const handleUnifiedGallerySelect = async () => {
+    console.log('[SD Card Access] Gallery button pressed');
+    
+    if (Platform.OS === 'android') {
+      try {
+        const androidVersion = Platform.Version;
+        console.log('[SD Card Access] Android version:', androidVersion);
+        
+        // Android 13+ (API 33+) uses granular media permissions
+        if (androidVersion >= 33) {
+          const permissions = [
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+          ];
+          const results = await PermissionsAndroid.requestMultiple(permissions);
+          console.log('[SD Card Access] Android 13+ permissions:', results);
+          
+          const allGranted = Object.values(results).every(
+            result => result === PermissionsAndroid.RESULTS.GRANTED
+          );
+          
+          if (!allGranted) {
+            Alert.alert(
+              'Permission Required',
+              'Please grant access to photos and videos to select media from your device and SD card.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        } else {
+          // Android 12 and below use READ_EXTERNAL_STORAGE
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            {
+              title: 'Storage Permission',
+              message: 'App needs access to your storage to select media from your device and SD card',
+              buttonPositive: 'OK',
+            }
+          );
+          console.log('[SD Card Access] READ_EXTERNAL_STORAGE result:', granted);
+          
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert(
+              'Permission Denied',
+              'Storage permission is required to select media. Please enable it in Settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('[SD Card Access] Permission error:', err);
+        Alert.alert('Error', 'Failed to request storage permission');
+        return;
+      }
+    }
+    
+    console.log('[SD Card Access] Opening image library with fullScreen presentation');
+    launchImageLibrary({ 
+      mediaType: 'mixed', 
+      quality: 0.8,
+      presentationStyle: 'fullScreen',
+    }, response => {
+      console.log('[SD Card Access] Response:', JSON.stringify(response, null, 2));
       if (response.assets && response.assets.length > 0) {
+        console.log('[SD Card Access] Media selected:', response.assets[0].uri);
         setUnifiedPostMedia(response.assets[0]);
+      } else if (response.didCancel) {
+        console.log('[SD Card Access] User cancelled');
+      } else if (response.errorCode) {
+        console.log('[SD Card Access] Error:', response.errorCode, response.errorMessage);
+        Alert.alert('Error', `Failed to open gallery: ${response.errorMessage}`);
       }
     });
   };
   
+
+  // SD Card Media Picker - All file types
+  const handleSDCardPicker = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const androidVersion = Platform.Version;
+        
+        // Android 13+ (API 33+): Request granular media permissions
+        if (androidVersion >= 33) {
+          const permissions = [
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO
+          ];
+          const results = await PermissionsAndroid.requestMultiple(permissions);
+          const allGranted = Object.values(results).every(result => result === PermissionsAndroid.RESULTS.GRANTED);
+          if (!allGranted) {
+            Alert.alert(
+              'Permission Required',
+              'Grant access to select media from SD card.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        }
+        // Android 11-12 (API 30-32): Request all files access for SD card
+        else if (androidVersion >= 30) {
+          // Check if we already have all files access
+          const hasAllFilesAccess = await new Promise<boolean>((resolve) => {
+            try {
+              // Try to open settings to check permission
+              Linking.canOpenURL('package:' + 'com.aqualink.tindo').then(() => {
+                resolve(false); // Assume we need to request
+              });
+            } catch {
+              resolve(false);
+            }
+          });
+
+          if (!hasAllFilesAccess) {
+            Alert.alert(
+              'SD Card Access',
+              'To access all files on your SD card, please enable "All files access" in Settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Open Settings',
+                  onPress: () => {
+                    // Open app settings where user can grant MANAGE_EXTERNAL_STORAGE
+                    Linking.openSettings();
+                  }
+                }
+              ]
+            );
+            // Continue anyway - the image picker will work with scoped storage
+          }
+        }
+        // Android 10 and below: Request READ_EXTERNAL_STORAGE
+        else {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            {
+              title: 'Storage Permission',
+              message: 'Access storage to select media from SD card',
+              buttonPositive: 'OK'
+            }
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert(
+              'Permission Denied',
+              'Storage permission required.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('SD card permission error:', err);
+        Alert.alert('Error', 'Failed to request permission');
+        return;
+      }
+    }
+    
+    // Launch image picker with mixed media type for SD card access
+    launchImageLibrary(
+      {
+        mediaType: 'mixed',
+        quality: 0.8,
+        presentationStyle: 'fullScreen',
+        selectionLimit: 1
+      },
+      response => {
+        if (response.assets && response.assets.length > 0) {
+          setUnifiedPostMedia(response.assets[0]);
+          console.log('SD card media selected:', response.assets[0].uri);
+        } else if (response.didCancel) {
+          console.log('User cancelled SD card picker');
+        } else if (response.errorCode) {
+          console.error('SD card picker error:', response.errorCode, response.errorMessage);
+          Alert.alert('Error', `Failed to select media: ${response.errorMessage}`);
+        }
+      }
+    );
+  };
+
   const handleUnifiedPost = async () => {
     const trimmedText = unifiedPostText.trim();
     
@@ -8959,16 +9146,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                     
   // (removed Movable Textbox state)
-  const onEditorToolPress = async (toolLabel: string) => {
-    if (
-      toolLabel === 'Ocean Melodies' ||
-      toolLabel === 'Sea Shanties' ||
-      toolLabel === 'Ocean melodies'
-    ) {
-      setShowAudioModal(true);
-      return;
-    }
-    if (toolLabel === 'Cut the Wake' && capturedMedia && capturedMedia.type && capturedMedia.type.startsWith('image/')) {
+  const onEditorToolPress = async (toolLabel: string) => { if (toolLabel === 'Cut the Wake' && capturedMedia && capturedMedia.type && capturedMedia.type.startsWith('image/')) {
       try {
         const cropped = await ImageCropPicker.openCropper({
           path: capturedMedia.uri,
@@ -11697,6 +11875,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               {/* Text Input */}
               <TextInput
                 placeholder="What's the story?"
+                placeholder="What's the story?"
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 value={unifiedPostText}
                 onChangeText={setUnifiedPostText}
@@ -11720,9 +11899,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 >
                   <Text style={styles.logbookActionText}>🖼️ Gallery</Text>
                 </Pressable>
+                <Pressable
+                  onPress={handleSDCardPicker}
+                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                >
+                  <Text style={styles.logbookActionText}>?? SD Card</Text>
+                </Pressable>
               </View>
-
-              {/* Send/Cancel Buttons */}
               <View style={styles.textComposerButtonRow}>
                 <Pressable
                   style={styles.textComposerButton}
@@ -13892,6 +14075,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         const result = await launchImageLibrary({
                           mediaType: 'photo',
                           quality: 0.8,
+                          presentationStyle: 'fullScreen',
                         });
                         if (result.assets && result.assets[0]) {
                           setMessageAttachment(result.assets[0]);
@@ -13915,6 +14099,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         const result = await launchImageLibrary({
                           mediaType: 'video',
                           quality: 0.8,
+                          presentationStyle: 'fullScreen',
                         });
                         if (result.assets && result.assets[0]) {
                           setMessageAttachment(result.assets[0]);
@@ -13938,6 +14123,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         const result = await launchImageLibrary({
                           mediaType: 'mixed',
                           selectionLimit: 1,
+                          presentationStyle: 'fullScreen',
                         });
                         if (result.assets && result.assets[0] && result.assets[0].type?.startsWith('audio/')) {
                           setMessageAttachment(result.assets[0]);
@@ -19192,3 +19378,7 @@ const authStyles = StyleSheet.create({
 });
                     
                     
+
+
+
+
