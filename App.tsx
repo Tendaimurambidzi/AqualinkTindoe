@@ -318,12 +318,8 @@ const formatNotificationMessage = (notification: {
   // Format based on notification type with username included and no icons
   switch (notification.type) {
     case 'echo':
-      return notification.text || `${username} echoed your post`;
-    case 'echo_reply':
-      return notification.text || `${username} replied to your comment`;
     case 'splash':
     case 'octopus_hug':
-      return notification.text || `${username} hugged your vibe`;
     case 'follow':
     case 'CONNECT_VIBE':
     case 'joined_tide':
@@ -860,7 +856,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   profileBio: {
-    color: 'rgba(255,255,255,0.8)',
+    color: '#8B0000',
     marginTop: 2,
     fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
@@ -5363,7 +5359,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       let query = firestoreMod()
         .collection('waves')
         .orderBy('createdAt', 'desc')
-        .limit(lastLoadedDoc ? 10 : 20); // Larger initial load
+        .limit(lastLoadedDoc ? 10 : 15); // Initial: 15, Pagination: 10
       
       if (lastLoadedDoc) {
         query = query.startAfter(lastLoadedDoc);
@@ -5494,10 +5490,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               user: wave.ownerUid ? userDataMap[wave.ownerUid] || null : null,
             }));
             
-            // Add new waves to the feed
+            // Add new waves to the feed with memory-safe limit
             if (lastLoadedDoc) {
-              // Append for pagination
-              setPublicFeed(prev => [...prev, ...wavesWithUserData]);
+              // Append for pagination, keep max 50 posts to prevent memory issues
+              setPublicFeed(prev => {
+                const combined = [...prev, ...wavesWithUserData];
+                return combined.length > 50 ? combined.slice(-50) : combined;
+              });
             } else {
               // Replace for initial load or refresh
               setPublicFeed(wavesWithUserData);
@@ -6929,17 +6928,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .get();
           
         const echoes: any[] = [];
-        for (const doc of echoListSnap.docs) {
+        echoListSnap.forEach((doc: any) => {
           const data = doc.data();
-          
-          // Count replies to this echo
-          const repliesSnap = await firestore()
-            .collection('waves')
-            .doc(currentWave.id)
-            .collection('echoes')
-            .where('replyToEchoId', '==', doc.id)
-            .get();
-          
           echoes.push({
             id: doc.id,
             uid: data?.userUid,
@@ -6947,9 +6937,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             userName: data?.userName,
             userPhoto: data?.userPhoto,
             createdAt: data?.createdAt,
-            replyCount: repliesSnap.size,
           });
-        }
+        });
         setEchoList(echoes);
       } catch {
         setEchoList([]);
@@ -8800,16 +8789,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleNotificationNavigation = useCallback(
     (data: any) => {
       if (data?.waveId) {
-        // Close any open modals first
-        setShowInbox(false);
-        setShowNotifications(false);
-        
-        // Find the wave in the feed
         const waveIndex = displayFeed.findIndex(w => w.id === data.waveId);
         if (waveIndex !== -1) {
-          // Navigate to the wave
           setCurrentIndex(waveIndex);
           setWaveKey(Date.now());
+          
+          // If this is an echo_reply notification, open the echoes modal
+          if (data?.type === 'echo_reply' || data?.type === 'echo') {
+            setEchoWaveId(data.waveId);
+            setTimeout(() => {
+              setShowEchoes(true);
+            }, 300);
+          }
         }
       } else if (data?.type === 'ping' || data?.route === 'Pings') {
         setShowPings(true);
@@ -9576,10 +9567,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 bounces={true}
                 showsVerticalScrollIndicator={false}
                 overScrollMode="never"
-                maintainVisibleContentPosition={{
-                  minIndexForVisible: 0,
-                  autoscrollToTopThreshold: 10,
-                }}
                 onScrollBeginDrag={() => {
                   setIsSwiping(true);
                   showUiTemporarily(); // Show toggles on swipe
@@ -9727,7 +9714,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         onPress={() => showTopBar()}
       >
         <View style={styles.topBarWrapper}>
-
+          {/* VIBES - always visible removed */}
           {isTopBarVisible && (
             <ScrollView
               horizontal
@@ -10229,6 +10216,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       width: '100%',
                       borderBottomWidth: 1,
                       borderBottomColor: 'rgba(255,255,255,0.2)',
+                      color: '#8B0000',
                     },
                   ]}
                 />
@@ -10469,7 +10457,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 // Unified notifications view
                 (() => {
                   // Define system notification types that should show with letter avatars
-                  const systemNotificationTypes = ['hug', 'echo', 'echo_reply', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+                  const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
                   
                   // Separate notifications into system notifications and individual messages
                   const systemNotifications = notifications.filter(notification => 
@@ -10646,27 +10634,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   if (!item.notificationData.read) {
                                     markNotificationAsRead(item.notificationData.id);
                                   }
-                                  // Handle navigation for notifications with waveId
-                                  if (item.notificationData.waveId) {
-                                    setShowInbox(false);
-                                    const waveIndex = displayFeed.findIndex(w => w.id === item.notificationData.waveId);
-                                    if (waveIndex !== -1) {
-                                      setCurrentIndex(waveIndex);
-                                      setWaveKey(Date.now());
-                                      // Open echoes modal for echo and echo_reply notifications
-                                      const notifType = item.notificationData.type;
-                                      if (notifType === 'echo' || notifType === 'echo_reply') {
-                                        setEchoWaveId(item.notificationData.waveId);
-                                        setTimeout(() => setShowEchoes(true), 300);
-                                      }
-                                    }
-                                  } else {
-                                    Alert.alert(
-                                      'Notification',
-                                      formatNotificationMessage(item.notificationData, userData || {}),
-                                      [{ text: 'OK' }]
-                                    );
-                                  }
+                                  Alert.alert(
+                                    'Notification',
+                                    formatNotificationMessage(item.notificationData, userData || {}),
+                                    [{ text: 'OK' }]
+                                  );
                                 }
                               }
                             }}
@@ -13764,33 +13736,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <Text> </Text>
                             <Text>{e.text}</Text>
                           </Text>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                            {e.createdAt && (
-                              <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                                {(() => {
-                                  try {
-                                    const date = e.createdAt?.toDate ? e.createdAt.toDate() : new Date(e.createdAt);
-                                    const now = new Date();
-                                    const diffMs = now.getTime() - date.getTime();
-                                    const diffMins = Math.floor(diffMs / (1000 * 60));
-                                    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                                    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                                    
-                                    if (diffMins < 1) return 'just now';
-                                    if (diffMins < 60) return `${diffMins}m ago`;
-                                    if (diffHours < 24) return `${diffHours}h ago`;
-                                    if (diffDays < 7) return `${diffDays}d ago`;
-                                    return date.toLocaleDateString();
-                                  } catch {
-                                    return '';
-                                  }
-                                })()}
-                              </Text>
-                            )}
-                            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginLeft: 8 }}>
-                              Echo ({e.replyCount || 0})
+                          {e.createdAt && (
+                            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
+                              {(() => {
+                                try {
+                                  const date = e.createdAt?.toDate ? e.createdAt.toDate() : new Date(e.createdAt);
+                                  const now = new Date();
+                                  const diffMs = now.getTime() - date.getTime();
+                                  const diffMins = Math.floor(diffMs / (1000 * 60));
+                                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                                  
+                                  if (diffMins < 1) return 'just now';
+                                  if (diffMins < 60) return `${diffMins}m ago`;
+                                  if (diffHours < 24) return `${diffHours}h ago`;
+                                  if (diffDays < 7) return `${diffDays}d ago`;
+                                  return date.toLocaleDateString();
+                                } catch {
+                                  return '';
+                                }
+                              })()}
                             </Text>
-                          </View>
+                          )}
                         </View>
                       </Pressable>
                     ))

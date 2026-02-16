@@ -162,6 +162,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [status, setStatus] = useState<string>('');
   const [activeEchoActionId, setActiveEchoActionId] = useState<string | null>(null);
   const [localEchoHugs, setLocalEchoHugs] = useState<Record<string, { hugs: number; hugged: boolean }>>({});
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
+  const [echoReplies, setEchoReplies] = useState<Record<string, any[]>>({});
+  const [replyPreviews, setReplyPreviews] = useState<Record<string, any>>({});
 
   useEffect(() => {
     if (item.ownerUid !== myUid) {
@@ -406,9 +409,61 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     setShowEchoes(true);
   }, [item.id, index, setEchoWaveId, setCurrentIndex, setShowEchoes]);
 
+  // Fetch replies for a specific echo
+  const fetchRepliesForEcho = useCallback(async (echoId: string) => {
+    try {
+      const repliesSnap = await firestore()
+        .collection(`waves/${item.id}/echoes`)
+        .where('replyToEchoId', '==', echoId)
+        .orderBy('createdAt', 'desc')
+        .get();
+      
+      const replies = repliesSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        uid: doc.data().userUid,
+      }));
+      
+      setEchoReplies(prev => ({ ...prev, [echoId]: replies }));
+      
+      // Set most recent reply as preview
+      if (replies.length > 0) {
+        setReplyPreviews(prev => ({ ...prev, [echoId]: replies[0] }));
+      }
+    } catch (error) {
+      console.log('Error fetching replies:', error);
+    }
+  }, [item.id]);
+
+  // Toggle replies expansion
+  const toggleReplies = useCallback((echoId: string) => {
+    setExpandedReplies(prev => {
+      const isExpanding = !prev[echoId];
+      if (isExpanding && !echoReplies[echoId]) {
+        fetchRepliesForEcho(echoId);
+      }
+      return { ...prev, [echoId]: isExpanding };
+    });
+  }, [echoReplies, fetchRepliesForEcho]);
+
+  // Fetch reply previews for all echoes
+  useEffect(() => {
+    const echoes = postEchoLists[item.id] || [];
+    echoes.forEach(echo => {
+      if (echo.replyCount > 0 && !replyPreviews[echo.id]) {
+        fetchRepliesForEcho(echo.id);
+      }
+    });
+  }, [postEchoLists, item.id, replyPreviews, fetchRepliesForEcho]);
+
   const renderEchoItem = useCallback((echo: any, idx: number) => {
     const { hugs, hugged } = getEchoHugState(echo);
     const showActions = activeEchoActionId === echo.id;
+    const replies = echoReplies[echo.id] || [];
+    const replyPreview = replyPreviews[echo.id];
+    const hasReplies = (echo.replyCount || 0) > 0;
+    const isExpanded = expandedReplies[echo.id];
+    
     return (
       <View
         key={echo.id || idx}
@@ -434,6 +489,72 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
           </Text>
         </Pressable>
+
+        {/* Reply Preview - Show most recent reply if exists and not expanded */}
+        {hasReplies && !isExpanded && replyPreview && (
+          <View style={{ marginTop: 8, marginLeft: 16, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: '#1e88e5' }}>
+            <Text style={{ color: '#555', fontSize: 11, fontWeight: '600' }}>
+              {displayHandle(replyPreview.uid, replyPreview.userName || replyPreview.uid)}
+            </Text>
+            <Text style={{ color: '#666', fontSize: 12 }}>
+              {replyPreview.text}
+            </Text>
+            <Text style={{ color: 'gray', fontSize: 9 }}>
+              {replyPreview.createdAt ? formatDefiniteTime(replyPreview.createdAt) : 'just now'}
+            </Text>
+          </View>
+        )}
+
+        {/* View More Replies Button */}
+        {hasReplies && !isExpanded && (echo.replyCount || 0) > 1 && (
+          <Pressable
+            onPress={() => toggleReplies(echo.id)}
+            style={{ marginTop: 6, marginLeft: 16 }}
+          >
+            <Text style={{ color: '#1e88e5', fontSize: 11, fontWeight: '600' }}>
+              View {(echo.replyCount || 0) - 1} more {(echo.replyCount || 0) - 1 === 1 ? 'reply' : 'replies'}
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Expanded Replies */}
+        {isExpanded && replies.length > 0 && (
+          <View style={{ marginTop: 8, marginLeft: 16 }}>
+            {replies.map((reply, replyIdx) => (
+              <View
+                key={reply.id || replyIdx}
+                style={{
+                  marginBottom: 6,
+                  paddingLeft: 12,
+                  borderLeftWidth: 2,
+                  borderLeftColor: '#1e88e5',
+                }}
+              >
+                <Text style={{ color: '#555', fontSize: 11, fontWeight: '600' }}>
+                  {displayHandle(reply.uid, reply.userName || reply.uid)}
+                </Text>
+                <Text style={{ color: '#666', fontSize: 12 }}>
+                  {reply.text}
+                </Text>
+                <Text style={{ color: 'gray', fontSize: 9 }}>
+                  {reply.createdAt ? formatDefiniteTime(reply.createdAt) : 'just now'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Collapse Replies Button */}
+        {isExpanded && hasReplies && (
+          <Pressable
+            onPress={() => toggleReplies(echo.id)}
+            style={{ marginTop: 6, marginLeft: 16 }}
+          >
+            <Text style={{ color: '#1e88e5', fontSize: 11, fontWeight: '600' }}>
+              Hide replies
+            </Text>
+          </Pressable>
+        )}
 
         {showActions && (
           <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
@@ -467,7 +588,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         )}
       </View>
     );
-  }, [activeEchoActionId, getEchoHugState, handleEchoReply, toggleEchoHug, formatDefiniteTime, displayHandle]);
+  }, [activeEchoActionId, getEchoHugState, handleEchoReply, toggleEchoHug, formatDefiniteTime, displayHandle, echoReplies, replyPreviews, expandedReplies, toggleReplies]);
 
   return (
     <Pressable>

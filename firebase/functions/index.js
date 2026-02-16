@@ -234,13 +234,18 @@ exports.onSplashDelete = onDocumentDeleted('waves/{waveId}/splashes/{uid}', asyn
 exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async (event) => {
   const snap = event.data;
   const waveId = event.params.waveId;
+  const echo = snap.data() || {};
+  
   // --- COUNT --- //
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    const waveSnap = await tx.get(waveRef);
-    if (!waveSnap.exists) return;
-    tx.set(waveRef, { counts: { echoes: admin.firestore.FieldValue.increment(1) } }, { merge: true });
-  });
+  // Only increment main post echo count for top-level echoes (not replies)
+  if (!echo.replyToEchoId) {
+    const waveRef = db.doc(`waves/${waveId}`);
+    await db.runTransaction(async (tx) => {
+      const waveSnap = await tx.get(waveRef);
+      if (!waveSnap.exists) return;
+      tx.set(waveRef, { counts: { echoes: admin.firestore.FieldValue.increment(1) } }, { merge: true });
+    });
+  }
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
@@ -249,7 +254,6 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
     console.log(`No wave owner found for wave ${waveId}`);
     return;
   }
-  const echo = snap.data() || {};
   const echoSenderUid = echo.userUid;
   if (!echoSenderUid) {
     console.log(`No echo sender UID found for echo in wave ${waveId}`);
@@ -315,18 +319,23 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
 
 exports.onEchoDelete = onDocumentDeleted('waves/{waveId}/echoes/{echoId}', async (event) => {
   const waveId = event.params.waveId;
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(waveRef);
-    if (!snap.exists) return;
-    const data = snap.data() || {};
-    const counts = data.counts || { splashes: 0, regularSplashes: 0, hugs: 0, echoes: 0 };
-    
-    // Only decrement if count is above 0 to prevent negative values
-    if (counts.echoes > 0) {
-      tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
-    }
-  });
+  const echoData = event.data?.data() || {};
+  
+  // Only decrement main post echo count for top-level echoes (not replies)
+  if (!echoData.replyToEchoId) {
+    const waveRef = db.doc(`waves/${waveId}`);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(waveRef);
+      if (!snap.exists) return;
+      const data = snap.data() || {};
+      const counts = data.counts || { splashes: 0, regularSplashes: 0, hugs: 0, echoes: 0 };
+      
+      // Only decrement if count is above 0 to prevent negative values
+      if (counts.echoes > 0) {
+        tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
+      }
+    });
+  }
 });
 
 // Notify when someone replies to an echo
