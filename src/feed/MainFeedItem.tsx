@@ -741,7 +741,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                   >
                     <Text style={{
-                      color: 'gray',
+                      color: '#8B0000',
                       fontSize: 12,
                       textAlign: 'center',
                       fontStyle: 'italic'

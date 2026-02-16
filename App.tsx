@@ -9556,10 +9556,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
-                removeClippedSubviews={true}
-                maxToRenderPerBatch={10}
-                windowSize={21}
-                initialNumToRender={8}
+                removeClippedSubviews={false}
+                maxToRenderPerBatch={5}
+                windowSize={11}
+                initialNumToRender={3}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -10209,16 +10209,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   placeholder="Write a short bio..."
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   multiline
-                  style={[
-                    styles.profileBio as any,
-                    {
-                      marginTop: 8,
-                      width: '100%',
-                      borderBottomWidth: 1,
-                      borderBottomColor: 'rgba(255,255,255,0.2)',
-                      color: '#8B0000',
-                    },
-                  ]}
+                  style={{
+                    color: '#8B0000',
+                    marginTop: 8,
+                    width: '100%',
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.2)',
+                    fontSize: 11,
+                    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+                  }}
                 />
                 <Pressable
                   style={({ pressed }) => [
