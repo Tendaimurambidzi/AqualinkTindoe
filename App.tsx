@@ -1,4 +1,4 @@
-
+﻿
 import React, {
   useEffect,
   useMemo,
@@ -11815,19 +11815,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={handleUnifiedCameraCapture}
                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                 >
-                  <Text style={styles.logbookActionText}>📷 Camera</Text>
+                  <Text style={styles.logbookActionText}>📷</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleUnifiedGallerySelect}
                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                 >
-                  <Text style={styles.logbookActionText}>🖼️ Gallery</Text>
+                  <Text style={styles.logbookActionText}>🖼️</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleSDCardPicker}
                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                 >
-                  <Text style={styles.logbookActionText}>?? SD Card</Text>
+                  <Text style={styles.logbookActionText}>📁</Text>
                 </Pressable>
               </View>
               <View style={styles.textComposerButtonRow}>
