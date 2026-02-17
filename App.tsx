@@ -62,6 +62,7 @@ import CharteredSeaDriftButton from './CharteredSeaDriftButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary, CameraOptions, Asset, ImagePickerResponse } from 'react-native-image-picker';
+import RNFS from 'react-native-fs';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
@@ -8732,114 +8733,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
   
 
-  // SD Card Media Picker - All file types
+  // SD Card Media Picker - All file types (images, videos, audio)
   const handleSDCardPicker = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const androidVersion = Platform.Version;
-        
-        // Android 13+ (API 33+): Request granular media permissions
-        if (androidVersion >= 33) {
-          const permissions = [
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
-            PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO
-          ];
-          const results = await PermissionsAndroid.requestMultiple(permissions);
-          const allGranted = Object.values(results).every(result => result === PermissionsAndroid.RESULTS.GRANTED);
-          if (!allGranted) {
-            Alert.alert(
-              'Permission Required',
-              'Grant access to select media from SD card.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Settings', onPress: () => Linking.openSettings() }
-              ]
-            );
-            return;
-          }
-        }
-        // Android 11-12 (API 30-32): Request all files access for SD card
-        else if (androidVersion >= 30) {
-          // Check if we already have all files access
-          const hasAllFilesAccess = await new Promise<boolean>((resolve) => {
-            try {
-              // Try to open settings to check permission
-              Linking.canOpenURL('package:' + 'com.aqualink.tindo').then(() => {
-                resolve(false); // Assume we need to request
-              });
-            } catch {
-              resolve(false);
-            }
-          });
-
-          if (!hasAllFilesAccess) {
-            Alert.alert(
-              'SD Card Access',
-              'To access all files on your SD card, please enable "All files access" in Settings.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Open Settings',
-                  onPress: () => {
-                    // Open app settings where user can grant MANAGE_EXTERNAL_STORAGE
-                    Linking.openSettings();
-                  }
-                }
-              ]
-            );
-            // Continue anyway - the image picker will work with scoped storage
-          }
-        }
-        // Android 10 and below: Request READ_EXTERNAL_STORAGE
-        else {
-          const granted = await PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-            {
-              title: 'Storage Permission',
-              message: 'Access storage to select media from SD card',
-              buttonPositive: 'OK'
-            }
-          );
-          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-            Alert.alert(
-              'Permission Denied',
-              'Storage permission required.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'Settings', onPress: () => Linking.openSettings() }
-              ]
-            );
-            return;
-          }
-        }
-      } catch (err) {
-        console.error('SD card permission error:', err);
-        Alert.alert('Error', 'Failed to request permission');
+    try {
+      const result = await AudioPicker.pickAudio();
+      
+      if (!result || !result.uri) {
+        console.log('No file selected from SD card');
         return;
       }
-    }
-    
-    // Launch image picker with mixed media type for SD card access
-    launchImageLibrary(
-      {
-        mediaType: 'mixed',
-        quality: 0.8,
-        presentationStyle: 'fullScreen',
-        selectionLimit: 1
-      },
-      response => {
-        if (response.assets && response.assets.length > 0) {
-          setUnifiedPostMedia(response.assets[0]);
-          console.log('SD card media selected:', response.assets[0].uri);
-        } else if (response.didCancel) {
-          console.log('User cancelled SD card picker');
-        } else if (response.errorCode) {
-          console.error('SD card picker error:', response.errorCode, response.errorMessage);
-          Alert.alert('Error', `Failed to select media: ${response.errorMessage}`);
-        }
+
+      const uri = result.uri;
+      const fileName = result.name || uri.split('/').pop() || '';
+      const mimeType = result.type || '';
+      
+      const isAudio = mimeType.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
+      const isVideo = mimeType.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|3gp)$/i.test(fileName);
+      const isImage = mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(fileName);
+      
+      if (isAudio) {
+        setAttachedAudio({ uri, name: fileName || 'Audio from SD Card' });
+        notifySuccess('Audio attached from SD card');
+      } else if (isVideo || isImage) {
+        setCapturedMedia({ uri, type: mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'), fileName });
+        notifySuccess('Media selected from SD card');
+      } else {
+        Alert.alert('Unsupported File', 'Please select an image, video, or audio file.');
       }
-    );
+    } catch (err) {
+      console.error('SD card picker error:', err);
+      Alert.alert('Error', 'Failed to open SD card picker');
+    }
   };
 
   const handleUnifiedPost = async () => {
