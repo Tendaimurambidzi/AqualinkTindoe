@@ -44,11 +44,6 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
-        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
-            "image/*",
-            "video/*",
-            "audio/*"
-        });
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);

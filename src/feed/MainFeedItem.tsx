@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useState } from 'react';
+import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -25,6 +25,14 @@ const isAudioAsset = (asset: Asset | null | undefined): boolean => {
   if (t.includes('audio')) return true;
   const uri = String(asset.uri || '').toLowerCase();
   return /(\.(mp3|m4a|aac|wav|ogg|flac))($|\?)/i.test(uri);
+};
+
+const isImageAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = String(asset.type || '').toLowerCase();
+  if (t.includes('image')) return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
 };
 
 type Vibe = {
@@ -182,6 +190,31 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [replyPreviews, setReplyPreviews] = useState<Record<string, any>>({});
   const [showProfilePreview, setShowProfilePreview] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [audioControlsVisible, setAudioControlsVisible] = useState(false);
+  const audioControlsTimerRef = useRef<any>(null);
+
+  const revealAudioControlsTemporarily = useCallback(() => {
+    setAudioControlsVisible(true);
+    if (audioControlsTimerRef.current) {
+      try {
+        clearTimeout(audioControlsTimerRef.current);
+      } catch {}
+    }
+    audioControlsTimerRef.current = setTimeout(() => {
+      setAudioControlsVisible(false);
+      audioControlsTimerRef.current = null;
+    }, 4000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (audioControlsTimerRef.current) {
+        try {
+          clearTimeout(audioControlsTimerRef.current);
+        } catch {}
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (item.ownerUid !== myUid) {
@@ -892,6 +925,36 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   />
                 </View>
               ) : audioOnlyPost ? (
+                <Pressable
+                  onPress={revealAudioControlsTemporarily}
+                  style={{
+                    marginHorizontal: 0,
+                    width: SCREEN_WIDTH,
+                    minHeight: 180,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: '#0f1724',
+                    paddingVertical: 20,
+                    paddingHorizontal: 14,
+                  }}
+                >
+                  <Text style={{ fontSize: 40, marginBottom: 10 }}>🎵</Text>
+                  {RNVideo ? (
+                    <RNVideo
+                      source={{ uri: String(item.audio?.uri || item.media?.uri || '') }}
+                      audioOnly
+                      controls={audioControlsVisible}
+                      paused={!playSynced}
+                      style={{ width: SCREEN_WIDTH - 28, height: 64 }}
+                      playInBackground={false}
+                      playWhenInactive={false}
+                      ignoreSilentSwitch="ignore"
+                    />
+                  ) : (
+                    <Text style={{ color: '#9ab4cf' }}>Audio player unavailable</Text>
+                  )}
+                </Pressable>
+              ) : item.media && !isImageAsset(item.media) ? (
                 <View
                   style={{
                     marginHorizontal: 0,
@@ -904,24 +967,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     paddingHorizontal: 14,
                   }}
                 >
-                  <Text style={{ fontSize: 40 }}>🎵</Text>
-                  <Text style={{ color: '#cfe9ff', marginTop: 6, marginBottom: 12 }}>
-                    Audio Post
-                  </Text>
-                  {RNVideo ? (
-                    <RNVideo
-                      source={{ uri: String(item.audio?.uri || item.media?.uri || '') }}
-                      audioOnly
-                      controls
-                      paused={!playSynced}
-                      style={{ width: SCREEN_WIDTH - 28, height: 64 }}
-                      playInBackground={false}
-                      playWhenInactive={false}
-                      ignoreSilentSwitch="ignore"
-                    />
-                  ) : (
-                    <Text style={{ color: '#9ab4cf' }}>Audio player unavailable</Text>
-                  )}
+                  <Text style={{ fontSize: 40 }}>📄</Text>
                 </View>
               ) : (
                 <Pressable onPress={handleImageReveal}>

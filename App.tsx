@@ -136,6 +136,14 @@ const isAudioAsset = (asset: Asset | null | undefined): boolean => {
   const uri = String(asset.uri || '').toLowerCase();
   return /(\.(mp3|m4a|aac|wav|ogg|flac))($|\?)/i.test(uri);
 };
+
+const isImageAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = (asset.type || '').toLowerCase();
+  if (t.includes('image')) return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
+};
                     
 type Vibe = {
   id: string;
@@ -1855,7 +1863,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const DEV_SKIP_STORAGE_UPLOAD = false;
   const versionInfo = useAppVersionInfo();
                     
-  const editorTools = useMemo(() => [{ icon: '\u2702\ufe0f', label: 'Cut the Wake' }, { icon: '\ud83c\udfa8', label: 'Ocean Tones' }], []);
+  const editorTools = useMemo(
+    () => [
+      { icon: '\u2702\ufe0f', label: 'Cut the Wake' },
+      { icon: '\ud83c\udfa8', label: 'Ocean Tones' },
+      { icon: '\ud83c\udfb5', label: 'Ocean Melodies' },
+    ],
+    [],
+  );
                     
   const [splashes, setSplashes] = useState<number>(0);
   const [echoes, setEchoes] = useState<number>(0);
@@ -8791,7 +8806,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
 
   // SD Card Media Picker - All file types (images, videos, audio)
-  const handleSDCardPicker = async (forceAudioOnly: boolean = false) => {
+  const handleSDCardPicker = async () => {
     try {
       const result = await AudioPicker.pickAudio();
       
@@ -8811,8 +8826,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (isAudio) {
         setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
         notifySuccess('Audio attached from SD card');
-      } else if (forceAudioOnly) {
-        Alert.alert('Audio Only', 'Please select an audio file.');
       } else if (isVideo || isImage) {
         setUnifiedPostMedia({
           uri,
@@ -8822,7 +8835,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setUnifiedPostAudio(null);
         notifySuccess('Media selected from SD card');
       } else {
-        Alert.alert('Unsupported File', 'Please select an image, video, or audio file.');
+        setUnifiedPostMedia({
+          uri,
+          type: mimeType || 'application/octet-stream',
+          fileName,
+        });
+        notifySuccess('File selected from SD card');
       }
     } catch (err: any) {
       if (err?.code === 'CANCELLED') {
@@ -8833,8 +8851,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
   const handleUnifiedAudioSelect = async () => {
-    await handleSDCardPicker(true);
+    await handleSDCardPicker();
   };
+
+  const normalizeAssetForEditor = useCallback(async (asset: Asset): Promise<Asset> => {
+    if (!asset?.uri) return asset;
+    const rawUri = String(asset.uri);
+    if (!(Platform.OS === 'android' && /^content:/.test(rawUri))) {
+      return asset;
+    }
+    try {
+      const RNFSLocal = require('react-native-fs');
+      const nameGuessRaw =
+        asset.fileName || rawUri.split('/').pop() || `media_${Date.now()}`;
+      const sanitizedBase = String(nameGuessRaw)
+        .replace(/[^A-Za-z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_');
+      const type = String(asset.type || '').toLowerCase();
+      const ext =
+        (sanitizedBase.includes('.') &&
+          sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)) ||
+        (type.startsWith('video/')
+          ? 'mp4'
+          : type.startsWith('image/')
+          ? 'jpg'
+          : type.startsWith('audio/')
+          ? 'm4a'
+          : 'dat');
+      const copyDest = `${RNFSLocal.CachesDirectoryPath}/editor_${Date.now()}_${sanitizedBase}.${ext}`;
+      await RNFSLocal.copyFile(rawUri, copyDest);
+      return {
+        ...asset,
+        uri: `file://${copyDest}`,
+        fileName: asset.fileName || `${sanitizedBase}.${ext}`,
+        type:
+          asset.type ||
+          (ext.match(/mp4|mov|mkv|avi|webm|3gp/i)
+            ? 'video/mp4'
+            : ext.match(/jpg|jpeg|png|gif|webp|heic/i)
+            ? 'image/jpeg'
+            : asset.type),
+      };
+    } catch (e) {
+      console.warn('Normalize SD media for editor failed', e);
+      return asset;
+    }
+  }, []);
 
   const handleUnifiedPost = async () => {
     const trimmedText = unifiedPostText.trim();
@@ -8848,8 +8910,137 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setIsUnifiedPosting(true);
     try {
       if (unifiedPostMedia) {
+        const mediaIsVideo = isVideoAsset(unifiedPostMedia);
+        const mediaIsImage = isImageAsset(unifiedPostMedia);
+        const mediaIsAudio = isAudioAsset(unifiedPostMedia);
+        const mediaIsVisual = mediaIsVideo || mediaIsImage;
+
+        if (unifiedPostAudio?.uri && !mediaIsVisual) {
+          Alert.alert(
+            'Overlay Not Supported',
+            'Audio overlay can be attached only to images and videos.',
+          );
+          return;
+        }
+
+        if (!mediaIsVisual || mediaIsAudio) {
+          // Handle document/generic file post directly (without media editor).
+          let storageMod: any = null;
+          let firestoreMod: any = null;
+          let authMod: any = null;
+          try {
+            storageMod = require('@react-native-firebase/storage').default;
+          } catch {}
+          try {
+            firestoreMod = require('@react-native-firebase/firestore').default;
+          } catch {}
+          try {
+            authMod = require('@react-native-firebase/auth').default;
+          } catch {}
+          if (!storageMod || !firestoreMod || !authMod) {
+            Alert.alert('Backend not ready', 'File posting is unavailable right now.');
+            return;
+          }
+          const a = authMod();
+          const uid = a.currentUser?.uid;
+          if (!uid) {
+            Alert.alert('Sign in required', 'Please sign in to post files.');
+            return;
+          }
+
+          const mimeType =
+            unifiedPostMedia.type || 'application/octet-stream';
+          const nameGuessRaw =
+            unifiedPostMedia.fileName ||
+            String(unifiedPostMedia.uri || '').split('/').pop() ||
+            'file';
+          const sanitizedBase = String(nameGuessRaw)
+            .replace(/[^A-Za-z0-9._-]/g, '_')
+            .replace(/_{2,}/g, '_');
+          const ext =
+            (sanitizedBase.includes('.') &&
+              sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)) ||
+            'dat';
+          const baseNoExt = sanitizedBase.includes('.')
+            ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+            : sanitizedBase;
+          const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+
+          let localPath = String(unifiedPostMedia.uri || '');
+          try {
+            localPath = decodeURI(localPath);
+          } catch {}
+          if (/^content:/.test(String(localPath))) {
+            try {
+              const RNFS = require('react-native-fs');
+              const copyDest = `${RNFS.CachesDirectoryPath}/file_post_${Date.now()}_${baseNoExt}.${ext}`;
+              await RNFS.copyFile(String(localPath), copyDest);
+              localPath = copyDest;
+            } catch (e) {
+              console.warn('Document content copy failed', e);
+            }
+          }
+          if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+            localPath = localPath.replace('file://', '');
+          }
+          if (!localPath) {
+            Alert.alert('Upload error', 'Could not access the selected file.');
+            return;
+          }
+
+          await storageMod().ref(filePath).putFile(localPath, {
+            contentType: mimeType,
+          });
+          const fileDownloadUrl = await storageMod().ref(filePath).getDownloadURL();
+          const docRef = await firestoreMod()
+            .collection('waves')
+            .add({
+              authorId: uid,
+              ownerUid: uid,
+              authorName:
+                profileName ||
+                accountCreationHandle ||
+                a.currentUser?.displayName ||
+                null,
+              mediaPath: filePath,
+              mediaType: mimeType,
+              postType: 'document',
+              text: trimmedText,
+              createdAt: firestoreMod.FieldValue?.serverTimestamp
+                ? firestoreMod.FieldValue.serverTimestamp()
+                : new Date(),
+              audioUrl: null,
+              muxStatus: 'ready',
+              playbackUrl: null,
+              mediaUrl: fileDownloadUrl,
+              isPublic: true,
+            });
+
+          handlePostPublished({
+            id: docRef?.id || new Date().toISOString(),
+            media: { uri: fileDownloadUrl, type: mimeType } as any,
+            audio: null,
+            captionText: trimmedText,
+            playbackUrl: null,
+            muxStatus: 'ready',
+            authorName:
+              profileName ||
+              accountCreationHandle ||
+              a.currentUser?.displayName ||
+              null,
+            ownerUid: uid,
+          });
+
+          setUnifiedPostText('');
+          setUnifiedPostMedia(null);
+          setUnifiedPostAudio(null);
+          setShowUnifiedPostModal(false);
+          return;
+        }
+
         // Handle media post with optional caption
-        setCapturedMedia(unifiedPostMedia);
+        const preparedMedia = await normalizeAssetForEditor(unifiedPostMedia);
+        setCapturedMedia(preparedMedia);
         setWaveCaption(trimmedText);
         setTextComposerText(trimmedText);
         if (unifiedPostAudio?.uri) {
@@ -9273,7 +9464,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                     
   // (removed Movable Textbox state)
-  const onEditorToolPress = async (toolLabel: string) => { if (toolLabel === 'Cut the Wake' && capturedMedia && capturedMedia.type && capturedMedia.type.startsWith('image/')) {
+  const onEditorToolPress = async (toolLabel: string) => {
+    if (toolLabel === 'Ocean Melodies') {
+      setShowAudioModal(true);
+      return;
+    }
+    if (toolLabel === 'Cut the Wake' && capturedMedia && capturedMedia.type && capturedMedia.type.startsWith('image/')) {
       try {
         const cropped = await ImageCropPicker.openCropper({
           path: capturedMedia.uri,
@@ -9556,7 +9752,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxVideoStrategy: null,
             muxFps: null,
             muxStatus: overlayAudioStoragePath ? 'pending' : 'ready',
-            playbackUrl: overlayAudioStoragePath ? null : videoDownloadUrl || null,
+            playbackUrl:
+              overlayAudioStoragePath || !isVideoAsset(capturedMedia)
+                ? null
+                : videoDownloadUrl || null,
             mediaUrl: videoDownloadUrl || null,
             mediaType: type || null,
             postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
@@ -9635,7 +9834,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? { uri: audioDownloadUrl, name: attachedAudio?.name }
           : null,
         captionText: finalCaption,
-        playbackUrl: overlayAudioStoragePath ? null : videoDownloadUrl,
+        playbackUrl:
+          overlayAudioStoragePath || !isVideoAsset(capturedMedia)
+            ? null
+            : videoDownloadUrl,
         muxStatus: overlayAudioStoragePath ? 'pending' : 'ready',
         authorName: profileName || accountCreationHandle || null,
         ownerUid: (() => {
@@ -18857,8 +19059,12 @@ function PostDetailScreen({ route, navigation }: any) {
       const hasAudioOnly =
         (!post.playbackUrl && !!post.audio?.uri) ||
         (!post.playbackUrl && post.media && isAudioAsset(post.media));
-      const hasImage =
-        post.media && !isVideoAsset(post.media) && !isAudioAsset(post.media);
+      const hasImage = post.media && isImageAsset(post.media);
+      const hasDocument =
+        post.media &&
+        !isVideoAsset(post.media) &&
+        !isAudioAsset(post.media) &&
+        !isImageAsset(post.media);
       const hasText = post.captionText || post.link;
                     
       return (
@@ -18947,6 +19153,20 @@ function PostDetailScreen({ route, navigation }: any) {
                 playWhenInactive={false}
                 ignoreSilentSwitch="ignore"
               />
+            </View>
+          ) : hasDocument ? (
+            <View
+              style={{
+                width: SCREEN_WIDTH,
+                minHeight: 220,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#0f1724',
+                paddingHorizontal: 20,
+              }}
+            >
+              <Text style={{ fontSize: 42, marginBottom: 10 }}>📄</Text>
+              <Text style={{ color: '#cfe9ff' }}>Document attachment</Text>
             </View>
           ) : null}
                     
