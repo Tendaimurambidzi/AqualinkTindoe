@@ -3635,6 +3635,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     name?: string;
   } | null>(null);
   const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
+  const [waveCaption, setWaveCaption] = useState<string>('');
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
   const [audioUrlInput, setAudioUrlInput] = useState<string>('');
   const [transcoding, setTranscoding] = useState<boolean>(false);
@@ -3643,6 +3644,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showUnifiedPostModal, setShowUnifiedPostModal] = useState<boolean>(false);
   const [unifiedPostText, setUnifiedPostText] = useState<string>('');
   const [unifiedPostMedia, setUnifiedPostMedia] = useState<Asset | null>(null);
+  const [unifiedPostAudio, setUnifiedPostAudio] = useState<{
+    uri: string;
+    name?: string;
+  } | null>(null);
   const [isUnifiedPosting, setIsUnifiedPosting] = useState<boolean>(false);
                     
   // DM subscription - adds messages to pings automatically
@@ -8632,6 +8637,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             launchCamera({ mediaType: 'photo', quality: 0.8 }, response => {
               if (response.assets && response.assets.length > 0) {
                 setUnifiedPostMedia(response.assets[0]);
+                setUnifiedPostAudio(null);
               }
             }),
         },
@@ -8641,6 +8647,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             launchCamera({ mediaType: 'video', videoQuality: 'high' }, response => {
               if (response.assets && response.assets.length > 0) {
                 setUnifiedPostMedia(response.assets[0]);
+                setUnifiedPostAudio(null);
               }
             }),
         },
@@ -8723,6 +8730,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (response.assets && response.assets.length > 0) {
         console.log('[SD Card Access] Media selected:', response.assets[0].uri);
         setUnifiedPostMedia(response.assets[0]);
+        setUnifiedPostAudio(null);
       } else if (response.didCancel) {
         console.log('[SD Card Access] User cancelled');
       } else if (response.errorCode) {
@@ -8752,15 +8760,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const isImage = mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(fileName);
       
       if (isAudio) {
-        setAttachedAudio({ uri, name: fileName || 'Audio from SD Card' });
+        setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
         notifySuccess('Audio attached from SD card');
       } else if (isVideo || isImage) {
-        setCapturedMedia({ uri, type: mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'), fileName });
+        setUnifiedPostMedia({
+          uri,
+          type: mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+          fileName,
+        });
+        setUnifiedPostAudio(null);
         notifySuccess('Media selected from SD card');
       } else {
         Alert.alert('Unsupported File', 'Please select an image, video, or audio file.');
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === 'CANCELLED') {
+        return;
+      }
       console.error('SD card picker error:', err);
       Alert.alert('Error', 'Failed to open SD card picker');
     }
@@ -8774,15 +8790,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Create a Post', 'Please add some text or select media to post.');
       return;
     }
+    if (unifiedPostAudio && !unifiedPostMedia) {
+      Alert.alert(
+        'Add Media',
+        'Audio from SD card can be attached only when you also select an image or video.',
+      );
+      return;
+    }
     
     setIsUnifiedPosting(true);
     try {
       if (unifiedPostMedia) {
         // Handle media post with optional caption
         setCapturedMedia(unifiedPostMedia);
+        setWaveCaption(trimmedText);
         setTextComposerText(trimmedText);
+        if (unifiedPostAudio?.uri) {
+          setAttachedAudio({ uri: unifiedPostAudio.uri, name: unifiedPostAudio.name });
+        } else {
+          setAttachedAudio(null);
+        }
         setShowUnifiedPostModal(false);
         setShowMakeWaves(false); // Close the Make Waves modal, media editor opens directly
+        setUnifiedPostText('');
+        setUnifiedPostMedia(null);
+        setUnifiedPostAudio(null);
       } else {
         // Handle text-only post
         const result = await uploadPost({ 
@@ -8811,6 +8843,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Reset and close
         setUnifiedPostText('');
         setUnifiedPostMedia(null);
+        setUnifiedPostAudio(null);
         setShowUnifiedPostModal(false);
       }
     } catch (error) {
@@ -8825,6 +8858,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setShowUnifiedPostModal(false);
     setUnifiedPostText('');
     setUnifiedPostMedia(null);
+    setUnifiedPostAudio(null);
   };
                     
   // Map a user identifier to display label; show "/You" for the signed-in user
@@ -9121,6 +9155,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('No media', 'Please select or capture media first.');
       return;
     }
+    const finalCaption = (waveCaption || textComposerText || '').trim();
     setReleasing(true);
     let uploadedPath: string | null = null;
     let audioDownloadUrl: string | null = null;
@@ -9162,7 +9197,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ownerUid: uid,
               authorName: profileName || a.currentUser?.displayName || null,
               mediaPath: capturedMedia.uri || null,
-              text: textComposerText, // Feed text from "say something"
+              text: finalCaption,
               createdAt: firestoreMod.FieldValue?.serverTimestamp
                 ? firestoreMod.FieldValue.serverTimestamp()
                 : new Date(),
@@ -9339,7 +9374,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               a.currentUser?.displayName ||
               null,
             mediaPath: filePath,
-            text: textComposerText,
+            text: finalCaption,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
@@ -9424,7 +9459,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         audio: audioDownloadUrl
           ? { uri: audioDownloadUrl, name: attachedAudio?.name }
           : null,
-        captionText: textComposerText,
+        captionText: finalCaption,
         playbackUrl: null,
         muxStatus: audioDownloadUrl ? 'pending' : 'ready',
         authorName: profileName || accountCreationHandle || null,
@@ -9440,6 +9475,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       };
       setHasSplashed(false); // Reset splash state for new wave
       setSplashes(0); // Reset splash count for new wave
+      setCapturedMedia(null); // Clear captured media
+      setWaveCaption(''); // Clear caption
+      setTextComposerText('');
+      setAttachedAudio(null); // Clear attached audio
       setVibesFeed(prev => {
         // Add new wave to the beginning of the array
         const next = [newWave, ...prev];
@@ -11792,6 +11831,40 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     }}
                   >
                     <Text style={{ color: 'white', fontSize: 12 }}>Remove Media</Text>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* SD Audio Preview */}
+              {unifiedPostAudio && (
+                <View
+                  style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    backgroundColor: 'rgba(0,0,0,0.25)',
+                  }}
+                >
+                  <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '700' }}>
+                    Attached audio
+                  </Text>
+                  <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                    {unifiedPostAudio.name || unifiedPostAudio.uri}
+                  </Text>
+                  <Pressable
+                    onPress={() => setUnifiedPostAudio(null)}
+                    style={{
+                      marginTop: 8,
+                      alignSelf: 'flex-start',
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      backgroundColor: '#ff4444',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontSize: 12 }}>Remove Audio</Text>
                   </Pressable>
                 </View>
               )}
@@ -14241,6 +14314,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
             </View>
           )}
+
+          {/* Caption Input */}
+          <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+            <TextInput
+              placeholder="What's the story?"
+              placeholderTextColor="rgba(255,255,255,0.5)"
+              value={waveCaption}
+              onChangeText={setWaveCaption}
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                borderRadius: 8,
+                padding: 12,
+                color: 'white',
+                fontSize: 16,
+                minHeight: 60,
+                textAlignVertical: 'top',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.2)',
+              }}
+              multiline
+            />
+          </View>
                     
           {/* Editor Controls */}
           <View

@@ -1,10 +1,13 @@
 package com.aqualink.tindo;
 
 import android.app.Activity;
+import android.content.ContentResolver;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.facebook.react.bridge.ActivityEventListener;
@@ -41,6 +44,15 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[] {
+            "image/*",
+            "video/*",
+            "audio/*"
+        });
+        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI);
         }
@@ -55,6 +67,43 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
                     Uri uri = data.getData();
                     WritableMap result = Arguments.createMap();
                     result.putString("uri", uri != null ? uri.toString() : null);
+                    if (uri != null) {
+                        try {
+                            int flags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                                activity.getContentResolver().takePersistableUriPermission(uri, flags);
+                            }
+                        } catch (Exception ignored) {}
+
+                        ContentResolver resolver = activity.getContentResolver();
+                        String mimeType = resolver.getType(uri);
+                        if (mimeType != null) {
+                            result.putString("type", mimeType);
+                        }
+
+                        Cursor cursor = null;
+                        try {
+                            cursor = resolver.query(uri, null, null, null, null);
+                            if (cursor != null && cursor.moveToFirst()) {
+                                int nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME);
+                                if (nameIndex >= 0) {
+                                    String name = cursor.getString(nameIndex);
+                                    if (name != null) {
+                                        result.putString("name", name);
+                                    }
+                                }
+                                int sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE);
+                                if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                                    result.putDouble("size", cursor.getDouble(sizeIndex));
+                                }
+                            }
+                        } catch (Exception ignored) {
+                        } finally {
+                            if (cursor != null) {
+                                cursor.close();
+                            }
+                        }
+                    }
                     pickerPromise.resolve(result);
                 } else {
                     pickerPromise.reject("CANCELLED", "Audio picking cancelled");
