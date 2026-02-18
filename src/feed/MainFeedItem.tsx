@@ -11,8 +11,21 @@ import ProfilePreviewModal from '../components/ProfilePreviewModal';
 import database from '@react-native-firebase/database';
 import firestore from '@react-native-firebase/firestore';
 import { formatAwaySince } from '../services/timeUtils';
+import { Asset } from 'react-native-image-picker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+let RNVideo: any = null;
+try {
+  RNVideo = require('react-native-video').default;
+} catch {}
+
+const isAudioAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = String(asset.type || '').toLowerCase();
+  if (t.includes('audio')) return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  return /(\.(mp3|m4a|aac|wav|ogg|flac))($|\?)/i.test(uri);
+};
 
 type Vibe = {
   id: string;
@@ -202,14 +215,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         600_000,
       );
 
+  const audioOnlyPost =
+    (!item.playbackUrl && !!item.audio?.uri && !isVideoAsset(item.media)) ||
+    (!item.playbackUrl && !!item.media && isAudioAsset(item.media));
   const overlayState = overlayReadyMap[item.id] || {};
-  const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl;
+  const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl && !audioOnlyPost;
   const overlayVideoReady = overlayState.video === true || !isVideoAsset(item.media);
   const overlayPairReady = !hasOverlayAudio || (overlayVideoReady && overlayState.audio === true);
   const playSynced = shouldPlay && overlayPairReady && item.id === activeVideoId;
   const shouldPreload = preloadedVideoIds.has(item.id) && overlayPairReady;
   const near = Math.abs(index - currentIndex) <= 1;
-  const textOnlyStory = !item.media && !item.image;
+  const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
 
   const handleProfilePress = useCallback(() => {
     if (item.ownerUid === myUid) {
@@ -808,7 +824,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           </View>
 
           {/* Post Content - Text or Media */}
-          {item.media ? (
+          {(item.media || item.audio?.uri) ? (
             <>
               {/* Post Text (if any) */}
               {item.captionText && (
@@ -874,6 +890,38 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       });
                     }}
                   />
+                </View>
+              ) : audioOnlyPost ? (
+                <View
+                  style={{
+                    marginHorizontal: 0,
+                    width: SCREEN_WIDTH,
+                    minHeight: 180,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: '#0f1724',
+                    paddingVertical: 20,
+                    paddingHorizontal: 14,
+                  }}
+                >
+                  <Text style={{ fontSize: 40 }}>🎵</Text>
+                  <Text style={{ color: '#cfe9ff', marginTop: 6, marginBottom: 12 }}>
+                    Audio Post
+                  </Text>
+                  {RNVideo ? (
+                    <RNVideo
+                      source={{ uri: String(item.audio?.uri || item.media?.uri || '') }}
+                      audioOnly
+                      controls
+                      paused={!playSynced}
+                      style={{ width: SCREEN_WIDTH - 28, height: 64 }}
+                      playInBackground={false}
+                      playWhenInactive={false}
+                      ignoreSilentSwitch="ignore"
+                    />
+                  ) : (
+                    <Text style={{ color: '#9ab4cf' }}>Audio player unavailable</Text>
+                  )}
                 </View>
               ) : (
                 <Pressable onPress={handleImageReveal}>

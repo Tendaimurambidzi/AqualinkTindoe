@@ -128,6 +128,14 @@ const isVideoAsset = (asset: Asset | null | undefined): boolean => {
   if (isLocal && !isImageExt) return true;
   return false;
 };
+
+const isAudioAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = (asset.type || '').toLowerCase();
+  if (t.includes('audio')) return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  return /(\.(mp3|m4a|aac|wav|ogg|flac))($|\?)/i.test(uri);
+};
                     
 type Vibe = {
   id: string;
@@ -2320,10 +2328,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const waves: Vibe[] = [];
         snapshot?.forEach((doc: any) => {
           const data = doc.data();
+          const mediaUri = data.playbackUrl || data.mediaUrl || null;
+          const mediaType = data.mediaType || null;
+          const isAudioPost =
+            data.postType === 'audio' || /^audio\//i.test(String(mediaType || ''));
           waves.push({
             id: doc.id,
-            media: { uri: data.playbackUrl || data.mediaUrl },
-            audio: data.audioUrl ? { uri: data.audioUrl } : null,
+            media:
+              !isAudioPost && mediaUri
+                ? ({ uri: mediaUri, type: mediaType || undefined } as any)
+                : null,
+            audio: data.audioUrl
+              ? { uri: data.audioUrl }
+              : isAudioPost && mediaUri
+              ? { uri: mediaUri }
+              : null,
             captionText: data.captionText || data.caption || data.text || '',
             link: data.link || null,
             playbackUrl: data.playbackUrl,
@@ -3421,15 +3440,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (result.kind !== 'vibe') return null;
     const extra = result.extra || {};
     const uri = extra.mediaUri || extra.playbackUrl || '';
-    if (!uri) return null;
+    const isAudioPost =
+      extra.postType === 'audio' ||
+      /^audio\//i.test(String(extra.mediaType || ''));
+    if (!uri && !extra.audioUrl) return null;
     return {
       id: result.id,
-      media: { uri, type: extra.mediaType || extra.media?.type || 'video/mp4' } as Asset,
+      media:
+        !isAudioPost && uri
+          ? ({ uri, type: extra.mediaType || extra.media?.type || 'video/mp4' } as Asset)
+          : null,
       audio: extra.audioUrl
         ? {
             uri: extra.audioUrl,
             name: extra.audioName || 'Audio',
           }
+        : isAudioPost && uri
+        ? { uri, name: extra.audioName || 'Audio' }
         : null,
       captionText: extra.caption || '',
       playbackUrl: extra.playbackUrl || null,
@@ -5162,6 +5189,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
             const cap = data?.caption || { x: 0, y: 0 };
             const authorName = data?.authorName || null;
+            const mediaType = data?.mediaType || null;
+            const isAudioPost =
+              data?.postType === 'audio' ||
+              /^audio\//i.test(String(mediaType || ''));
             let playbackUrl: string | null =
               data?.playbackUrl || data?.mediaUrl || null;
             let mediaUri: string | null = null;
@@ -5174,12 +5205,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }
             // Show all vibes in public feed (my vibes and other users' vibes)
             const finalUri = playbackUrl || mediaUri;
-            if (!finalUri) continue;
+            if (!finalUri && !data?.audioUrl) continue;
             out.push({
               id: id,
-              media: { uri: finalUri } as any,
-              audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-              captionText: mediaCaption, // Media overlay text
+              media:
+                !isAudioPost && finalUri
+                  ? ({ uri: finalUri, type: mediaType || undefined } as any)
+                  : null,
+              audio: data?.audioUrl
+                ? { uri: String(data.audioUrl) }
+                : isAudioPost && finalUri
+                ? { uri: String(finalUri) }
+                : null,
+              captionText: mediaCaption || feedText,
               link: data.link || null,
               playbackUrl: playbackUrl,
               muxStatus: (data?.muxStatus || null) as any,
@@ -5403,6 +5441,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
           const cap = data?.caption || { x: 0, y: 0 };
           const authorName = data?.authorName || null;
+          const mediaType = data?.mediaType || null;
+          const isAudioPost =
+            data?.postType === 'audio' ||
+            /^audio\//i.test(String(mediaType || ''));
           let playbackUrl: string | null =
             data?.playbackUrl || data?.mediaUrl || null;
           let mediaUri: string | null = null;
@@ -5415,12 +5457,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
           // Show all vibes in public feed (my vibes and other users' vibes)
           const finalUri = playbackUrl || mediaUri;
-          if (!finalUri) continue;
+          if (!finalUri && !data?.audioUrl) continue;
           out.push({
             id: id,
-            media: { uri: finalUri } as any,
-            audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-            captionText: mediaCaption, // Media overlay text
+            media:
+              !isAudioPost && finalUri
+                ? ({ uri: finalUri, type: mediaType || undefined } as any)
+                : null,
+            audio: data?.audioUrl
+              ? { uri: String(data.audioUrl) }
+              : isAudioPost && finalUri
+              ? { uri: String(finalUri) }
+              : null,
+            captionText: mediaCaption || feedText,
             link: data.link || null,
             playbackUrl: playbackUrl,
             muxStatus: (data?.muxStatus || null) as any,
@@ -8742,7 +8791,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
 
   // SD Card Media Picker - All file types (images, videos, audio)
-  const handleSDCardPicker = async () => {
+  const handleSDCardPicker = async (forceAudioOnly: boolean = false) => {
     try {
       const result = await AudioPicker.pickAudio();
       
@@ -8762,6 +8811,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (isAudio) {
         setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
         notifySuccess('Audio attached from SD card');
+      } else if (forceAudioOnly) {
+        Alert.alert('Audio Only', 'Please select an audio file.');
       } else if (isVideo || isImage) {
         setUnifiedPostMedia({
           uri,
@@ -8781,20 +8832,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Error', 'Failed to open SD card picker');
     }
   };
+  const handleUnifiedAudioSelect = async () => {
+    await handleSDCardPicker(true);
+  };
 
   const handleUnifiedPost = async () => {
     const trimmedText = unifiedPostText.trim();
     
-    // If no text and no media, show error
-    if (!trimmedText && !unifiedPostMedia) {
+    // If no text, media, or audio, show error
+    if (!trimmedText && !unifiedPostMedia && !unifiedPostAudio) {
       Alert.alert('Create a Post', 'Please add some text or select media to post.');
-      return;
-    }
-    if (unifiedPostAudio && !unifiedPostMedia) {
-      Alert.alert(
-        'Add Media',
-        'Audio from SD card can be attached only when you also select an image or video.',
-      );
       return;
     }
     
@@ -8815,6 +8862,128 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setUnifiedPostText('');
         setUnifiedPostMedia(null);
         setUnifiedPostAudio(null);
+      } else if (unifiedPostAudio?.uri) {
+        // Handle audio-only post
+        let storageMod: any = null;
+        let firestoreMod: any = null;
+        let authMod: any = null;
+        try {
+          storageMod = require('@react-native-firebase/storage').default;
+        } catch {}
+        try {
+          firestoreMod = require('@react-native-firebase/firestore').default;
+        } catch {}
+        try {
+          authMod = require('@react-native-firebase/auth').default;
+        } catch {}
+        if (!storageMod || !firestoreMod || !authMod) {
+          Alert.alert('Backend not ready', 'Audio posting is unavailable right now.');
+          return;
+        }
+        const a = authMod();
+        const uid = a.currentUser?.uid;
+        if (!uid) {
+          Alert.alert('Sign in required', 'Please sign in to post audio.');
+          return;
+        }
+
+        let audioLocal = String(unifiedPostAudio.uri || '');
+        try {
+          audioLocal = decodeURI(audioLocal);
+        } catch {}
+        if (/^content:/.test(String(audioLocal))) {
+          try {
+            const RNFS = require('react-native-fs');
+            const name = (unifiedPostAudio.name || 'audio').replace(
+              /[^A-Za-z0-9._-]/g,
+              '_',
+            );
+            const ext =
+              /\.(mp3|m4a|aac|wav|ogg|flac)$/i.exec(name)?.[1] || 'm4a';
+            const copyDest = `${RNFS.CachesDirectoryPath}/audio_post_${Date.now()}_${name}.${ext}`;
+            await RNFS.copyFile(String(audioLocal), copyDest);
+            audioLocal = copyDest;
+          } catch (e) {
+            console.warn('Audio-only content copy failed', e);
+          }
+        }
+        if (Platform.OS === 'android' && audioLocal.startsWith('file://')) {
+          audioLocal = audioLocal.replace('file://', '');
+        }
+        if (!audioLocal) {
+          Alert.alert('Upload error', 'Could not access the selected audio file.');
+          return;
+        }
+
+        const audioNameGuess = (unifiedPostAudio.name || 'audio').replace(
+          /[^A-Za-z0-9._-]/g,
+          '_',
+        );
+        const audioExt =
+          (audioNameGuess.includes('.') && audioNameGuess.split('.').pop()) ||
+          /\.(mp3|m4a|aac|wav|ogg|flac)$/i.exec(unifiedPostAudio.uri || '')?.[1] ||
+          'm4a';
+        const audioPath = `posts/${uid}/${Date.now()}_${audioNameGuess}.${audioExt}`;
+        const audioCt = /m4a$/i.test(audioExt)
+          ? 'audio/m4a'
+          : /mp3$/i.test(audioExt)
+          ? 'audio/mpeg'
+          : /aac$/i.test(audioExt)
+          ? 'audio/aac'
+          : /wav$/i.test(audioExt)
+          ? 'audio/wav'
+          : /ogg$/i.test(audioExt)
+          ? 'audio/ogg'
+          : /flac$/i.test(audioExt)
+          ? 'audio/flac'
+          : 'audio/mpeg';
+
+        await storageMod().ref(audioPath).putFile(audioLocal, { contentType: audioCt });
+        const audioDownloadUrl = await storageMod().ref(audioPath).getDownloadURL();
+
+        const docRef = await firestoreMod()
+          .collection('waves')
+          .add({
+            authorId: uid,
+            ownerUid: uid,
+            authorName:
+              profileName ||
+              accountCreationHandle ||
+              a.currentUser?.displayName ||
+              null,
+            mediaPath: audioPath,
+            mediaType: audioCt,
+            postType: 'audio',
+            text: trimmedText,
+            createdAt: firestoreMod.FieldValue?.serverTimestamp
+              ? firestoreMod.FieldValue.serverTimestamp()
+              : new Date(),
+            audioUrl: audioDownloadUrl,
+            muxStatus: 'ready',
+            playbackUrl: null,
+            mediaUrl: audioDownloadUrl,
+            isPublic: true,
+          });
+
+        handlePostPublished({
+          id: docRef?.id || new Date().toISOString(),
+          media: null,
+          audio: { uri: audioDownloadUrl, name: unifiedPostAudio.name },
+          captionText: trimmedText,
+          playbackUrl: null,
+          muxStatus: 'ready',
+          authorName:
+            profileName ||
+            accountCreationHandle ||
+            a.currentUser?.displayName ||
+            null,
+          ownerUid: uid,
+        });
+
+        setUnifiedPostText('');
+        setUnifiedPostMedia(null);
+        setUnifiedPostAudio(null);
+        setShowUnifiedPostModal(false);
       } else {
         // Handle text-only post
         const result = await uploadPost({ 
@@ -9158,7 +9327,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const finalCaption = (waveCaption || textComposerText || '').trim();
     setReleasing(true);
     let uploadedPath: string | null = null;
+    let videoDownloadUrl: string | null = null;
     let audioDownloadUrl: string | null = null;
+    let overlayAudioStoragePath: string | null = null;
     let serverDocId: string | null = null;
     let storageMod: any = null;
     let firestoreMod: any = null;
@@ -9210,6 +9381,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               muxStatus: 'ready',
               playbackUrl: null,
               mediaUrl: capturedMedia.uri || null,
+              mediaType: capturedMedia.type || null,
+              postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
               isPublic: true,
               devSkipStorage: true,
             });
@@ -9287,7 +9460,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .ref(filePath)
           .putFile(uploadPath, { contentType: uploadContentType });
         uploadedPath = filePath;
-        let videoDownloadUrl: string | null = null;
         try {
           videoDownloadUrl = await storageMod().ref(filePath).getDownloadURL();
         } catch {}
@@ -9360,6 +9532,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               audioDownloadUrl = await storageMod()
                 .ref(audioPath)
                 .getDownloadURL();
+              overlayAudioStoragePath = audioPath;
             }
           }
         }
@@ -9382,13 +9555,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxMode: null,
             muxVideoStrategy: null,
             muxFps: null,
-            muxStatus: audioDownloadUrl ? 'pending' : 'ready',
-            playbackUrl: audioDownloadUrl ? null : videoDownloadUrl || null,
+            muxStatus: overlayAudioStoragePath ? 'pending' : 'ready',
+            playbackUrl: overlayAudioStoragePath ? null : videoDownloadUrl || null,
             mediaUrl: videoDownloadUrl || null,
+            mediaType: type || null,
+            postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
             isPublic: true,
-            mergeRequested: !!audioDownloadUrl,
+            mergeRequested: !!overlayAudioStoragePath,
             mergeSourceVideoPath: filePath,
-            mergeOverlayAudioPath: audioDownloadUrl || null,
+            mergeOverlayAudioPath: overlayAudioStoragePath || null,
           });
         serverDocId = docRef?.id || null;
         // Notify backend that a wave was posted (and request server merge if overlay exists)
@@ -9416,10 +9591,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 a.currentUser?.displayName ||
                 null,
             };
-            if (audioDownloadUrl) {
+            if (overlayAudioStoragePath) {
               payload.merge = {
                 sourceVideoPath: filePath,
-                overlayAudioPath: audioDownloadUrl,
+                overlayAudioPath: overlayAudioStoragePath,
               };
             }
             fetch(`${backendBase}/notify/wave`, {
@@ -9460,8 +9635,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? { uri: audioDownloadUrl, name: attachedAudio?.name }
           : null,
         captionText: finalCaption,
-        playbackUrl: null,
-        muxStatus: audioDownloadUrl ? 'pending' : 'ready',
+        playbackUrl: overlayAudioStoragePath ? null : videoDownloadUrl,
+        muxStatus: overlayAudioStoragePath ? 'pending' : 'ready',
         authorName: profileName || accountCreationHandle || null,
         ownerUid: (() => {
           try {
@@ -11902,6 +12077,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 >
                   <Text style={styles.logbookActionText}>📁</Text>
                 </Pressable>
+                <Pressable
+                  onPress={handleUnifiedAudioSelect}
+                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                >
+                  <Text style={styles.logbookActionText}>🎵</Text>
+                </Pressable>
               </View>
               <View style={styles.textComposerButtonRow}>
                 <Pressable
@@ -11922,7 +12103,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <ActivityIndicator color="white" />
                   ) : (
                     <Text style={styles.textComposerButtonText}>
-                      {unifiedPostMedia ? 'Post with Media' : 'Post Text'}
+                      {unifiedPostMedia
+                        ? 'Post with Media'
+                        : unifiedPostAudio
+                        ? 'Post Audio'
+                        : 'Post Text'}
                     </Text>
                   )}
                 </Pressable>
@@ -18669,7 +18854,11 @@ function PostDetailScreen({ route, navigation }: any) {
   const renderPostContent = () => {
     try {
       const hasVideo = post.playbackUrl || (post.media && isVideoAsset(post.media));
-      const hasImage = post.media && !isVideoAsset(post.media);
+      const hasAudioOnly =
+        (!post.playbackUrl && !!post.audio?.uri) ||
+        (!post.playbackUrl && post.media && isAudioAsset(post.media));
+      const hasImage =
+        post.media && !isVideoAsset(post.media) && !isAudioAsset(post.media);
       const hasText = post.captionText || post.link;
                     
       return (
@@ -18729,6 +18918,34 @@ function PostDetailScreen({ route, navigation }: any) {
                     console.log('Image loaded with dimensions:', width, height);
                   }
                 }}
+              />
+            </View>
+          ) : hasAudioOnly && RNVideo ? (
+            <View
+              style={{
+                width: SCREEN_WIDTH,
+                minHeight: 220,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#0f1724',
+                paddingHorizontal: 20,
+              }}
+            >
+              <Text style={{ fontSize: 42, marginBottom: 10 }}>🎵</Text>
+              <Text style={{ color: '#cfe9ff', marginBottom: 10 }}>
+                Audio post
+              </Text>
+              <RNVideo
+                source={{
+                  uri: String(post.audio?.uri || post.media?.uri || ''),
+                }}
+                audioOnly
+                controls
+                paused={!isFocused}
+                style={{ width: SCREEN_WIDTH - 40, height: 64 }}
+                playInBackground={false}
+                playWhenInactive={false}
+                ignoreSilentSwitch="ignore"
               />
             </View>
           ) : null}
