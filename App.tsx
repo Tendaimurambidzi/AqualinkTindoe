@@ -9423,6 +9423,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const result = await AudioPicker.pickAudio();
       if (result && result.uri) {
+        const fileName =
+          result.name || String(result.uri).split('/').pop() || '';
+        const mimeType = String(result.type || '');
+        const isAudio =
+          mimeType.startsWith('audio/') ||
+          /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
+        if (!isAudio) {
+          Alert.alert('Audio only', 'Please select an audio file for Ocean Melodies.');
+          return;
+        }
         setAttachedAudio({ uri: result.uri, name: result.name || undefined });
         setShowAudioModal(false);
         setAudioUrlInput('');
@@ -9650,7 +9660,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Set contentType to help ExoPlayer/iOS pick the right pipeline
         const uploadPath = localPath;
         const uploadContentType =
-          type && type.startsWith('video/') ? type : 'video/mp4';
+          type && type.startsWith('video/')
+            ? type
+            : type && type.startsWith('image/')
+            ? type
+            : isVideoAsset(capturedMedia)
+            ? 'video/mp4'
+            : 'image/jpeg';
                     
         await storageMod()
           .ref(filePath)
@@ -9732,6 +9748,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }
           }
         }
+        const canServerMergeOverlay =
+          !!overlayAudioStoragePath && isVideoAsset(capturedMedia);
         const docRef = await firestoreMod()
           .collection('waves')
           .add({
@@ -9751,18 +9769,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxMode: null,
             muxVideoStrategy: null,
             muxFps: null,
-            muxStatus: overlayAudioStoragePath ? 'pending' : 'ready',
+            muxStatus: canServerMergeOverlay ? 'pending' : 'ready',
             playbackUrl:
-              overlayAudioStoragePath || !isVideoAsset(capturedMedia)
+              canServerMergeOverlay || !isVideoAsset(capturedMedia)
                 ? null
                 : videoDownloadUrl || null,
             mediaUrl: videoDownloadUrl || null,
             mediaType: type || null,
             postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
             isPublic: true,
-            mergeRequested: !!overlayAudioStoragePath,
-            mergeSourceVideoPath: filePath,
-            mergeOverlayAudioPath: overlayAudioStoragePath || null,
+            mergeRequested: canServerMergeOverlay,
+            mergeSourceVideoPath: canServerMergeOverlay ? filePath : null,
+            mergeOverlayAudioPath: canServerMergeOverlay
+              ? overlayAudioStoragePath
+              : null,
           });
         serverDocId = docRef?.id || null;
         // Notify backend that a wave was posted (and request server merge if overlay exists)
@@ -9790,7 +9810,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 a.currentUser?.displayName ||
                 null,
             };
-            if (overlayAudioStoragePath) {
+            if (canServerMergeOverlay) {
               payload.merge = {
                 sourceVideoPath: filePath,
                 overlayAudioPath: overlayAudioStoragePath,
@@ -9835,10 +9855,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           : null,
         captionText: finalCaption,
         playbackUrl:
-          overlayAudioStoragePath || !isVideoAsset(capturedMedia)
+          (overlayAudioStoragePath && isVideoAsset(capturedMedia)) ||
+          !isVideoAsset(capturedMedia)
             ? null
             : videoDownloadUrl,
-        muxStatus: overlayAudioStoragePath ? 'pending' : 'ready',
+        muxStatus:
+          overlayAudioStoragePath && isVideoAsset(capturedMedia)
+            ? 'pending'
+            : 'ready',
         authorName: profileName || accountCreationHandle || null,
         ownerUid: (() => {
           try {

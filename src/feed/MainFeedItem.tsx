@@ -251,12 +251,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const audioOnlyPost =
     (!item.playbackUrl && !!item.audio?.uri && !isVideoAsset(item.media)) ||
     (!item.playbackUrl && !!item.media && isAudioAsset(item.media));
-  const overlayState = overlayReadyMap[item.id] || {};
   const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl && !audioOnlyPost;
-  const overlayVideoReady = overlayState.video === true || !isVideoAsset(item.media);
-  const overlayPairReady = !hasOverlayAudio || (overlayVideoReady && overlayState.audio === true);
-  const playSynced = shouldPlay && overlayPairReady && item.id === activeVideoId;
-  const shouldPreload = preloadedVideoIds.has(item.id) && overlayPairReady;
+  const playSynced = shouldPlay && item.id === activeVideoId;
+  const shouldPreload = preloadedVideoIds.has(item.id);
   const near = Math.abs(index - currentIndex) <= 1;
   const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
 
@@ -907,6 +904,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     style={videoStyleFor(item.id)}
                     resizeMode={'contain'}
                     paused={!playSynced}
+                    muted={hasOverlayAudio}
                     playInBackground={false}
                     isActive={item.id === activeVideoId}
                     videoId={item.id}
@@ -923,6 +921,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       });
                     }}
                   />
+                  {hasOverlayAudio && RNVideo ? (
+                    <RNVideo
+                      source={{ uri: String(item.audio?.uri || '') }}
+                      audioOnly
+                      paused={!playSynced}
+                      style={{ width: 1, height: 1, opacity: 0 }}
+                      playInBackground={false}
+                      playWhenInactive={false}
+                      ignoreSilentSwitch="ignore"
+                    />
+                  ) : null}
                 </View>
               ) : audioOnlyPost ? (
                 <Pressable
@@ -992,8 +1001,19 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                           Tap to reveal
                         </Text>
                       </View>
-                    )}
+                      )}
                   </View>
+                  {hasOverlayAudio && RNVideo ? (
+                    <RNVideo
+                      source={{ uri: String(item.audio?.uri || '') }}
+                      audioOnly
+                      paused={!playSynced}
+                      style={{ width: 1, height: 1, opacity: 0 }}
+                      playInBackground={false}
+                      playWhenInactive={false}
+                      ignoreSilentSwitch="ignore"
+                    />
+                  ) : null}
                 </Pressable>
               )}
             </>
