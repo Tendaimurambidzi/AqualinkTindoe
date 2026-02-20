@@ -2036,6 +2036,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     {
                       online: false,
                       lastSeen: firestoreMod.Timestamp.now(),
+                      lastActiveAt: firestoreMod.Timestamp.now(),
                     },
                     { merge: true },
                   );
@@ -2059,6 +2060,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   .set(
                     {
                       online: true,
+                      lastActiveAt: firestoreMod.Timestamp.now(),
                     },
                     { merge: true },
                   );
@@ -2086,6 +2088,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         database().ref(`/presence/${user.uid}`).update({ 
           online: true, 
           lastSeen: null,
+          lastActiveAt: database.ServerValue.TIMESTAMP,
           lastHeartbeat: database.ServerValue.TIMESTAMP 
         }).catch(err => console.log('Heartbeat update failed:', err));
       }
@@ -19859,21 +19862,38 @@ const App: React.FC = () => {
           const uid = u.uid;
           if (uid !== previousUidRef.current) {
             if (previousUidRef.current) {
-              database().ref(`/presence/${previousUidRef.current}`).set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+              database().ref(`/presence/${previousUidRef.current}`).set({
+                online: false,
+                lastSeen: database.ServerValue.TIMESTAMP,
+                lastActiveAt: database.ServerValue.TIMESTAMP,
+                lastHeartbeat: database.ServerValue.TIMESTAMP,
+              });
               firestore().doc(`users/${previousUidRef.current}`).set(
                 {
                   online: false,
                   lastSeen: firestore.FieldValue.serverTimestamp(),
+                  lastActiveAt: firestore.FieldValue.serverTimestamp(),
                 },
                 { merge: true },
               ).catch(() => {});
             }
             const presenceRef = database().ref(`/presence/${uid}`);
-            presenceRef.set({ online: true, lastSeen: null });
-            presenceRef.onDisconnect().set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+            presenceRef.set({
+              online: true,
+              lastSeen: null,
+              lastActiveAt: database.ServerValue.TIMESTAMP,
+              lastHeartbeat: database.ServerValue.TIMESTAMP,
+            });
+            presenceRef.onDisconnect().set({
+              online: false,
+              lastSeen: database.ServerValue.TIMESTAMP,
+              lastActiveAt: database.ServerValue.TIMESTAMP,
+              lastHeartbeat: database.ServerValue.TIMESTAMP,
+            });
             firestore().doc(`users/${uid}`).set(
               {
                 online: true,
+                lastActiveAt: firestore.FieldValue.serverTimestamp(),
               },
               { merge: true },
             ).catch(() => {});
@@ -19881,11 +19901,17 @@ const App: React.FC = () => {
           }
         } else {
           if (previousUidRef.current) {
-            database().ref(`/presence/${previousUidRef.current}`).set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+            database().ref(`/presence/${previousUidRef.current}`).set({
+              online: false,
+              lastSeen: database.ServerValue.TIMESTAMP,
+              lastActiveAt: database.ServerValue.TIMESTAMP,
+              lastHeartbeat: database.ServerValue.TIMESTAMP,
+            });
             firestore().doc(`users/${previousUidRef.current}`).set(
               {
                 online: false,
                 lastSeen: firestore.FieldValue.serverTimestamp(),
+                lastActiveAt: firestore.FieldValue.serverTimestamp(),
               },
               { merge: true },
             ).catch(() => {});

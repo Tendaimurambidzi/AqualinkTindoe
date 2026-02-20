@@ -231,55 +231,88 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
   useEffect(() => {
     const ownerUid = item.ownerUid;
-    if (!ownerUid) {
-      setIsHereNow(false);
-      setStatus('');
-      return;
-    }
-
-    const fallbackLastSeen = userData[ownerUid]?.lastSeen || null;
-    let firestoreOnline = userData[ownerUid]?.online === true;
-    let rtdbOnline = false;
-    let firestoreLastSeen: any = fallbackLastSeen;
-    let rtdbLastSeen: any = null;
-
-    const chooseMostRecent = (a: any, b: any) => {
-      const toMillis = (input: any): number => {
-        if (!input) return 0;
-        if (typeof input?.toDate === 'function') return input.toDate().getTime();
-        if (typeof input === 'number') return input < 1e12 ? input * 1000 : input;
-        const d = new Date(input);
-        return Number.isNaN(d.getTime()) ? 0 : d.getTime();
-      };
-      return toMillis(a) >= toMillis(b) ? a : b;
-    };
-
-    const refreshStatus = () => {
-      const online = firestoreOnline || rtdbOnline;
-      if (online) {
-        setIsHereNow(true);
-        setStatus('Online');
-        return;
-      }
-      const lastSeen = chooseMostRecent(firestoreLastSeen, rtdbLastSeen);
-      const exact =
-        formatPresenceLastSeenExact(lastSeen) ||
-        formatPresenceLastSeenExact((item as any)?.createdAt || (item as any)?.timestamp);
-      setIsHereNow(false);
-      setStatus(exact ? `Last Seen: ${exact}` : 'Last Seen: --');
-    };
     if (ownerUid === myUid) {
       setIsHereNow(false);
       setStatus('');
       return;
     }
 
+    const ONLINE_GRACE_MS = 60 * 1000;
+    const postFallbackTs = (item as any)?.createdAt || (item as any)?.timestamp || new Date();
+
+    const toMillis = (input: any): number => {
+      if (!input) return 0;
+      if (typeof input?.toDate === 'function') return input.toDate().getTime();
+      if (typeof input === 'number') return input < 1e12 ? input * 1000 : input;
+      if (typeof input === 'object') {
+        const seconds =
+          typeof input.seconds === 'number'
+            ? input.seconds
+            : typeof input._seconds === 'number'
+            ? input._seconds
+            : null;
+        const nanoseconds =
+          typeof input.nanoseconds === 'number'
+            ? input.nanoseconds
+            : typeof input._nanoseconds === 'number'
+            ? input._nanoseconds
+            : 0;
+        if (seconds !== null) return seconds * 1000 + Math.floor(nanoseconds / 1e6);
+      }
+      const d = new Date(input);
+      return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+    };
+
+    if (!ownerUid) {
+      const exact = formatPresenceLastSeenExact(postFallbackTs);
+      setIsHereNow(false);
+      setStatus(exact ? `Last Seen: ${exact}` : `Last Seen: ${formatPresenceLastSeenExact(new Date())}`);
+      return;
+    }
+
+    const fallbackLastSeen = userData[ownerUid]?.lastSeen || postFallbackTs;
+    let firestoreOnline = userData[ownerUid]?.online === true;
+    let rtdbOnline = false;
+    let firestoreLastSeen: any = fallbackLastSeen;
+    let rtdbLastSeen: any = null;
+    let firestoreLastActiveAt: any = null;
+    let rtdbLastActiveAt: any = null;
+
+    const chooseMostRecent = (a: any, b: any) => {
+      return toMillis(a) >= toMillis(b) ? a : b;
+    };
+
+    const refreshStatus = () => {
+      const mostRecentLastSeen = chooseMostRecent(firestoreLastSeen, rtdbLastSeen);
+      const mostRecentActive = chooseMostRecent(firestoreLastActiveAt, rtdbLastActiveAt);
+      const referenceActiveTs = mostRecentActive || mostRecentLastSeen;
+      const onlineByFreshSignal =
+        (rtdbOnline || firestoreOnline) &&
+        toMillis(referenceActiveTs) > 0 &&
+        Date.now() - toMillis(referenceActiveTs) <= ONLINE_GRACE_MS;
+      const online = onlineByFreshSignal;
+      if (online) {
+        setIsHereNow(true);
+        setStatus('Here Now!');
+        return;
+      }
+      const resolvedLastSeen = mostRecentLastSeen || mostRecentActive || postFallbackTs;
+      const exact =
+        formatPresenceLastSeenExact(resolvedLastSeen) ||
+        formatPresenceLastSeenExact(postFallbackTs) ||
+        formatPresenceLastSeenExact(new Date());
+      setIsHereNow(false);
+      setStatus(`Away Since: ${exact}`);
+    };
+
     refreshStatus();
+    const freshnessTimer = setInterval(refreshStatus, 30000);
 
     const unsubscribeFs = firestore().doc(`users/${ownerUid}`).onSnapshot((doc) => {
       const data = doc?.data() || {};
       firestoreOnline = data?.online === true;
       firestoreLastSeen = data?.lastSeen || fallbackLastSeen;
+      firestoreLastActiveAt = data?.lastActiveAt || data?.lastHeartbeat || null;
       refreshStatus();
     });
     const presenceRef = database().ref(`/presence/${ownerUid}`);
@@ -287,10 +320,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       const val = snap.val() || {};
       rtdbOnline = val?.online === true;
       rtdbLastSeen = val?.lastSeen || null;
+      rtdbLastActiveAt = val?.lastActiveAt || val?.lastHeartbeat || null;
       refreshStatus();
     });
 
     return () => {
+      clearInterval(freshnessTimer);
       unsubscribeFs();
       presenceRef.off('value', onPresence);
     };
@@ -319,8 +354,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
   const mediaEdits = item.mediaEdits || null;
   const fallbackAwayText = (() => {
-    const exact = formatPresenceLastSeenExact((item as any)?.createdAt || (item as any)?.timestamp);
-    return exact ? `Last Seen: ${exact}` : 'Last Seen: --';
+    const exact =
+      formatPresenceLastSeenExact((item as any)?.createdAt || (item as any)?.timestamp) ||
+      formatPresenceLastSeenExact(new Date());
+    return `Away Since: ${exact}`;
   })();
 
   const filterOverlayStyle = (() => {
@@ -1306,8 +1343,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
           {item.ownerUid !== myUid && (
-            <Text style={{ fontSize: 14, color: isHereNow ? '#16a34a' : '#1f2937', marginRight: 20, fontWeight: '700' }}>
-              {isHereNow ? 'Online' : (status || fallbackAwayText)}
+            <Text style={{ fontSize: 14, color: isHereNow ? '#16a34a' : '#6b7280', marginRight: 20, fontWeight: '700' }}>
+              {isHereNow ? 'Here Now!' : (status || fallbackAwayText)}
             </Text>
           )}
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
