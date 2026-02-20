@@ -42,8 +42,14 @@ type Vibe = {
   mediaEdits?: {
     filter?: 'none' | 'warm' | 'cool' | 'mono' | 'vivid';
     brightness?: number;
+    contrast?: number;
+    vignette?: number;
     mirror?: boolean;
-    stickers?: Array<{ id: string; emoji: string; x: number; y: number; size: number }>;
+    flipVertical?: boolean;
+    playbackRate?: number;
+    volumeBoost?: number;
+    voiceMode?: 'normal' | 'chipmunk' | 'deep' | 'robot';
+    stickers?: Array<{ id: string; emoji: string; x: number; y: number; size: number; rotation?: number }>;
   } | null;
   captionText: string;
   playbackUrl?: string | null;
@@ -232,38 +238,63 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
 
     const fallbackLastSeen = userData[ownerUid]?.lastSeen || null;
-    const setAwayState = (timestamp: any) => {
-      const exact = formatPresenceLastSeenExact(timestamp);
-      setIsHereNow(false);
-      setStatus(exact ? `Away Since: ${exact}` : '');
+    let firestoreOnline = userData[ownerUid]?.online === true;
+    let rtdbOnline = false;
+    let firestoreLastSeen: any = fallbackLastSeen;
+    let rtdbLastSeen: any = null;
+
+    const chooseMostRecent = (a: any, b: any) => {
+      const toMillis = (input: any): number => {
+        if (!input) return 0;
+        if (typeof input?.toDate === 'function') return input.toDate().getTime();
+        if (typeof input === 'number') return input < 1e12 ? input * 1000 : input;
+        const d = new Date(input);
+        return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+      };
+      return toMillis(a) >= toMillis(b) ? a : b;
     };
 
+    const refreshStatus = () => {
+      const online = firestoreOnline || rtdbOnline;
+      if (online) {
+        setIsHereNow(true);
+        setStatus('Online');
+        return;
+      }
+      const lastSeen = chooseMostRecent(firestoreLastSeen, rtdbLastSeen);
+      const exact =
+        formatPresenceLastSeenExact(lastSeen) ||
+        formatPresenceLastSeenExact((item as any)?.createdAt || (item as any)?.timestamp);
+      setIsHereNow(false);
+      setStatus(exact ? `Last Seen: ${exact}` : 'Last Seen: --');
+    };
     if (ownerUid === myUid) {
       setIsHereNow(false);
       setStatus('');
       return;
     }
 
-    // Single source of truth: users/{uid} in Firestore.
-    if (userData[ownerUid]?.online === true) {
-      setIsHereNow(true);
-      setStatus('Here Now!');
-    } else {
-      setAwayState(fallbackLastSeen);
-    }
+    refreshStatus();
 
-    const unsubscribe = firestore().doc(`users/${ownerUid}`).onSnapshot((doc) => {
+    const unsubscribeFs = firestore().doc(`users/${ownerUid}`).onSnapshot((doc) => {
       const data = doc?.data() || {};
-      if (data?.online === true) {
-        setIsHereNow(true);
-        setStatus('Here Now!');
-        return;
-      }
-      setAwayState(data?.lastSeen || fallbackLastSeen);
+      firestoreOnline = data?.online === true;
+      firestoreLastSeen = data?.lastSeen || fallbackLastSeen;
+      refreshStatus();
+    });
+    const presenceRef = database().ref(`/presence/${ownerUid}`);
+    const onPresence = presenceRef.on('value', snap => {
+      const val = snap.val() || {};
+      rtdbOnline = val?.online === true;
+      rtdbLastSeen = val?.lastSeen || null;
+      refreshStatus();
     });
 
-    return unsubscribe;
-  }, [item.ownerUid, myUid, userData]);
+    return () => {
+      unsubscribeFs();
+      presenceRef.off('value', onPresence);
+    };
+  }, [item.ownerUid, myUid, userData, (item as any)?.createdAt, (item as any)?.timestamp]);
 
   // Calculate play conditions
   const isAnyModalOpen = showMakeWaves || showAudioModal || !!capturedMedia || showLive;
@@ -287,6 +318,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const near = Math.abs(index - currentIndex) <= 1;
   const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
   const mediaEdits = item.mediaEdits || null;
+  const fallbackAwayText = (() => {
+    const exact = formatPresenceLastSeenExact((item as any)?.createdAt || (item as any)?.timestamp);
+    return exact ? `Last Seen: ${exact}` : 'Last Seen: --';
+  })();
 
   const filterOverlayStyle = (() => {
     const f = mediaEdits?.filter || 'none';
@@ -304,6 +339,23 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             Number(mediaEdits.brightness) > 0
               ? `rgba(255,255,255,${Math.min(0.4, Number(mediaEdits.brightness) / 100)})`
               : `rgba(0,0,0,${Math.min(0.45, Math.abs(Number(mediaEdits.brightness)) / 90)})`,
+        }
+      : null;
+
+  const contrastOverlayStyle =
+    mediaEdits && Number(mediaEdits.contrast || 0) !== 0
+      ? {
+          backgroundColor:
+            Number(mediaEdits.contrast) > 0
+              ? `rgba(255,255,255,${Math.min(0.22, Number(mediaEdits.contrast) / 260)})`
+              : `rgba(0,0,0,${Math.min(0.28, Math.abs(Number(mediaEdits.contrast)) / 220)})`,
+        }
+      : null;
+
+  const vignetteOverlayStyle =
+    mediaEdits && Number(mediaEdits.vignette || 0) > 0
+      ? {
+          backgroundColor: `rgba(0,0,0,${Math.min(0.34, Number(mediaEdits.vignette) / 180)})`,
         }
       : null;
 
@@ -956,11 +1008,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       {
                         transform: [
                           { scaleX: mediaEdits?.mirror ? -1 : 1 },
+                          { scaleY: mediaEdits?.flipVertical ? -1 : 1 },
                         ],
                       },
                     ]}
                     resizeMode={'contain'}
                     paused={!playSynced}
+                    playbackRate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
+                    audioVolume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
                     muted={hasOverlayAudio}
                     playInBackground={false}
                     isActive={item.id === activeVideoId}
@@ -990,6 +1045,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       style={[StyleSheet.absoluteFillObject as any, brightnessOverlayStyle]}
                     />
                   ) : null}
+                  {contrastOverlayStyle ? (
+                    <View
+                      pointerEvents="none"
+                      style={[StyleSheet.absoluteFillObject as any, contrastOverlayStyle]}
+                    />
+                  ) : null}
+                  {vignetteOverlayStyle ? (
+                    <View
+                      pointerEvents="none"
+                      style={[StyleSheet.absoluteFillObject as any, vignetteOverlayStyle]}
+                    />
+                  ) : null}
                   {(mediaEdits?.stickers || []).map(s => (
                     <Text
                       key={s.id}
@@ -1002,6 +1069,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         transform: [
                           { translateX: -(s.size || 34) / 2 },
                           { translateY: -(s.size || 34) / 2 },
+                          { rotate: `${s.rotation || 0}deg` },
                         ],
                       }}
                     >
@@ -1013,6 +1081,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       source={{ uri: String(item.audio?.uri || '') }}
                       audioOnly
                       paused={!playSynced}
+                      rate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
                       style={{ width: 1, height: 1, opacity: 0 }}
                       playInBackground={false}
                       playWhenInactive={false}
@@ -1041,6 +1111,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       audioOnly
                       controls={audioControlsVisible}
                       paused={!playSynced}
+                      rate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
                       style={{ width: SCREEN_WIDTH - 28, height: 64 }}
                       playInBackground={false}
                       playWhenInactive={false}
@@ -1075,6 +1147,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         {
                           transform: [
                             { scaleX: mediaEdits?.mirror ? -1 : 1 },
+                            { scaleY: mediaEdits?.flipVertical ? -1 : 1 },
                           ],
                         },
                       ]}
@@ -1092,6 +1165,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         style={[StyleSheet.absoluteFillObject as any, brightnessOverlayStyle]}
                       />
                     ) : null}
+                    {contrastOverlayStyle ? (
+                      <View
+                        pointerEvents="none"
+                        style={[StyleSheet.absoluteFillObject as any, contrastOverlayStyle]}
+                      />
+                    ) : null}
+                    {vignetteOverlayStyle ? (
+                      <View
+                        pointerEvents="none"
+                        style={[StyleSheet.absoluteFillObject as any, vignetteOverlayStyle]}
+                      />
+                    ) : null}
                     {(mediaEdits?.stickers || []).map(s => (
                       <Text
                         key={s.id}
@@ -1104,6 +1189,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                           transform: [
                             { translateX: -(s.size || 34) / 2 },
                             { translateY: -(s.size || 34) / 2 },
+                            { rotate: `${s.rotation || 0}deg` },
                           ],
                         }}
                       >
@@ -1219,9 +1305,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
-          {item.ownerUid !== myUid && !!status && (
-            <Text style={{ fontSize: 14, color: isHereNow ? '#16a34a' : 'grey', marginRight: 20 }}>
-              {status}
+          {item.ownerUid !== myUid && (
+            <Text style={{ fontSize: 14, color: isHereNow ? '#16a34a' : '#1f2937', marginRight: 20, fontWeight: '700' }}>
+              {isHereNow ? 'Online' : (status || fallbackAwayText)}
             </Text>
           )}
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}

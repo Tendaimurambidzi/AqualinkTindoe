@@ -78,6 +78,24 @@ export const formatPresenceLastSeenExact = (timestamp) => {
   let date: Date;
   if (timestamp.toDate) {
     date = timestamp.toDate();
+  } else if (typeof timestamp === 'object' && timestamp) {
+    const seconds =
+      typeof timestamp.seconds === 'number'
+        ? timestamp.seconds
+        : typeof timestamp._seconds === 'number'
+        ? timestamp._seconds
+        : null;
+    const nanoseconds =
+      typeof timestamp.nanoseconds === 'number'
+        ? timestamp.nanoseconds
+        : typeof timestamp._nanoseconds === 'number'
+        ? timestamp._nanoseconds
+        : 0;
+    if (seconds !== null) {
+      date = new Date(seconds * 1000 + Math.floor(nanoseconds / 1e6));
+    } else {
+      date = new Date(timestamp);
+    }
   } else if (typeof timestamp === 'number') {
     const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp;
     date = new Date(ms);

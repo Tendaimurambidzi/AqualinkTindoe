@@ -2408,7 +2408,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             captionText: data.captionText || data.caption || data.text || '',
             link: data.link || null,
             playbackUrl: data.playbackUrl,
-            mediaEdits: data.mediaEdits || null,
+            mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
             muxStatus: data.muxStatus,
             authorName: data.authorName,
             ownerUid: data.ownerUid,
@@ -3411,7 +3411,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             mediaUri: data.mediaUrl || null,
             muxStatus: data.muxStatus || null,
             audioUrl: data.audioUrl || null,
-            mediaEdits: data.mediaEdits || null,
+            mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
           },
         });
       });
@@ -3524,7 +3524,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ? { uri, name: extra.audioName || 'Audio' }
         : null,
       captionText: extra.caption || '',
-      mediaEdits: extra.mediaEdits || null,
+      mediaEdits: extra.mediaEdits || extra.editorState || extra.edits || null,
       playbackUrl: extra.playbackUrl || null,
       muxStatus: extra.muxStatus || null,
       authorName: extra.authorName || null,
@@ -5290,7 +5290,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               captionText: mediaCaption || feedText,
               link: data.link || null,
               playbackUrl: playbackUrl,
-              mediaEdits: data?.mediaEdits || null,
+              mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
               muxStatus: (data?.muxStatus || null) as any,
               authorName,
               ownerUid: (data?.ownerUid || data?.authorId || null) as any,
@@ -5543,7 +5543,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             captionText: mediaCaption || feedText,
             link: data.link || null,
             playbackUrl: playbackUrl,
-            mediaEdits: data?.mediaEdits || null,
+            mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
             muxStatus: (data?.muxStatus || null) as any,
             authorName,
             ownerUid: (data?.ownerUid || data?.authorId || null) as any,
@@ -9655,6 +9655,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
               isPublic: true,
               mediaEdits: capturedMediaEdits,
+              editorState: capturedMediaEdits,
+              edits: capturedMediaEdits,
               devSkipStorage: true,
             });
           serverDocId = docRef?.id || null;
@@ -9844,6 +9846,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
             isPublic: true,
             mediaEdits: capturedMediaEdits,
+            editorState: capturedMediaEdits,
+            edits: capturedMediaEdits,
             mergeRequested: canServerMergeOverlay,
             mergeSourceVideoPath: canServerMergeOverlay ? filePath : null,
             mergeOverlayAudioPath: canServerMergeOverlay
@@ -14693,12 +14697,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             {
                               scaleX: capturedMediaEdits.mirror ? -1 : 1,
                             },
+                            {
+                              scaleY: capturedMediaEdits.flipVertical ? -1 : 1,
+                            },
                           ],
                         },
                       ]}
                       resizeMode={'contain'}
                       repeat
                       paused={isPaused || !editorPlaying}
+                      rate={Math.max(0.5, Math.min(2, Number(capturedMediaEdits.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(capturedMediaEdits.volumeBoost || 1)))}
                       muted={true} // Mute video preview by default
                       disableFocus={true}
                       playInBackground={false}
@@ -14728,6 +14737,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       audioOnly
                       repeat
                       paused={isPaused || !editorPlaying || !audioUnpaused}
+                      rate={Math.max(0.5, Math.min(2, Number(capturedMediaEdits.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(capturedMediaEdits.volumeBoost || 1)))}
                       disableFocus={true}
                       playInBackground={false}
                       playWhenInactive={false}
@@ -14755,6 +14766,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           {
                             scaleX: capturedMediaEdits.mirror ? -1 : 1,
                           },
+                          {
+                            scaleY: capturedMediaEdits.flipVertical ? -1 : 1,
+                          },
                         ],
                       },
                     ]}
@@ -14766,6 +14780,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       audioOnly
                       repeat
                       paused={isPaused || !editorPlaying}
+                      rate={Math.max(0.5, Math.min(2, Number(capturedMediaEdits.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(capturedMediaEdits.volumeBoost || 1)))}
                       playInBackground={false}
                       playWhenInactive={false}
                       volume={1.0}
@@ -14819,6 +14835,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     ]}
                   />
                 )}
+                {Number(capturedMediaEdits.contrast || 0) !== 0 && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      {
+                        backgroundColor:
+                          Number(capturedMediaEdits.contrast) > 0
+                            ? `rgba(255,255,255,${Math.min(0.22, Number(capturedMediaEdits.contrast) / 260)})`
+                            : `rgba(0,0,0,${Math.min(0.28, Math.abs(Number(capturedMediaEdits.contrast)) / 220)})`,
+                      },
+                    ]}
+                  />
+                )}
+                {Number(capturedMediaEdits.vignette || 0) > 0 && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      {
+                        backgroundColor: `rgba(0,0,0,${Math.min(0.34, Number(capturedMediaEdits.vignette) / 180)})`,
+                      },
+                    ]}
+                  />
+                )}
                 {capturedMediaEdits.stickers.map(s => (
                   <Text
                     key={s.id}
@@ -14831,6 +14872,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       transform: [
                         { translateX: -s.size / 2 },
                         { translateY: -s.size / 2 },
+                        { rotate: `${s.rotation || 0}deg` },
                       ],
                     }}
                   >

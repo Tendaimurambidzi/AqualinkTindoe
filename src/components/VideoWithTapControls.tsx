@@ -54,6 +54,8 @@ type Props = {
   onProgress?: (data: OnProgressData) => void;
   onPlay?: () => void;
   muted?: boolean;
+  playbackRate?: number;
+  audioVolume?: number;
   resizeMode?: string;
   isActive?: boolean;
   onTap?: () => void;
@@ -85,6 +87,8 @@ const VideoWithTapControls: React.FC<Props> = ({
   onProgress,
   onPlay,
   muted,
+  playbackRate = 1,
+  audioVolume = 1,
   resizeMode = 'contain',
   isActive = true,
   onTap,
@@ -336,6 +340,8 @@ const VideoWithTapControls: React.FC<Props> = ({
         ignoreSilentSwitch={ignoreSilentSwitch}
         controls={controls}
         muted={isMuted}
+        rate={playbackRate}
+        volume={audioVolume}
         preload="auto"
         onLoad={handleLoad}
         onProgress={handleProgress}
