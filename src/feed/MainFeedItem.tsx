@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput } from 'react-native';
+import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput, StyleSheet } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
@@ -10,7 +10,7 @@ import OnlineUsersList from '../components/OnlineUsersList';
 import ProfilePreviewModal from '../components/ProfilePreviewModal';
 import database from '@react-native-firebase/database';
 import firestore from '@react-native-firebase/firestore';
-import { formatAwaySince } from '../services/timeUtils';
+import { formatPresenceLastSeenExact } from '../services/timeUtils';
 import { Asset } from 'react-native-image-picker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -39,6 +39,12 @@ type Vibe = {
   id: string;
   media?: Asset | null;
   audio?: { uri: string; name?: string } | null;
+  mediaEdits?: {
+    filter?: 'none' | 'warm' | 'cool' | 'mono' | 'vivid';
+    brightness?: number;
+    mirror?: boolean;
+    stickers?: Array<{ id: string; emoji: string; x: number; y: number; size: number }>;
+  } | null;
   captionText: string;
   playbackUrl?: string | null;
   muxStatus?: 'pending' | 'ready' | 'failed';
@@ -67,7 +73,7 @@ interface MainFeedItemProps {
   myUid: string | null;
   profileName: string;
   profileBio: string;
-  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date }>;
+  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }>;
   ensureUserData: (uid: string) => Promise<any>;
   waveStats: Record<string, any>;
   isInUserCrew: Record<string, boolean>;
@@ -183,6 +189,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   isVideoAsset,
 }) => {
   const [status, setStatus] = useState<string>('');
+  const [isHereNow, setIsHereNow] = useState<boolean>(false);
   const [activeEchoActionId, setActiveEchoActionId] = useState<string | null>(null);
   const [localEchoHugs, setLocalEchoHugs] = useState<Record<string, { hugs: number; hugged: boolean }>>({});
   const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
@@ -217,23 +224,46 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   }, []);
 
   useEffect(() => {
-    if (item.ownerUid !== myUid) {
-      const presenceRef = database().ref(`/presence/${item.ownerUid}`);
-      const unsubscribe = presenceRef.on('value', (snapshot) => {
-        if (!snapshot) return;
-        const presence = snapshot.val();
-        if (presence?.online) {
-          setStatus('Here now!');
-        } else if (presence?.lastSeen) {
-          const awayStr = formatAwaySince(presence.lastSeen);
-          setStatus(awayStr ? `Away since ${awayStr}` : '');
-        } else {
-          setStatus('');
-        }
-      });
-      return unsubscribe;
+    const ownerUid = item.ownerUid;
+    if (!ownerUid) {
+      setIsHereNow(false);
+      setStatus('');
+      return;
     }
-  }, [item.ownerUid, myUid]);
+
+    const fallbackLastSeen = userData[ownerUid]?.lastSeen || null;
+    const setAwayState = (timestamp: any) => {
+      const exact = formatPresenceLastSeenExact(timestamp);
+      setIsHereNow(false);
+      setStatus(exact ? `Away Since: ${exact}` : '');
+    };
+
+    if (ownerUid === myUid) {
+      setIsHereNow(false);
+      setStatus('');
+      return;
+    }
+
+    // Single source of truth: users/{uid} in Firestore.
+    if (userData[ownerUid]?.online === true) {
+      setIsHereNow(true);
+      setStatus('Here Now!');
+    } else {
+      setAwayState(fallbackLastSeen);
+    }
+
+    const unsubscribe = firestore().doc(`users/${ownerUid}`).onSnapshot((doc) => {
+      const data = doc?.data() || {};
+      if (data?.online === true) {
+        setIsHereNow(true);
+        setStatus('Here Now!');
+        return;
+      }
+      setAwayState(data?.lastSeen || fallbackLastSeen);
+    });
+
+    return unsubscribe;
+  }, [item.ownerUid, myUid, userData]);
 
   // Calculate play conditions
   const isAnyModalOpen = showMakeWaves || showAudioModal || !!capturedMedia || showLive;
@@ -256,6 +286,26 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const shouldPreload = preloadedVideoIds.has(item.id);
   const near = Math.abs(index - currentIndex) <= 1;
   const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
+  const mediaEdits = item.mediaEdits || null;
+
+  const filterOverlayStyle = (() => {
+    const f = mediaEdits?.filter || 'none';
+    if (f === 'warm') return { backgroundColor: 'rgba(255,155,84,0.20)' };
+    if (f === 'cool') return { backgroundColor: 'rgba(90,170,255,0.18)' };
+    if (f === 'mono') return { backgroundColor: 'rgba(0,0,0,0.30)' };
+    if (f === 'vivid') return { backgroundColor: 'rgba(255,0,120,0.10)' };
+    return null;
+  })();
+
+  const brightnessOverlayStyle =
+    mediaEdits && Number(mediaEdits.brightness || 0) !== 0
+      ? {
+          backgroundColor:
+            Number(mediaEdits.brightness) > 0
+              ? `rgba(255,255,255,${Math.min(0.4, Number(mediaEdits.brightness) / 100)})`
+              : `rgba(0,0,0,${Math.min(0.45, Math.abs(Number(mediaEdits.brightness)) / 90)})`,
+        }
+      : null;
 
   const handleProfilePress = useCallback(() => {
     if (item.ownerUid === myUid) {
@@ -898,10 +948,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
               {/* Post Media */}
               {isVideoAsset(item.media) ? (
-                <View style={{ marginHorizontal: -10 }}>
+                <View style={{ marginHorizontal: -10, position: 'relative' }}>
                   <VideoWithTapControls
                     source={{ uri: item.media.uri }}
-                    style={videoStyleFor(item.id)}
+                    style={[
+                      videoStyleFor(item.id),
+                      {
+                        transform: [
+                          { scaleX: mediaEdits?.mirror ? -1 : 1 },
+                        ],
+                      },
+                    ]}
                     resizeMode={'contain'}
                     paused={!playSynced}
                     muted={hasOverlayAudio}
@@ -921,6 +978,36 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       });
                     }}
                   />
+                  {filterOverlayStyle ? (
+                    <View
+                      pointerEvents="none"
+                      style={[StyleSheet.absoluteFillObject as any, filterOverlayStyle]}
+                    />
+                  ) : null}
+                  {brightnessOverlayStyle ? (
+                    <View
+                      pointerEvents="none"
+                      style={[StyleSheet.absoluteFillObject as any, brightnessOverlayStyle]}
+                    />
+                  ) : null}
+                  {(mediaEdits?.stickers || []).map(s => (
+                    <Text
+                      key={s.id}
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        left: `${s.x * 100}%`,
+                        top: `${s.y * 100}%`,
+                        fontSize: s.size || 34,
+                        transform: [
+                          { translateX: -(s.size || 34) / 2 },
+                          { translateY: -(s.size || 34) / 2 },
+                        ],
+                      }}
+                    >
+                      {s.emoji}
+                    </Text>
+                  ))}
                   {hasOverlayAudio && RNVideo ? (
                     <RNVideo
                       source={{ uri: String(item.audio?.uri || '') }}
@@ -983,9 +1070,46 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   <View style={{ position: 'relative', marginHorizontal: 0, width: SCREEN_WIDTH }}>
                     <Image
                       source={{ uri: item.media.uri }}
-                      style={videoStyleFor(item.id)}
+                      style={[
+                        videoStyleFor(item.id),
+                        {
+                          transform: [
+                            { scaleX: mediaEdits?.mirror ? -1 : 1 },
+                          ],
+                        },
+                      ]}
                       resizeMode="contain"
                     />
+                    {filterOverlayStyle ? (
+                      <View
+                        pointerEvents="none"
+                        style={[StyleSheet.absoluteFillObject as any, filterOverlayStyle]}
+                      />
+                    ) : null}
+                    {brightnessOverlayStyle ? (
+                      <View
+                        pointerEvents="none"
+                        style={[StyleSheet.absoluteFillObject as any, brightnessOverlayStyle]}
+                      />
+                    ) : null}
+                    {(mediaEdits?.stickers || []).map(s => (
+                      <Text
+                        key={s.id}
+                        pointerEvents="none"
+                        style={{
+                          position: 'absolute',
+                          left: `${s.x * 100}%`,
+                          top: `${s.y * 100}%`,
+                          fontSize: s.size || 34,
+                          transform: [
+                            { translateX: -(s.size || 34) / 2 },
+                            { translateY: -(s.size || 34) / 2 },
+                          ],
+                        }}
+                      >
+                        {s.emoji}
+                      </Text>
+                    ))}
                     {!revealedImages.has(item.id) && (
                       <View style={{
                         position: 'absolute',
@@ -1095,7 +1219,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
-          {status && <Text style={{ fontSize: 14, color: 'grey', marginRight: 20 }}>{status}</Text>}
+          {item.ownerUid !== myUid && !!status && (
+            <Text style={{ fontSize: 14, color: isHereNow ? '#16a34a' : 'grey', marginRight: 20 }}>
+              {status}
+            </Text>
+          )}
           {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
         </ScrollView>
 

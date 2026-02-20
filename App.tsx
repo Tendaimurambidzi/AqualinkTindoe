@@ -84,6 +84,10 @@ import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestio
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import MainFeedItem from './src/feed/MainFeedItem';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
+import MediaEditor, {
+  defaultMediaEdits,
+  MediaEdits,
+} from './src/components/MediaEditor';
                     
 
 // Navigation stack shared across auth/app flows
@@ -149,6 +153,7 @@ type Vibe = {
   id: string;
   media?: Asset | null;
   audio?: { uri: string; name?: string } | null;
+  mediaEdits?: MediaEdits | null;
   captionText: string;
   playbackUrl?: string | null; // server-muxed single stream
   muxStatus?: 'pending' | 'ready' | 'failed';
@@ -1868,6 +1873,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       { icon: '\u2702\ufe0f', label: 'Cut the Wake' },
       { icon: '\ud83c\udfa8', label: 'Ocean Tones' },
       { icon: '\ud83c\udfb5', label: 'Ocean Melodies' },
+      { icon: '\ud83d\udee0\ufe0f', label: 'Media Editor' },
     ],
     [],
   );
@@ -2011,7 +2017,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [user?.uid]);
                     
-  // Update lastSeen when app goes to background
+  // Maintain single-source presence state in Firestore users/{uid}
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextAppState) => {
       if (user?.uid) {
@@ -2024,7 +2030,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 firestoreMod = require('@react-native-firebase/firestore').default;
               } catch {}
               if (firestoreMod) {
-                await firestoreMod().doc(`users/${user?.uid}`).set({ lastSeen: firestoreMod.Timestamp.now() }, { merge: true });
+                await firestoreMod()
+                  .doc(`users/${user?.uid}`)
+                  .set(
+                    {
+                      online: false,
+                      lastSeen: firestoreMod.Timestamp.now(),
+                    },
+                    { merge: true },
+                  );
               }
             } catch (error) {
               console.warn('Failed to update lastSeen on background:', error);
@@ -2033,21 +2047,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           updateLastSeen();
         } else if (nextAppState === 'active') {
           setIsCurrentUserOnline(true);
-          // Clear lastSeen when coming back online
-          const clearLastSeen = async () => {
+          const setOnline = async () => {
             try {
               let firestoreMod: any = null;
               try {
                 firestoreMod = require('@react-native-firebase/firestore').default;
               } catch {}
               if (firestoreMod) {
-                await firestoreMod().doc(`users/${user?.uid}`).update({ lastSeen: firestoreMod.FieldValue.delete() });
+                await firestoreMod()
+                  .doc(`users/${user?.uid}`)
+                  .set(
+                    {
+                      online: true,
+                    },
+                    { merge: true },
+                  );
               }
             } catch (error) {
-              console.warn('Failed to clear lastSeen on active:', error);
+              console.warn('Failed to set online on active:', error);
             }
           };
-          clearLastSeen();
+          setOnline();
         }
       }
     });
@@ -2209,7 +2229,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
-  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date }>>({});
+  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }>>({});
 
   // Helper function to ensure user data is available for a given user ID
   const ensureUserData = async (userId: string) => {
@@ -2241,6 +2261,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         avatar: data?.avatar || data?.userPhoto || '',
         bio: data?.bio || '',
         lastSeen: lastSeen,
+        online: data?.online === true,
       };
       setUserData(prev => {
         const existing = prev[userId];
@@ -2307,22 +2328,48 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!firestoreMod) return;
 
     const fetchUsers = async () => {
-      const updates: Record<string, { name: string; avatar: string; bio: string }> = {};
+      const updates: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }> = {};
       for (const uid of missingUids) {
         try {
           const doc = await firestoreMod().doc(`users/${uid}`).get();
           const data = doc.data();
+          let lastSeen: Date | null = null;
+          if (data?.lastSeen) {
+            if (typeof data.lastSeen.toDate === 'function') {
+              lastSeen = data.lastSeen.toDate();
+            } else if (typeof data.lastSeen === 'number') {
+              lastSeen = new Date(data.lastSeen);
+            } else if (typeof data.lastSeen === 'string') {
+              lastSeen = new Date(data.lastSeen);
+            }
+          }
           updates[uid] = {
             name: data?.name || data?.displayName || 'User',
             avatar: data?.avatar || data?.userPhoto || '',
             bio: data?.bio || '',
+            lastSeen,
+            online: data?.online === true,
           };
         } catch (e) {
           console.warn('Failed to fetch user data for', uid, e);
-          updates[uid] = { name: 'User', avatar: '', bio: '' };
+          updates[uid] = { name: 'User', avatar: '', bio: '', lastSeen: null, online: false };
         }
       }
-      setUserData(prev => ({ ...prev, ...updates }));
+      setUserData(prev => {
+        const merged = { ...prev };
+        Object.entries(updates).forEach(([uid, next]) => {
+          const existing = merged[uid];
+          merged[uid] = {
+            ...(existing || {}),
+            ...next,
+            lastSeen:
+              existing?.lastSeen && !next.lastSeen
+                ? existing.lastSeen
+                : next.lastSeen,
+          };
+        });
+        return merged;
+      });
     };
     fetchUsers();
   }, [wavesFeed]); // Removed userData from dependencies to prevent infinite loops
@@ -2361,6 +2408,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             captionText: data.captionText || data.caption || data.text || '',
             link: data.link || null,
             playbackUrl: data.playbackUrl,
+            mediaEdits: data.mediaEdits || null,
             muxStatus: data.muxStatus,
             authorName: data.authorName,
             ownerUid: data.ownerUid,
@@ -2554,6 +2602,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       loadReachCounts([wave.id]);
       // Clear captured media after successful posting
       setCapturedMedia(null);
+      setCapturedMediaEdits(defaultMediaEdits);
       // Show success message for posting a splashline
       notifySuccess('You dropped a splashline!');
     },
@@ -3362,6 +3411,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             mediaUri: data.mediaUrl || null,
             muxStatus: data.muxStatus || null,
             audioUrl: data.audioUrl || null,
+            mediaEdits: data.mediaEdits || null,
           },
         });
       });
@@ -3474,6 +3524,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ? { uri, name: extra.audioName || 'Audio' }
         : null,
       captionText: extra.caption || '',
+      mediaEdits: extra.mediaEdits || null,
       playbackUrl: extra.playbackUrl || null,
       muxStatus: extra.muxStatus || null,
       authorName: extra.authorName || null,
@@ -3677,8 +3728,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     name?: string;
   } | null>(null);
   const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
+  const [capturedMediaEdits, setCapturedMediaEdits] =
+    useState<MediaEdits>(defaultMediaEdits);
   const [waveCaption, setWaveCaption] = useState<string>('');
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
+  const [showMediaEditorModal, setShowMediaEditorModal] =
+    useState<boolean>(false);
   const [audioUrlInput, setAudioUrlInput] = useState<string>('');
   const [transcoding, setTranscoding] = useState<boolean>(false);
   
@@ -5235,6 +5290,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               captionText: mediaCaption || feedText,
               link: data.link || null,
               playbackUrl: playbackUrl,
+              mediaEdits: data?.mediaEdits || null,
               muxStatus: (data?.muxStatus || null) as any,
               authorName,
               ownerUid: (data?.ownerUid || data?.authorId || null) as any,
@@ -5487,6 +5543,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             captionText: mediaCaption || feedText,
             link: data.link || null,
             playbackUrl: playbackUrl,
+            mediaEdits: data?.mediaEdits || null,
             muxStatus: (data?.muxStatus || null) as any,
             authorName,
             ownerUid: (data?.ownerUid || data?.authorId || null) as any,
@@ -8509,6 +8566,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowMakeWaves(false);
         const picked = response.assets[0];
         setCapturedMedia(picked);
+        setCapturedMediaEdits(defaultMediaEdits);
         setTranscoding(false);
       }
     });
@@ -8527,6 +8585,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setShowMakeWaves(false);
       const picked = response.assets[0];
       setCapturedMedia(picked);
+      setCapturedMediaEdits(defaultMediaEdits);
       setTranscoding(false);
     }
   };
@@ -9041,6 +9100,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Handle media post with optional caption
         const preparedMedia = await normalizeAssetForEditor(unifiedPostMedia);
         setCapturedMedia(preparedMedia);
+        setCapturedMediaEdits(defaultMediaEdits);
         setWaveCaption(trimmedText);
         setTextComposerText(trimmedText);
         if (unifiedPostAudio?.uri) {
@@ -9479,6 +9539,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setShowAudioModal(true);
       return;
     }
+    if (toolLabel === 'Media Editor') {
+      setShowMediaEditorModal(true);
+      return;
+    }
     if (toolLabel === 'Cut the Wake' && capturedMedia && capturedMedia.type && capturedMedia.type.startsWith('image/')) {
       try {
         const cropped = await ImageCropPicker.openCropper({
@@ -9590,6 +9654,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               mediaType: capturedMedia.type || null,
               postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
               isPublic: true,
+              mediaEdits: capturedMediaEdits,
               devSkipStorage: true,
             });
           serverDocId = docRef?.id || null;
@@ -9778,6 +9843,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             mediaType: type || null,
             postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
             isPublic: true,
+            mediaEdits: capturedMediaEdits,
             mergeRequested: canServerMergeOverlay,
             mergeSourceVideoPath: canServerMergeOverlay ? filePath : null,
             mergeOverlayAudioPath: canServerMergeOverlay
@@ -9853,6 +9919,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         audio: audioDownloadUrl
           ? { uri: audioDownloadUrl, name: attachedAudio?.name }
           : null,
+        mediaEdits: capturedMediaEdits,
         captionText: finalCaption,
         playbackUrl:
           (overlayAudioStoragePath && isVideoAsset(capturedMedia)) ||
@@ -9877,6 +9944,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setHasSplashed(false); // Reset splash state for new wave
       setSplashes(0); // Reset splash count for new wave
       setCapturedMedia(null); // Clear captured media
+      setCapturedMediaEdits(defaultMediaEdits);
       setWaveCaption(''); // Clear caption
       setTextComposerText('');
       setAttachedAudio(null); // Clear attached audio
@@ -9926,6 +9994,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
       // Reset editor state
       setCapturedMedia(null);
+      setCapturedMediaEdits(defaultMediaEdits);
       setAttachedAudio(null);
       setReleasing(false);
       setWaveKey(Date.now()); // Force the feed to update and play the new wave
@@ -14589,7 +14658,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         visible={!!capturedMedia}
         transparent
         animationType="slide"
-        onRequestClose={() => setCapturedMedia(null)}
+        onRequestClose={() => {
+          setCapturedMedia(null);
+          setCapturedMediaEdits(defaultMediaEdits);
+        }}
       >
         <View
           style={[
@@ -14616,6 +14688,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={[
                         StyleSheet.absoluteFillObject as any,
                         { backgroundColor: 'black' },
+                        {
+                          transform: [
+                            {
+                              scaleX: capturedMediaEdits.mirror ? -1 : 1,
+                            },
+                          ],
+                        },
                       ]}
                       resizeMode={'contain'}
                       repeat
@@ -14671,6 +14750,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     style={[
                       StyleSheet.absoluteFillObject as any,
                       { resizeMode: 'cover' },
+                      {
+                        transform: [
+                          {
+                            scaleX: capturedMediaEdits.mirror ? -1 : 1,
+                          },
+                        ],
+                      },
                     ]}
                   />
                   {RNVideo && attachedAudio?.uri && (
@@ -14695,6 +14781,64 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   )}
                 </>
               ))}
+
+            {capturedMedia?.uri ? (
+              <>
+                {capturedMediaEdits.filter !== 'none' && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      capturedMediaEdits.filter === 'warm'
+                        ? { backgroundColor: 'rgba(255,155,84,0.20)' }
+                        : capturedMediaEdits.filter === 'cool'
+                        ? { backgroundColor: 'rgba(90,170,255,0.18)' }
+                        : capturedMediaEdits.filter === 'mono'
+                        ? { backgroundColor: 'rgba(0,0,0,0.30)' }
+                        : { backgroundColor: 'rgba(255,0,120,0.10)' },
+                    ]}
+                  />
+                )}
+                {capturedMediaEdits.brightness !== 0 && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      {
+                        backgroundColor:
+                          capturedMediaEdits.brightness > 0
+                            ? `rgba(255,255,255,${Math.min(
+                                0.4,
+                                capturedMediaEdits.brightness / 100,
+                              )})`
+                            : `rgba(0,0,0,${Math.min(
+                                0.45,
+                                Math.abs(capturedMediaEdits.brightness) / 90,
+                              )})`,
+                      },
+                    ]}
+                  />
+                )}
+                {capturedMediaEdits.stickers.map(s => (
+                  <Text
+                    key={s.id}
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: `${s.x * 100}%`,
+                      top: `${s.y * 100}%`,
+                      fontSize: s.size,
+                      transform: [
+                        { translateX: -s.size / 2 },
+                        { translateY: -s.size / 2 },
+                      ],
+                    }}
+                  >
+                    {s.emoji}
+                  </Text>
+                ))}
+              </>
+            ) : null}
           </View>
                     
           {/* Attached Audio Summary */}
@@ -14790,7 +14934,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             >
               <Pressable
                 style={[styles.closeBtn, { flex: 1, marginVertical: 0 }]}
-                onPress={() => setCapturedMedia(null)}
+                onPress={() => {
+                  setCapturedMedia(null);
+                  setCapturedMediaEdits(defaultMediaEdits);
+                }}
                 disabled={releasing}
               >
                 <Text style={styles.closeText}>Cancel</Text>
@@ -14811,6 +14958,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </View>
       </Modal>
+
+      <MediaEditor
+        visible={showMediaEditorModal}
+        initialMedia={capturedMedia}
+        initialEdits={capturedMediaEdits}
+        onApply={(media: Asset, edits: MediaEdits) => {
+          setCapturedMedia(media);
+          setCapturedMediaEdits(edits);
+        }}
+        onClose={() => setShowMediaEditorModal(false)}
+      />
                     
       {/* OCEAN MELODIES: Attach Audio */}
       <Modal
@@ -19660,15 +19818,35 @@ const App: React.FC = () => {
           if (uid !== previousUidRef.current) {
             if (previousUidRef.current) {
               database().ref(`/presence/${previousUidRef.current}`).set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+              firestore().doc(`users/${previousUidRef.current}`).set(
+                {
+                  online: false,
+                  lastSeen: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              ).catch(() => {});
             }
             const presenceRef = database().ref(`/presence/${uid}`);
             presenceRef.set({ online: true, lastSeen: null });
             presenceRef.onDisconnect().set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+            firestore().doc(`users/${uid}`).set(
+              {
+                online: true,
+              },
+              { merge: true },
+            ).catch(() => {});
             previousUidRef.current = uid;
           }
         } else {
           if (previousUidRef.current) {
             database().ref(`/presence/${previousUidRef.current}`).set({ online: false, lastSeen: database.ServerValue.TIMESTAMP });
+            firestore().doc(`users/${previousUidRef.current}`).set(
+              {
+                online: false,
+                lastSeen: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            ).catch(() => {});
             previousUidRef.current = null;
           }
         }

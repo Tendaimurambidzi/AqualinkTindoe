@@ -71,3 +71,31 @@ export const formatAwaySince = (timestamp) => {
   });
   return `${dateStr} at ${timeStr}`;
 };
+
+export const formatPresenceLastSeenExact = (timestamp) => {
+  if (!timestamp) return "";
+
+  let date: Date;
+  if (timestamp.toDate) {
+    date = timestamp.toDate();
+  } else if (typeof timestamp === 'number') {
+    const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp;
+    date = new Date(ms);
+  } else {
+    date = new Date(timestamp);
+  }
+
+  if (isNaN(date.getTime())) return "";
+
+  const dateStr = date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+  const timeStr = date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+  return `${dateStr} at ${timeStr}`;
+};
