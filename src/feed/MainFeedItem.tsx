@@ -1039,7 +1039,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               {isVideoAsset(item.media) ? (
                 <View style={{ marginHorizontal: -10, position: 'relative' }}>
                   <VideoWithTapControls
-                    source={{ uri: item.media.uri }}
+                    source={{ uri: item.media?.uri || '' }}
                     style={[
                       videoStyleFor(item.id),
                       {
@@ -1178,7 +1178,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 <Pressable onPress={handleImageReveal}>
                   <View style={{ position: 'relative', marginHorizontal: 0, width: SCREEN_WIDTH }}>
                     <Image
-                      source={{ uri: item.media.uri }}
+                      source={{ uri: item.media?.uri || '' }}
                       style={[
                         videoStyleFor(item.id),
                         {
@@ -1343,7 +1343,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
           {item.ownerUid !== myUid && (
-            <Text style={{ fontSize: 14, color: isHereNow ? '#16a34a' : '#6b7280', marginRight: 20, fontWeight: '700' }}>
+            <Text style={{ fontSize: 11, color: isHereNow ? '#16a34a' : '#6b7280', marginRight: 20, fontWeight: '700' }}>
               {isHereNow ? 'Here Now!' : (status || fallbackAwayText)}
             </Text>
           )}
