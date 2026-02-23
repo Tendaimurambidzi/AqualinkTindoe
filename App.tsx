@@ -17817,18 +17817,6 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🧭</Text>
               <Text style={editorStyles.liveRightLabel}>Invite</Text>
             </Pressable>
-                        {/* Viewers */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={() => setShowUserPanel(v => !v)}
-            >
-              <Text style={editorStyles.liveRightIcon}>👥</Text>
-              <Text style={editorStyles.liveRightLabel}>
-                Viewers ({viewers.length})
-              </Text>
-            </Pressable>
-                    
-            {/* NEW LIVE CONTROLS */}
             {/* Screen Share */}
             <Pressable
               style={editorStyles.liveRightButton}
