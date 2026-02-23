@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Image,
@@ -8,7 +8,20 @@ import {
   Alert,
   Platform,
   Pressable,
+  TextInput,
 } from 'react-native';
+// Helper to get current user's username from Firestore
+const getCurrentUsername = async (uid: string) => {
+  if (!firestore) return '';
+  try {
+    const doc = await firestore().collection('users').doc(uid).get();
+    if (doc.exists) {
+      const data = doc.data();
+      return data?.username || '';
+    }
+  } catch {}
+  return '';
+};
 import ImageCropPicker, {
   Image as CropImage,
 } from 'react-native-image-crop-picker';
@@ -159,13 +172,38 @@ type EditableProfileAvatarProps = {
   onPhotoChanged?: (uri: string | null) => void; // send new cropped URI (or null)
 };
 
+
 const EditableProfileAvatar: React.FC<EditableProfileAvatarProps> = ({
   initialPhotoUrl,
   onPhotoChanged,
 }) => {
-  const [photoUrl, setPhotoUrl] = useState<string | null>(
-    initialPhotoUrl ?? null
-  );
+  const [photoUrl, setPhotoUrl] = useState<string | null>(initialPhotoUrl ?? null);
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      if (!auth || !firestore) return;
+      const user = auth().currentUser;
+      if (!user) return;
+      setEmail(user.email || '');
+      const uname = await getCurrentUsername(user.uid);
+      setUsername(uname);
+      setLoading(false);
+    };
+    fetchProfile();
+  }, []);
+  // Save username to Firestore
+  const saveUsername = async () => {
+    if (!auth || !firestore) return;
+    const user = auth().currentUser;
+    if (!user) return;
+    const trimmed = username.trim();
+    if (!trimmed) return;
+    await firestore().collection('users').doc(user.uid).set({ username: trimmed }, { merge: true });
+    Alert.alert('Username saved', 'Your username has been updated.');
+  };
 
   const openPickerWithCrop = async () => {
     try {
@@ -298,7 +336,24 @@ const EditableProfileAvatar: React.FC<EditableProfileAvatarProps> = ({
           </View>
         )}
       </Pressable>
-      {/* Removed label as requested */}
+      <View style={{ marginTop: 16, width: 200 }}>
+        <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Username</Text>
+        <TextInput
+          style={styles.usernameInput}
+          value={username}
+          onChangeText={setUsername}
+          placeholder="Enter username"
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!loading}
+        />
+        <TouchableOpacity style={styles.saveButton} onPress={saveUsername} disabled={loading || !username.trim()}>
+          <Text style={styles.saveButtonText}>Save Username</Text>
+        </TouchableOpacity>
+        <Text style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
+          {(!username.trim() && email) ? `Using email as fallback: ${email}` : ''}
+        </Text>
+      </View>
     </View>
   );
 };
@@ -328,6 +383,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#555',
     textAlign: 'center',
+  },
+  usernameInput: {
+    borderWidth: 1,
+    borderColor: '#bbb',
+    borderRadius: 6,
+    padding: 8,
+    fontSize: 16,
+    backgroundColor: '#fff',
+    marginBottom: 8,
+  },
+  saveButton: {
+    backgroundColor: '#0099ff',
+    paddingVertical: 8,
+    borderRadius: 6,
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   label: {
     marginTop: 8,

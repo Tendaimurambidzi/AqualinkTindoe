@@ -17,6 +17,7 @@ type UserResult = {
   displayName: string;
   photoURL: string | null;
   username?: string;
+  email?: string;
 };
 
 type UserSearchProps = {
@@ -63,6 +64,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
         displayName: doc.data().displayName || 'Anonymous',
         photoURL: doc.data().photoURL || null,
         username: doc.data().username,
+        email: doc.data().email,
       }));
       for (const variant of usernameVariants) {
         const usernameSnap = await usersRef
@@ -75,6 +77,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
             displayName: doc.data().displayName || 'Anonymous',
             photoURL: doc.data().photoURL || null,
             username: doc.data().username,
+            email: doc.data().email,
           };
           if (!users.find(u => u.uid === user.uid)) {
             users.push(user);
@@ -110,9 +113,11 @@ const UserSearch: React.FC<UserSearchProps> = ({
       />
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>{item.displayName}</Text>
-        {item.username && (
+        {item.username ? (
           <Text style={styles.username}>@{item.username}</Text>
-        )}
+        ) : item.email ? (
+          <Text style={styles.username}>{item.email}</Text>
+        ) : null}
       </View>
       {(onJoinCrew || onInviteToDrift) && (
         <View style={styles.userActions}>
