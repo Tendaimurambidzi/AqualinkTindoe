@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Image, StyleSheet, TouchableOpacity, Modal, Dimensions } from 'react-native';
+import { View, Text, Image, StyleSheet, TouchableOpacity, Modal, Dimensions, Pressable } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -10,6 +10,7 @@ interface ProfileAvatarWithCrewProps {
   showCrewCount?: boolean;
   showFleetCount?: boolean;
   style?: any;
+  optimisticCrewCount?: number; // For instant UI feedback
 }
 
 const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
@@ -18,6 +19,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   showCrewCount = true,
   showFleetCount = false,
   style,
+  optimisticCrewCount,
 }) => {
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -147,15 +149,25 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   return (
     <>
       <View style={[styles.container, style]}>
-        <TouchableOpacity onPress={() => setShowModal(true)} activeOpacity={0.8}>
+        <Pressable 
+          onPress={() => setShowModal(true)}
+          style={({ pressed }) => [
+            { padding: 2 },
+            pressed && {
+              opacity: 0.8,
+              transform: [{ scale: 0.95 }],
+            }
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
           <Image
             source={{ uri: photoURLWithCacheBust }}
             style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
           />
-        </TouchableOpacity>
+        </Pressable>
         <View style={styles.countsContainer}>
           {showCrewCount && (
-            <Text style={styles.crewText}>Crew: {formatCrewCount(crewCount)}</Text>
+            <Text style={styles.crewText}>Crew: {formatCrewCount(optimisticCrewCount !== undefined ? optimisticCrewCount : crewCount)}</Text>
           )}
           {showFleetCount && (
             <Text style={styles.fleetText}>Fleet: {formatFleetCount(fleetCount)}</Text>
@@ -172,26 +184,32 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
       >
         <View style={styles.modalOverlay}>
           {/* Close button */}
-          <TouchableOpacity
-            style={styles.closeButton}
+          <Pressable
+            style={({ pressed }) => [
+              styles.closeButton,
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.9 }],
+              }
+            ]}
             onPress={() => setShowModal(false)}
-            activeOpacity={0.8}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={styles.closeButtonText}>✕</Text>
-          </TouchableOpacity>
+          </Pressable>
 
           {/* Image container */}
-          <TouchableOpacity
+          <Pressable
             style={styles.modalContent}
-            activeOpacity={1}
             onPress={() => setShowModal(false)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Image
               source={{ uri: photoURLWithCacheBust }}
               style={styles.fullSizeImage}
               resizeMode="contain"
             />
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </Modal>
     </>

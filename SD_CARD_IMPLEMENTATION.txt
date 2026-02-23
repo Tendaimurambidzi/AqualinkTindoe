@@ -1,0 +1,107 @@
+// SD Card Picker Handler - Add after handleUnifiedGallerySelect function (around line 8732)
+
+  // SD Card Media Picker - All file types (repurposed from Ocean melodies)
+  const handleSDCardPicker = async () => {
+    console.log('[SD Card] Opening SD card media picker');
+    
+    if (Platform.OS === 'android') {
+      try {
+        const androidVersion = Platform.Version;
+        console.log('[SD Card] Android version:', androidVersion);
+        
+        if (androidVersion >= 33) {
+          const permissions = [
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
+          ];
+          const results = await PermissionsAndroid.requestMultiple(permissions);
+          console.log('[SD Card] Android 13+ permissions:', results);
+          
+          const allGranted = Object.values(results).every(
+            result => result === PermissionsAndroid.RESULTS.GRANTED
+          );
+          
+          if (!allGranted) {
+            Alert.alert(
+              'Permission Required',
+              'Please grant access to photos, videos, and audio to select media from SD card.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        } else {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            {
+              title: 'Storage Permission',
+              message: 'App needs access to your storage to select media from SD card',
+              buttonPositive: 'OK',
+            }
+          );
+          console.log('[SD Card] READ_EXTERNAL_STORAGE result:', granted);
+          
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert(
+              'Permission Denied',
+              'Storage permission is required to select media from SD card.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('[SD Card] Permission error:', err);
+        Alert.alert('Error', 'Failed to request storage permission');
+        return;
+      }
+    }
+    
+    console.log('[SD Card] Opening image library with fullScreen for all media types');
+    launchImageLibrary({ 
+      mediaType: 'mixed',
+      quality: 0.8,
+      presentationStyle: 'fullScreen',
+    }, response => {
+      console.log('[SD Card] Response:', JSON.stringify(response, null, 2));
+      if (response.assets && response.assets.length > 0) {
+        console.log('[SD Card] Media selected:', response.assets[0].uri);
+        setUnifiedPostMedia(response.assets[0]);
+      } else if (response.didCancel) {
+        console.log('[SD Card] User cancelled');
+      } else if (response.errorCode) {
+        console.log('[SD Card] Error:', response.errorCode, response.errorMessage);
+        Alert.alert('Error', `Failed to open SD card picker: ${response.errorMessage}`);
+      }
+    });
+  };
+
+// Add SD Card button in Unified Post Modal (around line 11789, after Gallery button)
+// Replace the View with flexDirection: 'row' that contains Camera and Gallery buttons with:
+
+               <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+                 <Pressable
+                   onPress={handleUnifiedCameraCapture}
+                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                 >
+                   <Text style={styles.logbookActionText}>📷 Camera</Text>
+                 </Pressable>
+                 <Pressable
+                   onPress={handleUnifiedGallerySelect}
+                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                 >
+                   <Text style={styles.logbookActionText}>🖼️ Gallery</Text>
+                 </Pressable>
+                 <Pressable
+                   onPress={handleSDCardPicker}
+                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                 >
+                   <Text style={styles.logbookActionText}>💾 SD Card</Text>
+                 </Pressable>
+               </View>

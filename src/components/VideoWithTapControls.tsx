@@ -10,8 +10,18 @@ import {
   Platform,
   AccessibilityInfo,
   Dimensions,
+  Image,
+  Pressable,
 } from "react-native";
 import Video, {OnProgressData} from "react-native-video";
+import NetInfo from '@react-native-community/netinfo';
+import {
+  getCachedVideoPath,
+  cacheVideo,
+  getVideoManifest,
+  saveVideoManifest,
+  VideoManifest,
+} from '../services/videoCache';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -44,23 +54,27 @@ type Props = {
   onProgress?: (data: OnProgressData) => void;
   onPlay?: () => void;
   muted?: boolean;
+  playbackRate?: number;
+  audioVolume?: number;
   resizeMode?: string;
   isActive?: boolean;
   onTap?: () => void;
   onMaximize?: () => void; // New prop for maximizing video
+  videoId?: string; // Add videoId prop to fetch poster
+  shouldPreload?: boolean; // New prop to control preloading
 };
 
 const VideoWithTapControls: React.FC<Props> = ({
   source,
   style = {},
-  hideTimeout = 3000,
+  hideTimeout = 4000,
   seekStep = 10,
   paused = false,
   maxBitRate,
   bufferConfig,
   useTextureView,
   progressUpdateInterval,
-  poster,
+  poster: initialPoster,
   posterResizeMode,
   disableFocus,
   playInBackground,
@@ -73,10 +87,14 @@ const VideoWithTapControls: React.FC<Props> = ({
   onProgress,
   onPlay,
   muted,
+  playbackRate = 1,
+  audioVolume = 1,
   resizeMode = 'contain',
   isActive = true,
   onTap,
   onMaximize, // New prop
+  videoId,
+  shouldPreload = false,
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
@@ -87,6 +105,8 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
+  const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true
+  const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
 
   useEffect(() => {
@@ -95,9 +115,19 @@ const VideoWithTapControls: React.FC<Props> = ({
 
   useEffect(() => {
     if (!isActive) {
+      setInternalPaused(true);
       setIsMuted(true);
     }
   }, [isActive]);
+
+  // Unmute immediately when video becomes active and is playing
+  useEffect(() => {
+    if (!internalPaused && !videoCompleted && isActive) {
+      setIsMuted(false);
+    } else if (!isActive) {
+      setIsMuted(true);
+    }
+  }, [internalPaused, videoCompleted, isActive]);
 
   const showControls = useCallback(() => {
     if (hideTimer.current) {
@@ -107,15 +137,37 @@ const VideoWithTapControls: React.FC<Props> = ({
     setControlsVisible(true);
     Animated.timing(controlsOpacity, {
       toValue: 1,
-      duration: 180,
+      duration: 50, // Reduced from 180ms to 50ms for immediate response
       useNativeDriver: true,
     }).start();
 
-    // Always auto-hide controls after timeout
-    hideTimer.current = setTimeout(() => {
-      hideControls();
-    }, hideTimeout);
-  }, [hideTimeout, controlsOpacity]);
+    // Only auto-hide controls after timeout if video is not loading
+    if (!isLoading) {
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, hideTimeout);
+    }
+  }, [hideTimeout, controlsOpacity, isLoading]);
+
+  const showControlsWithTimeout = useCallback((timeout: number) => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setControlsVisible(true);
+    Animated.timing(controlsOpacity, {
+      toValue: 1,
+      duration: 50, // Reduced from 180ms to 50ms for immediate response
+      useNativeDriver: true,
+    }).start();
+
+    // Auto-hide controls after specified timeout (unless loading)
+    if (!isLoading) {
+      hideTimer.current = setTimeout(() => {
+        hideControls();
+      }, timeout);
+    }
+  }, [controlsOpacity, isLoading]);
 
   const hideControls = useCallback(() => {
     if (hideTimer.current) {
@@ -124,7 +176,7 @@ const VideoWithTapControls: React.FC<Props> = ({
     }
     Animated.timing(controlsOpacity, {
       toValue: 0,
-      duration: 180,
+      duration: 50, // Reduced from 180ms to 50ms for immediate response
       useNativeDriver: true,
     }).start(() => setControlsVisible(false));
   }, [controlsOpacity]);
@@ -149,21 +201,16 @@ const VideoWithTapControls: React.FC<Props> = ({
     } else if (locationX > rightThird) {
       safeSeek(currentTime + seekStep);
     } else {
-      // Center tap - navigate to full screen detail view
-      onTap?.();
+      // Center tap - just show controls, don't navigate
+      // onTap?.(); // Removed navigation on center tap
     }
     // Always show controls when tapping anywhere on video
     showControls();
-  }, [currentTime, seekStep, safeSeek, showControls, onTap]);
+  }, [currentTime, seekStep, safeSeek, showControls]);
 
   const onToggleMute = useCallback(() => {
     const willUnmute = isMuted; // If currently muted, this action will unmute
     setIsMuted(prev => !prev);
-    
-    // If unmuting, also maximize the video
-    if (willUnmute) {
-      onMaximize?.();
-    }
     
     showControls();
   }, [isMuted, showControls, onMaximize]);
@@ -190,15 +237,21 @@ const VideoWithTapControls: React.FC<Props> = ({
       
       // If starting playback (pressing play), maximize (if available) and unmute
       if (willStartPlaying) {
-        onMaximize?.();
         setIsMuted(false); // Unmute when starting playback
       }
     }
-    showControls();
-  }, [videoCompleted, safeSeek, showControls, internalPaused, onMaximize]);
+    
+    // Show controls and auto-hide after 3 seconds when starting playback
+    if (!internalPaused) {
+      showControlsWithTimeout(3000);
+    } else {
+      showControls();
+    }
+  }, [videoCompleted, safeSeek, showControls, showControlsWithTimeout, internalPaused, onMaximize]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);
+    setIsLoading(false); // Video has loaded
     onLoad?.(meta);
   }, [onLoad]);
 
@@ -211,6 +264,24 @@ const VideoWithTapControls: React.FC<Props> = ({
     setVideoCompleted(true);
     setInternalPaused(true);
   }, []);
+
+  useEffect(() => {
+    if (videoId) {
+      let alive = true;
+      const fetchPoster = async () => {
+        try {
+          const manifest = await getVideoManifest(videoId);
+          if (alive && manifest?.thumb) {
+            setFetchedPoster(manifest.thumb);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch video poster:', error);
+        }
+      };
+      fetchPoster();
+      return () => { alive = false; };
+    }
+  }, [videoId]);
 
   useEffect(() => {
     return () => {
@@ -261,7 +332,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         bufferConfig={bufferConfig}
         useTextureView={useTextureView}
         progressUpdateInterval={progressUpdateInterval}
-        poster={poster}
+        poster={initialPoster || fetchedPoster}
         posterResizeMode={posterResizeMode}
         disableFocus={disableFocus}
         playInBackground={playInBackground}
@@ -269,6 +340,9 @@ const VideoWithTapControls: React.FC<Props> = ({
         ignoreSilentSwitch={ignoreSilentSwitch}
         controls={controls}
         muted={isMuted}
+        rate={playbackRate}
+        volume={audioVolume}
+        preload="auto"
         onLoad={handleLoad}
         onProgress={handleProgress}
         onBuffer={onBuffer}
@@ -280,16 +354,37 @@ const VideoWithTapControls: React.FC<Props> = ({
       >
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
+      {/* Show poster overlay when video is paused or completed */}
+      {(internalPaused || videoCompleted) && (
+        <View style={styles.posterContainer}>
+          <Image 
+            source={{ uri: initialPoster || fetchedPoster || (videoCompleted ? source.uri : null) }} 
+            style={styles.posterImage} 
+            resizeMode={posterResizeMode || 'contain'} 
+          />
+        </View>
+      )}
       {videoCompleted && (
         <View style={styles.replayContainer}>
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel="Replay video"
             onPress={onPlayPause}
-            style={styles.replayButton}
-            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
+            style={({ pressed }) => [
+              styles.replayButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              }
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            delayPressIn={0}
+            delayPressOut={0}
+            activeOpacity={0.7}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.replaySymbol}>↺</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       )}
       <Animated.View
@@ -297,51 +392,95 @@ const VideoWithTapControls: React.FC<Props> = ({
         style={[styles.controlsContainer, { opacity: controlsOpacity, zIndex: 10 }]}
       >
         <View style={styles.controlsRow}>
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel="Rewind ten seconds"
             onPress={onRewind}
-            style={styles.seekButton}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            style={({ pressed }) => [
+              styles.seekButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              }
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            delayPressIn={0}
+            delayPressOut={0}
+            activeOpacity={0.7}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             accessibilityRole="button"
             accessibilityLabel={videoCompleted ? "Replay video" : internalPaused ? "Play" : "Pause"}
             onPress={onPlayPause}
-            style={styles.playButton}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            style={({ pressed }) => [
+              styles.playButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              }
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            delayPressIn={0}
+            delayPressOut={0}
+            activeOpacity={0.7}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.playCircle}>
               <Text style={styles.playSymbol}>
                 {internalPaused ? "▶" : "⏸"}
               </Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel="Fast forward ten seconds"
             onPress={onFastForward}
-            style={styles.seekButton}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            style={({ pressed }) => [
+              styles.seekButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              }
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            delayPressIn={0}
+            delayPressOut={0}
+            activeOpacity={0.7}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.seekCircle}>
               <Text style={styles.seekNumber}>{seekStep}</Text>
             </View>
-          </TouchableOpacity>
+          </Pressable>
         </View>
         <View style={styles.timeContainer}>
-          <TouchableOpacity
+          <Pressable
             accessibilityLabel={isMuted ? "Unmute video" : "Mute video"}
             onPress={onToggleMute}
-            style={styles.muteButton}
-            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            style={({ pressed }) => [
+              styles.muteButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              }
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            delayPressIn={0}
+            delayPressOut={0}
+            activeOpacity={0.7}
+            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
-          </TouchableOpacity>
+          </Pressable>
           <Text style={styles.timeText}>
             {formatTime(currentTime)} / {formatTime(duration)}
           </Text>
@@ -408,16 +547,20 @@ const styles = StyleSheet.create({
   },
   timeContainer: {
     position: 'absolute',
-    bottom: 10,
-    left: 10,
-    right: 10,
+    bottom: 12,
+    // Push right by 5mm (approx 19px at 96dpi, but use PixelRatio for accuracy if needed)
+    left: SCREEN_WIDTH * 0.18 + 19 + 11, // 11px ≈ 3mm more (total 8mm)
+    width: SCREEN_WIDTH * 0.45, // ~to 3/4 of Gems button (adjust as needed)
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.7)',
+    backgroundColor: 'rgba(0,0,0,0.55)',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
+    paddingVertical: 2,
+    borderRadius: 6,
+    minHeight: 28,
+    maxHeight: 32,
+    zIndex: 10,
   },
   muteButton: {
     padding: 4,
@@ -445,6 +588,14 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 24,
     fontWeight: '600',
+  },
+  posterContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 1,
+  },
+  posterImage: {
+    width: '100%',
+    height: '100%',
   },
 });
 

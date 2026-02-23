@@ -1,0 +1,22 @@
+
+  // SD Card Media Picker - All file types
+  const handleSDCardPicker = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const androidVersion = Platform.Version;
+        if (androidVersion >= 33) {
+          const permissions = [PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES, PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO, PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO];
+          const results = await PermissionsAndroid.requestMultiple(permissions);
+          const allGranted = Object.values(results).every(result => result === PermissionsAndroid.RESULTS.GRANTED);
+          if (!allGranted) { Alert.alert('Permission Required', 'Grant access to select media from SD card.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Settings', onPress: () => Linking.openSettings() }]); return; }
+        } else {
+          const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE, { title: 'Storage Permission', message: 'Access storage to select media from SD card', buttonPositive: 'OK' });
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) { Alert.alert('Permission Denied', 'Storage permission required.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Settings', onPress: () => Linking.openSettings() }]); return; }
+        }
+      } catch (err) { Alert.alert('Error', 'Failed to request permission'); return; }
+    }
+    launchImageLibrary({ mediaType: 'mixed', quality: 0.8, presentationStyle: 'fullScreen' }, response => {
+      if (response.assets && response.assets.length > 0) { setUnifiedPostMedia(response.assets[0]); }
+      else if (response.errorCode) { Alert.alert('Error', `Failed: ${response.errorMessage}`); }
+    });
+  };

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  Pressable,
 } from 'react-native';
 import ImageCropPicker, {
   Image as CropImage,
@@ -279,7 +280,16 @@ const EditableProfileAvatar: React.FC<EditableProfileAvatarProps> = ({
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity onPress={openAvatarOptions} activeOpacity={0.8}>
+      <Pressable 
+        onPress={openAvatarOptions} 
+        style={({ pressed }) => [
+          pressed && {
+            opacity: 0.8,
+            transform: [{ scale: 0.95 }],
+          }
+        ]}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
         {photoUrl ? (
           <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
         ) : (
@@ -287,7 +297,7 @@ const EditableProfileAvatar: React.FC<EditableProfileAvatarProps> = ({
             <Text style={styles.placeholderText}>Tap to add photo</Text>
           </View>
         )}
-      </TouchableOpacity>
+      </Pressable>
       {/* Removed label as requested */}
     </View>
   );

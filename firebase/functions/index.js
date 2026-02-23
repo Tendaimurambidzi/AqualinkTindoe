@@ -197,8 +197,12 @@ exports.onSplashCreate = onDocumentCreated('waves/{waveId}/splashes/{uid}', asyn
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
-  if (!wave.authorId) return;
-  if (wave.authorId === splashData.userUid) return; // Don't ping self
+  if (!wave.authorId && !wave.ownerUid) return;
+  const waveOwner = wave.authorId || wave.ownerUid;
+  if (waveOwner && splashData.userUid && String(waveOwner).trim() === String(splashData.userUid).trim()) {
+    console.log(`Blocking self-notification: wave owner ${waveOwner} hugged their own wave`);
+    return;
+  }
   
   const userName = splashData.userName || 'Drifter';
   const text = `/${userName} has hugged your vibe!`;
@@ -244,21 +248,39 @@ exports.onSplashDelete = onDocumentDeleted('waves/{waveId}/splashes/{uid}', asyn
 exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async (event) => {
   const snap = event.data;
   const waveId = event.params.waveId;
+  const echo = snap.data() || {};
+  
   // --- COUNT --- //
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    const waveSnap = await tx.get(waveRef);
-    if (!waveSnap.exists) return;
-    tx.set(waveRef, { counts: { echoes: admin.firestore.FieldValue.increment(1) } }, { merge: true });
-  });
+  // Only increment main post echo count for top-level echoes (not replies)
+  if (!echo.replyToEchoId) {
+    const waveRef = db.doc(`waves/${waveId}`);
+    await db.runTransaction(async (tx) => {
+      const waveSnap = await tx.get(waveRef);
+      if (!waveSnap.exists) return;
+      tx.set(waveRef, { counts: { echoes: admin.firestore.FieldValue.increment(1) } }, { merge: true });
+    });
+  }
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
   const wave = waveSnap.data() || {};
   const waveOwnerUid = wave.ownerUid || wave.authorId;
-  if (!waveOwnerUid) return;
-  const echo = snap.data() || {};
+  if (!waveOwnerUid) {
+    console.log(`No wave owner found for wave ${waveId}`);
+    return;
+  }
   const echoSenderUid = echo.userUid;
-  if (!echoSenderUid) return;
+  if (!echoSenderUid) {
+    console.log(`No echo sender UID found for echo in wave ${waveId}`);
+    return;
+  }
+  
+  console.log(`Echo created: waveOwner=${waveOwnerUid}, echoSender=${echoSenderUid}, userName=${echo.userName}`);
+  
+  // IMMEDIATE SELF-NOTIFICATION CHECK - Don't send any notifications for self-actions
+  if (waveOwnerUid && echoSenderUid && String(waveOwnerUid).trim() === String(echoSenderUid).trim()) {
+    console.log(`Blocking self-notification: wave owner ${waveOwnerUid} echoed their own wave`);
+    return;
+  }
   
   // Check if this is a reply to another echo
   let notificationTargetUid = waveOwnerUid;
@@ -272,11 +294,17 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
       if (originalEchoSnap.exists) {
         const originalEcho = originalEchoSnap.data() || {};
         const originalEchoAuthorUid = originalEcho.userUid;
-        if (originalEchoAuthorUid && String(originalEchoAuthorUid) !== String(echoSenderUid)) {
+        console.log(`Echo reply: originalAuthor=${originalEchoAuthorUid}, echoSender=${echoSenderUid}`);
+        
+        // Don't notify if replying to own echo
+        if (originalEchoAuthorUid && String(originalEchoAuthorUid).trim() !== String(echoSenderUid).trim()) {
           // Notify the original echo author
           notificationTargetUid = originalEchoAuthorUid;
           notificationType = 'echo_reply';
-          notificationText = `💬 ${echo.userName || 'Someone'} replied to your echo: ${echo.text?.slice(0, 60) || ''}`;
+          notificationText = `${echo.userName || 'Someone'} has replied to your comment`;
+        } else {
+          console.log(`Blocking self-reply notification: ${echoSenderUid} replied to their own echo`);
+          return;
         }
       }
     } catch (error) {
@@ -285,13 +313,19 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
     }
   }
   
-  // Don't send notification if the echo sender is the notification target
-  if (String(notificationTargetUid) === String(echoSenderUid)) return;
+  // FINAL SELF-NOTIFICATION CHECK - Don't send notification if the echo sender is the notification target
+  if (notificationTargetUid && echoSenderUid && String(notificationTargetUid).trim() === String(echoSenderUid).trim()) {
+    console.log(`Blocking self-notification: echo sender ${echoSenderUid} is the notification target ${notificationTargetUid}`);
+    return;
+  }
+  
+  console.log(`Sending echo notification to ${notificationTargetUid}: ${notificationText}`);
   
   await addPing(notificationTargetUid, {
     type: notificationType,
     text: notificationText,
     waveId,
+    echoId: event.params.echoId,
     fromUid: echoSenderUid,
     fromName: echo.userName,
   });
@@ -299,18 +333,76 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
 
 exports.onEchoDelete = onDocumentDeleted('waves/{waveId}/echoes/{echoId}', async (event) => {
   const waveId = event.params.waveId;
-  const waveRef = db.doc(`waves/${waveId}`);
-  await db.runTransaction(async (tx) => {
-    const snap = await tx.get(waveRef);
-    if (!snap.exists) return;
-    const data = snap.data() || {};
-    const counts = data.counts || { splashes: 0, regularSplashes: 0, hugs: 0, echoes: 0 };
-    
-    // Only decrement if count is above 0 to prevent negative values
-    if (counts.echoes > 0) {
-      tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
+  const echoData = event.data?.data() || {};
+  
+  // Only decrement main post echo count for top-level echoes (not replies)
+  if (!echoData.replyToEchoId) {
+    const waveRef = db.doc(`waves/${waveId}`);
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(waveRef);
+      if (!snap.exists) return;
+      const data = snap.data() || {};
+      const counts = data.counts || { splashes: 0, regularSplashes: 0, hugs: 0, echoes: 0 };
+      
+      // Only decrement if count is above 0 to prevent negative values
+      if (counts.echoes > 0) {
+        tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
+      }
+    });
+  }
+});
+
+// Notify when someone replies to an echo
+exports.onEchoReplyCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}/replies/{replyId}', async (event) => {
+  const snap = event.data;
+  const waveId = event.params.waveId;
+  const echoId = event.params.echoId;
+  const reply = snap.data() || {};
+  const replySenderUid = reply.fromUid;
+  const replySenderName = reply.from || 'Someone';
+  
+  if (!replySenderUid) {
+    console.log(`No reply sender UID found for reply in wave ${waveId}, echo ${echoId}`);
+    return;
+  }
+  
+  try {
+    // Get the original echo to find its author
+    const originalEchoSnap = await db.collection('waves').doc(waveId).collection('echoes').doc(echoId).get();
+    if (!originalEchoSnap.exists) {
+      console.log(`Original echo ${echoId} not found`);
+      return;
     }
-  });
+    
+    const originalEcho = originalEchoSnap.data() || {};
+    const originalEchoAuthorUid = originalEcho.userUid;
+    
+    if (!originalEchoAuthorUid) {
+      console.log(`No author UID found for original echo ${echoId}`);
+      return;
+    }
+    
+    // Don't notify if replying to own echo
+    if (String(originalEchoAuthorUid).trim() === String(replySenderUid).trim()) {
+      console.log(`Blocking self-reply notification: ${replySenderUid} replied to their own echo`);
+      return;
+    }
+    
+    const notificationText = `${replySenderName} has replied to your comment`;
+    
+    console.log(`Sending echo reply notification to ${originalEchoAuthorUid}: ${notificationText}`);
+    
+    await addPing(originalEchoAuthorUid, {
+      type: 'echo_reply',
+      text: notificationText,
+      waveId,
+      echoId,
+      fromUid: replySenderUid,
+      fromName: replySenderName,
+    });
+  } catch (error) {
+    console.error('Error sending echo reply notification:', error);
+  }
 });
 
 exports.onMentionCreate = onDocumentCreated('users/{targetUid}/mentions/{id}', async (event) => {
@@ -576,7 +668,6 @@ exports.deleteEcho = onCall({ region: 'us-central1' }, async (req) => {
     const authorUid = echoSnap.get('userUid');
     if (authorUid !== uid) throw new HttpsError('permission-denied', 'You can only delete your own echo');
     tx.delete(echoRef);
-    tx.update(waveRef, { 'counts.echoes': FieldValue.increment(-1) });
   });
 
   return { status: 'deleted' };
@@ -1070,14 +1161,13 @@ exports.migrateBoardingToFollowing = onRequest({ region: 'us-central1' }, async 
 });
 
 // Connect Vibe Cloud Function
-exports.connectVibe = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.connectVibe = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const fromUserId = context.auth.uid;
-    const toUserId = data.toUserId;
+  const fromUserId = req.auth.uid;
+  const toUserId = req.data.toUserId;
 
     if (fromUserId === toUserId) {
       throw new functions.https.HttpsError(
@@ -1154,14 +1244,13 @@ exports.connectVibe = functions.https.onCall(
 );
 
 // Disconnect Vibe Cloud Function
-exports.disconnectVibe = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.disconnectVibe = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const fromUserId = context.auth.uid;
-    const toUserId = data.toUserId;
+  const fromUserId = req.auth.uid;
+  const toUserId = req.data.toUserId;
 
     // Remove from crew collection (follower)
     await admin.firestore()
@@ -1218,14 +1307,13 @@ exports.disconnectVibe = functions.https.onCall(
 );
 
 // Record Video Reach Cloud Function
-exports.recordVideoReach = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.recordVideoReach = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const viewerId = context.auth.uid;
-    const postId = data.postId;
+  const viewerId = req.auth.uid;
+  const postId = req.data.postId;
 
     const postRef = admin.firestore().collection("waves").doc(postId);
     const reachRef = postRef.collection("reach").doc(viewerId);
@@ -1259,14 +1347,13 @@ exports.recordVideoReach = functions.https.onCall(
 );
 
 // Record Image Reach Cloud Function
-exports.recordImageReach = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.recordImageReach = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const viewerId = context.auth.uid;
-    const postId = data.postId;
+  const viewerId = req.auth.uid;
+  const postId = req.data.postId;
 
     const postRef = admin.firestore().collection("waves").doc(postId);
     const reachRef = postRef.collection("reach").doc(viewerId);
@@ -1300,14 +1387,13 @@ exports.recordImageReach = functions.https.onCall(
 );
 
 // Record Text Reach Cloud Function
-exports.recordTextReach = functions.https.onCall(
-  async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError("unauthenticated");
-    }
+exports.recordTextReach = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError("unauthenticated");
+  }
 
-    const viewerId = context.auth.uid;
-    const postId = data.postId;
+  const viewerId = req.auth.uid;
+  const postId = req.data.postId;
 
     const postRef = admin.firestore().collection("waves").doc(postId);
     const reachRef = postRef.collection("reach").doc(viewerId);
@@ -1340,17 +1426,16 @@ exports.recordTextReach = functions.https.onCall(
   }
 );
 
-exports.generateAIResponse = onCall(async (data, context) => {
-  // Temporarily disable auth check for testing
-  // if (!context.auth) {
-  //   throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
-  // }
+exports.generateAIResponse = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError('unauthenticated', 'User must be authenticated to use AI.');
+  }
 
-  console.log('Received data:', data);
-  console.log('Data type:', typeof data);
-  console.log('Data keys:', Object.keys(data));
+  console.log('Received data:', req.data);
+  console.log('Data type:', typeof req.data);
+  console.log('Data keys:', Object.keys(req.data));
 
-  const { prompt } = data;
+  const { prompt } = req.data;
   console.log('Extracted prompt:', prompt);
   console.log('Prompt type:', typeof prompt);
   console.log('Prompt length:', prompt ? prompt.length : 'undefined');

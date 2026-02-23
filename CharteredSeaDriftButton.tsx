@@ -44,6 +44,7 @@ type Props = {
   onSharePromo?: (cfg: { title: string; priceUSD: number }) => void;
   buttonStyle?: StyleProp<ViewStyle>;
   buttonTextStyle?: StyleProp<TextStyle>;
+  hitSlop?: { top?: number; left?: number; bottom?: number; right?: number };
 };
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -61,6 +62,7 @@ export default function CharteredSeaDriftButton(props: Props) {
     onSharePromo,
     buttonStyle,
     buttonTextStyle,
+    hitSlop,
   } = props;
 
   const [open, setOpen] = useState(false);
@@ -239,6 +241,7 @@ export default function CharteredSeaDriftButton(props: Props) {
           pressed && styles.buttonPressed,
         ]}
         onPress={() => setOpen(true)}
+        hitSlop={hitSlop || {top: 200, left: 200, bottom: 200, right: 200}}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: 'red' }} />

@@ -19,10 +19,12 @@ export default function VideoTile({
   videoId,
   initialAutoPlay = false,
   uid,
+  isActive = true,
 }: {
   videoId: string;
   initialAutoPlay?: boolean;
   uid?: string;
+  isActive?: boolean;
 }) {
   const s = useDataSaver();
   const [r, setR] = useState<Renditions | null>(null);
@@ -34,6 +36,7 @@ export default function VideoTile({
   const [hadError, setHadError] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [playbackReady, setPlaybackReady] = useState(false);
+  const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted for feed
   const lastTime = useRef(0);
   const cacheKickoff = useRef(false);
   const loadTimeout = useRef<NodeJS.Timeout | null>(null);
@@ -62,7 +65,16 @@ export default function VideoTile({
     setHasStarted(false);
     lastTime.current = 0;
     cacheKickoff.current = false;
+    setIsMuted(true); // Reset to muted for new videos
   }, [videoId]);
+
+  // Pause video when it becomes inactive (user scrolled away)
+  useEffect(() => {
+    if (!isActive) {
+      setPlay(false);
+      setShowPoster(true);
+    }
+  }, [isActive]);
 
   // Check network status
   useEffect(() => {
@@ -183,24 +195,26 @@ export default function VideoTile({
   useEffect(() => {
     if (!r) return;
     if (!s.enabled) {
-      setPlay(initialAutoPlay);
+      setPlay(initialAutoPlay && isActive);
       return;
     }
     if (s.autoplayOnWifiOnly && s.cellular) {
       setPlay(false);
     } else {
-      setPlay(!s.thumbnailsOnlyInFeed && initialAutoPlay);
+      setPlay(!s.thumbnailsOnlyInFeed && initialAutoPlay && isActive);
     }
-  }, [r, s.enabled, s.autoplayOnWifiOnly, s.cellular, s.thumbnailsOnlyInFeed, initialAutoPlay]);
+  }, [r, s.enabled, s.autoplayOnWifiOnly, s.cellular, s.thumbnailsOnlyInFeed, initialAutoPlay, isActive]);
 
   const onTapPlay = () => {
     if (s.enabled && s.wifiOnlyDownloads && s.cellular) return;
+    if (!isActive) return; // Don't allow playing if video is not active
     setHadError(false);
     setShowPoster(true);
     setIsBuffering(true);
     setHasStarted(false);
     setPlaybackReady(false);
     setPlay(true);
+    setIsMuted(false); // Unmute when user taps to play
   };
 
   const thumb = r?.thumb || undefined;
@@ -259,11 +273,215 @@ export default function VideoTile({
   }, []);
 
   return (
-    <View style={{ aspectRatio: 9 / 16, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', minHeight: 300, minWidth: 169, position: 'relative' }}>
+    <View style={{ aspectRatio: 9 / 16, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden', minHeight: 315, minWidth: 169, position: 'relative' }}>
+      {/* Split screen video thumbnail - permanent multi-section display */}
+      {r?.low && (
+        <>
+          {/* Center section - main video area */}
+          <View style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 0,
+            borderRadius: 12,
+            overflow: 'hidden'
+          }}>
+            <Video
+              source={{ uri: r.low }}
+              style={{
+                width: '100%',
+                height: '100%'
+              }}
+              paused={false}
+              resizeMode="cover"
+              repeat={true}
+              muted={isMuted}
+              controls={false}
+              posterResizeMode="cover"
+              bufferConfig={{
+                minBufferMs: 100,
+                maxBufferMs: 500,
+                bufferForPlaybackMs: 50,
+                bufferForPlaybackAfterRebufferMs: 100,
+              }}
+              progressUpdateInterval={1000}
+              onLoadStart={() => {}}
+              onError={() => {}}
+              onProgress={() => {}}
+              onBuffer={() => {}}
+              onEnd={() => {}}
+            />
+          </View>
+
+          {/* Left side section - shows left part of video */}
+          <View style={{
+            position: 'absolute',
+            top: -20,
+            left: -40,
+            width: 40,
+            bottom: -20,
+            zIndex: 0,
+            overflow: 'hidden'
+          }}>
+            <Video
+              source={{ uri: r.low }}
+              style={{
+                width: '300%',
+                height: '120%',
+                position: 'absolute',
+                top: '-10%',
+                left: '0%'
+              }}
+              paused={false}
+              resizeMode="cover"
+              repeat={true}
+              muted={true}
+              controls={false}
+              posterResizeMode="cover"
+              bufferConfig={{
+                minBufferMs: 100,
+                maxBufferMs: 500,
+                bufferForPlaybackMs: 50,
+                bufferForPlaybackAfterRebufferMs: 100,
+              }}
+              progressUpdateInterval={1000}
+              onLoadStart={() => {}}
+              onError={() => {}}
+              onProgress={() => {}}
+              onBuffer={() => {}}
+              onEnd={() => {}}
+            />
+          </View>
+
+          {/* Right side section - shows right part of video */}
+          <View style={{
+            position: 'absolute',
+            top: -20,
+            right: -40,
+            width: 40,
+            bottom: -20,
+            zIndex: 0,
+            overflow: 'hidden'
+          }}>
+            <Video
+              source={{ uri: r.low }}
+              style={{
+                width: '300%',
+                height: '120%',
+                position: 'absolute',
+                top: '-10%',
+                left: '-200%'
+              }}
+              paused={false}
+              resizeMode="cover"
+              repeat={true}
+              muted={true}
+              controls={false}
+              posterResizeMode="cover"
+              bufferConfig={{
+                minBufferMs: 100,
+                maxBufferMs: 500,
+                bufferForPlaybackMs: 50,
+                bufferForPlaybackAfterRebufferMs: 100,
+              }}
+              progressUpdateInterval={1000}
+              onLoadStart={() => {}}
+              onError={() => {}}
+              onProgress={() => {}}
+              onBuffer={() => {}}
+              onEnd={() => {}}
+            />
+          </View>
+
+          {/* Top section - shows top part of video */}
+          <View style={{
+            position: 'absolute',
+            top: -40,
+            left: -20,
+            right: -20,
+            height: 40,
+            zIndex: 0,
+            overflow: 'hidden'
+          }}>
+            <Video
+              source={{ uri: r.low }}
+              style={{
+                width: '120%',
+                height: '300%',
+                position: 'absolute',
+                top: '0%',
+                left: '-10%'
+              }}
+              paused={false}
+              resizeMode="cover"
+              repeat={true}
+              muted={true}
+              controls={false}
+              posterResizeMode="cover"
+              bufferConfig={{
+                minBufferMs: 100,
+                maxBufferMs: 500,
+                bufferForPlaybackMs: 50,
+                bufferForPlaybackAfterRebufferMs: 100,
+              }}
+              progressUpdateInterval={1000}
+              onLoadStart={() => {}}
+              onError={() => {}}
+              onProgress={() => {}}
+              onBuffer={() => {}}
+              onEnd={() => {}}
+            />
+          </View>
+
+          {/* Bottom section - shows bottom part of video */}
+          <View style={{
+            position: 'absolute',
+            bottom: -40,
+            left: -20,
+            right: -20,
+            height: 40,
+            zIndex: 0,
+            overflow: 'hidden'
+          }}>
+            <Video
+              source={{ uri: r.low }}
+              style={{
+                width: '120%',
+                height: '300%',
+                position: 'absolute',
+                top: '-200%',
+                left: '-10%'
+              }}
+              paused={false}
+              resizeMode="cover"
+              repeat={true}
+              muted={true}
+              controls={false}
+              posterResizeMode="cover"
+              bufferConfig={{
+                minBufferMs: 100,
+                maxBufferMs: 500,
+                bufferForPlaybackMs: 50,
+                bufferForPlaybackAfterRebufferMs: 100,
+              }}
+              progressUpdateInterval={1000}
+              onLoadStart={() => {}}
+              onError={() => {}}
+              onProgress={() => {}}
+              onBuffer={() => {}}
+              onEnd={() => {}}
+            />
+          </View>
+        </>
+      )}
+
+      {/* Static poster fallback if video fails - always available behind video */}
       {thumb && (
         <FastImage
           source={{ uri: thumb }}
-          style={posterStyles.background}
+          style={posterStyles.fallbackBackground}
           resizeMode={FastImage.resizeMode.cover}
           pointerEvents="none"
         />
@@ -330,6 +548,11 @@ export default function VideoTile({
               setIsBuffering(isBuffering || !playbackReady);
               setShowPoster(isBuffering || !playbackReady);
             }}
+            onEnd={() => {
+              // When video ends, stop playing and show poster
+              setPlay(false);
+              setShowPoster(true);
+            }}
           />
         ) : null}
 
@@ -356,6 +579,10 @@ const posterStyles = StyleSheet.create({
   background: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
+  },
+  fallbackBackground: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: -1, // Behind video
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,

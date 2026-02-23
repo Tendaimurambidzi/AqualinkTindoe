@@ -1,3 +1,4 @@
+﻿
 import React, {
   useEffect,
   useMemo,
@@ -33,12 +34,12 @@ import {
   PermissionsAndroid,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -52,6 +53,19 @@ import branch from 'react-native-branch';
 import CrabWalkBadge from './src/components/CrabWalkBadge';
 import { DataSaverProvider } from './src/dataSaver/DataSaverProvider';
 import OceanAmbienceToggle from './src/components/OceanAmbienceToggle';
+                const overlayState = overlayReadyMap[item.id] || {};
+                const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl;
+                const overlayVideoReady =
+                  overlayState.video === true || !isVideoAsset(item.media);
+                const overlayPairReady =
+                  !hasOverlayAudio ||
+                  (overlayVideoReady && overlayState.audio === true);
+                const playSynced = shouldPlay && overlayPairReady && item.id === activeVideoId;
+                const near = Math.abs(index - currentIndex) <= 1;
+                const textOnlyStory = !item.media && !item.image;
+                const colors = ['#FFFFFF', '#FFFFFF'];
+                return (
+                  <Pressable>
 import InteractiveWavePhysics from './InteractiveWavePhysics';
 import PosterActionBar from './src/components/PosterActionBar';
 import ShakeForStorms from './ShakeForStorms';
@@ -61,12 +75,13 @@ import CharteredSeaDriftButton from './CharteredSeaDriftButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { launchCamera, launchImageLibrary, CameraOptions, Asset, ImagePickerResponse } from 'react-native-image-picker';
+import RNFS from 'react-native-fs';
 import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import storage from '@react-native-firebase/storage';
 import messaging from '@react-native-firebase/messaging';
-                    
+import database from '@react-native-firebase/database';
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
 import {
@@ -81,7 +96,12 @@ import { offlineQueue } from './src/services/offlineQueue';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
+import MainFeedItem from './src/feed/MainFeedItem';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
+import MediaEditor, {
+  defaultMediaEdits,
+  MediaEdits,
+} from './src/components/MediaEditor';
                     
 
 // Navigation stack shared across auth/app flows
@@ -126,11 +146,28 @@ const isVideoAsset = (asset: Asset | null | undefined): boolean => {
   if (isLocal && !isImageExt) return true;
   return false;
 };
+
+const isAudioAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = (asset.type || '').toLowerCase();
+  if (t.includes('audio')) return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  return /(\.(mp3|m4a|aac|wav|ogg|flac))($|\?)/i.test(uri);
+};
+
+const isImageAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = (asset.type || '').toLowerCase();
+  if (t.includes('image')) return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
+};
                     
 type Vibe = {
   id: string;
   media?: Asset | null;
   audio?: { uri: string; name?: string } | null;
+  mediaEdits?: MediaEdits | null;
   captionText: string;
   playbackUrl?: string | null; // server-muxed single stream
   muxStatus?: 'pending' | 'ready' | 'failed';
@@ -198,6 +235,50 @@ const formatCount = (n: number) => {
   return `${Math.floor(n / 1000)}k`;
 };
 
+// URL parsing and clickable text component
+const parseUrls = (text: string) => {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const parts = text.split(urlRegex);
+  
+  return parts.map((part, index) => {
+    if (urlRegex.test(part)) {
+      return { type: 'url', content: part, key: index };
+    }
+    return { type: 'text', content: part, key: index };
+  });
+};
+
+const ClickableTextWithLinks = ({ text, style, numberOfLines }: { text: string; style?: any; numberOfLines?: number }) => {
+  const parts = parseUrls(text);
+  
+  return (
+    <Text style={style} numberOfLines={numberOfLines}>
+      {parts.map((part) => {
+        if (part.type === 'url') {
+          return (
+            <Text
+              key={part.key}
+              style={{ color: '#1976D2', textDecorationLine: 'underline' }}
+              onPress={() => {
+                Linking.openURL(part.content).catch(err => 
+                  console.log('Failed to open link:', err)
+                );
+              }}
+            >
+              {part.content}
+            </Text>
+          );
+        }
+        return (
+          <Text key={part.key}>
+            {part.content}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+};
+
 // Helper function to fetch the actual username from a user's profile
 const fetchUserUsername = async (userId: string): Promise<string> => {
   try {
@@ -243,12 +324,29 @@ const formatNotificationMessage = (notification: {
   fromUid?: string;
   fromName?: string;
   createdAt: any;
-}, userData?: Record<string, { name: string; avatar: string; bio: string }>) => {
+}, userData?: Record<string, { name: string; avatar: string; bio: string; email?: string; phoneNumber?: string }>) => {
   // Compute username dynamically using the same logic as the feed
   let username = notification.fromName;
   if (!username && notification.fromUid && userData) {
     const userInfo = userData[notification.fromUid];
     username = userInfo?.name || userInfo?.username;
+  }
+  // If still no username, try to get email or phone number from Firebase Auth
+  if (!username && notification.fromUid) {
+    try {
+      const auth = require('@react-native-firebase/auth').default;
+      const currentUser = auth().currentUser;
+      if (currentUser && currentUser.uid === notification.fromUid) {
+        username = currentUser.email || currentUser.phoneNumber || 'Unknown User';
+      } else {
+        // For other users, we might not have their auth data, so check userData
+        const userInfo = userData?.[notification.fromUid];
+        username = userInfo?.email || userInfo?.phoneNumber || 'Unknown User';
+      }
+    } catch (error) {
+      console.warn('Could not get user auth data for notification:', error);
+      username = 'Unknown User';
+    }
   }
   if (!username) {
     username = 'Unknown User';
@@ -257,20 +355,14 @@ const formatNotificationMessage = (notification: {
   // Format based on notification type with username included and no icons
   switch (notification.type) {
     case 'echo':
-      return `${username} sent an echo to your vibe`;
     case 'splash':
-      return `${username} splashed your vibe`;
     case 'octopus_hug':
-      return `${username} hugged your vibe`;
     case 'follow':
     case 'CONNECT_VIBE':
-      return `${username} connected! Wanna say hi?`;
-    case 'message':
-      return `${username} sent you a message`;
-    case 'friend_went_live':
-      return `${username} went live`;
     case 'joined_tide':
-      return `${username} joined your tide`;
+      // Ensure username has only one leading slash
+      const cleanUsername = username.startsWith('/') ? username : `/${username}`;
+      return `${cleanUsername} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
     case 'system_message':
@@ -379,10 +471,6 @@ function useAppVersionInfo() {
                     
 const waveOptionMenu = [
   {
-    label: 'Connect SplashLine',
-    description: 'Connect with this user to see their splashlines in your feed.',
-  },
-  {
     label: 'Save to device',
     description: 'Download a copy of this splashline for offline viewing.',
   },
@@ -407,7 +495,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  upperRow: { height: 48, justifyContent: 'center', alignItems: 'center' },
+  upperRow: { height: 28, justifyContent: 'center', alignItems: 'center' },
   profileButton: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -417,7 +505,7 @@ const styles = StyleSheet.create({
   umbrellaIcon: { fontSize: 20, textAlign: 'center' },
   profileLabel: { color: 'white', fontWeight: '700', letterSpacing: 1.2 },
                     
-  lowerRow: { height: 64 },
+  lowerRow: { height: 32 },
   scrollRow: { alignItems: 'center', gap: 18, paddingHorizontal: 12 },
                     
   topItem: {
@@ -555,24 +643,25 @@ const styles = StyleSheet.create({
   waveOptionsMenu: {
     backgroundColor: 'rgba(11,18,36,0.95)',
     borderRadius: 16,
-    paddingVertical: 4,
+    paddingVertical: 8,
     overflow: 'hidden',
+    minWidth: 280,
   },
   waveOptionsItem: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   waveOptionsItemTitle: {
     color: 'white',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 18,
     textAlign: 'center',
   },
   waveOptionsItemDescription: {
     color: 'rgba(255,255,255,0.65)',
-    fontSize: 12,
+    fontSize: 14,
     textAlign: 'center',
     marginTop: 4,
   },
@@ -658,7 +747,7 @@ const styles = StyleSheet.create({
   posterName: {
     color: 'white',
     fontWeight: 'bold',
-    marginBottom: 8,
+    marginBottom: 2,
     textShadowColor: 'rgba(0,0,0,0.7)',
     textShadowRadius: 4,
   },
@@ -790,9 +879,9 @@ const styles = StyleSheet.create({
                     
   // Profile-specific styles for the logbook
   avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#2ec7ff',
     borderWidth: 2,
     borderColor: 'white',
@@ -800,12 +889,13 @@ const styles = StyleSheet.create({
   profileName: {
     color: 'white',
     fontWeight: '800',
-    fontSize: 16,
-    marginTop: 8,
+    fontSize: 14,
+    marginTop: 2,
   },
   profileBio: {
-    color: 'rgba(255,255,255,0.8)',
-    marginTop: 4,
+    color: '#8B0000',
+    marginTop: 2,
+    fontSize: 11,
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   statsOverlay: {
@@ -1516,9 +1606,21 @@ function AuthButton({
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity onPress={onPress} style={authStyles.btn}>
+    <Pressable 
+      onPress={onPress} 
+      style={({ pressed }) => [
+        authStyles.btn,
+        pressed && {
+          opacity: 0.8,
+          transform: [{ scale: 0.98 }],
+        }
+      ]}
+      hitSlop={{ top: 30, bottom: 30, left: 25, right: 25 }}
+      pressRetentionOffset={{ top: 30, bottom: 30, left: 25, right: 25 }}
+      android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+    >
       <Text style={authStyles.btnText}>{title}</Text>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
                     
@@ -1542,7 +1644,94 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const navigation = useNavigation();
   // Get current user for ocean features
   const [user, setUser] = useState<any>(null);
+  const [isCurrentUserOnline, setIsCurrentUserOnline] = useState<boolean>(false);
   const [authCompleted, setAuthCompleted] = useState<boolean>(false);
+  const myUid = user?.uid || null;
+  
+  // Debug logging for myUid changes
+  useEffect(() => {
+    console.log('🔍 InnerApp myUid changed:', myUid);
+  }, [myUid]);
+
+  // Automatic view tracking with 10-second dwell time
+  const recordAutomaticReach = async (postId: string) => {
+    try {
+      console.log(`📊 Starting automatic reach recording for post ${postId}`);
+      console.log(`🔍 Current user state:`, user);
+      console.log(`🔍 Current myUid:`, myUid);
+
+      // Check authentication - use both state and direct auth check
+      let currentUser = user;
+      if (!currentUser) {
+        try {
+          const authMod = require('@react-native-firebase/auth').default;
+          currentUser = authMod().currentUser;
+          console.log(`🔍 Direct auth check - currentUser:`, currentUser);
+        } catch (error) {
+          console.log(`❌ Could not get auth module:`, error);
+        }
+      }
+
+      const currentUid = currentUser?.uid || null;
+      console.log(`🔍 Final uid check:`, currentUid);
+
+      // Check authentication first
+      if (!currentUid) {
+        console.log(`❌ No user authentication for reach recording`);
+        Alert.alert('Authentication Required', 'Please sign in to track post views.');
+        return;
+      }
+
+      // Check if already viewed in this session
+      if (viewedPosts.has(postId)) {
+        console.log(`❌ Post ${postId} already viewed in this session`);
+        return;
+      }
+
+      // Check AsyncStorage for previous views
+      const viewedKey = `viewed_${postId}_${currentUid}`;
+      const hasViewed = await AsyncStorage.getItem(viewedKey);
+      if (hasViewed) {
+        console.log(`❌ Post ${postId} already viewed previously`);
+        setViewedPosts(prev => new Set(prev).add(postId));
+        return;
+      }
+
+      console.log(`✅ Recording reach for post ${postId}`);
+
+      // Record the reach
+      const recordReachFn = functions().httpsCallable('recordVideoReach');
+      const result = await recordReachFn({ postId });
+
+      console.log(`📈 Reach recording result:`, result.data);
+
+      if (result.data && result.data.success) {
+        // Mark as viewed
+        await AsyncStorage.setItem(viewedKey, Date.now().toString());
+        setViewedPosts(prev => new Set(prev).add(postId));
+
+        // Update local reach count
+        setReachCounts(prev => ({
+          ...prev,
+          [postId]: (prev[postId] || 0) + 1
+        }));
+
+        console.log(`🎉 Reach recorded for post ${postId}, new count: ${(reachCounts[postId] || 0) + 1}`);
+
+        // Refresh reach counts from server after a short delay
+        setTimeout(() => {
+          loadReachCounts([postId]);
+        }, 1000);
+      } else {
+        console.log(`❌ Reach recording failed:`, result.data);
+        Alert.alert('View Recording Failed', 'Could not record post view. Please try again.');
+      }
+
+    } catch (error) {
+      console.error('❌ Automatic reach recording error:', error);
+      Alert.alert('Error', `Failed to record view: ${error.message || 'Unknown error'}`);
+    }
+  };
                     
   // Belt-and-suspenders: even if the user somehow gets to this screen
   // without being logged in, reset them to the sign-up flow.
@@ -1553,7 +1742,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
     if (!authMod) return;
     const sub = authMod().onAuthStateChanged((u: any) => {
+      console.log('🔐 InnerApp auth state changed:', u ? `User: ${u.uid}` : 'No user');
       setUser(u);
+      setIsCurrentUserOnline(!!u);
       if (!u) {
         console.warn(
           'InnerApp mounted without a user. This indicates a routing issue.',
@@ -1565,10 +1756,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
   // Set up notifications listener
   useEffect(() => {
-    if (!myUid) return;
+    if (!user?.uid) return;
 
     const unsubscribe = firestore()
-      .collection(`users/${myUid}/pings`)
+      .collection(`users/${user.uid}/pings`)
       .orderBy('createdAt', 'desc')
       .onSnapshot((snapshot) => {
         if (!snapshot) {
@@ -1631,14 +1822,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
 
         setNotifications(notificationsData);
-        const unreadCount = notificationsData.filter(n => !n.read).length;
-        setUnreadNotificationsCount(unreadCount);
+        const unreadNotifications = notificationsData.filter(n => !n.read).length;
+        
+        // Recalculate total unread alerts including messages
+        const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+        setUnreadAlertsCount(unreadNotifications + unreadMessages);
 
         // Detect new notifications and show popup/sound
-        if (unreadCount > previousUnreadCount && notificationsData.length > 0) {
+        if (unreadNotifications > previousUnreadCount && notificationsData.length > 0) {
           const newNotifications = notificationsData.filter(n => !n.read);
           if (newNotifications.length > 0) {
             const latestNewNotification = newNotifications[0];
+            
+            // Ensure user data is available for the notification sender (async, don't wait)
+            ensureUserData(latestNewNotification.fromUid);
+            
             const displayName = userData[latestNewNotification.fromUid]?.name || latestNewNotification.fromName || 'Someone';
             
             let message = '';
@@ -1657,7 +1855,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         }
         
-        setPreviousUnreadCount(unreadCount);
+        setPreviousUnreadCount(unreadNotifications);
 
         // Show toast for new unread notifications
         const newUnreadNotifications = notificationsData.filter(n => !n.read);
@@ -1665,6 +1863,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const latestNotification = newUnreadNotifications[0];
           // Show toast for social interaction notifications
           if (['CONNECT_VIBE', 'echo', 'splash', 'octopus_hug', 'follow'].includes(latestNotification.type)) {
+            // Ensure user data is available for the notification sender (async, don't wait)
+            ensureUserData(latestNotification.fromUid);
+            
             const avatar = userData ? getUserAvatar(latestNotification.fromUid, userData) : null;
             const formattedMessage = formatNotificationMessage(latestNotification, userData || {});
             notifySuccess(formattedMessage, avatar);
@@ -1673,7 +1874,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
 
     return unsubscribe;
-  }, [myUid]);
+  }, [user?.uid]);
 
   const insets = useSafeAreaInsets();
   // Development safeguard (disabled): if you need to skip uploads in debug Android,
@@ -1683,13 +1884,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const editorTools = useMemo(
     () => [
-      { icon: '🎵', label: 'Ocean melodies' },
-      { icon: '🎨', label: 'Ocean Tones' },
-      { icon: '🖼️', label: 'Hull & Canvas' },
-      { icon: '✂️', label: 'Cut the Wake' },
-      { icon: '🌀', label: 'Riptide' },
-      { icon: '✨', label: 'Ripples & Foam' },
-      { icon: '🛟', label: 'Buoys' },
+      { icon: '\u2702\ufe0f', label: 'Cut the Wake' },
+      { icon: '\ud83c\udfa8', label: 'Ocean Tones' },
+      { icon: '\ud83c\udfb5', label: 'Ocean Melodies' },
+      { icon: '\ud83d\udee0\ufe0f', label: 'Media Editor' },
     ],
     [],
   );
@@ -1723,11 +1921,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     avatar: any;
   }>({ visible: false, message: '', fromName: '', type: '', avatar: null });
   
+  // View tracking state
+  const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
+  const [viewTimers, setViewTimers] = useState<Record<string, NodeJS.Timeout>>({});
+  const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
+  
   // Notification sound player
   const [notificationSound, setNotificationSound] = useState<Sound | null>(null);
   
   // Track previous unread count to detect new notifications
   const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
+  
+  // Track which images have been revealed in the feed
+  const [revealedImages, setRevealedImages] = useState<Set<string>>(new Set());
   
   // Initialize notification sound
   useEffect(() => {
@@ -1802,12 +2008,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [profilePhoto]);
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
-  const myUid = auth?.()?.currentUser?.uid || null;
+  const [quickReplyText, setQuickReplyText] = useState<string>('');
+  const [selectedMessageForReply, setSelectedMessageForReply] = useState<any>(null);
                     
   // Clear user-specific state when user changes
   useEffect(() => {
-    console.log('User change detected, myUid:', myUid);
-    if (!myUid) {
+    console.log('User change detected, myUid:', user?.uid || null);
+    if (!user?.uid) {
       // User signed out - clear all user data
       console.log('Clearing user data');
       setProfileName('');
@@ -1822,12 +2029,91 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setProfilePhoto(null);
       setAccountCreationHandle('');
     }
-  }, [myUid]);
+  }, [user?.uid]);
                     
+  // Maintain single-source presence state in Firestore users/{uid}
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      if (user?.uid) {
+        if (nextAppState === 'inactive' || nextAppState === 'background') {
+          setIsCurrentUserOnline(false);
+          const updateLastSeen = async () => {
+            try {
+              let firestoreMod: any = null;
+              try {
+                firestoreMod = require('@react-native-firebase/firestore').default;
+              } catch {}
+              if (firestoreMod) {
+                await firestoreMod()
+                  .doc(`users/${user?.uid}`)
+                  .set(
+                    {
+                      online: false,
+                      lastSeen: firestoreMod.Timestamp.now(),
+                      lastActiveAt: firestoreMod.Timestamp.now(),
+                    },
+                    { merge: true },
+                  );
+              }
+            } catch (error) {
+              console.warn('Failed to update lastSeen on background:', error);
+            }
+          };
+          updateLastSeen();
+        } else if (nextAppState === 'active') {
+          setIsCurrentUserOnline(true);
+          const setOnline = async () => {
+            try {
+              let firestoreMod: any = null;
+              try {
+                firestoreMod = require('@react-native-firebase/firestore').default;
+              } catch {}
+              if (firestoreMod) {
+                await firestoreMod()
+                  .doc(`users/${user?.uid}`)
+                  .set(
+                    {
+                      online: true,
+                      lastActiveAt: firestoreMod.Timestamp.now(),
+                    },
+                    { merge: true },
+                  );
+              }
+            } catch (error) {
+              console.warn('Failed to set online on active:', error);
+            }
+          };
+          setOnline();
+        }
+      }
+    });
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [user?.uid]);
+
+  // Heartbeat to keep user online status updated every 30 seconds
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    const heartbeatInterval = setInterval(() => {
+      if (isCurrentUserOnline) {
+        database().ref(`/presence/${user.uid}`).update({ 
+          online: true, 
+          lastSeen: null,
+          lastActiveAt: database.ServerValue.TIMESTAMP,
+          lastHeartbeat: database.ServerValue.TIMESTAMP 
+        }).catch(err => console.log('Heartbeat update failed:', err));
+      }
+    }, 30000); // Update every 30 seconds
+
+    return () => clearInterval(heartbeatInterval);
+  }, [user?.uid, isCurrentUserOnline]);
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
+  const replyInputRef = useRef<TextInput>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
-                    
   // Video controls and loading state
   const [videoControlsVisible, setVideoControlsVisible] = useState<{[key: string]: boolean}>({});
   const [videoLoading, setVideoLoading] = useState<{[key: string]: boolean}>({});
@@ -1945,11 +2231,76 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => {
       cancelled = true;
     };
-  }, [myUid, normalizeUserHandle]);
+  }, [user?.uid, normalizeUserHandle]);
+
+  // Auto-focus reply input when a message is selected for reply
+  useEffect(() => {
+    if (selectedMessageForReply && replyInputRef.current) {
+      // Small delay to ensure the input is rendered
+      setTimeout(() => {
+        replyInputRef.current?.focus();
+      }, 100);
+    }
+  }, [selectedMessageForReply]);
+
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
-  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string }>>({});
+  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }>>({});
+
+  // Helper function to ensure user data is available for a given user ID
+  const ensureUserData = async (userId: string) => {
+    if (userData[userId]) {
+      return userData[userId];
+    }
+
+    try {
+      let firestoreMod: any = null;
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      if (!firestoreMod) return null;
+
+      const doc = await firestoreMod().doc(`users/${userId}`).get();
+      const data = doc.data();
+      let lastSeen = null;
+      if (data?.lastSeen) {
+        if (typeof data.lastSeen.toDate === 'function') {
+          lastSeen = data.lastSeen.toDate();
+        } else if (typeof data.lastSeen === 'number') {
+          lastSeen = new Date(data.lastSeen);
+        } else if (typeof data.lastSeen === 'string') {
+          lastSeen = new Date(data.lastSeen);
+        }
+      }
+      const userInfo = {
+        name: data?.name || data?.displayName || data?.username || 'User',
+        avatar: data?.avatar || data?.userPhoto || '',
+        bio: data?.bio || '',
+        lastSeen: lastSeen,
+        online: data?.online === true,
+      };
+      setUserData(prev => {
+        const existing = prev[userId];
+        const updatedUserInfo = { ...userInfo };
+        if (existing) {
+          if (existing.lastSeen && updatedUserInfo.lastSeen) {
+            // Use the more recent lastSeen
+            updatedUserInfo.lastSeen = updatedUserInfo.lastSeen > existing.lastSeen ? updatedUserInfo.lastSeen : existing.lastSeen;
+          } else if (existing.lastSeen && !updatedUserInfo.lastSeen) {
+            // Keep existing if new is null
+            updatedUserInfo.lastSeen = existing.lastSeen;
+          }
+          // If existing is null, use updated (which may be null or set)
+        }
+        return { ...prev, [userId]: updatedUserInfo };
+      });
+      return userInfo;
+    } catch (error) {
+      console.warn('Failed to fetch user data for', userId, error);
+      return null;
+    }
+  };
 
   // Load userData from AsyncStorage on app start
   useEffect(() => {
@@ -1994,22 +2345,48 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!firestoreMod) return;
 
     const fetchUsers = async () => {
-      const updates: Record<string, { name: string; avatar: string; bio: string }> = {};
+      const updates: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }> = {};
       for (const uid of missingUids) {
         try {
           const doc = await firestoreMod().doc(`users/${uid}`).get();
           const data = doc.data();
+          let lastSeen: Date | null = null;
+          if (data?.lastSeen) {
+            if (typeof data.lastSeen.toDate === 'function') {
+              lastSeen = data.lastSeen.toDate();
+            } else if (typeof data.lastSeen === 'number') {
+              lastSeen = new Date(data.lastSeen);
+            } else if (typeof data.lastSeen === 'string') {
+              lastSeen = new Date(data.lastSeen);
+            }
+          }
           updates[uid] = {
             name: data?.name || data?.displayName || 'User',
             avatar: data?.avatar || data?.userPhoto || '',
             bio: data?.bio || '',
+            lastSeen,
+            online: data?.online === true,
           };
         } catch (e) {
           console.warn('Failed to fetch user data for', uid, e);
-          updates[uid] = { name: 'User', avatar: '', bio: '' };
+          updates[uid] = { name: 'User', avatar: '', bio: '', lastSeen: null, online: false };
         }
       }
-      setUserData(prev => ({ ...prev, ...updates }));
+      setUserData(prev => {
+        const merged = { ...prev };
+        Object.entries(updates).forEach(([uid, next]) => {
+          const existing = merged[uid];
+          merged[uid] = {
+            ...(existing || {}),
+            ...next,
+            lastSeen:
+              existing?.lastSeen && !next.lastSeen
+                ? existing.lastSeen
+                : next.lastSeen,
+          };
+        });
+        return merged;
+      });
     };
     fetchUsers();
   }, [wavesFeed]); // Removed userData from dependencies to prevent infinite loops
@@ -2030,13 +2407,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const waves: Vibe[] = [];
         snapshot?.forEach((doc: any) => {
           const data = doc.data();
+          const mediaUri = data.playbackUrl || data.mediaUrl || null;
+          const mediaType = data.mediaType || null;
+          const isAudioPost =
+            data.postType === 'audio' || /^audio\//i.test(String(mediaType || ''));
           waves.push({
             id: doc.id,
-            media: { uri: data.playbackUrl || data.mediaUrl },
-            audio: data.audioUrl ? { uri: data.audioUrl } : null,
+            media:
+              !isAudioPost && mediaUri
+                ? ({ uri: mediaUri, type: mediaType || undefined } as any)
+                : null,
+            audio: data.audioUrl
+              ? { uri: data.audioUrl }
+              : isAudioPost && mediaUri
+              ? { uri: mediaUri }
+              : null,
             captionText: data.captionText || data.caption || data.text || '',
             link: data.link || null,
             playbackUrl: data.playbackUrl,
+            mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
             muxStatus: data.muxStatus,
             authorName: data.authorName,
             ownerUid: data.ownerUid,
@@ -2090,7 +2479,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [expandedEchoes, setExpandedEchoes] = useState<Record<string, boolean>>({});
   const [echoesPageSize, setEchoesPageSize] = useState<Record<string, number>>({});
   const [echoExpansionInProgress, setEchoExpansionInProgress] = useState<Record<string, boolean>>({});
-  const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
   // Public feed toggle and data
                     
   const [waveKey, setWaveKey] = useState(Date.now()); // Key to force video player refresh
@@ -2099,13 +2487,118 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [preservedScrollPosition, setPreservedScrollPosition] = useState<number | null>(null); // Preserve scroll position when navigating to PostDetail
   const [fullScreenPost, setFullScreenPost] = useState<any>(null); // Post for full screen modal
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+  const [preloadedVideoIds, setPreloadedVideoIds] = useState<Set<string>>(new Set()); // Videos to preload (adjacent to active)
+  const onViewableItemsChanged = useRef(({ viewableItems, changed }: any) => {
+    console.log(`👁️ Viewable items changed:`, viewableItems.map((item: any) => item.item.id));
+
+    // Handle video playback logic
     if (viewableItems.length > 0) {
-      setActiveVideoId(viewableItems[0].item.id);
+      const newActiveId = viewableItems[0].item.id;
+      setActiveVideoId(newActiveId);
+      
+      // Preload adjacent videos (2 above and 2 below the active video)
+      const activeIndex = displayFeed.findIndex(item => item.id === newActiveId);
+      if (activeIndex !== -1) {
+        const preloadIds = new Set<string>();
+        
+        // Add videos adjacent to the active one
+        for (let i = Math.max(0, activeIndex - 2); i <= Math.min(displayFeed.length - 1, activeIndex + 2); i++) {
+          if (displayFeed[i].media && isVideoAsset(displayFeed[i].media)) {
+            preloadIds.add(displayFeed[i].id);
+          }
+        }
+        
+        setPreloadedVideoIds(preloadIds);
+      }
     } else {
       setActiveVideoId(null);
+      setPreloadedVideoIds(new Set());
     }
+
+    // Handle view tracking for reach counting
+    const currentlyViewableIds = new Set(viewableItems.map((item: any) => item.item.id));
+    
+    // Clear timers for items that are no longer viewable
+    setViewTimers(prevTimers => {
+      const newTimers = { ...prevTimers };
+      Object.keys(newTimers).forEach(postId => {
+        if (!currentlyViewableIds.has(postId)) {
+          console.log(`⏰ Clearing timer for non-viewable post ${postId}`);
+          clearTimeout(newTimers[postId]);
+          delete newTimers[postId];
+        }
+      });
+      return newTimers;
+    });
+
+    // Start timers for newly viewable items
+    viewableItems.forEach((viewableItem: any) => {
+      const postId = viewableItem.item.id;
+      console.log(`👁️ Post ${postId} became viewable`);
+      
+      setViewTimers(prevTimers => {
+        // Don't start a new timer if one already exists
+        if (prevTimers[postId]) {
+          console.log(`⏰ Timer already exists for post ${postId}`);
+          return prevTimers;
+        }
+
+        console.log(`⏰ Starting 10-second view timer for post ${postId}`);
+
+        // Start 10-second view timer
+        const timer = setTimeout(() => {
+          console.log(`🎯 10-second view timer fired for post ${postId}`);
+          recordAutomaticReach(postId);
+          // Remove timer after it fires
+          setViewTimers(prev => {
+            const newTimers = { ...prev };
+            delete newTimers[postId];
+            return newTimers;
+          });
+        }, 10000); // 10 seconds
+
+        return {
+          ...prevTimers,
+          [postId]: timer
+        };
+      });
+    });
   });
+
+  // Cleanup view timers on unmount
+  useEffect(() => {
+    return () => {
+      // Clear all active view timers
+      setViewTimers(prevTimers => {
+        Object.values(prevTimers).forEach(timer => clearTimeout(timer));
+        return {};
+      });
+    };
+  }, []);
+
+  // Load viewed posts from AsyncStorage on mount
+  useEffect(() => {
+    const loadViewedPosts = async () => {
+      try {
+        if (!myUid) return;
+        
+        const keys = await AsyncStorage.getAllKeys();
+        const viewedKeys = keys.filter(key => key.startsWith('viewed_') && key.includes(`_${myUid}`));
+        
+        const viewedPostIds = viewedKeys.map(key => {
+          const parts = key.split('_');
+          return parts[1]; // Extract postId from 'viewed_{postId}_{userId}'
+        });
+        
+        setViewedPosts(new Set(viewedPostIds));
+      } catch (error) {
+        console.error('Error loading viewed posts:', error);
+      }
+    };
+
+    loadViewedPosts();
+  }, [user?.uid]);
+
   const handlePostPublished = useCallback(
     (wave: Vibe) => {
       setPostFeed(prev => {
@@ -2127,6 +2620,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       loadReachCounts([wave.id]);
       // Clear captured media after successful posting
       setCapturedMedia(null);
+      setCapturedMediaEdits(defaultMediaEdits);
       // Show success message for posting a splashline
       notifySuccess('You dropped a splashline!');
     },
@@ -2144,7 +2638,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             feedRef.current.scrollToIndex({ 
               index: preservedScrollPosition, 
               animated: false,
-              viewPosition: 0 // Align to top of screen
+              viewPosition: 0.5 // Center the item in the screen
             });
             setCurrentIndex(preservedScrollPosition);
           }
@@ -2162,6 +2656,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [lastLoadedDoc, setLastLoadedDoc] = useState<any>(null);
   const [hasMoreItems, setHasMoreItems] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
                     
   const [showProfile, setShowProfile] = useState<boolean>(false);
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
@@ -2192,6 +2687,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isInUserCrew, setIsInUserCrew] = useState<{ [uid: string]: boolean }>(
     {},
   );
+  const [optimisticCrewCounts, setOptimisticCrewCounts] = useState<{ [uid: string]: number }>({});
   const [crewLoading, setCrewLoading] = useState<boolean>(false);
   const [blockedUsers, setBlockedUsers] = useState<Set<string>>(new Set());
   const [removedUsers, setRemovedUsers] = useState<Set<string>>(new Set());
@@ -2218,6 +2714,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [toastMessage, setToastMessage] = useState('');
   const [toastAvatar, setToastAvatar] = useState<any>(null);
   const toastTimerRef = useRef<any>(null);
+  const hibernationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Notifications state
   const [notifications, setNotifications] = useState<Array<{
@@ -2228,7 +2725,42 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     read: boolean;
     createdAt: any;
   }>>([]);
-  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+  const [unreadAlertsCount, setUnreadAlertsCount] = useState(0);
+  
+  // Messaging inbox state
+  const [messageThreads, setMessageThreads] = useState<Array<{
+    senderUid: string;
+    senderName: string;
+    senderAvatar: any;
+    lastMessage: string;
+    lastMessageTime: any;
+    unreadCount: number;
+    messages: Array<{
+      id: string;
+      text: string;
+      fromUid: string;
+      createdAt: any;
+      attachmentUrl?: string;
+      attachmentType?: string;
+      attachmentName?: string;
+    }>;
+  }>>([]);
+  
+  // Notification deletion state
+  const [selectedNotifications, setSelectedNotifications] = useState<Set<string>>(new Set());
+  const [isDeleteMode, setIsDeleteMode] = useState(false);
+  
+  // Thread message selection state
+  const [selectedThreadMessages, setSelectedThreadMessages] = useState<Set<string>>(new Set());
+  const [isThreadSelectionMode, setIsThreadSelectionMode] = useState(false);
+  
+  const [showInbox, setShowInbox] = useState(false);
+  const [selectedThread, setSelectedThread] = useState<{
+    senderUid: string;
+    senderName: string;
+    senderAvatar: any;
+    messages: Array<any>;
+  } | null>(null);
                     
   // Update timestamps every second
   useEffect(() => {
@@ -2236,6 +2768,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setTimeTick(prev => prev + 1);
     }, 1000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Load message threads on mount
+  useEffect(() => {
+    loadMessageThreads();
   }, []);
                     
   // Ocean Dialog state
@@ -2626,6 +3163,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const res = await launchImageLibrary({
               mediaType: 'photo',
               selectionLimit: 1,
+              includeBase64: false,
+              presentationStyle: 'fullScreen',
             });
             console.log('Image library response:', res);
             const a = res?.assets?.[0];
@@ -2725,6 +3264,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [bridge.rainEffectsEnabled]);
   const [showPearls, setShowPearls] = useState<boolean>(false);
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
+  const [echoWaveId, setEchoWaveId] = useState<string | null>(null);
+  const [echoPostData, setEchoPostData] = useState<Vibe | null>(null);
+  const [mainEchoSending, setMainEchoSending] = useState<boolean>(false);
   const [postEchoTexts, setPostEchoTexts] = useState<{[postId: string]: string}>({});
   const [postEchoLists, setPostEchoLists] = useState<{[postId: string]: any[]}>({});
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
@@ -2887,6 +3429,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             mediaUri: data.mediaUrl || null,
             muxStatus: data.muxStatus || null,
             audioUrl: data.audioUrl || null,
+            mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
           },
         });
       });
@@ -2980,17 +3523,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (result.kind !== 'vibe') return null;
     const extra = result.extra || {};
     const uri = extra.mediaUri || extra.playbackUrl || '';
-    if (!uri) return null;
+    const isAudioPost =
+      extra.postType === 'audio' ||
+      /^audio\//i.test(String(extra.mediaType || ''));
+    if (!uri && !extra.audioUrl) return null;
     return {
       id: result.id,
-      media: { uri, type: extra.mediaType || extra.media?.type || 'video/mp4' } as Asset,
+      media:
+        !isAudioPost && uri
+          ? ({ uri, type: extra.mediaType || extra.media?.type || 'video/mp4' } as Asset)
+          : null,
       audio: extra.audioUrl
         ? {
             uri: extra.audioUrl,
             name: extra.audioName || 'Audio',
           }
+        : isAudioPost && uri
+        ? { uri, name: extra.audioName || 'Audio' }
         : null,
       captionText: extra.caption || '',
+      mediaEdits: extra.mediaEdits || extra.editorState || extra.edits || null,
       playbackUrl: extra.playbackUrl || null,
       muxStatus: extra.muxStatus || null,
       authorName: extra.authorName || null,
@@ -3143,7 +3695,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleAIEchoSuggest = useCallback(async () => {
     setIsAIEchoSuggesting(true);
     try {
-      const suggestion = await generateEchoSuggestion();
+      // Build post context for AI
+      const postContext = echoPostData ? {
+        captionText: echoPostData.captionText,
+        mediaType: echoPostData.media?.type,
+        authorName: echoPostData.authorName,
+        hasImage: !!(echoPostData.image || (echoPostData.media?.type?.startsWith('image/'))),
+        hasVideo: !!(echoPostData.playbackUrl || (echoPostData.media?.type?.startsWith('video/')))
+      } : undefined;
+
+      const suggestion = await generateEchoSuggestion(postContext);
       updateEchoText(suggestion);
     } catch (error) {
       console.error('AI echo suggest failed', error);
@@ -3151,7 +3712,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } finally {
       setIsAIEchoSuggesting(false);
     }
-  }, [notifyError, updateEchoText]);
+  }, [notifyError, updateEchoText, echoPostData]);
   const [echoList, setEchoList] = useState<
     Array<{
       id?: string;
@@ -3178,13 +3739,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     uid: string;
     name: string;
   } | null>(null);
-  // Removed pre-fill of echo editor so input clears after send and stays free for next echo
-  const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
+  const [messageAttachment, setMessageAttachment] = useState<Asset | null>(null);
+  const [isSending, setIsSending] = useState<boolean>(false);
   const [attachedAudio, setAttachedAudio] = useState<{
     uri: string;
     name?: string;
   } | null>(null);
+  const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
+  const [capturedMediaEdits, setCapturedMediaEdits] =
+    useState<MediaEdits>(defaultMediaEdits);
+  const [waveCaption, setWaveCaption] = useState<string>('');
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
+  const [showMediaEditorModal, setShowMediaEditorModal] =
+    useState<boolean>(false);
   const [audioUrlInput, setAudioUrlInput] = useState<string>('');
   const [transcoding, setTranscoding] = useState<boolean>(false);
   
@@ -3192,6 +3759,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showUnifiedPostModal, setShowUnifiedPostModal] = useState<boolean>(false);
   const [unifiedPostText, setUnifiedPostText] = useState<string>('');
   const [unifiedPostMedia, setUnifiedPostMedia] = useState<Asset | null>(null);
+  const [unifiedPostAudio, setUnifiedPostAudio] = useState<{
+    uri: string;
+    name?: string;
+  } | null>(null);
   const [isUnifiedPosting, setIsUnifiedPosting] = useState<boolean>(false);
                     
   // DM subscription - adds messages to pings automatically
@@ -3657,7 +4228,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // Load echoes when echo modal opens
   useEffect(() => {
-    if (!showEchoes || !currentWave) {
+    if (!showEchoes || !echoWaveId) {
       setEchoList([]);
       return;
     }
@@ -3666,7 +4237,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         const echoesSnap = await firestore()
           .collection('waves')
-          .doc(currentWave.id)
+          .doc(echoWaveId)
           .collection('echoes')
           .orderBy('createdAt', 'desc')
           .get();
@@ -3694,7 +4265,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
                     
     loadEchoes();
-  }, [showEchoes, currentWave]);
+  }, [showEchoes, echoWaveId]);
+                    
+  // Load post data when echo modal opens
+  useEffect(() => {
+    if (!showEchoes || !echoWaveId) {
+      setEchoPostData(null);
+      return;
+    }
+                    
+    const loadPostData = async () => {
+      try {
+        const waveDoc = await firestore().collection('waves').doc(echoWaveId).get();
+        if (waveDoc.exists) {
+          const data = waveDoc.data();
+          const postData: Vibe = {
+            id: waveDoc.id,
+            captionText: data?.caption || '',
+            media: data?.media || null,
+            audio: data?.audio || null,
+            playbackUrl: data?.playbackUrl || null,
+            muxStatus: data?.muxStatus || null,
+            authorName: data?.authorName || null,
+            ownerUid: data?.ownerUid || null,
+            user: data?.user || null,
+            image: data?.image || null,
+            counts: data?.counts || { splashes: 0, echoes: 0 },
+          };
+          setEchoPostData(postData);
+        }
+      } catch (error) {
+        console.error('Error loading post data for echo:', error);
+        setEchoPostData(null);
+      }
+    };
+                    
+    loadPostData();
+  }, [showEchoes, echoWaveId]);
                     
   // Adjust right-side bubble vertical anchor to fit up to 3 stacks
   const rightBubblesTop = useMemo(() => {
@@ -3762,19 +4369,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const videoStyleFor = useCallback(
     (id: string) => {
-      const ar = videoAspectMap[id] || 9 / 16;
-      const width = SCREEN_WIDTH - 40;
-      const height = width / ar;
+      const ar = 9 / 16; // Use fixed aspect ratio for consistent full-width display
+      const width = SCREEN_WIDTH; // Full screen width to fill entire device width
+      const height = (width / ar) * 0.5; // Reduced height by half for 3-post view
       return [
         styles.postedWaveMedia,
         {
           width,
           height,
           alignSelf: 'center',
+          backgroundColor: 'transparent', // Override yellow background
         },
       ] as any;
     },
-    [videoAspectMap],
+    [], // Remove videoAspectMap dependency since we use fixed aspect ratio
   );
   const [bufferingMap, setBufferingMap] = useState<Record<string, boolean>>({});
   const bufferingTimeoutsRef = useRef<Record<string, any>>({});
@@ -3893,17 +4501,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Keep toggles visible a bit longer before auto-hide
     hideUiTimerRef.current = setTimeout(() => setIsUiVisible(false), 7000);
   }, []);
-  const withUi = useCallback(
-    (fn: () => void) => () => {
-      try {
-        showUiTemporarily();
-      } catch {}
-      try {
-        fn();
-      } catch {}
-    },
-    [showUiTemporarily],
-  );
   const openWaveOptions = useCallback((wave: Vibe) => {
     setWaveOptionsTarget(wave);
   }, []);
@@ -4202,11 +4799,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [waveOptionsTarget, functionsClient, isSavingWave, currentWave],
   );
-  const [isTopBarExpanded, setIsTopBarExpanded] = useState(false);
   const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
   const [isTopBarVisible, setIsTopBarVisible] = useState(true);
-  const hibernationTimerRef = useRef<NodeJS.Timeout | null>(null);
   const dragStartYRef = useRef(0);
   const dragStartTimeRef = useRef(0);
   const touchStartRef = useRef(0);
@@ -4214,13 +4809,48 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Hibernation logic for top bar
   const showTopBar = useCallback(() => {
     setIsTopBarVisible(true);
-    if (hibernationTimerRef.current) {
-      clearTimeout(hibernationTimerRef.current);
-    }
-    hibernationTimerRef.current = setTimeout(() => {
-      setIsTopBarVisible(false);
-    }, 7000);
   }, []);
+                    
+  // Optimized button handlers for instant response
+  const handleDropWave = useCallback(() => {
+    showTopBar();
+    setShowMakeWaves(true);
+  }, [showTopBar]);
+                    
+  const handleVibeAlerts = useCallback(() => {
+    showTopBar();
+    setShowInbox(true);
+  }, [showTopBar]);
+                    
+  const handleVibeHunt = useCallback(() => {
+    showTopBar();
+    setShowDeepSearch(true);
+  }, [showTopBar]);
+                    
+  const handleMyAura = useCallback(() => {
+    showTopBar();
+    setShowProfile(true);
+  }, [showTopBar]);
+                    
+  const handleVibeOut = useCallback(() => {
+    showTopBar();
+    setShowExplore(true);
+  }, [showTopBar]);
+                    
+  const handleVibeMode = useCallback(() => {
+    showTopBar();
+    setShowSchoolMode(true);
+  }, [showTopBar]);
+                    
+  const handleAiAssistant = useCallback(() => {
+    showTopBar();
+    setShowAIModal(true);
+  }, [showTopBar]);
+                    
+  const handleVibeBoard = useCallback(() => {
+    showTopBar();
+    setShowNotice(true);
+  }, [showTopBar]);
                     
   // Initial visibility on app open
   useEffect(() => {
@@ -4647,6 +5277,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
             const cap = data?.caption || { x: 0, y: 0 };
             const authorName = data?.authorName || null;
+            const mediaType = data?.mediaType || null;
+            const isAudioPost =
+              data?.postType === 'audio' ||
+              /^audio\//i.test(String(mediaType || ''));
             let playbackUrl: string | null =
               data?.playbackUrl || data?.mediaUrl || null;
             let mediaUri: string | null = null;
@@ -4659,14 +5293,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }
             // Show all vibes in public feed (my vibes and other users' vibes)
             const finalUri = playbackUrl || mediaUri;
-            if (!finalUri) continue;
+            if (!finalUri && !data?.audioUrl) continue;
             out.push({
               id: id,
-              media: { uri: finalUri } as any,
-              audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-              captionText: mediaCaption, // Media overlay text
+              media:
+                !isAudioPost && finalUri
+                  ? ({ uri: finalUri, type: mediaType || undefined } as any)
+                  : null,
+              audio: data?.audioUrl
+                ? { uri: String(data.audioUrl) }
+                : isAudioPost && finalUri
+                ? { uri: String(finalUri) }
+                : null,
+              captionText: mediaCaption || feedText,
               link: data.link || null,
               playbackUrl: playbackUrl,
+              mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
               muxStatus: (data?.muxStatus || null) as any,
               authorName,
               ownerUid: (data?.ownerUid || data?.authorId || null) as any,
@@ -4838,7 +5480,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   // Function to load more feed items
   const loadMoreFeedItems = useCallback(async () => {
-    if (isLoadingMore || !hasMoreItems || !lastLoadedDoc) return;
+    if (isLoadingMore) return;
     
     setIsLoadingMore(true);
     try {
@@ -4853,14 +5495,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       
       if (!firestoreMod) return;
       
-      // Load next batch of items
-      const nextQuery = firestoreMod()
+      // Load items
+      let query = firestoreMod()
         .collection('waves')
         .orderBy('createdAt', 'desc')
-        .startAfter(lastLoadedDoc)
-        .limit(10); // Smaller batch for pagination
+        .limit(lastLoadedDoc ? 10 : 15); // Initial: 15, Pagination: 10
       
-      const snap = await nextQuery.get();
+      if (lastLoadedDoc) {
+        query = query.startAfter(lastLoadedDoc);
+      }
+      
+      const snap = await query.get();
       const docs = (snap?.docs || []).slice();
       
       if (docs.length > 0) {
@@ -4885,6 +5530,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
           const cap = data?.caption || { x: 0, y: 0 };
           const authorName = data?.authorName || null;
+          const mediaType = data?.mediaType || null;
+          const isAudioPost =
+            data?.postType === 'audio' ||
+            /^audio\//i.test(String(mediaType || ''));
           let playbackUrl: string | null =
             data?.playbackUrl || data?.mediaUrl || null;
           let mediaUri: string | null = null;
@@ -4897,14 +5546,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
           // Show all vibes in public feed (my vibes and other users' vibes)
           const finalUri = playbackUrl || mediaUri;
-          if (!finalUri) continue;
+          if (!finalUri && !data?.audioUrl) continue;
           out.push({
             id: id,
-            media: { uri: finalUri } as any,
-            audio: data?.audioUrl ? { uri: String(data.audioUrl) } : null,
-            captionText: mediaCaption, // Media overlay text
+            media:
+              !isAudioPost && finalUri
+                ? ({ uri: finalUri, type: mediaType || undefined } as any)
+                : null,
+            audio: data?.audioUrl
+              ? { uri: String(data.audioUrl) }
+              : isAudioPost && finalUri
+              ? { uri: String(finalUri) }
+              : null,
+            captionText: mediaCaption || feedText,
             link: data.link || null,
             playbackUrl: playbackUrl,
+            mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
             muxStatus: (data?.muxStatus || null) as any,
             authorName,
             ownerUid: (data?.ownerUid || data?.authorId || null) as any,
@@ -4912,117 +5569,139 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               splashes: Number(data?.counts?.splashes || 0),
               echoes: Number(data?.counts?.echoes || 0),
             },
+            createdAt: data?.createdAt || null,
           });
         }
         
         if (out.length > 0) {
-          // Fetch user data for new wave authors
-          const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
-          const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
-          
-          if (uniqueOwnerUids.length > 0) {
-            try {
-              const userDocs = await Promise.all(
-                uniqueOwnerUids.map(uid => 
-                  firestoreMod().collection('users').doc(uid).get()
-                )
-              );
-              
-              userDocs.forEach((doc, index) => {
-                if (doc.exists) {
-                  const data = doc.data();
-                  const uid = uniqueOwnerUids[index];
-                  // Prioritize userPhoto (app-set pictures) over photoURL (Firebase Auth)
-                  const avatarUrl = data?.userPhoto || data?.photoURL || data?.avatar || data?.profilePicture || null;
-                  userDataMap[uid] = {
-                    name: data?.displayName || data?.name || data?.username || 'User',
-                    avatar: avatarUrl,
-                    bio: data?.bio || null,
-                  };
-                } else {
-                  // User document doesn't exist, create default data
-                  const uid = uniqueOwnerUids[index];
+          try {
+            // Fetch user data for new wave authors
+            const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
+            const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
+            
+            if (uniqueOwnerUids.length > 0) {
+              try {
+                const userDocs = await Promise.all(
+                  uniqueOwnerUids.map(uid => 
+                    firestoreMod().collection('users').doc(uid).get()
+                  )
+                );
+                
+                userDocs.forEach((doc, index) => {
+                  if (doc.exists) {
+                    const data = doc.data();
+                    const uid = uniqueOwnerUids[index];
+                    // Prioritize userPhoto (app-set pictures) over photoURL (Firebase Auth)
+                    const avatarUrl = data?.userPhoto || data?.photoURL || data?.avatar || data?.profilePicture || null;
+                    userDataMap[uid] = {
+                      name: data?.displayName || data?.name || data?.username || 'User',
+                      avatar: avatarUrl,
+                      bio: data?.bio || null,
+                    };
+                  } else {
+                    // User document doesn't exist, create default data
+                    const uid = uniqueOwnerUids[index];
+                    userDataMap[uid] = {
+                      name: 'User',
+                      avatar: null,
+                      bio: null,
+                    };
+                  }
+                });
+              } catch (error) {
+                console.warn('Error fetching user data for new waves:', error);
+                // Create default data for all users if fetch fails
+                uniqueOwnerUids.forEach(uid => {
                   userDataMap[uid] = {
                     name: 'User',
                     avatar: null,
                     bio: null,
                   };
-                }
-              });
-            } catch (error) {
-              console.warn('Error fetching user data for new waves:', error);
-              // Create default data for all users if fetch fails
-              uniqueOwnerUids.forEach(uid => {
-                userDataMap[uid] = {
-                  name: 'User',
-                  avatar: null,
-                  bio: null,
+                });
+              }
+            }
+            
+            // Update global userData state with fetched user data
+            const globalUserDataUpdates: Record<string, { name: string; avatar: string; bio: string }> = {};
+            Object.entries(userDataMap).forEach(([uid, userInfo]) => {
+              if (userInfo) {
+                globalUserDataUpdates[uid] = {
+                  name: userInfo.name || 'User',
+                  avatar: userInfo.avatar || '',
+                  bio: userInfo.bio || '',
                 };
+              }
+            });
+            if (Object.keys(globalUserDataUpdates).length > 0) {
+              setUserData(prev => ({ ...prev, ...globalUserDataUpdates }));
+            }
+            
+            // Attach user data to waves
+            const wavesWithUserData = out.map(wave => ({
+              ...wave,
+              user: wave.ownerUid ? userDataMap[wave.ownerUid] || null : null,
+            }));
+            
+            // Add new waves to the feed with memory-safe limit
+            if (lastLoadedDoc) {
+              // Append for pagination, keep max 50 posts to prevent memory issues
+              setPublicFeed(prev => {
+                const combined = [...prev, ...wavesWithUserData];
+                return combined.length > 50 ? combined.slice(-50) : combined;
               });
+            } else {
+              // Replace for initial load or refresh
+              setPublicFeed(wavesWithUserData);
             }
-          }
-          
-          // Update global userData state with fetched user data
-          const globalUserDataUpdates: Record<string, { name: string; avatar: string; bio: string }> = {};
-          Object.entries(userDataMap).forEach(([uid, userInfo]) => {
-            if (userInfo) {
-              globalUserDataUpdates[uid] = {
-                name: userInfo.name || 'User',
-                avatar: userInfo.avatar || '',
-                bio: userInfo.bio || '',
+            
+            // Update wave stats and load additional data
+            const myUid = (() => {
+              try {
+                const a = require('@react-native-firebase/auth').default;
+                return a?.()?.currentUser?.uid;
+              } catch {
+                return null;
+              }
+            })();
+            
+            // Filter out my own waves from public feed on my device
+            const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
+            // Note: We already added to publicFeed above, so no need to set again
+            
+            // Initialize waveStats for loaded waves
+            const waveStatsUpdate: Record<string, any> = {};
+            wavesWithUserData.forEach(wave => {
+              waveStatsUpdate[wave.id] = {
+                splashes: Number(wave.counts?.splashes || 0),
+                hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
+                echoes: Number(wave.counts?.echoes || 0),
+                views: Number(wave.counts?.views || 0),
+                createdAt: wave.createdAt,
               };
-            }
-          });
-          if (Object.keys(globalUserDataUpdates).length > 0) {
-            setUserData(prev => ({ ...prev, ...globalUserDataUpdates }));
-          }
-          
-          // Attach user data to waves
-          const wavesWithUserData = out.map(wave => ({
-            ...wave,
-            user: wave.ownerUid ? userDataMap[wave.ownerUid] || null : null,
-          }));
-          
-          // Add new waves to the feed
-          setPublicFeed(prev => [...prev, ...wavesWithUserData]);
-          
-          // Update wave stats and load additional data
-          const myUid = (() => {
+            });
+            setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
+            
+            // Load echoes for new waves
+            wavesWithUserData.forEach(wave => {
+              if (!postEchoLists[wave.id]) {
+                try {
+                  loadPostEchoes(wave.id);
+                } catch (error) {
+                  console.warn('Error loading echoes for wave:', wave.id, error);
+                }
+              }
+            });
+            
+            // Load reach counts for new waves
+            const waveIds = wavesWithUserData.map(wave => wave.id);
             try {
-              const a = require('@react-native-firebase/auth').default;
-              return a?.()?.currentUser?.uid;
-            } catch {
-              return null;
+              loadReachCounts(waveIds);
+            } catch (error) {
+              console.warn('Error loading reach counts:', error);
             }
-          })();
-          
-          // Filter out my own waves from public feed on my device
-          const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
-          // Note: We already added to publicFeed above, so no need to set again
-          
-          // Initialize waveStats for loaded waves
-          const waveStatsUpdate: Record<string, any> = {};
-          wavesWithUserData.forEach(wave => {
-            waveStatsUpdate[wave.id] = {
-              splashes: Number(wave.counts?.splashes || 0),
-              hugs: Number(wave.counts?.splashes || 0), // All splashes are now hugs
-              echoes: Number(wave.counts?.echoes || 0),
-              views: Number(wave.counts?.views || 0),
-              createdAt: wave.createdAt,
-            };
-          });
-          setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
-          
-          // Load echoes for new waves
-          wavesWithUserData.forEach(wave => {
-            if (!postEchoLists[wave.id]) {
-              loadPostEchoes(wave.id);
-            }
-          });
-          
-          // Load reach counts for new waves
-          const waveIds = wavesWithUserData.map(wave => wave.id);
-          loadReachCounts(waveIds);
+          } catch (error) {
+            console.warn('Error processing new feed items:', error);
+          }
         }
       } else {
         setHasMoreItems(false);
@@ -5032,7 +5711,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } finally {
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, hasMoreItems, lastLoadedDoc]);
+  }, [isLoadingMore, lastLoadedDoc]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setLastLoadedDoc(null);
+    setHasMoreItems(true);
+    setPublicFeed([]);
+    await loadMoreFeedItems();
+    setRefreshing(false);
+  }, [loadMoreFeedItems]);
+
+  // Initial load of public feed
+  useEffect(() => {
+    if (publicFeed.length === 0 && !isLoadingMore && !refreshing) {
+      loadMoreFeedItems();
+    }
+  }, [publicFeed.length, isLoadingMore, refreshing, loadMoreFeedItems]);
 
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
@@ -5365,7 +6060,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
                     
-  // Local + remote ping recording for in-app activity
+  // Local + remote ping recording for in-app activity (skip Firestore for self-notifications)
   const recordPingEvent = async (
     type: Ping['type'],
     waveId?: string,
@@ -5387,6 +6082,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ...prev,
       ]);
       setUnreadPingsCount(c => c + 1);
+      // Skip Firestore storage for self-notifications as requested
+      return;
       let firestoreMod: any = null;
       let authMod: any = null;
       try {
@@ -5438,67 +6135,251 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
                     
   const onSendMessage = async () => {
-    const text = messageText.trim();
-    if (!text || !messageRecipient) return;
+    if (!messageText.trim() && !messageAttachment) return;
     const user = auth().currentUser;
     if (!user) {
       Alert.alert('Not signed in', 'You must be signed in to send messages.');
       return;
     }
-    try {
-      // This collection is for the recipient's inbox view
-      await firestore()
-        .collection(`users/${messageRecipient.uid}/messages`)
-        .add({
-          text,
-          fromUid: user.uid,
-          fromName: user.displayName || 'Anonymous',
-          route: 'Pings',
-          type: 'message',
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        });
-      // This collection triggers the push notification via the onMentionCreate cloud function
-      await firestore()
-        .collection(`users/${messageRecipient.uid}/mentions`)
-        .add({
-          text,
-          fromUid: user.uid,
-          fromName: user.displayName || 'Anonymous',
-          fromPhoto: user.photoURL || null,
-          route: 'Pings',
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          type: 'message', // To distinguish from other mention types if needed
-        });
 
-      // Send notification
+    // Set sending state for visual feedback
+    setIsSending(true);
+
+    let attachmentUrl: string | null = null;
+    let attachmentType: string | null = null;
+    let attachmentName: string | null = null;
+    let uploadedPath: string | null = null;
+    let storageMod: any = null;
+    let firestoreMod: any = null;
+    let authMod: any = null;
+
+    try {
+      // Initialize Firebase modules
       try {
-        // Fetch the actual username from the user's profile
-        const fromUsername = await fetchUserUsername(user.uid);
-        
-        const addPingFn = functions().httpsCallable('addPing');
-        await addPingFn({
-          recipientUid: messageRecipient.uid,
-          type: 'message',
-          text: text,
-          fromUid: user.uid,
-          fromName: fromUsername,
-          fromPhoto: user.photoURL || null,
-        });
-      } catch (error) {
-        console.error('Error sending message notification:', error);
+        storageMod = require('@react-native-firebase/storage').default;
+      } catch {}
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      try {
+        authMod = require('@react-native-firebase/auth').default;
+      } catch {}
+
+      if (storageMod && firestoreMod && authMod) {
+        const a = authMod();
+        const uid = a.currentUser?.uid;
+        if (!uid) {
+          Alert.alert('Sign in required', 'Please sign in to send messages.');
+          setIsSending(false);
+          return;
+        }
+
+        // Handle attachment upload if present (using same logic as onPostWave)
+        if (messageAttachment) {
+          const nameGuessRaw = messageAttachment.fileName || 'attachment';
+          const type = (messageAttachment.type || '').toLowerCase();
+          const sanitizedBase = nameGuessRaw
+            .replace(/[^A-Za-z0-9._-]/g, '_')
+            .replace(/_{2,}/g, '_');
+          const baseNoExt = sanitizedBase.includes('.')
+            ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+            : sanitizedBase;
+          const ext = sanitizedBase.includes('.')
+            ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
+            : type.startsWith('video/')
+            ? 'mp4'
+            : type.startsWith('image/')
+            ? 'jpg'
+            : type.startsWith('audio/')
+            ? 'm4a'
+            : 'dat';
+          const filePath = `users/${uid}/messages/${Date.now()}_${baseNoExt}.${ext}`;
+
+          // Normalize local URI for putFile
+          let localPath = String(messageAttachment.uri || '');
+          try {
+            localPath = decodeURI(localPath);
+          } catch {}
+          if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+            localPath = localPath.replace('file://', '');
+          }
+          // Handle content:// URIs by copying to cache before upload
+          if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+            try {
+              const RNFS = require('react-native-fs');
+              const safeExt = (
+                ext || (type.startsWith('video/') ? 'mp4' : type.startsWith('audio/') ? 'm4a' : 'dat')
+              ).replace(/[^A-Za-z0-9]/g, '');
+              const copyDest = `${
+                RNFS.CachesDirectoryPath
+              }/msg_${Date.now()}.${safeExt}`;
+              await RNFS.copyFile(String(messageAttachment.uri), copyDest);
+              localPath = copyDest;
+            } catch (e) {
+              console.warn('Attachment content copy before upload failed', e);
+              Alert.alert('Upload Error', 'Could not access the selected file for upload.');
+              setIsSending(false);
+              return;
+            }
+          }
+          if (!localPath) {
+            Alert.alert('Upload error', 'Could not resolve a local path for the selected media.');
+            setIsSending(false);
+            return;
+          }
+
+          // Set contentType based on media type
+          const uploadContentType = type || (type.startsWith('video/') ? 'video/mp4' : type.startsWith('audio/') ? 'audio/m4a' : 'application/octet-stream');
+
+          await storageMod()
+            .ref(filePath)
+            .putFile(localPath, { contentType: uploadContentType });
+
+          attachmentUrl = await storageMod().ref(filePath).getDownloadURL();
+          attachmentType = type;
+          attachmentName = messageAttachment.fileName || null;
+          uploadedPath = filePath;
+        }
+
+        // Send to recipient's inbox
+        await firestoreMod()
+          .collection(`users/${messageRecipient.uid}/messages`)
+          .add({
+            text: messageText.trim(),
+            fromUid: user.uid,
+            fromName: user.displayName || 'Anonymous',
+            route: 'Pings',
+            type: 'message',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            attachmentUrl,
+            attachmentType,
+            attachmentName,
+          });
+
+        // Send to recipient's mentions for push notifications
+        await firestoreMod()
+          .collection(`users/${messageRecipient.uid}/mentions`)
+          .add({
+            text: messageText.trim(),
+            fromUid: user.uid,
+            fromName: user.displayName || 'Anonymous',
+            fromPhoto: user.photoURL || null,
+            route: 'Pings',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            type: 'message',
+            attachmentUrl,
+            attachmentType,
+            attachmentName,
+          });
+
+        // Send push notification
+        try {
+          const fromUsername = await fetchUserUsername(user.uid);
+          const addPingFn = functions().httpsCallable('addPing');
+          await addPingFn({
+            recipientUid: messageRecipient.uid,
+            type: 'message',
+            text: messageText.trim(),
+            fromUid: user.uid,
+            fromName: fromUsername,
+            fromPhoto: user.photoURL || null,
+            attachmentUrl,
+            attachmentType,
+          });
+        } catch (error) {
+          console.error('Error sending message notification:', error);
+        }
+
+        // Success - reset form and show confirmation
+        setShowSendMessage(false);
+        setMessageText('');
+        setMessageAttachment(null);
+        setIsSending(false);
+        notifySuccess('Ping sent!');
+        showOceanDialog(
+          'Message Sent',
+          `Your message to ${messageRecipient.name} has been cast into the sea!`,
+        );
+      } else {
+        Alert.alert('Backend not ready', 'Firebase modules not available.');
+        setIsSending(false);
       }
+    } catch (e: any) {
+      console.warn('Send message failed', e);
+      const msg = (e && (e.message || (typeof e === 'string' ? e : ''))) || 'Unknown error';
+      Alert.alert('Send failed', `Could not send your message. ${msg}`);
+      setIsSending(false);
+    }
+  };
                     
-      setShowSendMessage(false);
-      notifySuccess('Ping sent!');
-      showOceanDialog(
-        'Message Sent',
-        `Your message to ${messageRecipient.name} has been cast into the sea!`,
-      );
-    } catch (e) {
-      showOceanDialog(
-        'Error',
-        'Could not send message. The seas are rough right now.',
-      );
+  const sendMessage = async (recipientUid: string, messageText: string) => {
+    const user = auth().currentUser;
+    if (!user) {
+      throw new Error('User not signed in');
+    }
+
+    // Don't send if we don't have a proper username
+    const senderName = userData?.handle || user.displayName;
+    if (!senderName || senderName === 'You' || senderName === 'Anonymous') {
+      throw new Error('Username not available');
+    }
+
+    let firestoreMod: any = null;
+    let functionsMod: any = null;
+
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+      functionsMod = require('@react-native-firebase/functions').default;
+    } catch {}
+
+    if (!firestoreMod || !functionsMod) {
+      throw new Error('Firebase modules not available');
+    }
+
+    // Send to recipient's inbox
+    await firestoreMod()
+      .collection(`users/${recipientUid}/messages`)
+      .add({
+        text: messageText,
+        fromUid: user.uid,
+        fromName: senderName,
+        route: 'Pings',
+        type: 'message',
+        createdAt: firestoreMod.FieldValue.serverTimestamp(),
+        attachmentUrl: null,
+        attachmentType: null,
+        attachmentName: null,
+      });
+
+    // Send to recipient's mentions for push notifications
+    await firestoreMod()
+      .collection(`users/${recipientUid}/mentions`)
+      .add({
+        text: messageText,
+        fromUid: user.uid,
+        fromName: senderName,
+        fromPhoto: user.photoURL || null,
+        route: 'Pings',
+        createdAt: firestoreMod.FieldValue.serverTimestamp(),
+        type: 'message',
+        attachmentUrl: null,
+        attachmentType: null,
+        attachmentName: null,
+      });
+
+    // Send push notification
+    try {
+      const addPingFn = functionsMod().httpsCallable('addPing');
+      await addPingFn({
+        recipientUid: recipientUid,
+        type: 'message',
+        text: `${senderName} has echoed back your echo`,
+        fromUid: user.uid,
+        fromName: senderName,
+        fromPhoto: user.photoURL || null,
+      });
+    } catch (error) {
+      console.error('Error sending message notification:', error);
     }
   };
                     
@@ -5724,8 +6605,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         const message =
           splashType === 'octopus_hug'
-            ? 'You hugged this vibe - the vibe is embraced with 8 arms!'
-            : 'You splashed this vibe!';
+            ? 'You hugged this wave - the wave is embraced with 8 arms!'
+            : 'You hugged this wave!';
         notifySuccess(message);
         // Show octopus hug animation on screen
         // Octopus hug animation removed per user request; only show success message
@@ -5762,8 +6643,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch (e) {
       // Continue without profile data
     }
-                    
-    await offlineQueue.addAction('addEcho', {
+    // Merged logic: prefer using createEchoFn if available, fallback to offlineQueue
+    if (typeof functions === 'function' && functions().httpsCallable) {
+      const createEchoFn = functions().httpsCallable('createEcho');
+      await createEchoFn({
+        waveId,
+        text: trimmed,
+        userId: uid,
+        userName: fromName,
+        userPhoto: fromPhoto,
+        replyToEchoId,
+      });
+    } else {
+      await offlineQueue.addAction('addEcho', {
+        waveId,
+        text: trimmed,
+        userId: uid,
+        userName: fromName,
+        userPhoto: fromPhoto,
+        replyToEchoId,
+      });
+    }
       waveId,
       text: trimmed,
       userId: uid,
@@ -5782,8 +6682,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       text.length,
       'Text:',
       text,
-      'Current wave:',
-      currentWave?.id,
+      'Echo wave:',
+      echoWaveId,
     );
                     
     if (!text || text.length === 0) {
@@ -5795,18 +6695,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
                     
-    if (!currentWave) {
-      console.log('[ECHO] No current wave');
+    if (!echoWaveId) {
+      console.log('[ECHO] No echo wave');
       showOceanDialog(
         'No Wave Selected',
         'Please navigate to a wave before casting your echo.',
       );
       return;
     }
+
+    // Prevent duplicate sends
+    if (mainEchoSending) return;
+    setMainEchoSending(true);
                     
     console.log('[ECHO] Validation passed, proceeding with echo send');
                     
     try {
+      // Fetch the wave data
+      const waveDoc = await firestore().collection('waves').doc(echoWaveId).get();
+      if (!waveDoc.exists) {
+        console.log('[ECHO] Wave not found');
+        showOceanDialog('Wave Not Found', 'The wave you are trying to echo no longer exists.');
+        return;
+      }
+      const waveData = waveDoc.data();
+      const ownerUid = waveData?.ownerUid;
       // Optimistic local insertion for immediate UI feedback
       const rawText = echoTextRef.current || '';
       const text = rawText.trim();
@@ -5825,41 +6738,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       ]);
                     
       // Use the new sendEcho transaction
-      await sendEcho(currentWave.id, text, replyingToEcho?.id);
+      await sendEcho(echoWaveId, text, replyingToEcho?.id);
       
       // Update local echo counts
-      setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      
-      // Update Firestore echo count
-      try {
-        await firestore().doc(`waves/${currentWave.id}`).update({
-          'counts.echoes': firestore.FieldValue.increment(1)
-        });
-      } catch (error) {
-        console.error('Error updating echo count:', error);
-        // Revert local state on error
-        setVibesFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
-        setPublicFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
-        setPostFeed(prev => prev.map(v => v.id === currentWave.id ? { ...v, counts: { ...v.counts, echoes: Math.max(0, (v.counts?.echoes || 0) - 1) } } : v));
-      }
+      setVibesFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      setPublicFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
+      setPostFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
       
       // Reload echoes list
       loadPostEchoes(currentWave.id);
                     
       // Send ping notification to wave owner (if not self)
-      const currentUserUid = auth?.()?.currentUser?.uid;
-      if (currentWave.ownerUid && currentUserUid && String(currentWave.ownerUid) !== String(currentUserUid)) {
+      const currentUserUid = auth().currentUser?.uid;
+      if (ownerUid && currentUserUid && ownerUid !== currentUserUid) {
         try {
           // Fetch the actual username from the user's profile
           const fromUsername = await fetchUserUsername(currentUserUid);
           
           const addPingFn = functions().httpsCallable('addPing');
           await addPingFn({
-            recipientUid: currentWave.ownerUid,
+            recipientUid: ownerUid,
             type: 'echo',
-            waveId: currentWave.id,
+            waveId: echoWaveId,
             text: `${fromUsername} echoed your vibe!`,
             fromUid: currentUserUid,
             fromName: fromUsername,
@@ -5875,7 +6775,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setReplyingToEcho(null);
       setEchoList(prev => prev.filter(e => e.id !== pendingId));
       setMyEcho({ text });
-      setShowEchoes(false); // Hide echo UI first
+      setMainEchoSending(false);
+      // setShowEchoes(false); // Keep echo UI open for next echo
       try {
         recordPingEvent('echo', currentWave.id, { text });
       } catch {}
@@ -5884,8 +6785,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (e?.message && e.message.includes('permission-denied')) {
         // Silently ignore, since echo is likely created
         setShowEchoes(false);
+        setMainEchoSending(false);
         return;
       }
+      setMainEchoSending(false);
       Alert.alert('Error', `Could not send echo: ${e?.message || e || 'Unknown error'}`);
     }
   };
@@ -6490,7 +7393,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Continue without profile data
       }
                     
-      const createEchoFn = functions().httpsCallable('createEcho', { region: 'us-central1' });
+      const createEchoFn = functions().httpsCallable('createEcho');
       await createEchoFn({
         waveId,
         text,
@@ -6583,7 +7486,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .get();
         if (doc.exists) {
           const data = doc.data();
-          return { waveId, reach: data?.reach || 0 };
+          return { waveId, reach: data?.reachCount || 0 };
         }
         return { waveId, reach: 0 };
       });
@@ -6629,7 +7532,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const user = auth().currentUser;
       if (!user) {
-        Alert.alert('Sign in required', 'Please sign in to connect vibe.');
+        Alert.alert('Sign in required', 'Please sign in to connect wave.');
         return;
       }
 
@@ -6640,14 +7543,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.log(`[DEBUG] handleJoinCrew: joinCrew function completed for ${targetUid}`);
       
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
-      notifySuccess(`Connected to ${targetName || 'user'}'s vibe`);
+      notifySuccess(`Connected to ${targetName || 'user'}'s wave`);
       loadCrewCounts();
       await loadDriftWatchers();
       
       console.log(`[DEBUG] handleJoinCrew: UI updated for connection to ${targetUid}`);
     } catch (e) {
-      console.error('Connect vibe error:', e);
-      let msg = 'Could not connect vibe right now';
+      console.error('Connect wave error:', e);
+      let msg = 'Could not connect wave right now';
       if (e && (e.message || (typeof e === 'string'))) {
         msg = e.message || e.toString();
       }
@@ -6663,12 +7566,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       await leaveCrew(targetUid);
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
-      notifySuccess(`Disconnected from ${targetName || 'user'}'s vibe`);
+      notifySuccess(`Disconnected from ${targetName || 'user'}'s wave`);
       loadCrewCounts();
       await loadDriftWatchers();
     } catch (e) {
-      console.error('Disconnect vibe error:', e);
-      notifyError('Could not disconnect vibe right now');
+      console.error('Disconnect wave error:', e);
+      notifyError('Could not disconnect wave right now');
     } finally {
       setCrewLoading(false);
     }
@@ -6731,7 +7634,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const isCurrentlyConnected = isInUserCrew[targetUid];
 
       if (isCurrentlyConnected) {
-        // Disconnect vibe
+        // Disconnect vibe - optimistically decrement crew count
+        setOptimisticCrewCounts(prev => ({ ...prev, [targetUid]: (prev[targetUid] || 0) - 1 }));
         console.log(`[DEBUG] Disconnecting from ${targetUid}`);
         await leaveCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
@@ -6739,7 +7643,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         loadCrewCounts();
         await loadDriftWatchers();
       } else {
-        // Connect vibe
+        // Connect vibe - optimistically increment crew count
+        setOptimisticCrewCounts(prev => ({ ...prev, [targetUid]: (prev[targetUid] || 0) + 1 }));
         console.log(`[DEBUG] Connecting to ${targetUid}`);
         await joinCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
@@ -6747,12 +7652,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         loadCrewCounts();
         await loadDriftWatchers();
       }
-    } catch (error) {
-      console.error('Toggle vibe error:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      notifyError(`Connection update failed: ${errorMessage}`);
     } finally {
       setCrewLoading(false);
+      // Clear optimistic crew count after a delay to allow real-time listener to update
+      setTimeout(() => {
+        setOptimisticCrewCounts(prev => {
+          const newCounts = { ...prev };
+          delete newCounts[targetUid];
+          return newCounts;
+        });
+      }, 5000); // 5 seconds should be enough for real-time update
     }
   };
 
@@ -6872,8 +7781,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }>;
 
       setNotifications(notificationsData);
-      const unreadCount = notificationsData.filter(n => !n.read).length;
-      setUnreadNotificationsCount(unreadCount);
+      
+      // Separate system notifications from individual messages
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotifications = notificationsData.filter(n => systemNotificationTypes.includes(n.type));
+      const individualMessageNotifications = notificationsData.filter(n => !systemNotificationTypes.includes(n.type));
+      
+      const unreadSystemNotifications = systemNotifications.filter(n => !n.read).length;
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           individualMessageNotifications.filter(n => !n.read).length;
+      
+      // Recalculate total unread alerts
+      setUnreadAlertsCount(unreadSystemNotifications + unreadMessages);
     } catch (e) {
       console.error('Load notifications error:', e);
     }
@@ -6892,10 +7811,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setNotifications(prev =>
         prev.map(n => n.id === notificationId ? { ...n, read: true } : n)
       );
-      setUnreadNotificationsCount(prev => Math.max(0, prev - 1));
+      
+      // Recalculate total unread alerts
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotifications = notifications.filter(n => systemNotificationTypes.includes(n.type));
+      const individualMessageNotifications = notifications.filter(n => !systemNotificationTypes.includes(n.type));
+      
+      const remainingUnreadSystemNotifications = systemNotifications.filter(n => n.id !== notificationId && !n.read).length;
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           individualMessageNotifications.filter(n => !n.read).length;
+      
+      setUnreadAlertsCount(remainingUnreadSystemNotifications + unreadMessages);
+      
       // Clear app icon badge when notification is read
       try {
-        messaging().setBadgeCount(Math.max(0, unreadNotificationsCount - 1));
+        messaging().setBadgeCount(Math.max(0, remainingUnreadNotifications + unreadMessages));
       } catch (error) {
         console.warn('Failed to update badge count:', error);
       }
@@ -6924,15 +7854,140 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setNotifications(prev =>
         prev.map(n => ({ ...n, read: true }))
       );
-      setUnreadNotificationsCount(0);
+      
+      // Recalculate total unread alerts (only messages remain)
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const individualMessageNotifications = notifications.filter(n => !systemNotificationTypes.includes(n.type));
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           individualMessageNotifications.filter(n => !n.read).length;
+      setUnreadAlertsCount(unreadMessages);
+      
       // Clear app icon badge when all notifications are read
       try {
-        messaging().setBadgeCount(0);
+        messaging().setBadgeCount(unreadMessages);
       } catch (error) {
         console.warn('Failed to clear badge count:', error);
       }
     } catch (e) {
       console.error('Mark all notifications as read error:', e);
+    }
+  };
+
+  const loadMessageThreads = async () => {
+    try {
+      const user = auth().currentUser;
+      if (!user) return;
+
+      const messagesSnapshot = await firestore()
+        .collection(`users/${user.uid}/messages`)
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get();
+
+      const messages = messagesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      }));
+
+      // Group messages by sender
+      const threadsMap = new Map<string, {
+        senderUid: string;
+        senderName: string;
+        senderAvatar: any;
+        lastMessage: string;
+        lastMessageTime: any;
+        unreadCount: number;
+        messages: Array<any>;
+      }>();
+
+      messages.forEach(message => {
+        const senderUid = message.fromUid;
+        if (!threadsMap.has(senderUid)) {
+          threadsMap.set(senderUid, {
+            senderUid,
+            senderName: message.fromName || 'Unknown User',
+            senderAvatar: getUserAvatar(senderUid, userData || {}),
+            lastMessage: message.text || 'Attachment',
+            lastMessageTime: message.createdAt,
+            unreadCount: 0, // We'll implement read status later
+            messages: [],
+          });
+        }
+        threadsMap.get(senderUid)!.messages.push(message);
+      });
+
+      const threads = Array.from(threadsMap.values()).sort((a, b) => {
+        const aTime = a.lastMessageTime?.toDate?.() || new Date(0);
+        const bTime = b.lastMessageTime?.toDate?.() || new Date(0);
+        return bTime.getTime() - aTime.getTime();
+      });
+
+      setMessageThreads(threads);
+
+      // Calculate total unread alerts (messages + system notifications)
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotifications = notifications.filter(n => systemNotificationTypes.includes(n.type));
+      const unreadSystemNotifications = systemNotifications.filter(n => !n.read).length;
+      const unreadMessages = threads.reduce((sum, thread) => sum + thread.unreadCount, 0);
+      setUnreadAlertsCount(unreadSystemNotifications + unreadMessages);
+    } catch (e) {
+      console.error('Load message threads error:', e);
+    }
+  };
+
+  const deleteSelectedNotifications = async () => {
+    try {
+      const user = auth().currentUser;
+      if (!user) return;
+
+      const batch = firestore().batch();
+      selectedNotifications.forEach(notificationId => {
+        const notificationRef = firestore()
+          .collection(`users/${user.uid}/pings`)
+          .doc(notificationId);
+        batch.delete(notificationRef);
+      });
+
+      await batch.commit();
+
+      setNotifications(prev =>
+        prev.filter(n => !selectedNotifications.has(n.id))
+      );
+      
+      // Recalculate total unread alerts
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const remainingSystemNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && systemNotificationTypes.includes(n.type));
+      const remainingIndividualMessageNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && !systemNotificationTypes.includes(n.type));
+      
+      const remainingUnreadSystemNotifications = remainingSystemNotifications.filter(n => !n.read).length;
+      const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
+                           remainingIndividualMessageNotifications.filter(n => !n.read).length;
+      
+      setUnreadAlertsCount(remainingUnreadSystemNotifications + unreadMessages);
+      
+      setSelectedNotifications(new Set());
+      setIsDeleteMode(false);
+    } catch (e) {
+      console.error('Delete notifications error:', e);
+      Alert.alert('Error', 'Failed to delete notifications');
+    }
+  };
+
+  const toggleNotificationSelection = (notificationId: string) => {
+    const newSelected = new Set(selectedNotifications);
+    if (newSelected.has(notificationId)) {
+      newSelected.delete(notificationId);
+    } else {
+      newSelected.add(notificationId);
+    }
+    setSelectedNotifications(newSelected);
+  };
+
+  const selectAllNotifications = () => {
+    if (selectedNotifications.size === notifications.length) {
+      setSelectedNotifications(new Set());
+    } else {
+      setSelectedNotifications(new Set(notifications.map(n => n.id)));
     }
   };
 
@@ -7416,6 +8471,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const res = await launchImageLibrary({
         mediaType: 'photo',
         selectionLimit: 1,
+        includeBase64: false,
+        presentationStyle: 'fullScreen',
       });
       const asset = res.assets?.[0];
       if (asset?.uri) setProfilePhoto(asset.uri);
@@ -7546,6 +8603,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowMakeWaves(false);
         const picked = response.assets[0];
         setCapturedMedia(picked);
+        setCapturedMediaEdits(defaultMediaEdits);
         setTranscoding(false);
       }
     });
@@ -7564,6 +8622,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setShowMakeWaves(false);
       const picked = response.assets[0];
       setCapturedMedia(picked);
+      setCapturedMediaEdits(defaultMediaEdits);
       setTranscoding(false);
     }
   };
@@ -7616,7 +8675,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
                     
   const fromGallery = () => {
-    launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, handleMediaSelect);
+    launchImageLibrary({ 
+      mediaType: 'mixed', 
+      quality: 0.8,
+      presentationStyle: 'fullScreen',
+    }, handleMediaSelect);
   };
                     
   const pickAudioFromDevice = () => {
@@ -7658,7 +8721,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
     const startPick = () =>
       launchImageLibrary(
-        { mediaType: 'mixed', selectionLimit: 1 },
+        { 
+          mediaType: 'mixed', 
+          selectionLimit: 1,
+          presentationStyle: 'fullScreen',
+        },
         async response => {
           if (response.didCancel) return;
           if (response.errorCode) {
@@ -7730,6 +8797,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             launchCamera({ mediaType: 'photo', quality: 0.8 }, response => {
               if (response.assets && response.assets.length > 0) {
                 setUnifiedPostMedia(response.assets[0]);
+                setUnifiedPostAudio(null);
               }
             }),
         },
@@ -7739,6 +8807,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             launchCamera({ mediaType: 'video', videoQuality: 'high' }, response => {
               if (response.assets && response.assets.length > 0) {
                 setUnifiedPostMedia(response.assets[0]);
+                setUnifiedPostAudio(null);
               }
             }),
         },
@@ -7748,19 +8817,188 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
   };
   
-  const handleUnifiedGallerySelect = () => {
-    launchImageLibrary({ mediaType: 'mixed', quality: 0.8 }, response => {
+  const handleUnifiedGallerySelect = async () => {
+    console.log('[SD Card Access] Gallery button pressed');
+    
+    if (Platform.OS === 'android') {
+      try {
+        const androidVersion = Platform.Version;
+        console.log('[SD Card Access] Android version:', androidVersion);
+        
+        // Android 13+ (API 33+) uses granular media permissions
+        if (androidVersion >= 33) {
+          const permissions = [
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+            PermissionsAndroid.PERMISSIONS.READ_MEDIA_VIDEO,
+          ];
+          const results = await PermissionsAndroid.requestMultiple(permissions);
+          console.log('[SD Card Access] Android 13+ permissions:', results);
+          
+          const allGranted = Object.values(results).every(
+            result => result === PermissionsAndroid.RESULTS.GRANTED
+          );
+          
+          if (!allGranted) {
+            Alert.alert(
+              'Permission Required',
+              'Please grant access to photos and videos to select media from your device and SD card.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        } else {
+          // Android 12 and below use READ_EXTERNAL_STORAGE
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+            {
+              title: 'Storage Permission',
+              message: 'App needs access to your storage to select media from your device and SD card',
+              buttonPositive: 'OK',
+            }
+          );
+          console.log('[SD Card Access] READ_EXTERNAL_STORAGE result:', granted);
+          
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert(
+              'Permission Denied',
+              'Storage permission is required to select media. Please enable it in Settings.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() }
+              ]
+            );
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('[SD Card Access] Permission error:', err);
+        Alert.alert('Error', 'Failed to request storage permission');
+        return;
+      }
+    }
+    
+    console.log('[SD Card Access] Opening image library with fullScreen presentation');
+    launchImageLibrary({ 
+      mediaType: 'mixed', 
+      quality: 0.8,
+      presentationStyle: 'fullScreen',
+    }, response => {
+      console.log('[SD Card Access] Response:', JSON.stringify(response, null, 2));
       if (response.assets && response.assets.length > 0) {
+        console.log('[SD Card Access] Media selected:', response.assets[0].uri);
         setUnifiedPostMedia(response.assets[0]);
+        setUnifiedPostAudio(null);
+      } else if (response.didCancel) {
+        console.log('[SD Card Access] User cancelled');
+      } else if (response.errorCode) {
+        console.log('[SD Card Access] Error:', response.errorCode, response.errorMessage);
+        Alert.alert('Error', `Failed to open gallery: ${response.errorMessage}`);
       }
     });
   };
   
+
+  // SD Card Media Picker - All file types (images, videos, audio)
+  const handleSDCardPicker = async () => {
+    try {
+      const result = await AudioPicker.pickAudio();
+      
+      if (!result || !result.uri) {
+        console.log('No file selected from SD card');
+        return;
+      }
+
+      const uri = result.uri;
+      const fileName = result.name || uri.split('/').pop() || '';
+      const mimeType = result.type || '';
+      
+      const isAudio = mimeType.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
+      const isVideo = mimeType.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|3gp)$/i.test(fileName);
+      const isImage = mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(fileName);
+      
+      if (isAudio) {
+        setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
+        notifySuccess('Audio attached from SD card');
+      } else if (isVideo || isImage) {
+        setUnifiedPostMedia({
+          uri,
+          type: mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
+          fileName,
+        });
+        setUnifiedPostAudio(null);
+        notifySuccess('Media selected from SD card');
+      } else {
+        setUnifiedPostMedia({
+          uri,
+          type: mimeType || 'application/octet-stream',
+          fileName,
+        });
+        notifySuccess('File selected from SD card');
+      }
+    } catch (err: any) {
+      if (err?.code === 'CANCELLED') {
+        return;
+      }
+      console.error('SD card picker error:', err);
+      Alert.alert('Error', 'Failed to open SD card picker');
+    }
+  };
+  const handleUnifiedAudioSelect = async () => {
+    await handleSDCardPicker();
+  };
+
+  const normalizeAssetForEditor = useCallback(async (asset: Asset): Promise<Asset> => {
+    if (!asset?.uri) return asset;
+    const rawUri = String(asset.uri);
+    if (!(Platform.OS === 'android' && /^content:/.test(rawUri))) {
+      return asset;
+    }
+    try {
+      const RNFSLocal = require('react-native-fs');
+      const nameGuessRaw =
+        asset.fileName || rawUri.split('/').pop() || `media_${Date.now()}`;
+      const sanitizedBase = String(nameGuessRaw)
+        .replace(/[^A-Za-z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_');
+      const type = String(asset.type || '').toLowerCase();
+      const ext =
+        (sanitizedBase.includes('.') &&
+          sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)) ||
+        (type.startsWith('video/')
+          ? 'mp4'
+          : type.startsWith('image/')
+          ? 'jpg'
+          : type.startsWith('audio/')
+          ? 'm4a'
+          : 'dat');
+      const copyDest = `${RNFSLocal.CachesDirectoryPath}/editor_${Date.now()}_${sanitizedBase}.${ext}`;
+      await RNFSLocal.copyFile(rawUri, copyDest);
+      return {
+        ...asset,
+        uri: `file://${copyDest}`,
+        fileName: asset.fileName || `${sanitizedBase}.${ext}`,
+        type:
+          asset.type ||
+          (ext.match(/mp4|mov|mkv|avi|webm|3gp/i)
+            ? 'video/mp4'
+            : ext.match(/jpg|jpeg|png|gif|webp|heic/i)
+            ? 'image/jpeg'
+            : asset.type),
+      };
+    } catch (e) {
+      console.warn('Normalize SD media for editor failed', e);
+      return asset;
+    }
+  }, []);
+
   const handleUnifiedPost = async () => {
     const trimmedText = unifiedPostText.trim();
     
-    // If no text and no media, show error
-    if (!trimmedText && !unifiedPostMedia) {
+    // If no text, media, or audio, show error
+    if (!trimmedText && !unifiedPostMedia && !unifiedPostAudio) {
       Alert.alert('Create a Post', 'Please add some text or select media to post.');
       return;
     }
@@ -7768,11 +9006,272 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setIsUnifiedPosting(true);
     try {
       if (unifiedPostMedia) {
+        const mediaIsVideo = isVideoAsset(unifiedPostMedia);
+        const mediaIsImage = isImageAsset(unifiedPostMedia);
+        const mediaIsAudio = isAudioAsset(unifiedPostMedia);
+        const mediaIsVisual = mediaIsVideo || mediaIsImage;
+
+        if (unifiedPostAudio?.uri && !mediaIsVisual) {
+          Alert.alert(
+            'Overlay Not Supported',
+            'Audio overlay can be attached only to images and videos.',
+          );
+          return;
+        }
+
+        if (!mediaIsVisual || mediaIsAudio) {
+          // Handle document/generic file post directly (without media editor).
+          let storageMod: any = null;
+          let firestoreMod: any = null;
+          let authMod: any = null;
+          try {
+            storageMod = require('@react-native-firebase/storage').default;
+          } catch {}
+          try {
+            firestoreMod = require('@react-native-firebase/firestore').default;
+          } catch {}
+          try {
+            authMod = require('@react-native-firebase/auth').default;
+          } catch {}
+          if (!storageMod || !firestoreMod || !authMod) {
+            Alert.alert('Backend not ready', 'File posting is unavailable right now.');
+            return;
+          }
+          const a = authMod();
+          const uid = a.currentUser?.uid;
+          if (!uid) {
+            Alert.alert('Sign in required', 'Please sign in to post files.');
+            return;
+          }
+
+          const mimeType =
+            unifiedPostMedia.type || 'application/octet-stream';
+          const nameGuessRaw =
+            unifiedPostMedia.fileName ||
+            String(unifiedPostMedia.uri || '').split('/').pop() ||
+            'file';
+          const sanitizedBase = String(nameGuessRaw)
+            .replace(/[^A-Za-z0-9._-]/g, '_')
+            .replace(/_{2,}/g, '_');
+          const ext =
+            (sanitizedBase.includes('.') &&
+              sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)) ||
+            'dat';
+          const baseNoExt = sanitizedBase.includes('.')
+            ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+            : sanitizedBase;
+          const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+
+          let localPath = String(unifiedPostMedia.uri || '');
+          try {
+            localPath = decodeURI(localPath);
+          } catch {}
+          if (/^content:/.test(String(localPath))) {
+            try {
+              const RNFS = require('react-native-fs');
+              const copyDest = `${RNFS.CachesDirectoryPath}/file_post_${Date.now()}_${baseNoExt}.${ext}`;
+              await RNFS.copyFile(String(localPath), copyDest);
+              localPath = copyDest;
+            } catch (e) {
+              console.warn('Document content copy failed', e);
+            }
+          }
+          if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+            localPath = localPath.replace('file://', '');
+          }
+          if (!localPath) {
+            Alert.alert('Upload error', 'Could not access the selected file.');
+            return;
+          }
+
+          await storageMod().ref(filePath).putFile(localPath, {
+            contentType: mimeType,
+          });
+          const fileDownloadUrl = await storageMod().ref(filePath).getDownloadURL();
+          const docRef = await firestoreMod()
+            .collection('waves')
+            .add({
+              authorId: uid,
+              ownerUid: uid,
+              authorName:
+                profileName ||
+                accountCreationHandle ||
+                a.currentUser?.displayName ||
+                null,
+              mediaPath: filePath,
+              mediaType: mimeType,
+              postType: 'document',
+              text: trimmedText,
+              createdAt: firestoreMod.FieldValue?.serverTimestamp
+                ? firestoreMod.FieldValue.serverTimestamp()
+                : new Date(),
+              audioUrl: null,
+              muxStatus: 'ready',
+              playbackUrl: null,
+              mediaUrl: fileDownloadUrl,
+              isPublic: true,
+            });
+
+          handlePostPublished({
+            id: docRef?.id || new Date().toISOString(),
+            media: { uri: fileDownloadUrl, type: mimeType } as any,
+            audio: null,
+            captionText: trimmedText,
+            playbackUrl: null,
+            muxStatus: 'ready',
+            authorName:
+              profileName ||
+              accountCreationHandle ||
+              a.currentUser?.displayName ||
+              null,
+            ownerUid: uid,
+          });
+
+          setUnifiedPostText('');
+          setUnifiedPostMedia(null);
+          setUnifiedPostAudio(null);
+          setShowUnifiedPostModal(false);
+          return;
+        }
+
         // Handle media post with optional caption
-        setCapturedMedia(unifiedPostMedia);
+        const preparedMedia = await normalizeAssetForEditor(unifiedPostMedia);
+        setCapturedMedia(preparedMedia);
+        setCapturedMediaEdits(defaultMediaEdits);
+        setWaveCaption(trimmedText);
         setTextComposerText(trimmedText);
+        if (unifiedPostAudio?.uri) {
+          setAttachedAudio({ uri: unifiedPostAudio.uri, name: unifiedPostAudio.name });
+        } else {
+          setAttachedAudio(null);
+        }
         setShowUnifiedPostModal(false);
         setShowMakeWaves(false); // Close the Make Waves modal, media editor opens directly
+        setUnifiedPostText('');
+        setUnifiedPostMedia(null);
+        setUnifiedPostAudio(null);
+      } else if (unifiedPostAudio?.uri) {
+        // Handle audio-only post
+        let storageMod: any = null;
+        let firestoreMod: any = null;
+        let authMod: any = null;
+        try {
+          storageMod = require('@react-native-firebase/storage').default;
+        } catch {}
+        try {
+          firestoreMod = require('@react-native-firebase/firestore').default;
+        } catch {}
+        try {
+          authMod = require('@react-native-firebase/auth').default;
+        } catch {}
+        if (!storageMod || !firestoreMod || !authMod) {
+          Alert.alert('Backend not ready', 'Audio posting is unavailable right now.');
+          return;
+        }
+        const a = authMod();
+        const uid = a.currentUser?.uid;
+        if (!uid) {
+          Alert.alert('Sign in required', 'Please sign in to post audio.');
+          return;
+        }
+
+        let audioLocal = String(unifiedPostAudio.uri || '');
+        try {
+          audioLocal = decodeURI(audioLocal);
+        } catch {}
+        if (/^content:/.test(String(audioLocal))) {
+          try {
+            const RNFS = require('react-native-fs');
+            const name = (unifiedPostAudio.name || 'audio').replace(
+              /[^A-Za-z0-9._-]/g,
+              '_',
+            );
+            const ext =
+              /\.(mp3|m4a|aac|wav|ogg|flac)$/i.exec(name)?.[1] || 'm4a';
+            const copyDest = `${RNFS.CachesDirectoryPath}/audio_post_${Date.now()}_${name}.${ext}`;
+            await RNFS.copyFile(String(audioLocal), copyDest);
+            audioLocal = copyDest;
+          } catch (e) {
+            console.warn('Audio-only content copy failed', e);
+          }
+        }
+        if (Platform.OS === 'android' && audioLocal.startsWith('file://')) {
+          audioLocal = audioLocal.replace('file://', '');
+        }
+        if (!audioLocal) {
+          Alert.alert('Upload error', 'Could not access the selected audio file.');
+          return;
+        }
+
+        const audioNameGuess = (unifiedPostAudio.name || 'audio').replace(
+          /[^A-Za-z0-9._-]/g,
+          '_',
+        );
+        const audioExt =
+          (audioNameGuess.includes('.') && audioNameGuess.split('.').pop()) ||
+          /\.(mp3|m4a|aac|wav|ogg|flac)$/i.exec(unifiedPostAudio.uri || '')?.[1] ||
+          'm4a';
+        const audioPath = `posts/${uid}/${Date.now()}_${audioNameGuess}.${audioExt}`;
+        const audioCt = /m4a$/i.test(audioExt)
+          ? 'audio/m4a'
+          : /mp3$/i.test(audioExt)
+          ? 'audio/mpeg'
+          : /aac$/i.test(audioExt)
+          ? 'audio/aac'
+          : /wav$/i.test(audioExt)
+          ? 'audio/wav'
+          : /ogg$/i.test(audioExt)
+          ? 'audio/ogg'
+          : /flac$/i.test(audioExt)
+          ? 'audio/flac'
+          : 'audio/mpeg';
+
+        await storageMod().ref(audioPath).putFile(audioLocal, { contentType: audioCt });
+        const audioDownloadUrl = await storageMod().ref(audioPath).getDownloadURL();
+
+        const docRef = await firestoreMod()
+          .collection('waves')
+          .add({
+            authorId: uid,
+            ownerUid: uid,
+            authorName:
+              profileName ||
+              accountCreationHandle ||
+              a.currentUser?.displayName ||
+              null,
+            mediaPath: audioPath,
+            mediaType: audioCt,
+            postType: 'audio',
+            text: trimmedText,
+            createdAt: firestoreMod.FieldValue?.serverTimestamp
+              ? firestoreMod.FieldValue.serverTimestamp()
+              : new Date(),
+            audioUrl: audioDownloadUrl,
+            muxStatus: 'ready',
+            playbackUrl: null,
+            mediaUrl: audioDownloadUrl,
+            isPublic: true,
+          });
+
+        handlePostPublished({
+          id: docRef?.id || new Date().toISOString(),
+          media: null,
+          audio: { uri: audioDownloadUrl, name: unifiedPostAudio.name },
+          captionText: trimmedText,
+          playbackUrl: null,
+          muxStatus: 'ready',
+          authorName:
+            profileName ||
+            accountCreationHandle ||
+            a.currentUser?.displayName ||
+            null,
+          ownerUid: uid,
+        });
+
+        setUnifiedPostText('');
+        setUnifiedPostMedia(null);
+        setUnifiedPostAudio(null);
+        setShowUnifiedPostModal(false);
       } else {
         // Handle text-only post
         const result = await uploadPost({ 
@@ -7801,6 +9300,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Reset and close
         setUnifiedPostText('');
         setUnifiedPostMedia(null);
+        setUnifiedPostAudio(null);
         setShowUnifiedPostModal(false);
       }
     } catch (error) {
@@ -7815,6 +9315,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setShowUnifiedPostModal(false);
     setUnifiedPostText('');
     setUnifiedPostMedia(null);
+    setUnifiedPostAudio(null);
   };
                     
   // Map a user identifier to display label; show "/You" for the signed-in user
@@ -7905,16 +9406,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleNotificationNavigation = useCallback(
     (data: any) => {
       if (data?.waveId) {
-        const waveIndex = vibesFeed.findIndex(w => w.id === data.waveId);
+        const waveIndex = displayFeed.findIndex(w => w.id === data.waveId);
         if (waveIndex !== -1) {
           setCurrentIndex(waveIndex);
           setWaveKey(Date.now());
+          
+          // If this is an echo_reply notification, open the echoes modal
+          if (data?.type === 'echo_reply' || data?.type === 'echo') {
+            setEchoWaveId(data.waveId);
+            setTimeout(() => {
+              setShowEchoes(true);
+            }, 300);
+          }
         }
       } else if (data?.type === 'ping' || data?.route === 'Pings') {
         setShowPings(true);
       }
     },
-    [vibesFeed],
+    [displayFeed],
   );
                     
   const handleForegroundRemoteMessage = useCallback(
@@ -8011,6 +9520,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const result = await AudioPicker.pickAudio();
       if (result && result.uri) {
+        const fileName =
+          result.name || String(result.uri).split('/').pop() || '';
+        const mimeType = String(result.type || '');
+        const isAudio =
+          mimeType.startsWith('audio/') ||
+          /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
+        if (!isAudio) {
+          Alert.alert('Audio only', 'Please select an audio file for Ocean Melodies.');
+          return;
+        }
         setAttachedAudio({ uri: result.uri, name: result.name || undefined });
         setShowAudioModal(false);
         setAudioUrlInput('');
@@ -8053,12 +9572,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // (removed Movable Textbox state)
   const onEditorToolPress = async (toolLabel: string) => {
-    if (
-      toolLabel === 'Ocean Melodies' ||
-      toolLabel === 'Sea Shanties' ||
-      toolLabel === 'Ocean melodies'
-    ) {
+    if (toolLabel === 'Ocean Melodies') {
       setShowAudioModal(true);
+      return;
+    }
+    if (toolLabel === 'Media Editor') {
+      setShowMediaEditorModal(true);
       return;
     }
     if (toolLabel === 'Cut the Wake' && capturedMedia && capturedMedia.type && capturedMedia.type.startsWith('image/')) {
@@ -8112,9 +9631,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('No media', 'Please select or capture media first.');
       return;
     }
+    const finalCaption = (waveCaption || textComposerText || '').trim();
     setReleasing(true);
     let uploadedPath: string | null = null;
+    let videoDownloadUrl: string | null = null;
     let audioDownloadUrl: string | null = null;
+    let overlayAudioStoragePath: string | null = null;
     let serverDocId: string | null = null;
     let storageMod: any = null;
     let firestoreMod: any = null;
@@ -8153,7 +9675,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ownerUid: uid,
               authorName: profileName || a.currentUser?.displayName || null,
               mediaPath: capturedMedia.uri || null,
-              text: textComposerText, // Feed text from "say something"
+              text: finalCaption,
               createdAt: firestoreMod.FieldValue?.serverTimestamp
                 ? firestoreMod.FieldValue.serverTimestamp()
                 : new Date(),
@@ -8166,7 +9688,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               muxStatus: 'ready',
               playbackUrl: null,
               mediaUrl: capturedMedia.uri || null,
+              mediaType: capturedMedia.type || null,
+              postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
               isPublic: true,
+              mediaEdits: capturedMediaEdits,
+              editorState: capturedMediaEdits,
+              edits: capturedMediaEdits,
               devSkipStorage: true,
             });
           serverDocId = docRef?.id || null;
@@ -8237,13 +9764,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Set contentType to help ExoPlayer/iOS pick the right pipeline
         const uploadPath = localPath;
         const uploadContentType =
-          type && type.startsWith('video/') ? type : 'video/mp4';
+          type && type.startsWith('video/')
+            ? type
+            : type && type.startsWith('image/')
+            ? type
+            : isVideoAsset(capturedMedia)
+            ? 'video/mp4'
+            : 'image/jpeg';
                     
         await storageMod()
           .ref(filePath)
           .putFile(uploadPath, { contentType: uploadContentType });
         uploadedPath = filePath;
-        let videoDownloadUrl: string | null = null;
         try {
           videoDownloadUrl = await storageMod().ref(filePath).getDownloadURL();
         } catch {}
@@ -8316,9 +9848,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               audioDownloadUrl = await storageMod()
                 .ref(audioPath)
                 .getDownloadURL();
+              overlayAudioStoragePath = audioPath;
             }
           }
         }
+        const canServerMergeOverlay =
+          !!overlayAudioStoragePath && isVideoAsset(capturedMedia);
         const docRef = await firestoreMod()
           .collection('waves')
           .add({
@@ -8330,7 +9865,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               a.currentUser?.displayName ||
               null,
             mediaPath: filePath,
-            text: textComposerText,
+            text: finalCaption,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
@@ -8338,13 +9873,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxMode: null,
             muxVideoStrategy: null,
             muxFps: null,
-            muxStatus: audioDownloadUrl ? 'pending' : 'ready',
-            playbackUrl: audioDownloadUrl ? null : videoDownloadUrl || null,
+            muxStatus: canServerMergeOverlay ? 'pending' : 'ready',
+            playbackUrl:
+              canServerMergeOverlay || !isVideoAsset(capturedMedia)
+                ? null
+                : videoDownloadUrl || null,
             mediaUrl: videoDownloadUrl || null,
+            mediaType: type || null,
+            postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
             isPublic: true,
-            mergeRequested: !!audioDownloadUrl,
-            mergeSourceVideoPath: filePath,
-            mergeOverlayAudioPath: audioDownloadUrl || null,
+            mediaEdits: capturedMediaEdits,
+            editorState: capturedMediaEdits,
+            edits: capturedMediaEdits,
+            mergeRequested: canServerMergeOverlay,
+            mergeSourceVideoPath: canServerMergeOverlay ? filePath : null,
+            mergeOverlayAudioPath: canServerMergeOverlay
+              ? overlayAudioStoragePath
+              : null,
           });
         serverDocId = docRef?.id || null;
         // Notify backend that a wave was posted (and request server merge if overlay exists)
@@ -8372,10 +9917,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 a.currentUser?.displayName ||
                 null,
             };
-            if (audioDownloadUrl) {
+            if (canServerMergeOverlay) {
               payload.merge = {
                 sourceVideoPath: filePath,
-                overlayAudioPath: audioDownloadUrl,
+                overlayAudioPath: overlayAudioStoragePath,
               };
             }
             fetch(`${backendBase}/notify/wave`, {
@@ -8415,9 +9960,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         audio: audioDownloadUrl
           ? { uri: audioDownloadUrl, name: attachedAudio?.name }
           : null,
-        captionText: textComposerText,
-        playbackUrl: null,
-        muxStatus: audioDownloadUrl ? 'pending' : 'ready',
+        mediaEdits: capturedMediaEdits,
+        captionText: finalCaption,
+        playbackUrl:
+          (overlayAudioStoragePath && isVideoAsset(capturedMedia)) ||
+          !isVideoAsset(capturedMedia)
+            ? null
+            : videoDownloadUrl,
+        muxStatus:
+          overlayAudioStoragePath && isVideoAsset(capturedMedia)
+            ? 'pending'
+            : 'ready',
         authorName: profileName || accountCreationHandle || null,
         ownerUid: (() => {
           try {
@@ -8431,6 +9984,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       };
       setHasSplashed(false); // Reset splash state for new wave
       setSplashes(0); // Reset splash count for new wave
+      setCapturedMedia(null); // Clear captured media
+      setCapturedMediaEdits(defaultMediaEdits);
+      setWaveCaption(''); // Clear caption
+      setTextComposerText('');
+      setAttachedAudio(null); // Clear attached audio
       setVibesFeed(prev => {
         // Add new wave to the beginning of the array
         const next = [newWave, ...prev];
@@ -8477,6 +10035,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
       // Reset editor state
       setCapturedMedia(null);
+      setCapturedMediaEdits(defaultMediaEdits);
       setAttachedAudio(null);
       setReleasing(false);
       setWaveKey(Date.now()); // Force the feed to update and play the new wave
@@ -8546,45 +10105,75 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             },
           ]}
         >
-          <Pressable
-            style={styles.driftAlertButton}
-            onPress={() => {
-              requestToDriftForLiveId(vibeAlert.liveId, vibeAlert.hostName);
-              setVibeAlert(null);
-              lastDriftHostRef.current = null;
-              if (driftAlertTimerRef.current) {
-                clearTimeout(driftAlertTimerRef.current);
-                driftAlertTimerRef.current = null;
-              }
-            }}
-          >
-            <Animated.View
-              style={[
-                styles.driftAlertSignal,
-                {
-                  opacity: flickerAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0.3, 1],
-                  }),
-                },
-              ]}
-            />
-            <View style={styles.driftAlertAvatar}>
-              {vibeAlert.hostPhoto ? (
-                <Image
-                  source={{ uri: vibeAlert.hostPhoto }}
-                  style={styles.driftAlertAvatarImage}
-                />
-              ) : (
-                <Text style={styles.driftAlertInitials}>
-                  {vibeAlert.hostName.charAt(0).toUpperCase()}
-                </Text>
-              )}
-            </View>
-            <Text style={styles.driftAlertText}>
-              Open Sea Vibe • {vibeAlert.hostName}
-            </Text>
-          </Pressable>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable
+              style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
+              onPress={() => {
+                requestToDriftForLiveId(vibeAlert.liveId, vibeAlert.hostName);
+                setVibeAlert(null);
+                lastDriftHostRef.current = null;
+                if (driftAlertTimerRef.current) {
+                  clearTimeout(driftAlertTimerRef.current);
+                  driftAlertTimerRef.current = null;
+                }
+              }}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+            >
+              <Animated.View
+                style={[
+                  styles.driftAlertSignal,
+                  {
+                    opacity: flickerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.3, 1],
+                    }),
+                  },
+                ]}
+              />
+              <View style={styles.driftAlertAvatar}>
+                {vibeAlert.hostPhoto ? (
+                  <Image
+                    source={{ uri: vibeAlert.hostPhoto }}
+                    style={styles.driftAlertAvatarImage}
+                  />
+                ) : (
+                  <Text style={styles.driftAlertInitials}>
+                    {vibeAlert.hostName.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.driftAlertText}>
+                Open Sea Vibe • {vibeAlert.hostName}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.driftAlertButton, { width: 80, marginLeft: 8 }]}
+              onPress={() => {
+                setVibeAlert(null);
+                lastDriftHostRef.current = null;
+                if (driftAlertTimerRef.current) {
+                  clearTimeout(driftAlertTimerRef.current);
+                  driftAlertTimerRef.current = null;
+                }
+                setMessageRecipient({
+                  uid: vibeAlert.hostUid,
+                  name: vibeAlert.hostName,
+                });
+                setMessageText('');
+                setMessageAttachment(null);
+                setShowSendMessage(true);
+              }}
+              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+            >
+              <Text style={[styles.driftAlertText, { fontSize: 14 }]}>
+                Reply
+              </Text>
+            </Pressable>
+          </View>
         </Animated.View>
       )}
       {/* Facebook-like Header */}
@@ -8609,6 +10198,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return false; // do not block scroll/swipe
         }}
         delayPressIn={0}
+        pointerEvents="box-none"
+        hitSlop={{ top: 50, bottom: 50, left: 50, right: 50 }}
+        pressRetentionOffset={{ top: 50, bottom: 50, left: 50, right: 50 }}
       >
         <View style={{ flex: 1 }}>
           {displayFeed.length === 0 ? (
@@ -8625,14 +10217,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             </View>
           ) : (
             <>
-              <FlatList
+              <ErrorBoundary>
+                <FlatList
                 ref={feedRef}
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
-                removeClippedSubviews={true}
+                removeClippedSubviews={false}
                 maxToRenderPerBatch={5}
-                windowSize={5}
+                windowSize={11}
                 initialNumToRender={3}
                 pagingEnabled={false}
                 snapToInterval={undefined}
@@ -8641,10 +10234,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 bounces={true}
                 showsVerticalScrollIndicator={false}
                 overScrollMode="never"
-                maintainVisibleContentPosition={{
-                  minIndexForVisible: 0,
-                  autoscrollToTopThreshold: 10,
-                }}
                 onScrollBeginDrag={() => {
                   setIsSwiping(true);
                   showUiTemporarily(); // Show toggles on swipe
@@ -8655,18 +10244,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   setIsSwiping(false);
                   // Update currentIndex based on final scroll position
                   const scrollY = event.nativeEvent.contentOffset.y;
-                  const averageItemHeight = 400; // approximate height per post
+                  const averageItemHeight = 300; // approximate height per post (reduced for smaller video space)
                   const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
                   setCurrentIndex(newIndex);
                 }}
-                // TikTok-style viewability tracking
+                // Ultra-aggressive instant playback - videos start playing when 50% visible
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 80, // video must be mostly visible
+                  itemVisiblePercentThreshold: 50, // video starts playing when 50% pixel is visible
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
                   // Load more items when reaching the end
-                  loadMoreFeedItems();
+                  try {
+                    loadMoreFeedItems();
+                  } catch (error) {
+                    console.warn('Error in onEndReached:', error);
+                  }
                 }}
                 onEndReachedThreshold={0.5} // Trigger when 50% from the end
                 onScrollToIndexFailed={(info) => {
@@ -8682,27 +10275,70 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }
                 }}
                 renderItem={({ item, index }) => {
-                // Only pause for modals that interfere with video/audio
-                const isAnyModalOpen =
-                  showMakeWaves ||
-                  showAudioModal ||
-                  !!capturedMedia ||
-                  showLive;
-                const shouldPlay =
-                  !isPaused &&
-                  allowPlayback &&
-                  !isAnyModalOpen;
-                const maxBr = isWifi
-                  ? 1_500_000
-                  : Math.min(
-                      bridge.dataSaverDefaultOnCell
-                        ? Math.min(
-                            bridge.cellularMaxBitrateH264,
-                            bridge.cellularMaxBitrateHEVC,
-                          )
-                        : bridge.cellularMaxBitrateH264,
-                      600_000,
+                  try {
+                    return (
+                      <MainFeedItem
+                        item={item}
+                        index={index}
+                        myUid={myUid}
+                        profileName={profileName}
+                        profileBio={profileBio}
+                        userData={userData}
+                        ensureUserData={ensureUserData}
+                        waveStats={waveStats}
+                        isInUserCrew={isInUserCrew}
+                        optimisticCrewCounts={optimisticCrewCounts}
+                        expandedPosts={expandedPosts}
+                        revealedImages={revealedImages}
+                        isCurrentUserOnline={isCurrentUserOnline}
+                        bufferingMap={bufferingMap}
+                        postEchoLists={postEchoLists}
+                        expandedEchoes={expandedEchoes}
+                        echoesPageSize={echoesPageSize}
+                        echoExpansionInProgress={echoExpansionInProgress}
+                        reachCounts={reachCounts}
+                        isPaused={isPaused}
+                        allowPlayback={allowPlayback}
+                        showMakeWaves={showMakeWaves}
+                        showAudioModal={showAudioModal}
+                        capturedMedia={capturedMedia}
+                        showLive={showLive}
+                        activeVideoId={activeVideoId}
+                        preloadedVideoIds={preloadedVideoIds}
+                        overlayReadyMap={overlayReadyMap}
+                        isWifi={isWifi}
+                        bridge={bridge}
+                        currentIndex={currentIndex}
+                        displayHandle={displayHandle}
+                        formatDefiniteTime={formatDefiniteTime}
+                        openWaveOptions={openWaveOptions}
+                        handleToggleVibe={handleToggleVibe}
+                        setExpandedPosts={setExpandedPosts}
+                        setRevealedImages={setRevealedImages}
+                        recordVideoReach={recordVideoReach}
+                        recordImageReach={recordImageReach}
+                        setPreservedScrollPosition={setPreservedScrollPosition}
+                        navigation={navigation}
+                        ensureSplash={ensureSplash}
+                        removeSplash={removeSplash}
+                        setWavesFeed={setWavesFeed}
+                        setVibesFeed={setVibesFeed}
+                        setPublicFeed={setPublicFeed}
+                        setPostFeed={setPostFeed}
+                        setEchoWaveId={setEchoWaveId}
+                        setCurrentIndex={setCurrentIndex}
+                        setShowEchoes={setShowEchoes}
+                        setShowPearls={setShowPearls}
+                        anchorWave={anchorWave}
+                        onShareWave={onShareWave}
+                        setEchoExpansionInProgress={setEchoExpansionInProgress}
+                        setExpandedEchoes={setExpandedEchoes}
+                        setEchoesPageSize={setEchoesPageSize}
+                        videoStyleFor={videoStyleFor}
+                        isVideoAsset={isVideoAsset}
+                      />
                     );
+<<<<<<< HEAD
                 const overlayState = overlayReadyMap[item.id] || {};
                 const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl;
                 const overlayVideoReady =
@@ -9166,7 +10802,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </Pressable>
                 );
               }}
+=======
+                  } catch (error) {
+                    console.warn('Error rendering feed item:', item?.id, error);
+                    return null;
+                  }
+                }}
+                refreshControl={
+                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                }
+>>>>>>> 79c3f4992844e5651323514f5bba96d8602ad31d
             />
+              </ErrorBoundary>
             
             {/* Loading indicator for pagination */}
             {isLoadingMore && (
@@ -9197,45 +10844,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             backgroundColor: NAVY_BLUE,
           },
         ]}
-        onPress={withUi(() => showTopBar())}
+        onPress={() => showTopBar()}
       >
         <View style={styles.topBarWrapper}>
+          {/* VIBES - always visible removed */}
           {isTopBarVisible && (
-            <>
-              {/* VIBES - always visible */}
-              <Pressable
-                style={styles.topItem}
-                onPress={withUi(() => {
-                  showTopBar();
-                  setCurrentIndex(0);
-                  try {
-                    feedRef.current?.scrollToOffset({ offset: 0, animated: false });
-                  } catch {}
-                })}
-              >
-                <Text style={[styles.compassIcon, { color: 'red' }]}>
-                  🐬
-                </Text>
-                <Text style={styles.topLabel}>
-                  VIBES
-                </Text>
-              </Pressable>
-              {/* Toggle Button */}
-              <Pressable
-                style={styles.toggleButton}
-                hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
-                onPress={withUi(() => {
-                  setIsTopBarExpanded(p => !p);
-                  showTopBar();
-                })}
-              >
-                <Text style={styles.toggleButtonText}>
-                  {isTopBarExpanded ? '<' : '>'}
-                </Text>
-              </Pressable>
-            </>
-          )}
-          {isTopBarVisible && isTopBarExpanded && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -9244,28 +10857,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* MAKE WAVES */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowMakeWaves(true);
-                  })}
+                  onPress={handleDropWave}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.dolphinIcon}>✨</Text>
-                  <Text style={styles.topLabel}>DROP A VIBE</Text>
+                  <Text style={styles.topLabel}>DROP A WAVE</Text>
                 </Pressable>
                 {/* VIBE ALERTS - Placeholder */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowNotifications(true);
-                  })}
+                  onPress={handleVibeAlerts}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <View style={{ position: 'relative' }}>
                     <Text style={styles.pingsIcon}>📫</Text>
-                    {unreadNotificationsCount > 0 && (
+                    {unreadAlertsCount > 0 && (
                       <View style={styles.notificationBadge}>
                         <Text style={styles.notificationBadgeText}>
-                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                          {unreadAlertsCount > 99 ? '99+' : unreadAlertsCount}
                         </Text>
                       </View>
                     )}
@@ -9275,10 +10888,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* DEEP DIVE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowDeepSearch(true);
-                  })}
+                  onPress={handleVibeHunt}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.dolphinIcon}>🔎</Text>
                   <Text style={styles.topLabel}>VIBE HUNT</Text>
@@ -9287,10 +10900,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* MY SHORE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowProfile(true);
-                  })}
+                  onPress={handleMyAura}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.umbrellaIcon}>⛱️</Text>
                   <Text style={styles.topLabel}>MY AURA</Text>
@@ -9298,32 +10911,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* SET SAIL */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowExplore(true);
-                  })}
+                  onPress={handleVibeOut}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.boatIcon}>⛵</Text>
-                  <Text style={styles.topLabel}>VIBE OUT</Text>
+                  <Text style={styles.topLabel}>ADVENTURE SPACE</Text>
                 </Pressable>
                 {/* SCHOOL MODE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowSchoolMode(true);
-                  })}
+                  onPress={handleVibeMode}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.schoolIcon}>🏫</Text>
-                  <Text style={styles.topLabel}>VIBE MODE</Text>
+                  <Text style={styles.topLabel}>STUDY HUB</Text>
                 </Pressable>
                 {/* AI ASSISTANT */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowAIModal(true);
-                  })}
+                  onPress={handleAiAssistant}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.aiIcon}>🤖</Text>
                   <Text style={styles.topLabel}>AI ASSISTANT</Text>
@@ -9331,32 +10944,38 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {/* NOTICE BOARD */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
-                    showTopBar();
-                    setShowNotice(true);
-                  })}
+                  onPress={handleVibeBoard}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.noticeIcon}>📋</Text>
-                  <Text style={styles.topLabel}>VIBE BOARD</Text>
+                  <Text style={styles.topLabel}>BULLETIN BOARD</Text>
                 </Pressable>
                 {/* THE BRIDGE */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
+                  onPress={() => {
                     showTopBar();
                     setShowBridge(true);
-                  })}
+                  }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.gearIcon}>⚙️</Text>
-                  <Text style={styles.topLabel}>VIBE BRIDGE</Text>
+                  <Text style={styles.topLabel}>COMMAND CENTRE</Text>
                 </Pressable>
                 {/* PLACE HOLDER */}
                 <Pressable
                   style={styles.topItem}
-                  onPress={withUi(() => {
+                  onPress={() => {
                     showTopBar();
                     Alert.alert('Placeholder', 'Reserved for future feature.');
-                  })}
+                  }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.placeholderIcon}>🔮</Text>
                   <Text style={styles.topLabel}>PLACE HOLDER</Text>
@@ -9366,25 +10985,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </Pressable>
                     
-      {/* Media title + timer overlay (at bottom above interactions) */}
-      {currentWave && !isUiVisible && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.mediaTitleBar,
-            { top: undefined, bottom: insets.bottom + bottomBarHeight - 6 },
-          ]}
-        >
-          <Text
-            style={[styles.mediaTimerText, { marginLeft: 0, marginRight: 12 }]}
-          >
-            {formatTime(playbackTime)}
-          </Text>
-          <Text numberOfLines={1} style={styles.mediaTitleText}>
-            {getWaveTitle(currentWave)}
-          </Text>
-        </View>
-      )}
+    
                     
       {/* Right-edge overlapped bubbles */}
       {/* Notification Toast */}
@@ -9637,7 +11238,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showProfile}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowProfile(false)}
       >
         <View
@@ -9741,25 +11342,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   placeholder="Write a short bio..."
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   multiline
-                  style={[
-                    styles.profileBio as any,
-                    {
-                      marginTop: 8,
-                      width: '100%',
-                      borderBottomWidth: 1,
-                      borderBottomColor: 'rgba(255,255,255,0.2)',
-                    },
-                  ]}
-                />
-                <TouchableOpacity
                   style={{
-                    backgroundColor: '#00C2FF',
-                    paddingVertical: 12,
-                    paddingHorizontal: 24,
-                    borderRadius: 10,
-                    marginTop: 16,
-                    alignSelf: 'center',
+                    color: '#8B0000',
+                    marginTop: 8,
+                    width: '100%',
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.2)',
+                    fontSize: 11,
+                    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
                   }}
+                />
+                <Pressable
+                  style={({ pressed }) => [
+                    {
+                      backgroundColor: '#00C2FF',
+                      paddingVertical: 12,
+                      paddingHorizontal: 24,
+                      borderRadius: 10,
+                      marginTop: 16,
+                      alignSelf: 'center',
+                    },
+                    pressed && {
+                      opacity: 0.8,
+                      transform: [{ scale: 0.95 }],
+                    }
+                  ]}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={async () => {
                     if (!profileName.trim()) {
                       Alert.alert('Error', 'Username cannot be empty.');
@@ -9804,7 +11412,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }}
                 >
                   <Text style={{ color: '#001529', fontWeight: 'bold', fontSize: 16 }}>Save Profile</Text>
-                </TouchableOpacity>
+                </Pressable>
               </View>
               {/* My Vibes, Notifications, and My Collection */}
               <View style={{ flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 20, alignItems: 'center', gap: 16 }}>
@@ -9814,6 +11422,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowMyWaves(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -9835,6 +11448,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowTreasure(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -9856,6 +11474,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowNotifications(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -9865,11 +11488,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         width: 12,
                         height: 12,
                         borderRadius: 6,
-                        backgroundColor: unreadNotificationsCount > 0 ? '#FF4444' : '#00C2FF',
+                        backgroundColor: unreadAlertsCount > 0 ? '#FF4444' : '#00C2FF',
                       }}
                     />
                     <Text style={[styles.logbookActionText, { fontSize: 16 }]}>Notifications</Text>
-                    {unreadNotificationsCount > 0 && (
+                    {unreadAlertsCount > 0 && (
                       <View style={{
                         backgroundColor: '#FF4444',
                         borderRadius: 10,
@@ -9880,7 +11503,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         paddingHorizontal: 6,
                       }}>
                         <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>
-                          {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                          {unreadAlertsCount > 99 ? '99+' : unreadAlertsCount}
                         </Text>
                       </View>
                     )}
@@ -9892,6 +11515,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     setShowProfile(false);
                     setShowTreasure(true);
                   }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <View
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
@@ -9919,12 +11547,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </View>
       </Modal>
       
-      {/* NOTIFICATIONS MODAL */}
+      {/* MESSAGING INBOX MODAL */}
       <Modal
-        visible={showNotifications}
+        visible={showInbox}
         transparent
-        animationType="fade"
-        onRequestClose={() => setShowNotifications(false)}
+        animationType="none"
+        onRequestClose={() => {
+          setShowInbox(false);
+          setSelectedThread(null);
+          setIsDeleteMode(false);
+          setSelectedNotifications(new Set());
+        }}
       >
         <View
           style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
@@ -9943,77 +11576,249 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={{ flex: 1, padding: 16 }}>
-              <Text style={[styles.logbookTitle, { marginBottom: 16, textAlign: 'center' }]}>
-                Notifications
-              </Text>
-              
-              {notifications.length === 0 ? (
-                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                  <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
-                    No notifications yet
-                  </Text>
-                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
-                    When someone connects with your vibe, you'll see it here!
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView style={{ flex: 1 }}>
-                  {notifications.map((notification) => (
-                    <Pressable
-                      key={notification.id}
-                      style={{
-                        backgroundColor: notification.read ? 'rgba(255,255,255,0.05)' : 'rgba(255,215,0,0.1)',
-                        borderRadius: 6,
-                        padding: 12,
-                        marginBottom: 8,
-                        borderLeftWidth: notification.read ? 0 : 3,
-                        borderLeftColor: '#FFD700',
-                      }}
-                      onPress={() => {
-                        if (!notification.read) {
-                          markNotificationAsRead(notification.id);
-                        }
-                        
-                        // For echo notifications, show action buttons instead of alert
-                        if (notification.type === 'echo') {
-                          if (notificationWithActions === notification.id) {
-                            // Clicking the same notification again closes actions
-                            setNotificationWithActions(null);
-                            setEchoReplyText('');
-                            setShowEchoReplyInput(false);
-                          } else {
-                            // Show actions for this notification
-                            setNotificationWithActions(notification.id);
-                            setEchoReplyText('');
-                            setShowEchoReplyInput(false);
-                          }
-                        } else {
-                          // Close any open action buttons
-                          setNotificationWithActions(null);
-                          setEchoReplyText('');
-                          setShowEchoReplyInput(false);
+              <View style={{ marginBottom: 16 }}>
+                <Text style={[styles.logbookTitle, { textAlign: 'center', marginBottom: 8 }]}>
+                  VIBE ALERTS
+                </Text>
+                <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
+                  <Text style={{ color: '#FF4444' }}>NOTIFICATIONS</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length})</Text>
+                </Text>
+              </View>
+
+              {!selectedThread ? (
+                // Unified notifications view
+                (() => {
+                  // Define system notification types that should show with letter avatars
+                  const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+                  
+                  // Separate notifications into system notifications and individual messages
+                  const systemNotifications = notifications.filter(notification => 
+                    systemNotificationTypes.includes(notification.type)
+                  );
+                  
+                  const individualMessages = notifications.filter(notification => 
+                    !systemNotificationTypes.includes(notification.type)
+                  );
+                  
+                  // Convert individual messages to thread format
+                  const messageThreadsFromNotifications = individualMessages
+                    .filter(notification => {
+                      // Filter out notifications with unknown/placeholder usernames
+                      const senderName = notification.fromUserHandle || 'Unknown User';
+                      return senderName !== 'Unknown User' && senderName !== 'unknown' && senderName !== 'Unknown';
+                    })
+                    .map(notification => ({
+                    senderUid: notification.fromUid || 'unknown',
+                    senderName: notification.fromUserHandle || 'Unknown User',
+                    senderAvatar: null, // Will be handled by avatar logic
+                    lastMessage: notification.message,
+                    lastMessageTime: notification.createdAt,
+                    unreadCount: notification.read ? 0 : 1,
+                    messages: [{
+                      id: notification.id,
+                      text: notification.message,
+                      fromUid: notification.fromUid || 'unknown',
+                      createdAt: notification.createdAt,
+                      attachmentUrl: null,
+                      attachmentType: null,
+                      attachmentName: null,
+                    }],
+                  }));
+                  
+                  const unifiedNotifications = [
+                    ...messageThreads.map(thread => ({
+                      id: `thread_${thread.senderUid}`,
+                      type: 'thread' as const,
+                      senderName: thread.senderName,
+                      senderAvatar: thread.senderAvatar,
+                      message: thread.lastMessage,
+                      timestamp: thread.lastMessageTime,
+                      unread: thread.unreadCount > 0,
+                      threadData: thread,
+                    })),
+                    ...messageThreadsFromNotifications.map(thread => ({
+                      id: `thread_from_notification_${thread.senderUid}_${Date.now()}`,
+                      type: 'thread' as const,
+                      senderName: thread.senderName,
+                      senderAvatar: null,
+                      message: thread.lastMessage,
+                      timestamp: thread.lastMessageTime,
+                      unread: thread.unreadCount > 0,
+                      threadData: thread,
+                    })),
+                    ...systemNotifications
+                      .filter(notification => {
+                        // Filter out system notifications with unknown/placeholder usernames
+                        const senderName = notification.fromUserHandle || 'System';
+                        return senderName !== 'Unknown User' && senderName !== 'unknown' && senderName !== 'Unknown';
+                      })
+                      .map(notification => ({
+                      id: `notification_${notification.id}`,
+                      type: 'notification' as const,
+                      senderName: notification.fromUserHandle || 'System',
+                      senderAvatar: null, // Will use letter avatar
+                      message: notification.message,
+                      timestamp: notification.createdAt,
+                      unread: !notification.read,
+                      notificationData: notification,
+                    })),
+                  ].sort((a, b) => {
+                    const timeA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
+                    const timeB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
+                    return timeB.getTime() - timeA.getTime(); // Most recent first
+                  });
+
+                  if (unifiedNotifications.length === 0) {
+                    return (
+                      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                        <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
+                          No notifications yet
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
+                          When you receive messages or notifications, they'll appear here!
+                        </Text>
+                      </View>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <FlatList
+                      data={unifiedNotifications}
+                      keyExtractor={(item) => item.id}
+                      renderItem={({ item }) => {
+                        const getAvatarLetter = (name: string) => {
+                          if (!name || name.trim() === '') return '?';
+                          const cleanName = name.trim();
+                          const parts = cleanName.split(/\s+/); // Split on any whitespace
                           
-                          // Show the actual message content in an alert for other types
-                          Alert.alert(
-                            'Message Details',
-                            notification.message || 'No additional details available',
-                            [{ text: 'OK' }]
-                          );
-                        }
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                        {/* Avatar */}
-                        {(() => {
-                          const avatar = userData ? getUserAvatar(notification.fromUid, userData) : null;
-                          return avatar ? (
-                            typeof avatar === 'object' && 'text' in avatar ? (
-                              // Text-based avatar (initials)
+                          if (parts.length >= 2) {
+                            // Use first letter of first name + first letter of last name
+                            const firstInitial = parts[0].charAt(0).toUpperCase();
+                            const lastInitial = parts[parts.length - 1].charAt(0).toUpperCase();
+                            return firstInitial + lastInitial;
+                          } else if (parts.length === 1 && parts[0].length >= 2) {
+                            // Single word name with at least 2 characters
+                            return parts[0].substring(0, 2).toUpperCase();
+                          } else if (parts.length === 1 && parts[0].length === 1) {
+                            // Single character name
+                            return parts[0].charAt(0).toUpperCase() + parts[0].charAt(0).toUpperCase();
+                          } else {
+                            return '?';
+                          }
+                        };
+
+                        const getAvatarColor = (name: string) => {
+                          const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
+                          const index = name.length % colors.length;
+                          return colors[index];
+                        };
+
+                        return (
+                          <Pressable
+                            style={{
+                              backgroundColor: isDeleteMode && selectedNotifications.has(item.id) 
+                                ? 'rgba(255,215,0,0.3)' 
+                                : item.unread ? 'rgba(255,215,0,0.1)' : 'rgba(255,255,255,0.05)',
+                              borderRadius: 6,
+                              padding: 12,
+                              marginBottom: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              borderLeftWidth: item.unread ? 3 : 0,
+                              borderLeftColor: '#FFD700',
+                              borderWidth: isDeleteMode && selectedNotifications.has(item.id) ? 2 : 0,
+                              borderColor: '#FFD700',
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            delayPressIn={0}
+                            delayPressOut={0}
+                            activeOpacity={0.8}
+                            android_ripple={{ color: 'rgba(255, 215, 0, 0.2)', borderless: false }}
+                            onLongPress={() => {
+                              if (!isDeleteMode) {
+                                setIsDeleteMode(true);
+                                setSelectedNotifications(new Set([item.id]));
+                              }
+                            }}
+                            onPress={() => {
+                              if (isDeleteMode) {
+                                // Multiple selection - toggle selection
+                                const newSelected = new Set(selectedNotifications);
+                                if (newSelected.has(item.id)) {
+                                  newSelected.delete(item.id);
+                                  if (newSelected.size === 0) {
+                                    setIsDeleteMode(false);
+                                  }
+                                } else {
+                                  newSelected.add(item.id);
+                                }
+                                setSelectedNotifications(newSelected);
+                              } else {
+                                if (item.type === 'thread') {
+                                  setSelectedThread({
+                                    senderUid: item.threadData.senderUid,
+                                    senderName: item.threadData.senderName,
+                                    senderAvatar: item.threadData.senderAvatar,
+                                    messages: item.threadData.messages,
+                                  });
+                                } else {
+                                  if (!item.notificationData.read) {
+                                    markNotificationAsRead(item.notificationData.id);
+                                  }
+                                  Alert.alert(
+                                    'Notification',
+                                    formatNotificationMessage(item.notificationData, userData || {}),
+                                    [{ text: 'OK' }]
+                                  );
+                                }
+                              }
+                            }}
+                          >
+                            {/* Avatar */}
+                            {item.type === 'thread' && item.senderAvatar ? (
+                              typeof item.senderAvatar === 'object' && 'text' in item.senderAvatar ? (
+                                // Text-based avatar (initials)
+                                <View style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 20,
+                                  backgroundColor: item.senderAvatar.backgroundColor,
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                  marginRight: 12,
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(255,255,255,0.2)',
+                                }}>
+                                  <Text style={{
+                                    fontSize: 16,
+                                    fontWeight: 'bold',
+                                    color: item.senderAvatar.color
+                                  }}>
+                                    {item.senderAvatar.text}
+                                  </Text>
+                                </View>
+                              ) : (
+                                // Image-based avatar
+                                <Image
+                                  source={item.senderAvatar}
+                                  style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 20,
+                                    marginRight: 12,
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.2)',
+                                  }}
+                                />
+                              )
+                            ) : (
+                              // Letter avatar for notifications or missing avatars
                               <View style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: 16,
-                                backgroundColor: avatar.backgroundColor,
+                                width: 40,
+                                height: 40,
+                                borderRadius: 20,
+                                backgroundColor: getAvatarColor(item.senderName),
                                 justifyContent: 'center',
                                 alignItems: 'center',
                                 marginRight: 12,
@@ -10021,216 +11826,587 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 borderColor: 'rgba(255,255,255,0.2)',
                               }}>
                                 <Text style={{
-                                  fontSize: 14,
+                                  fontSize: 16,
                                   fontWeight: 'bold',
-                                  color: avatar.color
+                                  color: 'white'
                                 }}>
-                                  {avatar.text}
+                                  {getAvatarLetter(item.senderName)}
                                 </Text>
                               </View>
-                            ) : (
-                              // Image-based avatar
-                              <Image
-                                source={avatar}
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 16,
-                                  marginRight: 12,
-                                  borderWidth: 1,
-                                  borderColor: 'rgba(255,255,255,0.2)',
-                                }}
-                              />
-                            )
-                          ) : null;
-                        })()}
-                        
-                        <Text style={{
-                          color: 'white',
-                          fontSize: 16,
-                          fontWeight: notification.read ? 'normal' : 'bold',
-                          flex: 1,
-                        }}>
-                          {formatNotificationMessage(notification, userData || {})}
-                        </Text>
-                      </View>
-                      <Text style={{
-                        color: 'rgba(255,255,255,0.6)',
-                        fontSize: 12,
+                            )}
+
+                            {/* Selection Checkbox */}
+                            {isDeleteMode && (
+                              <View style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: 4,
+                                borderWidth: 2,
+                                borderColor: selectedNotifications.has(item.id) ? '#FFD700' : 'rgba(255,255,255,0.5)',
+                                backgroundColor: selectedNotifications.has(item.id) ? '#FFD700' : 'transparent',
+                                justifyContent: 'center',
+                                alignItems: 'center',
+                                marginRight: 12,
+                              }}>
+                                {selectedNotifications.has(item.id) && (
+                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>✓</Text>
+                                )}
+                              </View>
+                            )}
+
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 2 }}>
+                                <Text style={{
+                                  color: 'white',
+                                  fontSize: 16,
+                                  fontWeight: item.unread ? 'bold' : 'normal',
+                                }}>
+                                  {item.senderName}
+                                </Text>
+                              </View>
+                              <Text style={{
+                                color: 'rgba(255,255,255,0.7)',
+                                fontSize: 14,
+                                numberOfLines: 1,
+                              }}>
+                                {item.message}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        );
+                      }}
+                      showsVerticalScrollIndicator={false}
+                    />
+
+                    {/* Selection Action Bar */}
+                    {isDeleteMode && (
+                      <View style={{
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        borderRadius: 8,
+                        padding: 16,
+                        marginTop: 16,
                       }}>
-                        {notification.createdAt?.toDate ? 
-                          formatDefiniteTime(notification.createdAt.toDate()) : 
-                          'Unknown time'}
-                      </Text>
-                      
-                      {/* Action buttons for echo notifications */}
-                      {notificationWithActions === notification.id && notification.type === 'echo' && (
-                        <View style={{ marginTop: 12 }}>
-                          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.1)',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 8,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                                flex: 1,
-                              }}
-                              onPress={async () => {
-                                try {
-                                  // Send hug back to the wave that was echoed
-                                  if (notification.waveId) {
-                                    await ensureSplash(notification.waveId);
-                                    Alert.alert('Success', 'Hug sent! 🫂');
-                                  } else {
-                                    Alert.alert('Error', 'Could not find the wave to hug');
-                                  }
-                                } catch (error) {
-                                  console.error('Error sending hug:', error);
-                                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                                  Alert.alert('Error', `Failed to add hug: ${errorMessage}`);
-                                }
-                                setNotificationWithActions(null);
-                              }}
-                            >
-                              <Text style={{ fontSize: 16 }}>🫂</Text>
-                              <Text style={{ color: 'white', fontSize: 14 }}>Hug</Text>
-                            </Pressable>
-                            
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.1)',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 8,
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 6,
-                                flex: 1,
-                              }}
-                              onPress={() => {
-                                setShowEchoReplyInput(!showEchoReplyInput);
-                              }}
-                            >
-                              <Text style={{ fontSize: 16 }}>📣</Text>
-                              <Text style={{ color: 'white', fontSize: 14 }}>Echo back</Text>
-                            </Pressable>
-                          </View>
-                          
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                          <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
+                            {selectedNotifications.size} selected
+                          </Text>
+                        </View>
+                        
+                        <View style={{ 
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8
+                        }}>
+                          {/* Cancel */}
                           <Pressable
                             style={{
-                              backgroundColor: 'rgba(255,255,255,0.1)',
+                              backgroundColor: 'rgba(255,255,255,0.2)',
                               borderRadius: 6,
-                              paddingHorizontal: 12,
+                              paddingHorizontal: 10,
                               paddingVertical: 6,
-                              alignSelf: 'flex-start',
+                              flex: 1,
+                              alignItems: 'center',
                             }}
                             onPress={() => {
-                              setNotificationWithActions(null);
-                              setEchoReplyText('');
-                              setShowEchoReplyInput(false);
+                              setIsDeleteMode(false);
+                              setSelectedNotifications(new Set());
                             }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
-                            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>Close</Text>
+                            <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                              Cancel
+                            </Text>
                           </Pressable>
+
+                          {/* Mark as Read/Unread */}
+                          <Pressable
+                            style={{
+                              backgroundColor: 'rgba(255,215,0,0.8)',
+                              borderRadius: 6,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              flex: 1,
+                              alignItems: 'center',
+                            }}
+                            onPress={async () => {
+                              const selectedItems = unifiedNotifications.filter(item => selectedNotifications.has(item.id));
+                              
+                              for (const selectedItem of selectedItems) {
+                                if (selectedItem.type === 'notification' && selectedItem.notificationData) {
+                                  if (selectedItem.notificationData.read) {
+                                    // Mark as unread (if function exists)
+                                    // For now, we'll just mark as read if unread
+                                  } else {
+                                    await markNotificationAsRead(selectedItem.notificationData.id);
+                                  }
+                                }
+                              }
+                              
+                              setSelectedNotifications(new Set());
+                              setIsDeleteMode(false);
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Text style={{ color: 'black', fontSize: 11, fontWeight: 'bold' }}>
+                              Mark Read
+                            </Text>
+                          </Pressable>
+
+                          {/* Delete */}
+                          <Pressable
+                            style={{
+                              backgroundColor: '#FF4444',
+                              borderRadius: 6,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              flex: 1,
+                              alignItems: 'center',
+                            }}
+                            onPress={() => {
+                              Alert.alert(
+                                'Delete Messages',
+                                `Delete ${selectedNotifications.size} message${selectedNotifications.size > 1 ? 's' : ''}?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Delete',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      await deleteSelectedNotifications();
+                                      setIsDeleteMode(false);
+                                    }
+                                  }
+                                ]
+                              );
+                            }}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                              Delete
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    )}
+                    </>
+                  );
+                })()
+              ) : (
+                // Thread view - individual conversation
+                <>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <Text style={[styles.logbookTitle, { textAlign: 'left', flex: 1 }]}>
+                      {selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}
+                    </Text>
+                    <Pressable
+                      onPress={() => {
+                        setSelectedThread(null);
+                        setSelectedMessageForReply(null);
+                        setIsThreadSelectionMode(false);
+                        setSelectedThreadMessages(new Set());
+                      }}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      delayPressIn={0}
+                      delayPressOut={0}
+                    >
+                      <Text style={{ color: 'white', fontSize: 16 }}>←</Text>
+                    </Pressable>
+                  </View>
+                  <ScrollView style={{ flex: 1 }}>
+                  {selectedThread.messages.map((message, index) => (
+                    <Pressable
+                      key={message.id || index}
+                      style={{
+                        flexDirection: 'row',
+                        marginBottom: 12,
+                        alignItems: 'flex-start',
+                        padding: 8,
+                        backgroundColor: isThreadSelectionMode && selectedThreadMessages.has(message.id || `msg_${index}`) 
+                          ? 'rgba(255,215,0,0.3)' 
+                          : selectedMessageForReply === message 
+                            ? 'rgba(255,215,0,0.1)' 
+                            : index < selectedThread.messages.length - 1 
+                              ? 'rgba(255,255,255,0.02)' 
+                              : 'transparent',
+                        borderRadius: 6,
+                        borderWidth: (isThreadSelectionMode && selectedThreadMessages.has(message.id || `msg_${index}`)) || selectedMessageForReply === message ? 2 : 0,
+                        borderColor: '#FFD700',
+                      }}
+                      onLongPress={() => {
+                        if (!isThreadSelectionMode) {
+                          setIsThreadSelectionMode(true);
+                          setSelectedThreadMessages(new Set([message.id || `msg_${index}`]));
+                          setSelectedMessageForReply(null); // Clear reply selection when entering selection mode
+                        }
+                      }}
+                      onPress={() => {
+                        if (isThreadSelectionMode) {
+                          // Toggle selection
+                          const messageId = message.id || `msg_${index}`;
+                          const newSelected = new Set(selectedThreadMessages);
+                          if (newSelected.has(messageId)) {
+                            newSelected.delete(messageId);
+                            if (newSelected.size === 0) {
+                              setIsThreadSelectionMode(false);
+                            }
+                          } else {
+                            newSelected.add(messageId);
+                          }
+                          setSelectedThreadMessages(newSelected);
+                        } else {
+                          // Select message for reply
+                          setSelectedMessageForReply(message);
+                          setQuickReplyText('');
+                        }
+                      }}
+                    >
+                      {/* Read/Unread indicator */}
+                      <View style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: index < selectedThread.messages.length - 1 ? 'rgba(255,255,255,0.3)' : '#FFD700',
+                        marginRight: 8,
+                        marginTop: 4,
+                      }} />
+                      
+                      {/* Selection Checkbox */}
+                      {isThreadSelectionMode && (
+                        <View style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: 4,
+                          borderWidth: 2,
+                          borderColor: selectedThreadMessages.has(message.id || `msg_${index}`) ? '#FFD700' : 'rgba(255,255,255,0.5)',
+                          backgroundColor: selectedThreadMessages.has(message.id || `msg_${index}`) ? '#FFD700' : 'transparent',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 8,
+                          marginTop: 2,
+                        }}>
+                          {selectedThreadMessages.has(message.id || `msg_${index}`) && (
+                            <Text style={{ color: 'black', fontSize: 14, fontWeight: 'bold' }}>✓</Text>
+                          )}
                         </View>
                       )}
                       
-                      {/* Echo reply input */}
-                      {notificationWithActions === notification.id && showEchoReplyInput && (
-                        <View style={{ marginTop: 8 }}>
-                          <TextInput
-                            style={{
-                              backgroundColor: 'rgba(255,255,255,0.1)',
-                              borderRadius: 6,
-                              padding: 8,
-                              color: 'white',
-                              fontSize: 14,
-                              marginBottom: 8,
-                            }}
-                            placeholder="Type your echo reply..."
-                            placeholderTextColor="rgba(255,255,255,0.5)"
-                            value={echoReplyText}
-                            onChangeText={setEchoReplyText}
-                            multiline
-                            maxLength={280}
-                          />
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
-                            <Pressable
-                              style={{
-                                backgroundColor: '#007AFF',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 6,
-                                flex: 1,
-                              }}
-                              onPress={async () => {
-                                if (!echoReplyText.trim()) {
-                                  Alert.alert('Error', 'Please enter a reply');
-                                  return;
-                                }
-                                
-                                try {
-                                  // Send echo reply to the wave that was echoed
-                                  if (notification.waveId) {
-                                    await sendEcho(notification.waveId, echoReplyText);
-                                    Alert.alert('Success', 'Echo sent! 📣');
-                                  } else {
-                                    Alert.alert('Error', 'Could not find the wave to echo');
-                                  }
-                                } catch (error) {
-                                  console.error('Error sending echo:', error);
-                                  const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-                                  Alert.alert('Error', `Couldn't send echo: ${errorMessage}`);
-                                }
-                                
-                                setNotificationWithActions(null);
-                                setEchoReplyText('');
-                                setShowEchoReplyInput(false);
-                              }}
-                            >
-                              <Text style={{ color: 'white', fontSize: 14, textAlign: 'center' }}>Send Echo</Text>
-                            </Pressable>
-                            
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.2)',
-                                borderRadius: 6,
-                                paddingHorizontal: 12,
-                                paddingVertical: 6,
-                              }}
-                              onPress={() => {
-                                setShowEchoReplyInput(false);
-                                setEchoReplyText('');
-                              }}
-                            >
-                              <Text style={{ color: 'white', fontSize: 14 }}>Cancel</Text>
-                            </Pressable>
+                      {/* Avatar */}
+                      {selectedThread.senderAvatar ? (
+                        typeof selectedThread.senderAvatar === 'object' && 'text' in selectedThread.senderAvatar ? (
+                          // Text-based avatar (initials)
+                          <View style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: selectedThread.senderAvatar.backgroundColor,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 8,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.2)',
+                          }}>
+                            <Text style={{
+                              fontSize: 12,
+                              fontWeight: 'bold',
+                              color: selectedThread.senderAvatar.color
+                            }}>
+                              {selectedThread.senderAvatar.text}
+                            </Text>
                           </View>
+                        ) : (
+                          // Image-based avatar
+                          <Image
+                            source={selectedThread.senderAvatar}
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              marginRight: 8,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.2)',
+                            }}
+                          />
+                        )
+                      ) : (
+                        <View style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 16,
+                          backgroundColor: 'rgba(255,255,255,0.2)',
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          marginRight: 8,
+                        }}>
+                          <Text style={{ fontSize: 12, color: 'white' }}>👤</Text>
                         </View>
                       )}
+
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', marginBottom: 2 }}>
+                          <Text style={{
+                            color: 'rgba(255,255,255,0.6)',
+                            fontSize: 10,
+                          }}>
+                            {message.createdAt?.toDate ?
+                              formatDefiniteTime(message.createdAt.toDate()) :
+                              'Unknown time'}
+                          </Text>
+                        </View>
+                        <Text style={{
+                          color: 'white',
+                          fontSize: 13,
+                          lineHeight: 18,
+                        }}>
+                          {message.text}
+                        </Text>
+                        {message.attachmentUrl && (
+                          <Text style={{
+                            color: 'rgba(255,255,255,0.7)',
+                            fontSize: 11,
+                            marginTop: 4,
+                            fontStyle: 'italic',
+                          }}>
+                            📎 Attachment
+                          </Text>
+                        )}
+                      </View>
                     </Pressable>
                   ))}
+
+                  {/* Thread Message Selection Action Bar */}
+                  {isThreadSelectionMode && (
+                    <View style={{
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      borderRadius: 8,
+                      padding: 12,
+                      marginTop: 16,
+                    }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                        <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>
+                          {selectedThreadMessages.size} selected
+                        </Text>
+                      </View>
+                      
+                      <View style={{ 
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 6
+                      }}>
+                        {/* Cancel */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(255,255,255,0.2)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                            Cancel
+                          </Text>
+                        </Pressable>
+
+                        {/* Copy */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(0,150,255,0.8)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            const selectedMessages = selectedThread.messages.filter((_, index) => 
+                              selectedThreadMessages.has(`msg_${index}`)
+                            );
+                            const textToCopy = selectedMessages.map(msg => msg.text).join('\n\n');
+                            // Note: Clipboard.setString would be used in a real implementation
+                            Alert.alert('Copied', 'Message text copied to clipboard');
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                            Copy
+                          </Text>
+                        </Pressable>
+
+                        {/* Forward */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(255,215,0,0.8)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            Alert.alert('Forward', 'Forward functionality would be implemented here');
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'black', fontSize: 11, fontWeight: 'bold' }}>
+                            Forward
+                          </Text>
+                        </Pressable>
+
+                        {/* Hide */}
+                        <Pressable
+                          style={{
+                            backgroundColor: 'rgba(150,150,150,0.8)',
+                            borderRadius: 6,
+                            paddingHorizontal: 8,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            Alert.alert('Hide', 'Hide functionality would be implemented here');
+                            setIsThreadSelectionMode(false);
+                            setSelectedThreadMessages(new Set());
+                          }}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
+                            Hide
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Quick Reply Input - Only visible when a message is selected */}
+                  {selectedMessageForReply && (
+                    <View style={{
+                      marginTop: 16,
+                      backgroundColor: 'rgba(255,255,255,0.05)',
+                      borderRadius: 8,
+                      padding: 12,
+                    }}>
+                      <Text style={{
+                        color: 'rgba(255,255,255,0.8)',
+                        fontSize: 12,
+                        marginBottom: 8,
+                        fontWeight: 'bold',
+                      }}>
+                        Reply to {selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <TextInput
+                          ref={replyInputRef}
+                          style={{
+                            flex: 1,
+                            backgroundColor: 'rgba(255,255,255,0.1)',
+                            borderRadius: 6,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            color: 'white',
+                            fontSize: 14,
+                            marginRight: 8,
+                          }}
+                          placeholder="Type a message..."
+                          placeholderTextColor="rgba(255,255,255,0.5)"
+                          value={quickReplyText}
+                          onChangeText={setQuickReplyText}
+                          multiline
+                          maxLength={500}
+                          autoFocus={true}
+                        />
+                        <Pressable
+                          style={{
+                            backgroundColor: quickReplyText.trim() ? '#FFD700' : 'rgba(255,255,255,0.2)',
+                            borderRadius: 6,
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                          }}
+                          onPress={async () => {
+                            if (!quickReplyText.trim()) return;
+
+                            try {
+                              const messageData = {
+                                text: quickReplyText.trim(),
+                                createdAt: new Date(),
+                                senderUid: userData?.uid || '',
+                                senderName: userData?.handle || 'You',
+                                read: false,
+                              };
+
+                              // Add to local thread
+                              const updatedThread = {
+                                ...selectedThread,
+                                messages: [...selectedThread.messages, messageData],
+                              };
+                              setSelectedThread(updatedThread);
+
+                              // Update threads state
+                              setMessageThreads(prev => prev.map(thread =>
+                                thread.senderUid === selectedThread.senderUid
+                                  ? updatedThread
+                                  : thread
+                              ));
+
+                              // Send to Firebase
+                              await sendMessage(selectedThread.senderUid, quickReplyText.trim());
+
+                              // Clear input and selection
+                              setQuickReplyText('');
+                              setSelectedMessageForReply(null);
+
+                              // Show success feedback
+                              Alert.alert('Sent!', 'Your reply has been sent.');
+                            } catch (error) {
+                              console.error('Error sending quick reply:', error);
+                              Alert.alert('Error', 'Failed to send message. Please try again.');
+                            }
+                          }}
+                          disabled={!quickReplyText.trim()}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          delayPressIn={0}
+                          delayPressOut={0}
+                          activeOpacity={0.7}
+                          android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
+                        >
+                          <Text style={{
+                            color: quickReplyText.trim() ? '#000' : 'rgba(255,255,255,0.5)',
+                            fontSize: 12,
+                            fontWeight: 'bold',
+                          }}>
+                            Send
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
                 </ScrollView>
-              )}
-              
-              {notifications.length > 0 && (
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 16 }}>
-                  <Pressable
-                    style={[styles.primaryBtn, { flex: 1 }]}
-                    onPress={markAllNotificationsAsRead}
-                  >
-                    <Text style={styles.primaryBtnText}>Mark All Read</Text>
-                  </Pressable>
-                </View>
+                </>
               )}
             </View>
           </View>
           <Pressable
             style={styles.dismissBtn}
-            onPress={() => setShowNotifications(false)}
+            onPress={() => {
+              setShowInbox(false);
+              setSelectedThread(null);
+              setSelectedMessageForReply(null);
+              setIsDeleteMode(false);
+              setSelectedNotifications(new Set());
+            }}
           >
             <Text style={styles.dismissText}>Close</Text>
           </Pressable>
@@ -10300,12 +12476,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>My Vibes</Text>
               <ScrollView>
-                {vibesFeed.length === 0 ? (
+                {vibesFeed.filter(w => w.ownerUid === myUid).length === 0 ? (
                   <Text style={styles.hint}>
                     No vibes yet. Post from Make Vibes.
                   </Text>
                 ) : (
-                  vibesFeed.map((w, idx) => (
+                  vibesFeed.filter(w => w.ownerUid === myUid).map((w, idx) => {
+                    const actualIndex = vibesFeed.findIndex(v => v.id === w.id);
+                    return (
                     <View
                       key={w.id}
                       style={{
@@ -10320,11 +12498,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           try {
                             setShowMyWaves(false);
                             setIsPaused(false);
-                            setCurrentIndex(idx);
+                            setCurrentIndex(actualIndex);
                             setWaveKey(Date.now());
                             requestAnimationFrame(() => {
                               feedRef.current?.scrollToIndex?.({
-                                index: idx,
+                                index: actualIndex,
                                 animated: false,
                               });
                             });
@@ -10348,11 +12526,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             try {
                               setShowMyWaves(false);
                               setIsPaused(false);
-                              setCurrentIndex(idx);
+                              setCurrentIndex(actualIndex);
                               setWaveKey(Date.now());
                               requestAnimationFrame(() => {
                                 feedRef.current?.scrollToIndex?.({
-                                  index: idx,
+                                  index: actualIndex,
                                   animated: false,
                                 });
                               });
@@ -10455,7 +12633,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </View>
                       </View>
                     </View>
-                  ))
+                  );
+                  })
                 )}
               </ScrollView>
             </View>
@@ -10473,7 +12652,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showMakeWaves}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowMakeWaves(false)}
       >
         <View
@@ -10495,10 +12674,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
-                <Pressable style={styles.logbookAction} onPress={() => setShowUnifiedPostModal(true)}>
+                <Pressable style={styles.logbookAction} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
                   <Text style={styles.logbookActionText}>Say Something</Text>
                 </Pressable>
-                <Pressable style={styles.logbookAction} onPress={goDrift}>
+                <Pressable style={styles.logbookAction} onPress={goDrift}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
                   <View
                     style={{
                       flexDirection: 'row',
@@ -10520,6 +12709,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <CharteredSeaDriftButton
                   buttonStyle={styles.logbookAction}
                   buttonTextStyle={styles.logbookActionText}
+                  hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {
                     setIsCharteredDrift(true);
                     console.log('Chartered Drift Started:', cfg.title);
@@ -10591,7 +12781,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Image
                       source={{ uri: unifiedPostMedia.uri }}
                       style={{ width: 200, height: 200, borderRadius: 8 }}
-                      resizeMode="cover"
+                      resizeMode="contain"
                     />
                   ) : (
                     <View style={{ 
@@ -10621,9 +12811,44 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </Pressable>
                 </View>
               )}
+
+              {/* SD Audio Preview */}
+              {unifiedPostAudio && (
+                <View
+                  style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    backgroundColor: 'rgba(0,0,0,0.25)',
+                  }}
+                >
+                  <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '700' }}>
+                    Attached audio
+                  </Text>
+                  <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                    {unifiedPostAudio.name || unifiedPostAudio.uri}
+                  </Text>
+                  <Pressable
+                    onPress={() => setUnifiedPostAudio(null)}
+                    style={{
+                      marginTop: 8,
+                      alignSelf: 'flex-start',
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      backgroundColor: '#ff4444',
+                      borderRadius: 4,
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontSize: 12 }}>Remove Audio</Text>
+                  </Pressable>
+                </View>
+              )}
               
               {/* Text Input */}
               <TextInput
+                placeholder="What's the story?"
                 placeholder="What's the story?"
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 value={unifiedPostText}
@@ -10640,17 +12865,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={handleUnifiedCameraCapture}
                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                 >
-                  <Text style={styles.logbookActionText}>📷 Camera</Text>
+                  <Text style={styles.logbookActionText}>📷</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleUnifiedGallerySelect}
                   style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
                 >
-                  <Text style={styles.logbookActionText}>🖼️ Gallery</Text>
+                  <Text style={styles.logbookActionText}>🖼️</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSDCardPicker}
+                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                >
+                  <Text style={styles.logbookActionText}>📁</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleUnifiedAudioSelect}
+                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                >
+                  <Text style={styles.logbookActionText}>🎵</Text>
                 </Pressable>
               </View>
-              
-              {/* Send/Cancel Buttons */}
               <View style={styles.textComposerButtonRow}>
                 <Pressable
                   style={styles.textComposerButton}
@@ -10670,11 +12905,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <ActivityIndicator color="white" />
                   ) : (
                     <Text style={styles.textComposerButtonText}>
-                      {unifiedPostMedia ? 'Post with Media' : 'Post Text'}
+                      {unifiedPostMedia
+                        ? 'Post with Media'
+                        : unifiedPostAudio
+                        ? 'Post Audio'
+                        : 'Post Text'}
                     </Text>
                   )}
                 </Pressable>
               </View>
+              
             </View>
           </View>
         </View>
@@ -10811,6 +13051,66 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           </Text>
                         </Pressable>
                       )}
+                      {p.type === 'joined_tide' && (p as any).fromUid && (
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 8 }}>
+                          <Pressable
+                            style={[styles.pingButton, { flex: 1, marginRight: 4 }]}
+                            onPress={() => {
+                              setShowPings(false);
+                              setMessageRecipient({
+                                uid: (p as any).fromUid,
+                                name: displayHandle(
+                                  (p as any).fromUid,
+                                  p.actorName,
+                                ),
+                              });
+                              setMessageText('');
+                              setShowSendMessage(true);
+                            }}
+                          >
+                            <Text style={{ color: '#00C2FF', fontWeight: '700', fontSize: 12 }}>
+                              Message
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.pingButton, { flex: 1, marginLeft: 4, backgroundColor: '#ff4444' }]}
+                            onPress={() => {
+                              // Reject: remove from crew
+                              Alert.alert(
+                                'Reject Join',
+                                `Remove ${p.actorName || 'this user'} from your tide?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Reject',
+                                    style: 'destructive',
+                                    onPress: async () => {
+                                      try {
+                                        await firestore()
+                                          .collection('users')
+                                          .doc(myUid)
+                                          .collection('crew')
+                                          .doc((p as any).fromUid)
+                                          .delete();
+                                        // Update local state if needed
+                                        setUnreadPingsCount(prev => Math.max(0, prev - 1));
+                                        setPings(prev => prev.filter(ping => ping.id !== p.id));
+                                      } catch (e) {
+                                        console.error('Error rejecting crew join', e);
+                                        Alert.alert('Error', 'Could not reject the join request.');
+                                      }
+                                    },
+                                  },
+                                ]
+                              );
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontWeight: '700', fontSize: 12 }}>
+                              Reject
+                            </Text>
+                          </Pressable>
+                        </View>
+                      )}
                     </View>
                   ))
                 )}
@@ -10830,7 +13130,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showExplore}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowExplore(false)}
       >
         <View
@@ -10889,7 +13189,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showNotice}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowNotice(false)}
       >
         <View
@@ -10973,7 +13273,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showSchoolMode}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowSchoolMode(false)}
       >
         <View
@@ -11014,7 +13314,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     desc: 'View your learning profile',
                     action: () => {
                       setShowSchoolMode(false);
-                      setTimeout(() => setShowProfile(true), 300);
+                      setShowProfile(true);
                     },
                   },
                   {
@@ -11029,7 +13329,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     desc: 'Earn learning points',
                     action: () => {
                       setShowSchoolMode(false);
-                      setTimeout(() => setShowPearls(true), 300);
+                      setShowPearls(true);
                     },
                   },
                   {
@@ -11129,7 +13429,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showBridge}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowBridge(false)}
       >
         <View
@@ -11581,7 +13881,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showAIModal}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowAIModal(false)}
       >
         <View
@@ -11810,7 +14110,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showDeepSearch}
         transparent
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowDeepSearch(false)}
       >
         <View
@@ -11914,7 +14214,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <Image
                               source={{ uri: result.extra.photoURL }}
                               style={{ width: 56, height: 56 }}
-                              resizeMode="cover"
+                              resizeMode="contain"
                             />
                           ) : (
                             <Text style={{ fontSize: 28, color: 'white' }}>
@@ -12505,11 +14805,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   multiline
                 />
                 <Pressable
-                  style={[styles.primaryBtn, { marginTop: 16 }]}
+                  style={[styles.primaryBtn, { marginTop: 16 }, mainEchoSending && { opacity: 0.7 }]}
                   onPress={editingEcho ? onSaveEditedEcho : onSendEcho}
+                  disabled={mainEchoSending}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {replyingToEcho ? 'Send Reply' : editingEcho ? 'Save Echo' : 'Send Echo'}
+                    {mainEchoSending ? 'Sending...' : (replyingToEcho ? 'Send Reply' : editingEcho ? 'Save Echo' : 'Send Echo')}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -12695,11 +14996,157 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   multiline
                 />
+                
+                {/* Attachment Preview */}
+                {messageAttachment && (
+                  <View style={{ marginTop: 16, alignItems: 'center' }}>
+                    {messageAttachment.type?.startsWith('image/') ? (
+                      <Image
+                        source={{ uri: messageAttachment.uri }}
+                        style={{ width: 200, height: 200, borderRadius: 8 }}
+                              resizeMode="contain"
+                      />
+                    ) : messageAttachment.type?.startsWith('video/') ? (
+                      <View style={{ 
+                        width: 200, 
+                        height: 120, 
+                        backgroundColor: '#1a1a1a', 
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}>
+                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎥 Video</Text>
+                        <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                          {messageAttachment.fileName || 'Selected Video'}
+                        </Text>
+                      </View>
+                    ) : (
+                      <View style={{ 
+                        width: 200, 
+                        height: 80, 
+                        backgroundColor: '#1a1a1a', 
+                        borderRadius: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                      }}>
+                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎵 Audio</Text>
+                        <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                          {messageAttachment.fileName || 'Selected Audio'}
+                        </Text>
+                      </View>
+                    )}
+                    <Pressable
+                      onPress={() => setMessageAttachment(null)}
+                      style={{ 
+                        marginTop: 8, 
+                        padding: 4, 
+                        backgroundColor: '#ff4444', 
+                        borderRadius: 4 
+                      }}
+                      android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+                      hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 12 }}>Remove</Text>
+                    </Pressable>
+                  </View>
+                )}
+                
+                {/* Attachment Buttons */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        const result = await launchImageLibrary({
+                          mediaType: 'photo',
+                          quality: 0.8,
+                          presentationStyle: 'fullScreen',
+                        });
+                        if (result.assets && result.assets[0]) {
+                          setMessageAttachment(result.assets[0]);
+                        }
+                      } catch (error) {
+                        console.error('Gallery error:', error);
+                      }
+                    }}
+                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.logbookActionText}>🖼️ Photo</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        const result = await launchImageLibrary({
+                          mediaType: 'video',
+                          quality: 0.8,
+                          presentationStyle: 'fullScreen',
+                        });
+                        if (result.assets && result.assets[0]) {
+                          setMessageAttachment(result.assets[0]);
+                        }
+                      } catch (error) {
+                        console.error('Video gallery error:', error);
+                      }
+                    }}
+                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.logbookActionText}>🎥 Video</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={async () => {
+                      try {
+                        const result = await launchImageLibrary({
+                          mediaType: 'mixed',
+                          selectionLimit: 1,
+                          presentationStyle: 'fullScreen',
+                        });
+                        if (result.assets && result.assets[0] && result.assets[0].type?.startsWith('audio/')) {
+                          setMessageAttachment(result.assets[0]);
+                        }
+                      } catch (error) {
+                        console.error('Audio gallery error:', error);
+                      }
+                    }}
+                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.logbookActionText}>🎵 Audio</Text>
+                  </Pressable>
+                </View>
+                
                 <Pressable
-                  style={[styles.primaryBtn, { marginTop: 16 }]}
+                  style={[
+                    styles.primaryBtn,
+                    { marginTop: 16 },
+                    isSending && {
+                      backgroundColor: '#0066CC', // Darker blue when sending
+                      opacity: 0.8
+                    }
+                  ]}
                   onPress={onSendMessage}
+                  disabled={isSending}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
                 >
-                  <Text style={styles.primaryBtnText}>Send</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {isSending ? 'Sending...' : 'Send'}
+                  </Text>
                 </Pressable>
               </ScrollView>
             </View>
@@ -12718,7 +15165,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         visible={!!capturedMedia}
         transparent
         animationType="slide"
-        onRequestClose={() => setCapturedMedia(null)}
+        onRequestClose={() => {
+          setCapturedMedia(null);
+          setCapturedMediaEdits(defaultMediaEdits);
+        }}
       >
         <View
           style={[
@@ -12745,10 +15195,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={[
                         StyleSheet.absoluteFillObject as any,
                         { backgroundColor: 'black' },
+                        {
+                          transform: [
+                            {
+                              scaleX: capturedMediaEdits.mirror ? -1 : 1,
+                            },
+                            {
+                              scaleY: capturedMediaEdits.flipVertical ? -1 : 1,
+                            },
+                          ],
+                        },
                       ]}
-                      resizeMode={'cover'}
+                      resizeMode={'contain'}
                       repeat
                       paused={isPaused || !editorPlaying}
+                      rate={Math.max(0.5, Math.min(2, Number(capturedMediaEdits.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(capturedMediaEdits.volumeBoost || 1)))}
                       muted={true} // Mute video preview by default
                       disableFocus={true}
                       playInBackground={false}
@@ -12778,6 +15240,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       audioOnly
                       repeat
                       paused={isPaused || !editorPlaying || !audioUnpaused}
+                      rate={Math.max(0.5, Math.min(2, Number(capturedMediaEdits.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(capturedMediaEdits.volumeBoost || 1)))}
                       disableFocus={true}
                       playInBackground={false}
                       playWhenInactive={false}
@@ -12800,6 +15264,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     style={[
                       StyleSheet.absoluteFillObject as any,
                       { resizeMode: 'cover' },
+                      {
+                        transform: [
+                          {
+                            scaleX: capturedMediaEdits.mirror ? -1 : 1,
+                          },
+                          {
+                            scaleY: capturedMediaEdits.flipVertical ? -1 : 1,
+                          },
+                        ],
+                      },
                     ]}
                   />
                   {RNVideo && attachedAudio?.uri && (
@@ -12809,6 +15283,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       audioOnly
                       repeat
                       paused={isPaused || !editorPlaying}
+                      rate={Math.max(0.5, Math.min(2, Number(capturedMediaEdits.playbackRate || 1)))}
+                      volume={Math.max(0, Math.min(2, Number(capturedMediaEdits.volumeBoost || 1)))}
                       playInBackground={false}
                       playWhenInactive={false}
                       volume={1.0}
@@ -12824,6 +15300,90 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   )}
                 </>
               ))}
+
+            {capturedMedia?.uri ? (
+              <>
+                {capturedMediaEdits.filter !== 'none' && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      capturedMediaEdits.filter === 'warm'
+                        ? { backgroundColor: 'rgba(255,155,84,0.20)' }
+                        : capturedMediaEdits.filter === 'cool'
+                        ? { backgroundColor: 'rgba(90,170,255,0.18)' }
+                        : capturedMediaEdits.filter === 'mono'
+                        ? { backgroundColor: 'rgba(0,0,0,0.30)' }
+                        : { backgroundColor: 'rgba(255,0,120,0.10)' },
+                    ]}
+                  />
+                )}
+                {capturedMediaEdits.brightness !== 0 && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      {
+                        backgroundColor:
+                          capturedMediaEdits.brightness > 0
+                            ? `rgba(255,255,255,${Math.min(
+                                0.4,
+                                capturedMediaEdits.brightness / 100,
+                              )})`
+                            : `rgba(0,0,0,${Math.min(
+                                0.45,
+                                Math.abs(capturedMediaEdits.brightness) / 90,
+                              )})`,
+                      },
+                    ]}
+                  />
+                )}
+                {Number(capturedMediaEdits.contrast || 0) !== 0 && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      {
+                        backgroundColor:
+                          Number(capturedMediaEdits.contrast) > 0
+                            ? `rgba(255,255,255,${Math.min(0.22, Number(capturedMediaEdits.contrast) / 260)})`
+                            : `rgba(0,0,0,${Math.min(0.28, Math.abs(Number(capturedMediaEdits.contrast)) / 220)})`,
+                      },
+                    ]}
+                  />
+                )}
+                {Number(capturedMediaEdits.vignette || 0) > 0 && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      StyleSheet.absoluteFillObject as any,
+                      {
+                        backgroundColor: `rgba(0,0,0,${Math.min(0.34, Number(capturedMediaEdits.vignette) / 180)})`,
+                      },
+                    ]}
+                  />
+                )}
+                {capturedMediaEdits.stickers.map(s => (
+                  <Text
+                    key={s.id}
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: `${s.x * 100}%`,
+                      top: `${s.y * 100}%`,
+                      fontSize: s.size,
+                      transform: [
+                        { translateX: -s.size / 2 },
+                        { translateY: -s.size / 2 },
+                        { rotate: `${s.rotation || 0}deg` },
+                      ],
+                    }}
+                  >
+                    {s.emoji}
+                  </Text>
+                ))}
+              </>
+            ) : null}
           </View>
                     
           {/* Attached Audio Summary */}
@@ -12854,6 +15414,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
             </View>
           )}
+
+          {/* Caption Input */}
+          <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+            <TextInput
+              placeholder="What's the story?"
+              placeholderTextColor="rgba(255,255,255,0.5)"
+              value={waveCaption}
+              onChangeText={setWaveCaption}
+              style={{
+                backgroundColor: 'rgba(255,255,255,0.1)',
+                borderRadius: 8,
+                padding: 12,
+                color: 'white',
+                fontSize: 16,
+                minHeight: 60,
+                textAlignVertical: 'top',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.2)',
+              }}
+              multiline
+            />
+          </View>
                     
           {/* Editor Controls */}
           <View
@@ -12897,7 +15479,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             >
               <Pressable
                 style={[styles.closeBtn, { flex: 1, marginVertical: 0 }]}
-                onPress={() => setCapturedMedia(null)}
+                onPress={() => {
+                  setCapturedMedia(null);
+                  setCapturedMediaEdits(defaultMediaEdits);
+                }}
                 disabled={releasing}
               >
                 <Text style={styles.closeText}>Cancel</Text>
@@ -12918,6 +15503,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           </View>
         </View>
       </Modal>
+
+      <MediaEditor
+        visible={showMediaEditorModal}
+        initialMedia={capturedMedia}
+        initialEdits={capturedMediaEdits}
+        onApply={(media: Asset, edits: MediaEdits) => {
+          setCapturedMedia(media);
+          setCapturedMediaEdits(edits);
+        }}
+        onClose={() => setShowMediaEditorModal(false)}
+      />
                     
       {/* OCEAN MELODIES: Attach Audio */}
       <Modal
@@ -13024,17 +15620,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           onPress={() => setWaveOptionsTarget(null)}
         >
           <View style={styles.waveOptionsMenu}>
-            {/* Gem option - show on public vibes and my vibes for development */}
-            <Pressable
-              style={styles.waveOptionsItem}
-              onPress={() => handleWaveOptionSelect('Gem')}
-            >
-              <Text style={styles.waveOptionsItemTitle}>Gem</Text>
-              <Text style={styles.waveOptionsItemDescription}>
-                Send a gem to support this creator.
-              </Text>
-            </Pressable>
-            
             {/* Other existing options - filter out Connect Vibe and Gem from the static list */}
             {waveOptionMenu
               .filter(option => option.label !== 'Connect Vibe' && option.label !== 'Gem')
@@ -13095,7 +15680,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       setShowSendMessage(true);
                     }}
                   >
-                    <Text style={styles.waveOptionsItemTitle}>Echo Vibe</Text>
+                    <Text style={styles.waveOptionsItemTitle}>✉️ Echo Vibe</Text>
                     <Text style={styles.waveOptionsItemDescription}>
                       Send an echo vibe to this vibe master
                     </Text>
@@ -16781,18 +19366,25 @@ function SignUpScreen({ navigation }: any) {
               marginVertical: 12,
             }}
           >
-            <TouchableOpacity
+            <Pressable
               onPress={() => setAgreedToTerms(!agreedToTerms)}
-              style={{
-                width: 24,
-                height: 24,
-                borderWidth: 1,
-                borderColor: 'white',
-                borderRadius: 4,
-                marginRight: 12,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+              style={({ pressed }) => [
+                {
+                  width: 24,
+                  height: 24,
+                  borderWidth: 1,
+                  borderColor: 'white',
+                  borderRadius: 4,
+                  marginRight: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                },
+                pressed && {
+                  opacity: 0.8,
+                  transform: [{ scale: 0.9 }],
+                }
+              ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               {agreedToTerms && (
                 <Text
@@ -16801,7 +19393,7 @@ function SignUpScreen({ navigation }: any) {
                   ✓
                 </Text>
               )}
-            </TouchableOpacity>
+            </Pressable>
             <Text style={{ color: 'white', flex: 1 }}>
               I agree to the{' '}
               <Text
@@ -16827,14 +19419,18 @@ function SignUpScreen({ navigation }: any) {
                     
           <AuthButton title="Sign Up" onPress={signUp} />
                     
-          <TouchableOpacity
+          <Pressable
             onPress={() => navigation.replace('SignIn')}
-            style={{ marginTop: 14 }}
+            style={({ pressed }) => [
+              { marginTop: 14 },
+              pressed && { opacity: 0.7 }
+            ]}
+            hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
           >
             <Text style={authStyles.link}>
               Already have an account? Sign In
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -16946,20 +19542,31 @@ function SignInScreen({ navigation }: any) {
           secureTextEntry
         />
                     
-        <TouchableOpacity onPress={resetPassword} style={{ marginTop: 6 }}>
+        <Pressable 
+          onPress={resetPassword} 
+          style={({ pressed }) => [
+            { marginTop: 6 },
+            pressed && { opacity: 0.7 }
+          ]}
+          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
+        >
           <Text style={authStyles.link}>Forgot Password?</Text>
-        </TouchableOpacity>
+        </Pressable>
                     
         <View style={{ marginTop: 4 }}>
           <AuthButton title="Sign In" onPress={signIn} />
         </View>
                     
-        <TouchableOpacity
+        <Pressable
           onPress={() => navigation.replace('SignUp')}
-          style={{ marginTop: 14 }}
+          style={({ pressed }) => [
+            { marginTop: 14 },
+            pressed && { opacity: 0.7 }
+          ]}
+          hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
         >
           <Text style={authStyles.link}>Don't have an account? Sign up</Text>
-        </TouchableOpacity>
+        </Pressable>
       </KeyboardAvoidingView>
     </View>
   );
@@ -17176,7 +19783,15 @@ function PostDetailScreen({ route, navigation }: any) {
   const renderPostContent = () => {
     try {
       const hasVideo = post.playbackUrl || (post.media && isVideoAsset(post.media));
-      const hasImage = post.media && !isVideoAsset(post.media);
+      const hasAudioOnly =
+        (!post.playbackUrl && !!post.audio?.uri) ||
+        (!post.playbackUrl && post.media && isAudioAsset(post.media));
+      const hasImage = post.media && isImageAsset(post.media);
+      const hasDocument =
+        post.media &&
+        !isVideoAsset(post.media) &&
+        !isAudioAsset(post.media) &&
+        !isImageAsset(post.media);
       const hasText = post.captionText || post.link;
                     
       return (
@@ -17217,21 +19832,69 @@ function PostDetailScreen({ route, navigation }: any) {
                   console.log('Reach recording failed:', error.message);
                 });
               }}
-              onMaximize={() => {
-                // Already in full screen, no further maximization needed
-              }}
             />
           ) : hasImage ? (
-            <Image
-              source={{ uri: post.media.uri }}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'contain' }}
-              onLoad={() => {
-                // Record image reach when image loads in post detail view
-                recordImageReach(post.id).catch(error => {
-                  console.log('Image reach recording failed:', error.message);
-                });
+            <View style={{ flex: 1, backgroundColor: 'black' }}>
+              <Image
+                source={{ uri: post.media.uri }}
+                style={{ width: '100%', height: '100%' }}
+                resizeMode="contain"
+                onLoad={(event) => {
+                  // Record image reach when image loads in post detail view
+                  recordImageReach(post.id).catch(error => {
+                    console.log('Image reach recording failed:', error.message);
+                  });
+                  // Optionally adjust aspect ratio based on actual image dimensions
+                  const { width, height } = event.nativeEvent.source;
+                  if (width && height) {
+                    // Could update state to adjust dimensions, but for now keep simple
+                    console.log('Image loaded with dimensions:', width, height);
+                  }
+                }}
+              />
+            </View>
+          ) : hasAudioOnly && RNVideo ? (
+            <View
+              style={{
+                width: SCREEN_WIDTH,
+                minHeight: 220,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#0f1724',
+                paddingHorizontal: 20,
               }}
-            />
+            >
+              <Text style={{ fontSize: 42, marginBottom: 10 }}>🎵</Text>
+              <Text style={{ color: '#cfe9ff', marginBottom: 10 }}>
+                Audio post
+              </Text>
+              <RNVideo
+                source={{
+                  uri: String(post.audio?.uri || post.media?.uri || ''),
+                }}
+                audioOnly
+                controls
+                paused={!isFocused}
+                style={{ width: SCREEN_WIDTH - 40, height: 64 }}
+                playInBackground={false}
+                playWhenInactive={false}
+                ignoreSilentSwitch="ignore"
+              />
+            </View>
+          ) : hasDocument ? (
+            <View
+              style={{
+                width: SCREEN_WIDTH,
+                minHeight: 220,
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#0f1724',
+                paddingHorizontal: 20,
+              }}
+            >
+              <Text style={{ fontSize: 42, marginBottom: 10 }}>📄</Text>
+              <Text style={{ color: '#cfe9ff' }}>Document attachment</Text>
+            </View>
           ) : null}
                     
           {/* Text */}
@@ -17509,20 +20172,27 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
             </Text>
           </ScrollView>
 
-          <TouchableOpacity
+          <Pressable
             onPress={this.handleRetry}
-            style={{
-              backgroundColor: '#00C2FF',
-              paddingHorizontal: 18,
-              paddingVertical: 10,
-              borderRadius: 10,
-              marginBottom: 10,
-            }}
+            style={({ pressed }) => [
+              {
+                backgroundColor: '#00C2FF',
+                paddingHorizontal: 18,
+                paddingVertical: 10,
+                borderRadius: 10,
+                marginBottom: 10,
+              },
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={{ color: '#001529', fontWeight: '700', fontSize: 15 }}>Retry App</Text>
-          </TouchableOpacity>
+          </Pressable>
 
-          <TouchableOpacity
+          <Pressable
             onPress={() => {
               // Copy error details to clipboard for debugging
               const errorDetails = `Error: ${errorName}\nMessage: ${errorMessage}\nStack:\n${errorStack}\nTimestamp: ${new Date().toISOString()}`;
@@ -17530,15 +20200,22 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
               console.log('Error details for debugging:', errorDetails);
               Alert.alert('Error Details Copied', 'Error details have been logged to console for debugging.');
             }}
-            style={{
-              backgroundColor: 'rgba(255,255,255,0.2)',
-              paddingHorizontal: 18,
-              paddingVertical: 8,
-              borderRadius: 8,
-            }}
+            style={({ pressed }) => [
+              {
+                backgroundColor: 'rgba(255,255,255,0.2)',
+                paddingHorizontal: 18,
+                paddingVertical: 8,
+                borderRadius: 8,
+              },
+              pressed && {
+                opacity: 0.8,
+                transform: [{ scale: 0.95 }],
+              }
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <Text style={{ color: 'white', fontSize: 12 }}>Copy Error Details</Text>
-          </TouchableOpacity>
+          </Pressable>
         </View>
       );
     }
@@ -17650,10 +20327,13 @@ const App: React.FC = () => {
     loadAuthStatus();
   }, []);
                     
+  const previousUidRef = useRef<string | null>(null);
+                    
   useEffect(() => {
     let unsub: any = null;
     try {
       unsub = auth().onAuthStateChanged(async (u) => {
+        console.log('🔐 Auth state changed:', u ? `User: ${u.uid}` : 'No user');
         // Force sign out on first install to ensure sign-up/sign-in is required
         if (u) {
           try {
@@ -17676,6 +20356,68 @@ const App: React.FC = () => {
         }
         setUser(u);
         if (initializing) setInitializing(false);
+        
+        // Handle presence in RTDB
+        if (u) {
+          const uid = u.uid;
+          if (uid !== previousUidRef.current) {
+            if (previousUidRef.current) {
+              database().ref(`/presence/${previousUidRef.current}`).set({
+                online: false,
+                lastSeen: database.ServerValue.TIMESTAMP,
+                lastActiveAt: database.ServerValue.TIMESTAMP,
+                lastHeartbeat: database.ServerValue.TIMESTAMP,
+              });
+              firestore().doc(`users/${previousUidRef.current}`).set(
+                {
+                  online: false,
+                  lastSeen: firestore.FieldValue.serverTimestamp(),
+                  lastActiveAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              ).catch(() => {});
+            }
+            const presenceRef = database().ref(`/presence/${uid}`);
+            presenceRef.set({
+              online: true,
+              lastSeen: null,
+              lastActiveAt: database.ServerValue.TIMESTAMP,
+              lastHeartbeat: database.ServerValue.TIMESTAMP,
+            });
+            presenceRef.onDisconnect().set({
+              online: false,
+              lastSeen: database.ServerValue.TIMESTAMP,
+              lastActiveAt: database.ServerValue.TIMESTAMP,
+              lastHeartbeat: database.ServerValue.TIMESTAMP,
+            });
+            firestore().doc(`users/${uid}`).set(
+              {
+                online: true,
+                lastActiveAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            ).catch(() => {});
+            previousUidRef.current = uid;
+          }
+        } else {
+          if (previousUidRef.current) {
+            database().ref(`/presence/${previousUidRef.current}`).set({
+              online: false,
+              lastSeen: database.ServerValue.TIMESTAMP,
+              lastActiveAt: database.ServerValue.TIMESTAMP,
+              lastHeartbeat: database.ServerValue.TIMESTAMP,
+            });
+            firestore().doc(`users/${previousUidRef.current}`).set(
+              {
+                online: false,
+                lastSeen: firestore.FieldValue.serverTimestamp(),
+                lastActiveAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            ).catch(() => {});
+            previousUidRef.current = null;
+          }
+        }
       });
     } catch (e) {
       setNativeInitError('Native module error: ' + (e && e.message ? e.message : String(e)));
@@ -17748,12 +20490,19 @@ const App: React.FC = () => {
         <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, textAlign: 'center', marginBottom: 16 }}>
           {nativeInitError}
         </Text>
-        <TouchableOpacity
+        <Pressable
           onPress={() => setNativeInitError(null)}
-          style={{ backgroundColor: '#00C2FF', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 }}
+          style={({ pressed }) => [
+            { backgroundColor: '#00C2FF', paddingHorizontal: 18, paddingVertical: 10, borderRadius: 10 },
+            pressed && {
+              opacity: 0.8,
+              transform: [{ scale: 0.95 }],
+            }
+          ]}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Text style={{ color: '#001529', fontWeight: '700', fontSize: 15 }}>Retry</Text>
-        </TouchableOpacity>
+        </Pressable>
       </View>
     );
   }
@@ -17942,3 +20691,7 @@ const authStyles = StyleSheet.create({
   </View>
 </Modal>
                     
+
+
+
+

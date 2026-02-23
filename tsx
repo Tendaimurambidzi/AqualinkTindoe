@@ -3890,7 +3890,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const message =
           splashType === 'octopus_hug'
             ? 'You hugged this SplashLine - the SplashLine is embraced with 8 arms!'
-            : 'You splashed this SplashLine!';
+            : 'You hugged this SplashLine!';
         
         // Update splash count and show success message immediately
         setSplashes(prev => prev + 1);
@@ -6643,7 +6643,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     {showPublicFeed ? '🌐' : '🌊'}
                   </Text>
                   <Text style={styles.topLabel}>
-                    {showPublicFeed ? 'PUBLIC VIBES' : 'MY VIBES'}
+                    {showPublicFeed ? 'PUBLIC WAVES' : 'MY WAVES'}
                   </Text>
                 </Pressable>
                 {/* MAKE WAVES */}
@@ -6652,7 +6652,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={withUi(() => setShowMakeWaves(true))}
                 >
                   <Text style={styles.dolphinIcon}>🐬</Text>
-                  <Text style={styles.topLabel}>MAKE VIBES</Text>
+                  <Text style={styles.topLabel}>MAKE WAVES</Text>
                 </Pressable>
                 {/* PINGS */}
                 <Pressable

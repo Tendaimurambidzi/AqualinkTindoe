@@ -1,239 +1,92 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  TextInput,
-  Button,
-  Image,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
   StyleSheet,
   Pressable,
+  Alert,
 } from 'react-native';
-import { launchImageLibrary, Asset } from 'react-native-image-picker';
-import { uploadPost } from '../services/uploadPost';
-import type { SimpleMedia } from '../services/uploadPost';
-import auth from '@react-native-firebase/auth';
-
-const mediaEditorItems = [
-  { id: 'music', icon: 'dYZæ', label: 'Music' },
-  { id: 'filters', icon: 'dYZ"', label: 'Filters' },
-  { id: 'overlays', icon: 'dY-¬‹,?', label: 'Overlays' },
-  { id: 'trim', icon: 'ƒo,‹,?', label: 'Trim' },
-  { id: 'comment', icon: 'dY\'ª', label: 'Comment' },
-];
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 
 const CreatePostScreen = ({ navigation, route }: any) => {
-  const [caption, setCaption] = useState('');
-  const [link, setLink] = useState('');
-  const [selectedMedia, setSelectedMedia] = useState<SimpleMedia | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [showLinkInput, setShowLinkInput] = useState(false);
-  const onPostPublished: ((wave: any) => void) | undefined =
-    route?.params?.onPostPublished;
+  const setCapturedMedia = route?.params?.setCapturedMedia;
+  const handleSDCardPicker = route?.params?.handleSDCardPicker;
 
-  const handlePickMedia = () => {
-    launchImageLibrary(
-      { mediaType: 'mixed', selectionLimit: 1 },
-      response => {
-        if (response.didCancel) return;
-        if (response.errorCode) {
-          Alert.alert('Error', response.errorMessage || 'Could not pick file');
-          return;
-        }
-
-        const asset = response.assets && response.assets[0];
-        if (asset?.uri) {
-          setSelectedMedia({
-            uri: asset.uri,
-            fileName: asset.fileName || null,
-            type: asset.type || null,
-          });
-        } else {
-          Alert.alert('Error', 'No file selected');
-        }
-      },
-    );
-  };
-
-  const handleUpload = async () => {
-    const trimmedCaption = caption.trim();
-    if (!selectedMedia && !trimmedCaption) {
-      Alert.alert(
-        'Missing content',
-        'Pick a photo/video or write something before posting.',
-      );
-      return;
-    }
-
-    const selected = selectedMedia;
-
+  const handleCamera = async () => {
     try {
-      setUploading(true);
-      const result = await uploadPost({
-        media: selected ?? undefined,
-        caption: trimmedCaption,
-        link: link.trim() || undefined,
-        authorName: auth().currentUser?.displayName || null,
+      const result = await launchCamera({
+        mediaType: 'mixed',
+        saveToPhotos: true,
       });
 
-      const waveUri = result.mediaUrl || selected?.uri;
-      if (waveUri && onPostPublished) {
-        const asset: Asset = {
-          uri: waveUri,
-          type: selected?.type || 'video/mp4',
-          fileName: selected?.fileName || undefined,
-        };
-        try {
-          onPostPublished({
-            id: result.id,
-            media: asset,
-            audio: null,
-            captionText: trimmedCaption,
-            captionPosition: { x: 0, y: 0 },
-            playbackUrl: selected?.type?.startsWith('image/') ? result.mediaUrl : null, // Use remote URL for images, local for videos until streaming is implemented
-            muxStatus: null,
-            authorName: auth().currentUser?.displayName || null,
-            ownerUid: auth().currentUser?.uid || null,
-          });
-        } catch (callbackError) {
-          console.warn('Post feed callback failed', callbackError);
-        }
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert('Error', result.errorMessage || 'Camera failed');
+        return;
       }
 
-      setUploading(false);
-      setCaption('');
-      setSelectedMedia(null);
-
-      if (navigation?.goBack) {
+      const asset = result.assets?.[0];
+      if (asset?.uri && setCapturedMedia) {
+        setCapturedMedia(asset);
         navigation.goBack();
       }
-    } catch (err: any) {
-      console.warn(err);
-      setUploading(false);
-      Alert.alert(
-        'Upload failed',
-        err?.message || 'Could not upload your post. Please try again.',
-      );
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open camera');
+    }
+  };
+
+  const handleGallery = async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'mixed',
+        selectionLimit: 1,
+      });
+
+      if (result.didCancel) return;
+      if (result.errorCode) {
+        Alert.alert('Error', result.errorMessage || 'Gallery failed');
+        return;
+      }
+
+      const asset = result.assets?.[0];
+      if (asset?.uri && setCapturedMedia) {
+        setCapturedMedia(asset);
+        navigation.goBack();
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to open gallery');
+    }
+  };
+
+  const handleSDCard = async () => {
+    if (handleSDCardPicker) {
+      await handleSDCardPicker();
+      navigation.goBack();
     }
   };
 
   return (
-    <View style={{ flex: 1, padding: 16, backgroundColor: '#f0f2f5' }}>
-      <Text style={{ fontSize: 18, marginBottom: 8, fontWeight: 'bold' }}>Create Post</Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Select Media Source</Text>
 
-      <TextInput
-        placeholder="What's on your mind?"
-        value={caption}
-        onChangeText={setCaption}
-        style={{
-          borderWidth: 1,
-          borderColor: '#ddd',
-          borderRadius: 8,
-          padding: 12,
-          marginBottom: 12,
-          backgroundColor: 'white',
-          minHeight: 80,
-          textAlignVertical: 'top',
-        }}
-        multiline
-      />
+      <Pressable style={styles.button} onPress={handleCamera}>
+        <Text style={styles.icon}>📷</Text>
+        <Text style={styles.label}>Camera</Text>
+      </Pressable>
 
-      {showLinkInput && (
-        <TextInput
-          placeholder="Paste link here..."
-          value={link}
-          onChangeText={setLink}
-          style={{
-            borderWidth: 1,
-            borderColor: '#ddd',
-            borderRadius: 8,
-            padding: 8,
-            marginBottom: 12,
-            backgroundColor: 'white',
-          }}
-        />
-      )}
+      <Pressable style={styles.button} onPress={handleGallery}>
+        <Text style={styles.icon}>🖼️</Text>
+        <Text style={styles.label}>Gallery</Text>
+      </Pressable>
 
-      <View style={{ flexDirection: 'row', marginBottom: 12 }}>
-        <Pressable
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            padding: 8,
-            marginRight: 16,
-          }}
-          onPress={handlePickMedia}
-        >
-          <Text style={{ fontSize: 20, marginRight: 8 }}>📷</Text>
-          <Text>Photo/Video</Text>
-        </Pressable>
-        <Pressable
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            padding: 8,
-          }}
-          onPress={() => setShowLinkInput(!showLinkInput)}
-        >
-          <Text style={{ fontSize: 20, marginRight: 8 }}>🔗</Text>
-          <Text>Link</Text>
-        </Pressable>
-      </View>
+      <Pressable style={styles.button} onPress={handleSDCard}>
+        <Text style={styles.icon}>💾</Text>
+        <Text style={styles.label}>SD Card</Text>
+      </Pressable>
 
-      {selectedMedia ? (
-        <>
-          <Image
-            source={{ uri: selectedMedia.uri }}
-            style={{
-              width: '100%',
-              height: 250,
-              marginBottom: 12,
-              borderRadius: 8,
-            }}
-            resizeMode="cover"
-          />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.mediaEditorRow}
-          >
-            {mediaEditorItems.map(item => (
-              <Pressable
-                key={item.id}
-                style={styles.mediaEditorItem}
-                onPress={() =>
-                  Alert.alert(item.label, 'Media editor coming soon.')
-                }
-              >
-                <Text style={styles.mediaEditorIcon}>{item.icon}</Text>
-                <Text style={styles.mediaEditorLabel}>{item.label}</Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </>
-      ) : (
-        <Text style={{ marginBottom: 12, color: '#666' }}>No media selected</Text>
-      )}
-
-      <View style={{ flexDirection: 'row', justifyContent: 'flex-end' }}>
-        {uploading ? (
-          <ActivityIndicator />
-        ) : (
-          <Pressable
-            style={{
-              backgroundColor: '#1877f2',
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-              borderRadius: 6,
-            }}
-            onPress={handleUpload}
-          >
-            <Text style={{ color: 'white', fontWeight: 'bold' }}>Post</Text>
-          </Pressable>
-        )}
-      </View>
+      <Pressable style={styles.cancelButton} onPress={() => navigation.goBack()}>
+        <Text style={styles.cancelText}>Cancel</Text>
+      </Pressable>
     </View>
   );
 };
@@ -241,30 +94,45 @@ const CreatePostScreen = ({ navigation, route }: any) => {
 export default CreatePostScreen;
 
 const styles = StyleSheet.create({
-  mediaEditorRow: {
-    gap: 12,
-    marginBottom: 12,
+  container: {
+    flex: 1,
+    padding: 24,
+    backgroundColor: '#0A1929',
+    justifyContent: 'center',
   },
-  mediaEditorItem: {
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  button: {
+    flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    padding: 20,
     borderRadius: 12,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    flexShrink: 0,
-    minWidth: 0,
-    width: 'auto',
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  mediaEditorIcon: {
-    fontSize: 20,
-    color: 'white',
+  icon: {
+    fontSize: 32,
+    marginRight: 16,
   },
-  mediaEditorLabel: {
+  label: {
+    fontSize: 18,
     color: 'white',
-    fontSize: 11,
-    marginTop: 4,
+    fontWeight: '600',
+  },
+  cancelButton: {
+    marginTop: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  cancelText: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 16,
   },
 });

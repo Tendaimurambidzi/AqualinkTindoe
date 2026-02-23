@@ -5,9 +5,10 @@ import {
   FlatList,
   Text,
   Image,
-  Pressable,
+  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 
@@ -117,22 +118,36 @@ const UserSearch: React.FC<UserSearchProps> = ({
         <View style={styles.userActions}>
           {onJoinCrew && (
             <Pressable
-              style={styles.userActionButton}
+              style={({ pressed }) => [
+                styles.userActionButton,
+                pressed && {
+                  opacity: 0.8,
+                  transform: [{ scale: 0.95 }],
+                }
+              ]}
               onPress={event => {
                 event.stopPropagation?.();
                 onJoinCrew(item);
               }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.userActionText}>Connect SplashLine</Text>
             </Pressable>
           )}
           {onInviteToDrift && (
             <Pressable
-              style={styles.userActionButton}
+              style={({ pressed }) => [
+                styles.userActionButton,
+                pressed && {
+                  opacity: 0.8,
+                  transform: [{ scale: 0.95 }],
+                }
+              ]}
               onPress={event => {
                 event.stopPropagation?.();
                 onInviteToDrift(item);
               }}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
               <Text style={styles.userActionText}>Invite</Text>
             </Pressable>

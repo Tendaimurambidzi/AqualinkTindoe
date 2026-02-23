@@ -1,8 +1,10 @@
 // Import necessary components and hooks
-import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, StyleSheet, Alert, ScrollView } from 'react-native';
+import React, { useState, useEffect, memo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Pressable, Modal, FlatList } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
+import NetInfo from '@react-native-community/netinfo';
+import { offlineQueueService } from '../services/offlineQueueService';
 
 // Function to fetch user data by ID
 const fetchUserData = async (userId: string) => {
@@ -12,7 +14,7 @@ const fetchUserData = async (userId: string) => {
       .doc(userId)
       .get();
 
-    if (userDoc.exists) {
+    if (userDoc.exists()) {
       const userData = userDoc.data();
       return userData;
     }
@@ -34,7 +36,7 @@ interface PosterActionBarProps {
   isCasted: boolean;
   onAdd: () => void;
   onRemove: () => void;
-  onEcho: () => void;
+  onEcho: (waveId: string) => void;
   onPearl: () => void;
   onAnchor: () => void;
   onCast: () => void;
@@ -45,7 +47,7 @@ interface PosterActionBarProps {
 const PosterActionBar: React.FC<PosterActionBarProps> = ({
   waveId,
   currentUserId,
-  splashesCount: initialSplashesCount,
+  splashesCount,
   echoesCount,
   pearlsCount,
   isAnchored,
@@ -58,16 +60,23 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   onCast,
   creatorUserId,
 }) => {
-  const [hasHugged, setHasHugged] = useState(false);
-  const [hasEchoed, setHasEchoed] = useState(false);
+  const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
+  const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
   const [hugActionInProgress, setHugActionInProgress] = useState(false);
-  const [echoActionInProgress, setEchoActionInProgress] = useState(false);
-  const [pearlActionInProgress, setPearlActionInProgress] = useState(false);
   const [hugInitialized, setHugInitialized] = useState(false);
-  const [splashesCount, setSplashesCount] = useState(initialSplashesCount);
+
+  // State for huggers dropdown
+  const [showHuggersDropdown, setShowHuggersDropdown] = useState(false);
+  type Hugger = { id: string; name: string; photo: string; timestamp: any };
+  const [huggersList, setHuggersList] = useState<Hugger[]>([]);
+  const [loadingHuggers, setLoadingHuggers] = useState(false);
 
   // State for creator user data
-  const [creatorUserData, setCreatorUserData] = useState(null);
+  const [creatorUserData, setCreatorUserData] = useState<any>(null);
+
+  // Connectivity state
+  const [isOnline, setIsOnline] = useState(true);
+  const hugsCount = Math.max(0, splashesCount);
 
   // Fetch user data for the creator of the post
   useEffect(() => {
@@ -80,6 +89,20 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       fetchCreatorUserData();
     }
   }, [creatorUserId]);
+
+  // Monitor connectivity
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      setIsOnline(state.isConnected ?? true);
+    });
+
+    // Initial check
+    NetInfo.fetch().then(state => {
+      setIsOnline(state.isConnected ?? true);
+    });
+
+    return unsubscribe;
+  }, []);
 
   // Check if user has already interacted
   useEffect(() => {
@@ -110,57 +133,97 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   }, [waveId, currentUserId]);
 
   const handleHug = () => {
-    // Remove the action in progress blocking for better responsiveness
-    // Immediate visual feedback
+    // Immediate visual feedback - no blocking
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
-    
-    // Update count immediately
-    setSplashesCount(prev => newHasHugged ? prev + 1 : Math.max(0, prev - 1));
-    
-    // Call the parent callback
-    if (hasHugged) {
-      onRemove();
+
+    // Handle action based on connectivity - fire and forget
+    if (isOnline) {
+      // Call the parent callback for immediate sync
+      if (newHasHugged) {
+        // We just hugged, so this was an add action
+        onAdd();
+      } else {
+        // We just unhugged, so this was a remove action
+        onRemove();
+      }
     } else {
-      onAdd();
+      // Queue action for offline processing
+      const actionType = newHasHugged ? 'splash' : 'unsplash';
+      offlineQueueService.addAction(actionType, waveId);
     }
-    
-    // Optional: Add a very short cooldown to prevent spam clicking
-    setHugActionInProgress(true);
-    setTimeout(() => {
-      setHugActionInProgress(false);
-    }, 200); // Reduced from 500ms to 200ms
+
+    // No blocking timeout - allow instant re-taps
   };
 
   const handleEcho = () => {
-    if (echoActionInProgress) return; // Prevent concurrent actions
-
-    setEchoActionInProgress(true);
-    
     // Immediate visual feedback
     setHasEchoed(true);
+
+    // Handle action based on connectivity
+    if (isOnline) {
+      // Call the parent callback for immediate sync
+      onEcho(waveId);
+    } else {
+      // Queue action for offline processing (basic echo without text for now)
+      offlineQueueService.addAction('echo', waveId, { text: '' });
+    }
+
+    // No blocking timeout - allow instant re-taps
+  };
+
+  const fetchHuggers = async () => {
+    if (loadingHuggers) return;
     
-    // Call the parent callback
-    onEcho();
-    
-    // Reset action in progress after a short delay
-    setTimeout(() => {
-      setEchoActionInProgress(false);
-    }, 500);
+    setLoadingHuggers(true);
+    try {
+      const splashesSnap = await firestore()
+        .collection(`waves/${waveId}/splashes`)
+        .orderBy('createdAt', 'desc')
+        .get();
+      
+      const huggers = [];
+      for (const doc of splashesSnap.docs) {
+        const splashData = doc.data();
+        const userId = doc.id; // The document ID is the user ID
+        if (userId) {
+          const userData = await fetchUserData(userId);
+          if (userData) {
+            huggers.push({
+              id: userId,
+              name: userData.displayName || userData.username || 'Unknown User',
+              photo: userData.photoURL || userData.userPhoto,
+              timestamp: splashData.createdAt,
+            });
+          }
+        }
+      }
+      
+      setHuggersList(huggers);
+      setShowHuggersDropdown(true);
+    } catch (error) {
+      console.error('Error fetching huggers:', error);
+      Alert.alert('Error', 'Failed to load huggers list');
+    } finally {
+      setLoadingHuggers(false);
+    }
+  };
+
+  const handleHugPress = () => {
+    // Show huggers list
+    fetchHuggers();
+  };
+
+  const handleHugAction = () => {
+    // Perform the hug action (increment/decrement count)
+    handleHug();
   };
 
   const handlePearl = () => {
-    if (pearlActionInProgress) return; // Prevent concurrent actions
-
-    setPearlActionInProgress(true);
-    
     // Call the parent callback
     onPearl();
     
-    // Reset action in progress after a short delay
-    setTimeout(() => {
-      setPearlActionInProgress(false);
-    }, 500);
+    // No blocking timeout - allow instant re-taps
   };
 
   const handleAnchor = () => {
@@ -175,173 +238,253 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const creatorProfilePicture = creatorUserData?.userPhoto || creatorUserData?.photoURL || 'https://via.placeholder.com/100x100.png?text=No+Photo';
 
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionBar}>
-      {/* Splashes Button */}
-      <View style={styles.actionButton}>
-        <Pressable
-          onPress={handleHug}
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 60, left: 60, bottom: 60, right: 60}}
-        >
-          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>
-            🫂
-          </Text>
-        </Pressable>
-        <Text style={styles.actionLabel}>Hugs</Text>
-        <Text style={[styles.actionCount, Math.max(0, splashesCount) > 0 ? styles.activeCount : styles.inactiveCount]}>
-          {Math.max(0, splashesCount)}
-        </Text>
-      </View>
 
-      {/* Echoes Button */}
-      <View style={styles.actionButton}>
-        <Pressable
-          onPress={handleEcho}
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
-        >
-          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
-            📣
+    <>
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.textButtonsBar}
+      keyboardShouldPersistTaps="handled"
+      scrollEnabled={true}
+      contentContainerStyle={{ flexDirection: 'row' }}
+    >
+      {/* Hugs Button (with icon and count) */}
+      <Pressable
+        onPress={handleHugAction}
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+      >
+        <View style={styles.buttonContent}>
+          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>🫂</Text>
+          <Text style={[styles.actionLabel, hasHugged ? styles.blueCount : styles.whiteCount]}>
+            {hasHugged ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
           </Text>
-        </Pressable>
-        <Text style={styles.actionLabel}>Echoes</Text>
-        <Text style={[styles.actionCount, echoesCount > 0 ? styles.activeCount : styles.inactiveCount]}>
-          {echoesCount}
-        </Text>
-      </View>
+        </View>
+      </Pressable>
+
+      {/* Echoes Button (with icon and count) */}
+      <Pressable
+        onPress={handleEcho}
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+      >
+        <View style={styles.buttonContent}>
+          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>📣</Text>
+          <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
+            Echo ({echoesCount})
+          </Text>
+        </View>
+      </Pressable>
 
       {/* Gems Button */}
-      <View style={styles.actionButton}>
+      {currentUserId !== creatorUserId && (
         <Pressable
           onPress={handlePearl}
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <Text style={[styles.actionIcon, pearlsCount > 0 && styles.pearlActive]}>
-            💎
-          </Text>
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionIconSmall}>💎</Text>
+            <Text style={styles.actionLabel}>Gems</Text>
+          </View>
         </Pressable>
-        <Text style={styles.actionLabel}>Gems</Text>
-      </View>
+      )}
 
       {/* Anchor Wave Button - Only show for other users' posts */}
       {currentUserId !== creatorUserId && (
-        <View style={styles.actionButton}>
-          <Pressable
-            onPress={handleAnchor}
-            style={styles.iconTouchable}
-            android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-            hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
-          >
-            <Text style={[styles.actionIcon, isAnchored && styles.activeAction]}>
-              ⚓
-            </Text>
-          </Pressable>
-          <Text style={styles.actionLabel}>Anchor</Text>
-          <Text style={styles.actionCount}></Text>
-        </View>
+        <Pressable
+          onPress={handleAnchor}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+        >
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionIconSmall}>⚓</Text>
+            <Text style={styles.actionLabel}>Anchor</Text>
+          </View>
+        </Pressable>
       )}
 
       {/* Cast Wave Button - Only show for other users' posts */}
       {currentUserId !== creatorUserId && (
-        <View style={styles.actionButton}>
-          <Pressable
-            onPress={handleCast}
-            style={styles.iconTouchable}
-            android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-            hitSlop={{top: 20, left: 20, bottom: 20, right: 20}}
-          >
-            <Text style={[styles.actionIcon, isCasted && styles.activeAction]}>
-              📡
-            </Text>
-          </Pressable>
-          <Text style={styles.actionLabel}>Cast</Text>
-          <Text style={styles.actionCount}></Text>
-        </View>
+        <Pressable
+          onPress={handleCast}
+          style={({ pressed }) => [
+            styles.textButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+        >
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionIconSmall}>📡</Text>
+            <Text style={styles.actionLabel}>Cast</Text>
+          </View>
+        </Pressable>
       )}
 
       {/* Placeholder Button 1 */}
-      <View style={styles.actionButton}>
-        <Pressable
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
-        >
-          <Text style={styles.actionIcon}>🔱</Text>
-        </Pressable>
-        <Text style={styles.actionLabel}>Placeholder 1</Text>
-        <Text style={styles.actionCount}></Text>
-      </View>
+      <Pressable
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+      >
+        <View style={styles.buttonContent}>
+          <Text style={styles.actionIconSmall}>🍴</Text>
+          <Text style={styles.actionLabel}>Placeholder 1</Text>
+        </View>
+      </Pressable>
 
       {/* Placeholder Button 2 */}
-      <View style={styles.actionButton}>
-        <Pressable
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
-        >
-          <Text style={styles.actionIcon}>🐚</Text>
-        </Pressable>
-        <Text style={styles.actionLabel}>Placeholder 2</Text>
-        <Text style={styles.actionCount}></Text>
-      </View>
-
-      {/* Placeholder Button 3 */}
-      <View style={styles.actionButton}>
-        <Pressable
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
-        >
-          <Text style={styles.actionIcon}></Text>
-        </Pressable>
-        <Text style={styles.actionLabel}></Text>
-        <Text style={styles.actionCount}></Text>
-      </View>
-
-      {/* Placeholder Button 4 */}
-      <View style={styles.actionButton}>
-        <Pressable
-          style={styles.iconTouchable}
-          android_ripple={{color: 'rgba(255,255,255,0.1)'}}
-          hitSlop={{top: 25, left: 25, bottom: 25, right: 25}}
-        >
-          <Text style={styles.actionIcon}></Text>
-        </Pressable>
-        <Text style={styles.actionLabel}></Text>
-        <Text style={styles.actionCount}></Text>
-      </View>
+      <Pressable
+        style={({ pressed }) => [
+          styles.textButton,
+          pressed && styles.pressedButton
+        ]}
+        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+      >
+        <View style={styles.buttonContent}>
+          <Text style={styles.actionIconSmall}>🐚</Text>
+          <Text style={styles.actionLabel}>Placeholder 2</Text>
+        </View>
+      </Pressable>
     </ScrollView>
+
+    {/* Huggers Dropdown Modal */}
+    <Modal
+      visible={showHuggersDropdown}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={() => setShowHuggersDropdown(false)}
+    >
+      <Pressable
+        style={styles.modalOverlay}
+        onPress={() => setShowHuggersDropdown(false)}
+      >
+        <View style={styles.modalContent}>
+          <Pressable
+            onPress={() => setShowHuggersDropdown(false)}
+            style={styles.closeButton}
+          >
+            <Text style={styles.closeButtonText}>✕</Text>
+          </Pressable>
+          {loadingHuggers ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>Loading huggers...</Text>
+            </View>
+          ) : huggersList.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No one has hugged this post yet</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={huggersList}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <View style={styles.huggerItem}>
+                  <Text style={styles.huggerName}>{item.name}</Text>
+                  <Text style={styles.huggerTimestamp}>
+                    {item.timestamp ? new Date(item.timestamp.toDate()).toLocaleDateString() : 'Recently'}
+                  </Text>
+                </View>
+              )}
+              style={styles.huggersList}
+            />
+          )}
+        </View>
+      </Pressable>
+    </Modal>
+    </>
   );
 };
 
 // Styles
 const styles = StyleSheet.create({
   actionBar: {
-    paddingVertical: 5,
-    paddingHorizontal: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 0,
     backgroundColor: 'grey',
     borderRadius: 0,
     marginHorizontal: 0,
-    marginBottom: 10,
+    marginBottom: 0,
+    minHeight: 32,
+    height: 38,
+    width: '100%',
+  },
+  textButtonsBar: {
+    paddingVertical: 4,
+    paddingHorizontal: 0,
+    backgroundColor: 'grey',
+    borderRadius: 0,
+    marginHorizontal: 0,
+    marginBottom: 0,
+    minHeight: 32,
+    height: 38,
+    width: '100%',
   },
   actionButton: {
     alignItems: 'center',
     padding: 8,
-    marginHorizontal: 15, // Increased spacing between buttons to prevent accidental clicks
+    marginHorizontal: 20, // Increased spacing between buttons to prevent accidental clicks
+  },
+  iconButton: {
+    alignItems: 'center',
+    padding: 8,
+    marginHorizontal: 20,
   },
   iconTouchable: {
-    padding: 8, // Increased padding for better touch area
-    minWidth: 40, // Minimum touch width
-    minHeight: 40, // Minimum touch height
     alignItems: 'center',
     justifyContent: 'center',
   },
+  textButton: {
+    backgroundColor: '#ff4444',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 36,
+    minHeight: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4,
+  },
+  pressedButton: {
+    opacity: 0.6,
+    transform: [{ scale: 0.9 }],
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
   actionIcon: {
-    fontSize: 24, // Enlarged icons
+    fontSize: 20,
     color: '#fff',
     fontWeight: 'bold',
   },
@@ -358,15 +501,30 @@ const styles = StyleSheet.create({
     color: '#ff0088', // Red for pearls/gems
   },
   actionLabel: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#ccc',
-    marginTop: 2,
-    marginBottom: 2,
+    marginRight: 2,
+  },
+  huggedLabel: {
+    color: '#1e88e5',
+  },
+  greenCount: {
+    color: '#00ff88',
+  },
+  blueCount: {
+    color: '#1e88e5',
+  },
+  whiteCount: {
+    color: '#fff',
+  },
+  actionIconSmall: {
+    fontSize: 16,
+    color: '#fff',
+    marginRight: 2,
   },
   actionCount: {
     fontSize: 12,
     fontWeight: 'bold',
-    marginTop: 2,
   },
   activeCount: {
     color: '#00ff88', // Green for counts > 0
@@ -374,6 +532,138 @@ const styles = StyleSheet.create({
   inactiveCount: {
     color: '#fff', // White for count = 0
   },
+  iconContainer: {
+    alignItems: 'center',
+    position: 'relative',
+  },
+  iconCount: {
+    position: 'absolute',
+    top: -5,
+    right: -5,
+    fontSize: 10,
+    fontWeight: 'bold',
+    backgroundColor: '#333',
+    borderRadius: 5,
+    paddingHorizontal: 2,
+    paddingVertical: 0,
+    minWidth: 12,
+    textAlign: 'center',
+  },
+  activeIconCount: {
+    color: '#00ff88', // Green for counts > 0
+  },
+  inactiveIconCount: {
+    color: '#ccc', // Grey for count = 0
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: '#1a1a1a',
+    borderRadius: 12,
+    padding: 0,
+    width: '90%',
+    maxWidth: 400,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    padding: 8,
+    zIndex: 1,
+  },
+  closeButtonText: {
+    fontSize: 18,
+    color: '#fff',
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#ccc',
+    fontSize: 16,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#ccc',
+    fontSize: 16,
+  },
+  huggersList: {
+    maxHeight: 300,
+  },
+  huggerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#333',
+  },
+  huggerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  huggerEmoji: {
+    fontSize: 20,
+  },
+  huggerInfo: {
+    flex: 1,
+  },
+  huggerName: {
+    fontSize: 16,
+    color: '#fff',
+    fontWeight: '500',
+  },
+  huggerTimestamp: {
+    fontSize: 12,
+    color: '#ccc',
+    marginTop: 2,
+  },
+  modalActions: {
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#333',
+  },
+  hugButton: {
+    backgroundColor: '#ff4444',
+    borderRadius: 8,
+    padding: 12,
+    alignItems: 'center',
+  },
+  hugButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
 });
 
 export default PosterActionBar;
+
+
+
