@@ -6,14 +6,15 @@ import {
   FlatList,
   Text,
   Image,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  Modal,
 } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 
-type UserResult = {
+// User type
+export type VibeUser = {
   uid: string;
   displayName: string;
   photoURL: string | null;
@@ -21,22 +22,14 @@ type UserResult = {
   email?: string;
 };
 
-type UserSearchProps = {
-  onUserSelect: (user: UserResult) => void;
-  onJoinCrew?: (user: UserResult) => void;
-  onInviteToDrift?: (user: UserResult) => void;
-};
-
-const UserSearch: React.FC<UserSearchProps> = ({
-  onUserSelect,
-  onJoinCrew,
-  onInviteToDrift,
-}) => {
+const VibeHuntUserSearch: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [results, setResults] = useState<UserResult[]>([]);
-  const [suggestions, setSuggestions] = useState<UserResult[]>([]);
+  const [results, setResults] = useState<VibeUser[]>([]);
+  const [suggestions, setSuggestions] = useState<VibeUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<VibeUser | null>(null);
+  const [modalVisible, setModalVisible] = useState(false);
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -51,48 +44,22 @@ const UserSearch: React.FC<UserSearchProps> = ({
     setLoading(true);
     try {
       const usersRef = firestore().collection('users');
-      let searchTerm = query.trim();
-      let usernameVariants = [searchTerm];
-      if (!searchTerm.startsWith('/')) {
-        usernameVariants.push('/' + searchTerm);
-      } else {
-        usernameVariants.push(searchTerm.replace(/^\//, ''));
-      }
       const displayNameSnap = await usersRef
-        .where('displayName', '>=', searchTerm)
-        .where('displayName', '<=', searchTerm + '\uf8ff')
+        .where('displayName', '>=', query)
+        .where('displayName', '<=', query + '\uf8ff')
         .limit(20)
         .get();
-      let users: UserResult[] = displayNameSnap.docs.map(doc => ({
+      let users: VibeUser[] = displayNameSnap.docs.map(doc => ({
         uid: doc.id,
         displayName: doc.data().displayName || 'Anonymous',
         photoURL: doc.data().photoURL || null,
         username: doc.data().username,
         email: doc.data().email,
       }));
-      for (const variant of usernameVariants) {
-        const usernameSnap = await usersRef
-          .where('username', '==', variant)
-          .limit(20)
-          .get();
-        usernameSnap.docs.forEach(doc => {
-          const user = {
-            uid: doc.id,
-            displayName: doc.data().displayName || 'Anonymous',
-            photoURL: doc.data().photoURL || null,
-            username: doc.data().username,
-            email: doc.data().email,
-          };
-          if (!users.find(u => u.uid === user.uid)) {
-            users.push(user);
-          }
-        });
-      }
-      setResults(users);
+      // Fuzzy suggestions if no exact match
       if (users.length === 0) {
-        // Fuzzy suggestions if no exact match
         const allSnap = await usersRef.limit(100).get();
-        const allUsers: UserResult[] = allSnap.docs.map(doc => ({
+        const allUsers: VibeUser[] = allSnap.docs.map(doc => ({
           uid: doc.id,
           displayName: doc.data().displayName || 'Anonymous',
           photoURL: doc.data().photoURL || null,
@@ -107,11 +74,11 @@ const UserSearch: React.FC<UserSearchProps> = ({
         setSuggestions(fuzzyResults.slice(0, 10));
         setError('No exact results. Did you mean:');
       } else {
+        setResults(users);
         setSuggestions([]);
         setError(null);
       }
     } catch (error) {
-      console.error('Search error:', error);
       setResults([]);
       setSuggestions([]);
       setError('Search failed. Please try again.');
@@ -120,15 +87,18 @@ const UserSearch: React.FC<UserSearchProps> = ({
     }
   };
 
-  const renderUser = ({ item }: { item: UserResult }) => (
-    <Pressable
-      style={styles.userItem}
-      onPress={() => {
-        onUserSelect(item);
-        setSearchQuery('');
-        setResults([]);
-      }}
-    >
+  const handleUserPress = (user: VibeUser) => {
+    setSelectedUser(user);
+    setModalVisible(true);
+  };
+
+  const closeModal = () => {
+    setModalVisible(false);
+    setSelectedUser(null);
+  };
+
+  const renderUser = ({ item }: { item: VibeUser }) => (
+    <Pressable style={styles.userItem} onPress={() => handleUserPress(item)}>
       <Image
         source={{ uri: item.photoURL || 'https://via.placeholder.com/50' }}
         style={styles.avatar}
@@ -141,46 +111,6 @@ const UserSearch: React.FC<UserSearchProps> = ({
           <Text style={styles.username}>{item.email}</Text>
         ) : null}
       </View>
-      {(onJoinCrew || onInviteToDrift) && (
-        <View style={styles.userActions}>
-          {onJoinCrew && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.userActionButton,
-                pressed && {
-                  opacity: 0.8,
-                  transform: [{ scale: 0.95 }],
-                }
-              ]}
-              onPress={event => {
-                event.stopPropagation?.();
-                onJoinCrew(item);
-              }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.userActionText}>Connect SplashLine</Text>
-            </Pressable>
-          )}
-          {onInviteToDrift && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.userActionButton,
-                pressed && {
-                  opacity: 0.8,
-                  transform: [{ scale: 0.95 }],
-                }
-              ]}
-              onPress={event => {
-                event.stopPropagation?.();
-                onInviteToDrift(item);
-              }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.userActionText}>Invite</Text>
-            </Pressable>
-          )}
-        </View>
-      )}
     </Pressable>
   );
 
@@ -190,7 +120,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search SplashLiners..."
+          placeholder="Search VIBE HUNT users..."
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={searchQuery}
           onChangeText={handleSearch}
@@ -240,6 +170,48 @@ const UserSearch: React.FC<UserSearchProps> = ({
           />
         </View>
       )}
+      {/* User Action Modal */}
+      <Modal
+        visible={modalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeModal}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={closeModal}
+        >
+          <Pressable
+            style={styles.modalContent}
+            onPress={e => e.stopPropagation()}
+          >
+            {selectedUser && (
+              <>
+                <Image
+                  source={{ uri: selectedUser.photoURL || 'https://via.placeholder.com/80' }}
+                  style={styles.modalAvatar}
+                />
+                <Text style={styles.modalDisplayName}>{selectedUser.displayName}</Text>
+                {selectedUser.username && (
+                  <Text style={styles.modalUsername}>@{selectedUser.username}</Text>
+                )}
+                {/* Action Buttons */}
+                <View style={styles.modalActions}>
+                  <Pressable style={styles.modalActionButton} onPress={() => {/* TODO: View Profile */}}>
+                    <Text style={styles.modalActionText}>View Profile</Text>
+                  </Pressable>
+                  <Pressable style={styles.modalActionButton} onPress={() => {/* TODO: Invite to VIBE HUNT */}}>
+                    <Text style={styles.modalActionText}>Invite</Text>
+                  </Pressable>
+                  <Pressable style={styles.modalActionButton} onPress={closeModal}>
+                    <Text style={styles.modalActionText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 };
@@ -297,23 +269,6 @@ const styles = StyleSheet.create({
   resultsList: {
     padding: 8,
   },
-  userActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  userActionButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
-  },
-  userActionText: {
-    color: '#00C2FF',
-    fontWeight: '600',
-    fontSize: 12,
-  },
   userItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -342,6 +297,56 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContent: {
+    backgroundColor: 'white',
+    borderRadius: 16,
+    padding: 24,
+    width: '85%',
+    maxWidth: 400,
+    alignItems: 'center',
+  },
+  modalAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginBottom: 12,
+  },
+  modalDisplayName: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  modalUsername: {
+    fontSize: 16,
+    color: '#00C2FF',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    marginTop: 24,
+    gap: 12,
+  },
+  modalActionButton: {
+    backgroundColor: '#00C2FF',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginHorizontal: 4,
+  },
+  modalActionText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
+  },
 });
 
-export default UserSearch;
+export default VibeHuntUserSearch;
