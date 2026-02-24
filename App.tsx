@@ -10801,40 +10801,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     }
                   }}
                 />
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: 8,
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: 'rgba(255,255,255,0.8)',
-                      fontSize: 18,
-                      marginRight: 2,
-                    }}
-                  >
-                    /
-                  </Text>
-                  <TextInput
-                    value={(profileName || '/Viber').replace(/^\/+/, '')}
-                    onChangeText={t =>
-                      setProfileName('/' + String(t || '').replace(/^\/+/, ''))
-                    }
-                    placeholder="SplashLiner"
-                    placeholderTextColor="rgba(255,255,255,0.5)"
-                    style={[
-                      styles.profileName as any,
-                      {
-                        marginTop: 0,
-                        padding: 0,
-                        borderBottomWidth: 1,
-                        borderBottomColor: 'rgba(255,255,255,0.3)',
-                      },
-                    ]}
-                  />
-                </View>
+                <TextInput
+                  value={profileName || ''}
+                  onChangeText={setProfileName}
+                  placeholder="SplashLiner"
+                  placeholderTextColor="rgba(255,255,255,0.5)"
+                  style={[
+                    styles.profileName as any,
+                    {
+                      marginTop: 0,
+                      padding: 0,
+                      borderBottomWidth: 1,
+                      borderBottomColor: 'rgba(255,255,255,0.3)',
+                    },
+                  ]}
+                />
                 <TextInput
                   value={profileBio}
                   onChangeText={setProfileBio}
