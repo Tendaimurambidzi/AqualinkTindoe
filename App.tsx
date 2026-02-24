@@ -17,6 +17,7 @@ const NotificationToast = lazy(() => import('./src/components/NotificationToast'
 const WaveRippleEffect = lazy(() => import('./src/components/WaveRippleEffect'));
 const SwimmingFishLoader = lazy(() => import('./src/components/SwimmingFishLoader'));
 const UserSearch = lazy(() => import('./src/components/UserSearch'));
+const VibeHuntUserSearch = lazy(() => import('./src/components/VibeHuntUserSearch'));
 import {
   Alert,
   Animated,
@@ -13613,255 +13614,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         animationType="none"
         onRequestClose={() => setShowDeepSearch(false)}
       >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
-        >
-          <View
-            style={[
-              styles.modalContent,
-              { width: '100%', maxHeight: SCREEN_HEIGHT * 0.75 },
-            ]}
-          >
-            <Text style={styles.modalTitle}>DEEP DIVE - Find Vibers</Text>
-                    
-            <Text style={[styles.hint, { marginBottom: 8 }]}>
-              Search by username:
-            </Text>
-            <TextInput
-              value={deepQuery}
-              onChangeText={v => setDeepQuery(v)}
-              placeholder="Enter username..."
-              placeholderTextColor="rgba(255,255,255,0.4)"
-              style={[styles.input, { fontSize: 14 }]}
-              autoCapitalize="none"
-            />
-            <Pressable
-              style={[styles.primaryBtn, deepSearchLoading && { opacity: 0.7 }]}
-              onPress={runDeepSearch}
-              disabled={deepSearchLoading}
-            >
-              {deepSearchLoading ? (
-                <ActivityIndicator color="white" size="small" />
-              ) : (
-                <Text style={styles.primaryBtnText}>Search</Text>
-              )}
-            </Pressable>
-            <Pressable
-              style={[styles.primaryBtn, { backgroundColor: '#FF6B00', marginTop: 8 }, isAISearchSuggesting && { opacity: 0.7 }]}
-              onPress={handleAISearchSuggest}
-              disabled={isAISearchSuggesting}
-            >
-              {isAISearchSuggesting ? (
-                <ActivityIndicator color="white" size="small" />
-              ) : (
-                <Text style={styles.primaryBtnText}>AI Suggest</Text>
-              )}
-            </Pressable>
-            {deepSearchError && (
-              <Text style={[styles.hint, { color: '#ff6b6b', marginTop: 8 }]}>
-                {deepSearchError}
-              </Text>
-            )}
-            <ScrollView style={{ flex: 1, marginTop: 12 }}>
-              {(() => {
-                console.log('Rendering search results, deepResults.length:', deepResults.length);
-                console.log('deepSearchLoading:', deepSearchLoading);
-                console.log('deepResults:', JSON.stringify(deepResults));
-                return null;
-              })()}
-              {!deepSearchLoading && deepResults.length === 0 && (
-                <Text style={styles.hint}>
-                  No results yet. Try a handle or keyword.
-                </Text>
-              )}
-              {deepResults.map(result => (
-                <View key={result.kind + result.id}>
-                  {result.kind === 'vibe' ? (
-                    <Pressable
-                      style={styles.pingItem}
-                      onPress={() => handleDeepWaveSelect(result)}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.pingText}>
-                          🎉 {result.label}
-                        </Text>
-                      </View>
-                      <Text style={styles.primaryBtnText}>View wave</Text>
-                    </Pressable>
-                  ) : (
-                    <View style={{
-                      backgroundColor: 'rgba(255,255,255,0.05)',
-                      borderRadius: 12,
-                      padding: 12,
-                      marginBottom: 12,
-                      borderWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.1)',
-                    }}>
-                      {/* User Profile Header */}
-                      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                        {/* Profile Picture or Avatar */}
-                        <View style={{
-                          width: 56,
-                          height: 56,
-                          borderRadius: 28,
-                          backgroundColor: '#00C2FF',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          marginRight: 12,
-                          overflow: 'hidden',
-                        }}>
-                          {result.extra?.photoURL ? (
-                            <Image
-                              source={{ uri: result.extra.photoURL }}
-                              style={{ width: 56, height: 56 }}
-                              resizeMode="contain"
-                            />
-                          ) : (
-                            <Text style={{ fontSize: 28, color: 'white' }}>
-                              {result.label.charAt(0).toUpperCase()}
-                            </Text>
-                          )}
-                        </View>
-                    
-                        {/* User Info */}
-                        <View style={{ flex: 1 }}>
-                          <Text style={{
-                            color: 'white',
-                            fontSize: 16,
-                            fontWeight: 'bold',
-                            marginBottom: 4,
-                          }}>
-                            {result.label}
-                          </Text>
-                          {result.extra?.bio && typeof result.extra.bio === 'string' && (
-                            <Text
-                              style={{
-                                color: 'rgba(255,255,255,0.6)',
-                                fontSize: 12,
-                              }}
-                              numberOfLines={2}
-                            >
-                              {result.extra.bio}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    
-                      {/* Action Buttons */}
-                      <View style={{
-                        flexDirection: 'row',
-                        gap: 8,
-                        flexWrap: 'wrap',
-                      }}>
-                        {/* Send Message Button */}
-                        <Pressable
-                          style={{
-                            flex: 1,
-                            minWidth: '45%',
-                            paddingVertical: 10,
-                            borderRadius: 8,
-                            alignItems: 'center',
-                            borderWidth: 1,
-                            borderColor: '#9C27B0',
-                            backgroundColor: 'rgba(156, 39, 176, 0.2)',
-                          }}
-                          onPress={async () => {
-                            const currentUser = auth?.()?.currentUser;
-                            if (!currentUser) {
-                              Alert.alert('Sign in required', 'You must be signed in to send messages.');
-                              return;
-                            }
-                            if (currentUser.uid === result.id) {
-                              Alert.alert('Info', "You can't message yourself");
-                              return;
-                            }
-                            setMessageRecipient({
-                              uid: result.id,
-                              name: result.label,
-                            });
-                            setShowSendMessage(true);
-                            setShowDeepSearch(false);
-                          }}
-                        >
-                          <Text style={{
-                            color: '#E1BEE7',
-                            fontSize: 14,
-                            fontWeight: '600',
-                          }}>
-                            💬 Message
-                          </Text>
-                        </Pressable>
-                    
-                        {/* Invite to Drift Button */}
-                        <Pressable
-                          style={{
-                            flex: 1,
-                            minWidth: '45%',
-                            paddingVertical: 10,
-                            borderRadius: 8,
-                            alignItems: 'center',
-                            borderWidth: 1,
-                            borderColor: '#4CAF50',
-                            backgroundColor: 'rgba(76, 175, 80, 0.2)',
-                          }}
-                          onPress={() => {
-                            inviteCoHostById(result.id, result.label);
-                            setShowDeepSearch(false);
-                          }}
-                        >
-                          <Text style={{
-                            color: '#A5D6A7',
-                            fontSize: 14,
-                            fontWeight: '600',
-                          }}>
-                            🎙️ Invite Drift
-                          </Text>
-                        </Pressable>
-                    
-                        {/* Request to Join Their Drift (if they're live) */}
-                        {result.extra?.liveId && (
-                          <Pressable
-                            style={{
-                              flex: 1,
-                              minWidth: '45%',
-                              paddingVertical: 10,
-                              borderRadius: 8,
-                              alignItems: 'center',
-                              borderWidth: 1,
-                              borderColor: '#FF9800',
-                              backgroundColor: 'rgba(255, 152, 0, 0.2)',
-                            }}
-                            onPress={() => {
-                              requestToDriftForLiveId(
-                                result.extra.liveId,
-                                result.label,
-                              );
-                              setShowDeepSearch(false);
-                            }}
-                          >
-                            <Text style={{
-                              color: '#FFE0B2',
-                              fontSize: 14,
-                              fontWeight: '600',
-                            }}>
-                              🔴 Request Drift
-                            </Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    </View>
-                  )}
-                </View>
-              ))}
-            </ScrollView>
-            <Pressable
-              style={styles.closeBtn}
-              onPress={() => setShowDeepSearch(false)}
-            >
-              <Text style={styles.closeText}>Close</Text>
-            </Pressable>
-          </View>
-        </View>
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}> 
+          <View style={[styles.modalContent, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.75 }]}> 
+            <React.Suspense fallback={<ActivityIndicator color="#00C2FF" size="large" style={{ marginTop: 40 }} />}> 
+              <VibeHuntUserSearch /> 
+            </React.Suspense> 
+            <Pressable style={styles.closeBtn} onPress={() => setShowDeepSearch(false)}> 
+              <Text style={styles.closeText}>Close</Text> 
+            </Pressable> 
+          </View> 
+        </View> 
       </Modal>
                     
       {/* PEARLS */}
@@ -17817,6 +17579,7 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>🧭</Text>
               <Text style={editorStyles.liveRightLabel}>Invite</Text>
             </Pressable>
+// ...existing code...
             {/* Screen Share */}
             <Pressable
               style={editorStyles.liveRightButton}

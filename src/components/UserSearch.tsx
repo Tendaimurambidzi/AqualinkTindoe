@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import Fuse from 'fuse.js';
 import {
   View,
   TextInput,
@@ -17,6 +18,7 @@ type UserResult = {
   displayName: string;
   photoURL: string | null;
   username?: string;
+  email?: string;
 };
 
 type UserSearchProps = {
@@ -32,14 +34,17 @@ const UserSearch: React.FC<UserSearchProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<UserResult[]>([]);
+  const [suggestions, setSuggestions] = useState<UserResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
     setError(null);
+    setSuggestions([]);
     if (!query.trim()) {
       setResults([]);
+      setSuggestions([]);
       setError(null);
       return;
     }
@@ -63,6 +68,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
         displayName: doc.data().displayName || 'Anonymous',
         photoURL: doc.data().photoURL || null,
         username: doc.data().username,
+        email: doc.data().email,
       }));
       for (const variant of usernameVariants) {
         const usernameSnap = await usersRef
@@ -75,6 +81,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
             displayName: doc.data().displayName || 'Anonymous',
             photoURL: doc.data().photoURL || null,
             username: doc.data().username,
+            email: doc.data().email,
           };
           if (!users.find(u => u.uid === user.uid)) {
             users.push(user);
@@ -83,12 +90,30 @@ const UserSearch: React.FC<UserSearchProps> = ({
       }
       setResults(users);
       if (users.length === 0) {
-        setResults([]);
-        setError('No results found. Please check your search or try again.');
+        // Fuzzy suggestions if no exact match
+        const allSnap = await usersRef.limit(100).get();
+        const allUsers: UserResult[] = allSnap.docs.map(doc => ({
+          uid: doc.id,
+          displayName: doc.data().displayName || 'Anonymous',
+          photoURL: doc.data().photoURL || null,
+          username: doc.data().username,
+          email: doc.data().email,
+        }));
+        const fuse = new Fuse(allUsers, {
+          keys: ['displayName', 'username', 'email'],
+          threshold: 0.4,
+        });
+        const fuzzyResults = fuse.search(query).map(res => res.item);
+        setSuggestions(fuzzyResults.slice(0, 10));
+        setError('No exact results. Did you mean:');
+      } else {
+        setSuggestions([]);
+        setError(null);
       }
     } catch (error) {
       console.error('Search error:', error);
       setResults([]);
+      setSuggestions([]);
       setError('Search failed. Please try again.');
     } finally {
       setLoading(false);
@@ -110,9 +135,11 @@ const UserSearch: React.FC<UserSearchProps> = ({
       />
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>{item.displayName}</Text>
-        {item.username && (
+        {item.username ? (
           <Text style={styles.username}>@{item.username}</Text>
-        )}
+        ) : item.email ? (
+          <Text style={styles.username}>{item.email}</Text>
+        ) : null}
       </View>
       {(onJoinCrew || onInviteToDrift) && (
         <View style={styles.userActions}>
@@ -169,8 +196,22 @@ const UserSearch: React.FC<UserSearchProps> = ({
           onChangeText={handleSearch}
           autoCapitalize="none"
           autoCorrect={false}
+          editable={!loading}
         />
-        {loading && <ActivityIndicator size="small" color="#00C2FF" />}
+        <Pressable
+          style={({ pressed }) => [
+            styles.searchButton,
+            pressed && styles.searchButtonPressed,
+          ]}
+          onPress={() => handleSearch(searchQuery)}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.searchButtonText}>Search</Text>
+          )}
+        </Pressable>
       </View>
       {error && (
         <View style={{ padding: 12, alignItems: 'center' }}>
@@ -181,6 +222,17 @@ const UserSearch: React.FC<UserSearchProps> = ({
         <View style={styles.resultsContainer}>
           <FlatList
             data={results}
+            renderItem={renderUser}
+            keyExtractor={item => item.uid}
+            style={styles.resultsList}
+            keyboardShouldPersistTaps="handled"
+          />
+        </View>
+      )}
+      {suggestions.length > 0 && (
+        <View style={styles.resultsContainer}>
+          <FlatList
+            data={suggestions}
             renderItem={renderUser}
             keyExtractor={item => item.uid}
             style={styles.resultsList}
@@ -214,6 +266,25 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#FFFFFF',
     fontSize: 16,
+  },
+  searchButton: {
+    marginLeft: 8,
+    backgroundColor: '#00C2FF',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 70,
+  },
+  searchButtonPressed: {
+    backgroundColor: '#0090bb',
+    opacity: 0.8,
+  },
+  searchButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
   },
   resultsContainer: {
     backgroundColor: 'rgba(0, 31, 63, 0.95)',
