@@ -126,9 +126,18 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
 
   const photoURL = userData?.photoURL || userData?.userPhoto || 'https://via.placeholder.com/50';
   // Use stable cache-busting key that only updates when photoURL actually changes
-  const photoURLWithCacheBust = photoURL.includes('via.placeholder.com') 
-    ? photoURL 
-    : `${photoURL}?t=${cacheBustKey}`;
+  const photoURLWithCacheBust = photoURL && !photoURL.includes('via.placeholder.com')
+    ? `${photoURL}?t=${cacheBustKey}`
+    : null;
+
+  // Helper to get initials from displayName or username
+  const getInitials = () => {
+    const name = userData?.displayName || userData?.name || userData?.username || '';
+    if (!name) return '?';
+    const parts = name.trim().split(' ');
+    if (parts.length === 1) return parts[0][0]?.toUpperCase() || '?';
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  };
 
   // Format crew count (show "1k" for 1000+)
   const formatCrewCount = (count: number) => {
@@ -149,21 +158,39 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   return (
     <>
       <View style={[styles.container, style]}>
-        <Pressable 
+        <Pressable
           onPress={() => setShowModal(true)}
           style={({ pressed }) => [
             { padding: 2 },
             pressed && {
               opacity: 0.8,
               transform: [{ scale: 0.95 }],
-            }
+            },
           ]}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Image
-            source={{ uri: photoURLWithCacheBust }}
-            style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
-          />
+          {photoURLWithCacheBust ? (
+            <Image
+              source={{ uri: photoURLWithCacheBust }}
+              style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+            />
+          ) : (
+            <View
+              style={[
+                styles.avatar,
+                {
+                  width: size,
+                  height: size,
+                  borderRadius: size / 2,
+                  backgroundColor: '#00C2FF33',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                },
+              ]}
+            >
+              <Text style={styles.initials}>{getInitials()}</Text>
+            </View>
+          )}
         </Pressable>
         <View style={styles.countsContainer}>
           {showCrewCount && (
@@ -190,7 +217,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
               pressed && {
                 opacity: 0.8,
                 transform: [{ scale: 0.9 }],
-              }
+              },
             ]}
             onPress={() => setShowModal(false)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -198,17 +225,32 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
             <Text style={styles.closeButtonText}>✕</Text>
           </Pressable>
 
-          {/* Image container */}
+          {/* Image or initials in modal */}
           <Pressable
             style={styles.modalContent}
             onPress={() => setShowModal(false)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Image
-              source={{ uri: photoURLWithCacheBust }}
-              style={styles.fullSizeImage}
-              resizeMode="contain"
-            />
+            {photoURLWithCacheBust ? (
+              <Image
+                source={{ uri: photoURLWithCacheBust }}
+                style={styles.fullSizeImage}
+                resizeMode="contain"
+              />
+            ) : (
+              <View
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: '#00C2FF33',
+                  borderRadius: 10,
+                }}
+              >
+                <Text style={[styles.initials, { fontSize: 48 }]}>{getInitials()}</Text>
+              </View>
+            )}
           </Pressable>
         </View>
       </Modal>
@@ -230,6 +272,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ccc',
     borderWidth: 2,
     borderColor: '#00C2FF',
+  },
+  initials: {
+    color: '#00C2FF',
+    fontWeight: 'bold',
+    fontSize: 24,
   },
   crewText: {
     fontSize: 12,

@@ -52,12 +52,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
     try {
       const usersRef = firestore().collection('users');
       let searchTerm = query.trim();
-      let usernameVariants = [searchTerm];
-      if (!searchTerm.startsWith('/')) {
-        usernameVariants.push('/' + searchTerm);
-      } else {
-        usernameVariants.push(searchTerm.replace(/^\//, ''));
-      }
+      let usernameVariants = [searchTerm.replace(/^[@/]+/, '')];
       const displayNameSnap = await usersRef
         .where('displayName', '>=', searchTerm)
         .where('displayName', '<=', searchTerm + '\uf8ff')
@@ -136,7 +131,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>{item.displayName}</Text>
         {item.username ? (
-          <Text style={styles.username}>@{item.username}</Text>
+          <Text style={styles.username}>@{String(item.username).replace(/^[@/]+/, '')}</Text>
         ) : item.email ? (
           <Text style={styles.username}>{item.email}</Text>
         ) : null}

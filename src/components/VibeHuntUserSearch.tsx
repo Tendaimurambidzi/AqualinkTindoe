@@ -153,16 +153,36 @@ const VibeHuntUserSearch: React.FC = () => {
     }
   };
 
+  // Helper to get initials from displayName or username
+  const getInitials = (user: VibeUser) => {
+    const name = (user.displayName || user.username || '').replace(/^[@/]+/, '');
+    if (!name) return '?';
+    const parts = name.trim().split(' ');
+    if (parts.length === 1) return parts[0][0]?.toUpperCase() || '?';
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  };
+
+  const cleanUsername = (username?: string) => {
+    if (!username) return '';
+    return username.replace(/^[@/]+/, '');
+  };
+
   const renderUser = ({ item }: { item: VibeUser }) => (
     <Pressable style={styles.userItem} onPress={() => handleUserPress(item)}>
-      <Image
-        source={{ uri: item.photoURL || 'https://via.placeholder.com/50' }}
-        style={styles.avatar}
-      />
+      {item.photoURL ? (
+        <Image
+          source={{ uri: item.photoURL }}
+          style={styles.avatar}
+        />
+      ) : (
+        <View style={[styles.avatar, { backgroundColor: '#00C2FF33', justifyContent: 'center', alignItems: 'center' }]}> 
+          <Text style={styles.initials}>{getInitials(item)}</Text>
+        </View>
+      )}
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>{item.displayName}</Text>
         {item.username ? (
-          <Text style={styles.username}>@{item.username}</Text>
+          <Text style={styles.username}>{cleanUsername(item.username)}</Text>
         ) : item.email ? (
           <Text style={styles.username}>{item.email}</Text>
         ) : null}
@@ -243,13 +263,19 @@ const VibeHuntUserSearch: React.FC = () => {
           >
             {selectedUser && (
               <>
-                <Image
-                  source={{ uri: selectedUser.photoURL || 'https://via.placeholder.com/80' }}
-                  style={styles.modalAvatar}
-                />
+                {selectedUser.photoURL ? (
+                  <Image
+                    source={{ uri: selectedUser.photoURL }}
+                    style={styles.modalAvatar}
+                  />
+                ) : (
+                  <View style={[styles.modalAvatar, { backgroundColor: '#00C2FF33', justifyContent: 'center', alignItems: 'center' }]}> 
+                    <Text style={styles.initials}>{getInitials(selectedUser)}</Text>
+                  </View>
+                )}
                 <Text style={styles.modalDisplayName}>{selectedUser.displayName}</Text>
                 {selectedUser.username && (
-                  <Text style={styles.modalUsername}>@{selectedUser.username}</Text>
+                  <Text style={styles.modalUsername}>{cleanUsername(selectedUser.username)}</Text>
                 )}
                 {bio ? (
                   <Text style={{ color: '#444', fontSize: 14, marginBottom: 8, textAlign: 'center' }}>{bio}</Text>
@@ -261,16 +287,16 @@ const VibeHuntUserSearch: React.FC = () => {
                 </View>
                 <View style={styles.modalActions}>
                   <Pressable
-                    style={[styles.modalActionButton, { backgroundColor: inCrew ? '#FF4444' : '#00C2FF' }]}
+                    style={[styles.modalActionButton, styles.tinyButton, { backgroundColor: inCrew ? '#FF4444' : '#00C2FF' }]}
                     onPress={handleConnectLeave}
                     disabled={crewLoading}
                   >
-                    <Text style={styles.modalActionText}>
+                    <Text style={styles.tinyActionText}>
                       {crewLoading ? (inCrew ? 'Leaving...' : 'Connecting...') : inCrew ? 'Leave Tide' : 'Connect Tide'}
                     </Text>
                   </Pressable>
                   <Pressable
-                    style={styles.modalActionButton}
+                    style={[styles.modalActionButton, styles.tinyButton]}
                     onPress={() => {
                       if (selectedUser) {
                         closeModal();
@@ -281,10 +307,10 @@ const VibeHuntUserSearch: React.FC = () => {
                       }
                     }}
                   >
-                    <Text style={styles.modalActionText}>Chat</Text>
+                    <Text style={styles.tinyActionText}>Chat</Text>
                   </Pressable>
-                  <Pressable style={styles.modalActionButton} onPress={closeModal}>
-                    <Text style={styles.modalActionText}>Close</Text>
+                  <Pressable style={[styles.modalActionButton, styles.tinyButton, { backgroundColor: '#E0E0E0' }]} onPress={closeModal}>
+                    <Text style={[styles.tinyActionText, { color: '#222' }]}>Close</Text>
                   </Pressable>
                 </View>
               </>
@@ -418,9 +444,32 @@ const styles = StyleSheet.create({
   modalActionButton: {
     backgroundColor: '#00C2FF',
     borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    marginHorizontal: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginHorizontal: 2,
+    minWidth: 60,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+  },
+  tinyButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    minWidth: 36,
+    borderRadius: 5,
+  },
+  initials: {
+    color: '#00C2FF',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  tinyActionText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 11,
+    textAlign: 'center',
   },
   modalActionText: {
     color: '#fff',

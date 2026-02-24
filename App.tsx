@@ -2134,9 +2134,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const raw = String(name ?? '').trim();
       const core = raw.replace(/^[@/]+/, '');
-      return '/' + (core || 'viber');
+      return core ? '@' + core : 'viber';
     } catch {
-      return '/viber';
+      return 'viber';
     }
   }, []);
                     
@@ -2144,7 +2144,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const trimmed = String(value ?? '')
       .trim()
       .replace(/^[@/]+/, '');
-    return trimmed ? `/${trimmed}` : '';
+    return trimmed;
   }, []);
   useEffect(() => {
     if (!myUid) {
@@ -9291,7 +9291,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         const myUid = auth?.()?.currentUser?.uid || null;
         // Primary: uid match
-        if (ownerUid && myUid && ownerUid === myUid) return '/You';
+        if (ownerUid && myUid && ownerUid === myUid) return 'You';
         // Fallback: name match against my profile/display/email prefix
         const norm = (s?: string | null) =>
           String(s || '')
@@ -9305,7 +9305,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           (auth?.()?.currentUser?.email || '').split('@')[0],
         );
         if (n && (n === myHandle || n === myDisplay || n === myEmailPrefix))
-          return '/You';
+          return 'You';
         return formatHandle(name || '');
       } catch {
         return formatHandle(name || '');
@@ -10768,7 +10768,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     // Photo is already uploaded to Firebase Storage and Firestore updated in EditableProfileAvatar
                     // Just update local state
                     setProfilePhoto(newUri);
-                    
                     // Also update userData state for immediate UI updates
                     const currentUser = auth()?.currentUser;
                     if (currentUser) {
@@ -10782,7 +10781,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         }
                       }));
                     }
-                    
                     try {
                       let firestoreMod: any = null;
                       let authMod: any = null;
@@ -17410,7 +17408,7 @@ const LiveStreamModal = ({
                       {(c as any).fromUid
                         ? displayHandle((c as any).fromUid, c.from)
                         : c.from === 'You'
-                        ? '/You'
+                        ? 'You'
                         : formatHandle(c.from)}
                       :
                     </Text>
@@ -17454,7 +17452,7 @@ const LiveStreamModal = ({
                 >
                   <View style={editorStyles.liveCommentBubble}>
                     <Text style={editorStyles.liveCommentAuthor}>
-                      {fc.from === 'You' ? '/You' : formatHandle(fc.from)}:
+                      {fc.from === 'You' ? 'You' : formatHandle(fc.from)}:
                     </Text>
                     <Text style={editorStyles.liveCommentText}>{fc.text}</Text>
                   </View>

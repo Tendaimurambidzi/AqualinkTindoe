@@ -336,24 +336,6 @@ const EditableProfileAvatar: React.FC<EditableProfileAvatarProps> = ({
           </View>
         )}
       </Pressable>
-      <View style={{ marginTop: 16, width: 200 }}>
-        <Text style={{ fontWeight: 'bold', marginBottom: 4 }}>Username</Text>
-        <TextInput
-          style={styles.usernameInput}
-          value={username}
-          onChangeText={setUsername}
-          placeholder="Enter username"
-          autoCapitalize="none"
-          autoCorrect={false}
-          editable={!loading}
-        />
-        <TouchableOpacity style={styles.saveButton} onPress={saveUsername} disabled={loading || !username.trim()}>
-          <Text style={styles.saveButtonText}>Save Username</Text>
-        </TouchableOpacity>
-        <Text style={{ marginTop: 8, color: '#888', fontSize: 12 }}>
-          {(!username.trim() && email) ? `Using email as fallback: ${email}` : ''}
-        </Text>
-      </View>
     </View>
   );
 };

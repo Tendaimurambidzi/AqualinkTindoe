@@ -84,7 +84,7 @@ const ProfilePreviewModal: React.FC<ProfilePreviewModalProps> = ({
                 showFleetCount={false}
               />
 
-              {/* Username */}
+              {/* Username (single, clean) */}
               <Text
                 style={{
                   fontSize: 20,
@@ -94,7 +94,12 @@ const ProfilePreviewModal: React.FC<ProfilePreviewModalProps> = ({
                   textAlign: 'center',
                 }}
               >
-                {userData?.name || userData?.displayName || 'User'}
+                {(() => {
+                  const raw = userData?.username || userData?.name || userData?.displayName || 'User';
+                  if (!raw) return 'User';
+                  const clean = String(raw).replace(/^[@/]+/, '');
+                  return '@' + clean;
+                })()}
               </Text>
 
               {/* Bio */}
