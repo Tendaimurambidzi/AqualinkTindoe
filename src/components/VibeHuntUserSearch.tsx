@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Fuse from 'fuse.js';
 import {
   View,
@@ -11,9 +11,11 @@ import {
   Pressable,
   Modal,
 } from 'react-native';
+import { getCrewCount, isInCrew, joinCrew, leaveCrew } from '../services/crewService';
 import firestore from '@react-native-firebase/firestore';
 
 // User type
+
 export type VibeUser = {
   uid: string;
   displayName: string;
@@ -21,6 +23,8 @@ export type VibeUser = {
   username?: string;
   email?: string;
 };
+
+import { useNavigation } from '@react-navigation/native';
 
 const VibeHuntUserSearch: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -30,6 +34,12 @@ const VibeHuntUserSearch: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<VibeUser | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
+  // Crew and profile modal state
+  const [crewCount, setCrewCount] = useState<number | null>(null);
+  const [inCrew, setInCrew] = useState<boolean>(false);
+  const [bio, setBio] = useState<string>('');
+  const [crewLoading, setCrewLoading] = useState(false);
+  const navigation = useNavigation();
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -87,14 +97,60 @@ const VibeHuntUserSearch: React.FC = () => {
     }
   };
 
-  const handleUserPress = (user: VibeUser) => {
+
+  const handleUserPress = async (user: VibeUser) => {
     setSelectedUser(user);
+    setCrewLoading(true);
+    setCrewCount(null);
+    setInCrew(false);
+    setBio('');
     setModalVisible(true);
+    try {
+      // Fetch crew count
+      const count = await getCrewCount(user.uid);
+      setCrewCount(count);
+      // Check if current user is in crew
+      const inCrewRes = await isInCrew(user.uid);
+      setInCrew(inCrewRes);
+      // Fetch bio
+      const userDoc = await firestore().collection('users').doc(user.uid).get();
+      setBio(userDoc.data()?.bio || '');
+    } catch (e) {
+      setCrewCount(null);
+      setInCrew(false);
+      setBio('');
+    } finally {
+      setCrewLoading(false);
+    }
   };
 
   const closeModal = () => {
     setModalVisible(false);
     setSelectedUser(null);
+    setCrewCount(null);
+    setInCrew(false);
+    setBio('');
+    setCrewLoading(false);
+  };
+
+  const handleConnectLeave = async () => {
+    if (!selectedUser) return;
+    setCrewLoading(true);
+    try {
+      if (inCrew) {
+        await leaveCrew(selectedUser.uid);
+        setInCrew(false);
+        setCrewCount((c) => (c !== null ? c - 1 : null));
+      } else {
+        await joinCrew(selectedUser.uid);
+        setInCrew(true);
+        setCrewCount((c) => (c !== null ? c + 1 : null));
+      }
+    } catch (e) {
+      // Optionally show error
+    } finally {
+      setCrewLoading(false);
+    }
   };
 
   const renderUser = ({ item }: { item: VibeUser }) => (
@@ -195,16 +251,40 @@ const VibeHuntUserSearch: React.FC = () => {
                 {selectedUser.username && (
                   <Text style={styles.modalUsername}>@{selectedUser.username}</Text>
                 )}
-                {/* Action Buttons */}
+                {bio ? (
+                  <Text style={{ color: '#444', fontSize: 14, marginBottom: 8, textAlign: 'center' }}>{bio}</Text>
+                ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+                  <Text style={{ color: '#00C2FF', fontWeight: 'bold', fontSize: 15 }}>
+                    Crew: {crewLoading ? '...' : crewCount !== null ? crewCount : '-'}
+                  </Text>
+                </View>
                 <View style={styles.modalActions}>
-                  <Pressable style={styles.modalActionButton} onPress={() => {/* TODO: View Profile */}}>
-                    <Text style={styles.modalActionText}>View Profile</Text>
+                  <Pressable
+                    style={[styles.modalActionButton, { backgroundColor: inCrew ? '#FF4444' : '#00C2FF' }]}
+                    onPress={handleConnectLeave}
+                    disabled={crewLoading}
+                  >
+                    <Text style={styles.modalActionText}>
+                      {crewLoading ? (inCrew ? 'Leaving...' : 'Connecting...') : inCrew ? 'Leave Tide' : 'Connect Tide'}
+                    </Text>
                   </Pressable>
-                  <Pressable style={styles.modalActionButton} onPress={() => {/* TODO: Invite to VIBE HUNT */}}>
-                    <Text style={styles.modalActionText}>Invite</Text>
+                  <Pressable
+                    style={styles.modalActionButton}
+                    onPress={() => {
+                      if (selectedUser) {
+                        closeModal();
+                        navigation.navigate('ChatScreen', {
+                          userId: selectedUser.uid,
+                          username: selectedUser.displayName || selectedUser.username || 'User',
+                        });
+                      }
+                    }}
+                  >
+                    <Text style={styles.modalActionText}>Chat</Text>
                   </Pressable>
                   <Pressable style={styles.modalActionButton} onPress={closeModal}>
-                    <Text style={styles.modalActionText}>Cancel</Text>
+                    <Text style={styles.modalActionText}>Close</Text>
                   </Pressable>
                 </View>
               </>
