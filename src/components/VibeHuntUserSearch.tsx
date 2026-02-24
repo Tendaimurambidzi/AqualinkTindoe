@@ -41,50 +41,40 @@ const VibeHuntUserSearch: React.FC = () => {
   const [crewLoading, setCrewLoading] = useState(false);
   const navigation = useNavigation();
 
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
+  // Only search when user clicks the button
+  const handleSearchButton = async () => {
     setError(null);
     setSuggestions([]);
-    if (!query.trim()) {
+    if (!searchQuery.trim()) {
       setResults([]);
       setSuggestions([]);
-      setError(null);
+      setError('Default: No search yet.');
       return;
     }
     setLoading(true);
     try {
       const usersRef = firestore().collection('users');
-      const displayNameSnap = await usersRef
-        .where('displayName', '>=', query)
-        .where('displayName', '<=', query + '\uf8ff')
-        .limit(20)
-        .get();
-      let users: VibeUser[] = displayNameSnap.docs.map(doc => ({
+      const allSnap = await usersRef.limit(200).get();
+      const allUsers: VibeUser[] = allSnap.docs.map(doc => ({
         uid: doc.id,
         displayName: doc.data().displayName || 'Anonymous',
         photoURL: doc.data().photoURL || null,
         username: doc.data().username,
         email: doc.data().email,
       }));
-      // Fuzzy suggestions if no exact match
-      if (users.length === 0) {
-        const allSnap = await usersRef.limit(100).get();
-        const allUsers: VibeUser[] = allSnap.docs.map(doc => ({
-          uid: doc.id,
-          displayName: doc.data().displayName || 'Anonymous',
-          photoURL: doc.data().photoURL || null,
-          username: doc.data().username,
-          email: doc.data().email,
-        }));
-        const fuse = new Fuse(allUsers, {
-          keys: ['displayName', 'username', 'email'],
-          threshold: 0.4,
-        });
-        const fuzzyResults = fuse.search(query).map(res => res.item);
-        setSuggestions(fuzzyResults.slice(0, 10));
-        setError('No exact results. Did you mean:');
+      const fuse = new Fuse(allUsers, {
+        keys: ['displayName', 'username', 'email'],
+        threshold: 0.5,
+        ignoreLocation: true,
+        minMatchCharLength: 2,
+      });
+      const fuzzyResults = fuse.search(searchQuery).map(res => res.item);
+      if (fuzzyResults.length === 0) {
+        setResults([]);
+        setSuggestions([]);
+        setError('Failed: No results.');
       } else {
-        setResults(users);
+        setResults(fuzzyResults);
         setSuggestions([]);
         setError(null);
       }
@@ -96,7 +86,6 @@ const VibeHuntUserSearch: React.FC = () => {
       setLoading(false);
     }
   };
-
 
   const handleUserPress = async (user: VibeUser) => {
     setSelectedUser(user);
@@ -196,10 +185,10 @@ const VibeHuntUserSearch: React.FC = () => {
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search VIBE HUNT users..."
+          placeholder="Search..."
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={searchQuery}
-          onChangeText={handleSearch}
+          onChangeText={setSearchQuery}
           autoCapitalize="none"
           autoCorrect={false}
           editable={!loading}
@@ -209,7 +198,7 @@ const VibeHuntUserSearch: React.FC = () => {
             styles.searchButton,
             pressed && styles.searchButtonPressed,
           ]}
-          onPress={() => handleSearch(searchQuery)}
+          onPress={handleSearchButton}
           disabled={loading}
         >
           {loading ? (
@@ -219,10 +208,9 @@ const VibeHuntUserSearch: React.FC = () => {
           )}
         </Pressable>
       </View>
-      {error && (
-        <View style={{ padding: 12, alignItems: 'center' }}>
-          <Text style={{ color: '#FF4444', fontWeight: 'bold' }}>{error}</Text>
-        </View>
+      {/* Show 'Not found.' if no results */}
+      {error === 'Failed: No results.' && (
+        <Text style={{ color: '#888', textAlign: 'center', marginTop: 16 }}>Not found.</Text>
       )}
       {results.length > 0 && (
         <View style={styles.resultsContainer}>
