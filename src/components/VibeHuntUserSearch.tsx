@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Fuse from 'fuse.js';
 import {
   View,
@@ -10,11 +10,15 @@ import {
   ActivityIndicator,
   Pressable,
   Modal,
+  ScrollView,
 } from 'react-native';
-import { getCrewCount, isInCrew, joinCrew, leaveCrew } from '../services/crewService';
+import {
+  getCrewCount,
+  isInCrew,
+  joinCrew,
+  leaveCrew,
+} from '../services/crewService';
 import firestore from '@react-native-firebase/firestore';
-
-// User type
 
 export type VibeUser = {
   uid: string;
@@ -28,6 +32,12 @@ interface VibeHuntUserSearchProps {
   onChatUserSelect?: (user: { uid: string; name: string }) => void;
 }
 
+const normalizeText = (value?: string | null) =>
+  String(value || '')
+    .trim()
+    .replace(/^[@/]+/, '')
+    .toLowerCase();
+
 const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   onProfilePhotoSelect,
   onChatUserSelect,
@@ -39,37 +49,30 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<VibeUser | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
-  // Crew and profile modal state
   const [crewCount, setCrewCount] = useState<number | null>(null);
   const [inCrew, setInCrew] = useState<boolean>(false);
   const [bio, setBio] = useState<string>('');
   const [crewLoading, setCrewLoading] = useState(false);
 
-  // Real-time sync for selected user's profile photo
   useEffect(() => {
     if (!selectedUser || !selectedUser.uid || !modalVisible) return;
     const unsubscribe = firestore()
       .collection('users')
       .doc(selectedUser.uid)
-      .onSnapshot((doc) => {
-        if (doc.exists) {
-          const data = doc.data() || {};
-          // Only update if photoURL or userPhoto changed
-          const newPhoto = data.photoURL || data.userPhoto || null;
-          setSelectedUser((prev) => {
-            if (!prev) return prev;
-            if (prev.photoURL !== newPhoto) {
-              if (onProfilePhotoSelect) onProfilePhotoSelect(newPhoto);
-              return { ...prev, photoURL: newPhoto };
-            }
-            return prev;
-          });
-        }
+      .onSnapshot(doc => {
+        if (!doc.exists) return;
+        const data = doc.data() || {};
+        const newPhoto = data.photoURL || data.userPhoto || null;
+        setSelectedUser(prev => {
+          if (!prev) return prev;
+          if (prev.photoURL === newPhoto) return prev;
+          if (onProfilePhotoSelect) onProfilePhotoSelect(newPhoto);
+          return { ...prev, photoURL: newPhoto };
+        });
       });
     return () => unsubscribe();
   }, [selectedUser?.uid, modalVisible]);
 
-  // Only search when user clicks the button
   const handleSearchButton = async () => {
     setError(null);
     setSuggestions([]);
@@ -87,26 +90,55 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         uid: doc.id,
         username: doc.data().username || 'Anonymous',
         photoURL: doc.data().photoURL || null,
-        username: doc.data().username,
         email: doc.data().email,
       }));
+
+      const queryNorm = normalizeText(searchQuery);
+      const exactMatches = allUsers.filter(user => {
+        const usernameNorm = normalizeText(user.username);
+        const emailNorm = normalizeText(user.email);
+        return usernameNorm === queryNorm || emailNorm === queryNorm;
+      });
+
+      const prefixMatches = allUsers.filter(user => {
+        const usernameNorm = normalizeText(user.username);
+        const emailNorm = normalizeText(user.email);
+        const isPrefix =
+          usernameNorm.startsWith(queryNorm) || emailNorm.startsWith(queryNorm);
+        const isExact =
+          usernameNorm === queryNorm || emailNorm === queryNorm;
+        return isPrefix && !isExact;
+      });
+
       const fuse = new Fuse(allUsers, {
         keys: ['username', 'email'],
-        threshold: 0.5,
+        threshold: 0.42,
         ignoreLocation: true,
         minMatchCharLength: 2,
       });
       const fuzzyResults = fuse.search(searchQuery).map(res => res.item);
-      if (fuzzyResults.length === 0) {
+
+      const seen = new Set<string>();
+      const orderedResults = [
+        ...exactMatches,
+        ...prefixMatches,
+        ...fuzzyResults,
+      ].filter(user => {
+        if (seen.has(user.uid)) return false;
+        seen.add(user.uid);
+        return true;
+      });
+
+      if (orderedResults.length === 0) {
         setResults([]);
         setSuggestions([]);
         setError('Failed: No results.');
       } else {
-        setResults(fuzzyResults);
+        setResults(orderedResults);
         setSuggestions([]);
         setError(null);
       }
-    } catch (error) {
+    } catch {
       setResults([]);
       setSuggestions([]);
       setError('Search failed. Please try again.');
@@ -122,28 +154,22 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
     setInCrew(false);
     setBio('');
     setModalVisible(true);
-    if (onProfilePhotoSelect) {
-      onProfilePhotoSelect(user.photoURL || null);
-    }
+    if (onProfilePhotoSelect) onProfilePhotoSelect(user.photoURL || null);
     try {
-      // Fetch crew count
       const count = await getCrewCount(user.uid);
       setCrewCount(count);
-      // Check if current user is in crew
       const inCrewRes = await isInCrew(user.uid);
       setInCrew(inCrewRes);
-      // Fetch bio
       const userDoc = await firestore().collection('users').doc(user.uid).get();
       const userData = userDoc.data() || {};
       setBio(userData.bio || '');
-      // Update selectedUser with latest photoURL if available
       if (userData.photoURL && userData.photoURL !== user.photoURL) {
-        setSelectedUser(prev => prev ? { ...prev, photoURL: userData.photoURL } : prev);
-        if (onProfilePhotoSelect) {
-          onProfilePhotoSelect(userData.photoURL);
-        }
+        setSelectedUser(prev =>
+          prev ? { ...prev, photoURL: userData.photoURL } : prev,
+        );
+        if (onProfilePhotoSelect) onProfilePhotoSelect(userData.photoURL);
       }
-    } catch (e) {
+    } catch {
       setCrewCount(null);
       setInCrew(false);
       setBio('');
@@ -168,20 +194,17 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       if (inCrew) {
         await leaveCrew(selectedUser.uid);
         setInCrew(false);
-        setCrewCount((c) => (c !== null ? c - 1 : null));
+        setCrewCount(c => (c !== null ? c - 1 : null));
       } else {
         await joinCrew(selectedUser.uid);
         setInCrew(true);
-        setCrewCount((c) => (c !== null ? c + 1 : null));
+        setCrewCount(c => (c !== null ? c + 1 : null));
       }
-    } catch (e) {
-      // Optionally show error
     } finally {
       setCrewLoading(false);
     }
   };
 
-  // Helper to get initials from username
   const getInitials = (user: VibeUser) => {
     const name = (user.username || '').replace(/^[@/]+/, '');
     if (!name) return '?';
@@ -190,26 +213,21 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
     return (parts[0][0] + parts[1][0]).toUpperCase();
   };
 
-  const cleanUsername = (username?: string) => {
-    if (!username) return '';
-    return username.replace(/^[@/]+/, '');
-  };
+  const cleanUsername = (username?: string) =>
+    String(username || '').replace(/^[@/]+/, '');
 
   const renderUser = ({ item }: { item: VibeUser }) => (
     <Pressable style={styles.userItem} onPress={() => handleUserPress(item)}>
       {item.photoURL ? (
-        <Image
-          source={{ uri: item.photoURL }}
-          style={styles.avatar}
-        />
+        <Image source={{ uri: item.photoURL }} style={styles.avatar} />
       ) : (
-        <View style={[styles.avatar, { backgroundColor: '#00C2FF33', justifyContent: 'center', alignItems: 'center' }]}> 
+        <View style={[styles.avatar, styles.avatarFallback]}>
           <Text style={styles.initials}>{getInitials(item)}</Text>
         </View>
       )}
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>{item.username}</Text>
-        {item.username && (
+        {!!item.username && (
           <Text style={styles.username}>{`@${cleanUsername(item.username)}`}</Text>
         )}
       </View>
@@ -222,7 +240,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search..."
+          placeholder="Search users or email"
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -245,10 +263,13 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           )}
         </Pressable>
       </View>
-      {/* Show 'Not found.' if no results */}
+
       {error === 'Failed: No results.' && (
-        <Text style={{ color: '#888', textAlign: 'center', marginTop: 16 }}>Not found.</Text>
+        <Text style={{ color: '#888', textAlign: 'center', marginTop: 16 }}>
+          Not found.
+        </Text>
       )}
+
       {results.length > 0 && (
         <View style={styles.resultsContainer}>
           <FlatList
@@ -260,6 +281,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           />
         </View>
       )}
+
       {suggestions.length > 0 && (
         <View style={styles.resultsContainer}>
           <FlatList
@@ -271,81 +293,98 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           />
         </View>
       )}
-      {/* User Action Modal */}
+
       <Modal
         visible={modalVisible}
         transparent
         animationType="fade"
         onRequestClose={closeModal}
       >
-        <Pressable
-          style={styles.modalOverlay}
-          onPress={closeModal}
-        >
+        <Pressable style={styles.modalOverlay} onPress={closeModal}>
           <Pressable
             style={styles.modalContent}
             onPress={e => e.stopPropagation()}
           >
             {selectedUser && (
               <>
-                {selectedUser.photoURL && selectedUser.photoURL.trim() !== '' ? (
-                  <Image
-                    source={{ uri: selectedUser.photoURL }}
-                    style={styles.modalAvatar}
-                    onError={() => {
-                      /* fallback to initials if image fails */
-                      selectedUser.photoURL = '';
-                    }}
-                  />
-                ) : (
-                  <View style={[styles.modalAvatar, { backgroundColor: '#00C2FF33', justifyContent: 'center', alignItems: 'center' }]}> 
-                    <Text style={styles.initials}>{getInitials(selectedUser)}</Text>
+                <Text style={styles.modalTitle}>Vibe Hunt Profile</Text>
+                <ScrollView
+                  style={styles.modalBody}
+                  contentContainerStyle={styles.modalBodyContent}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {selectedUser.photoURL && selectedUser.photoURL.trim() !== '' ? (
+                    <Image
+                      source={{ uri: selectedUser.photoURL }}
+                      style={styles.modalAvatar}
+                      onError={() => {
+                        setSelectedUser(prev =>
+                          prev ? { ...prev, photoURL: null } : prev,
+                        );
+                      }}
+                    />
+                  ) : (
+                    <View style={[styles.modalAvatar, styles.avatarFallback]}>
+                      <Text style={styles.initials}>{getInitials(selectedUser)}</Text>
+                    </View>
+                  )}
+                  <Text style={styles.modalDisplayName}>{selectedUser.username}</Text>
+                  {!!selectedUser.username && (
+                    <Text style={styles.modalUsername}>
+                      {`@${cleanUsername(selectedUser.username)}`}
+                    </Text>
+                  )}
+                  {bio ? (
+                    <Text style={styles.modalBio}>{bio}</Text>
+                  ) : (
+                    <Text style={styles.modalBioPlaceholder}>No bio yet.</Text>
+                  )}
+                  <View style={styles.crewRow}>
+                    <Text style={styles.crewText}>
+                      Crew: {crewLoading ? '...' : crewCount !== null ? crewCount : '-'}
+                    </Text>
                   </View>
-                )}
-                <Text style={styles.modalDisplayName}>{selectedUser.username}</Text>
-                {selectedUser.username && (
-                  <Text style={styles.modalUsername}>{`@${cleanUsername(selectedUser.username)}`}</Text>
-                )}
-                {bio ? (
-                  <Text style={{ color: '#444', fontSize: 14, marginBottom: 8, textAlign: 'center' }}>{bio}</Text>
-                ) : null}
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
-                  <Text style={{ color: '#00C2FF', fontWeight: 'bold', fontSize: 15 }}>
-                    Crew: {crewLoading ? '...' : crewCount !== null ? crewCount : '-'}
-                  </Text>
-                </View>
+                </ScrollView>
+
                 <View style={styles.modalActions}>
                   <Pressable
-                    style={[styles.modalActionButton, styles.tinyButton, { backgroundColor: inCrew ? '#FF4444' : '#00C2FF' }]}
-                    onPress={handleConnectLeave}
-                    disabled={crewLoading}
-                  >
-                    <Text style={styles.tinyActionText}>
-                      {crewLoading ? (inCrew ? 'Leaving...' : 'Connecting...') : inCrew ? 'Leave Tide' : 'Connect Tide'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.modalActionButton, styles.tinyButton]}
+                    style={[styles.modalActionButton, styles.primaryAction]}
                     onPress={() => {
-                      if (selectedUser) {
-                        const name =
-                          selectedUser.username ||
-                          selectedUser.email ||
-                          'User';
-                        closeModal();
-                        if (onChatUserSelect) {
-                          onChatUserSelect({
-                            uid: selectedUser.uid,
-                            name,
-                          });
-                        }
+                      if (!selectedUser) return;
+                      const name =
+                        selectedUser.username || selectedUser.email || 'User';
+                      closeModal();
+                      if (onChatUserSelect) {
+                        onChatUserSelect({ uid: selectedUser.uid, name });
                       }
                     }}
                   >
-                    <Text style={styles.tinyActionText}>Chat</Text>
+                    <Text style={styles.primaryActionText}>Message</Text>
                   </Pressable>
-                  <Pressable style={[styles.modalActionButton, styles.tinyButton, { backgroundColor: '#E0E0E0' }]} onPress={closeModal}>
-                    <Text style={[styles.tinyActionText, { color: '#222' }]}>Close</Text>
+                  <Pressable
+                    style={[
+                      styles.modalActionButton,
+                      inCrew ? styles.leaveAction : styles.connectAction,
+                      crewLoading && styles.disabledAction,
+                    ]}
+                    onPress={handleConnectLeave}
+                    disabled={crewLoading}
+                  >
+                    <Text style={styles.secondaryActionText}>
+                      {crewLoading
+                        ? inCrew
+                          ? 'Leaving...'
+                          : 'Connecting...'
+                        : inCrew
+                        ? 'Leave Tide'
+                        : 'Connect Tide'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.modalActionButton, styles.closeAction]}
+                    onPress={closeModal}
+                  >
+                    <Text style={styles.closeActionText}>Close</Text>
                   </Pressable>
                 </View>
               </>
@@ -391,7 +430,7 @@ const styles = StyleSheet.create({
     minWidth: 70,
   },
   searchButtonPressed: {
-    backgroundColor: '#0090bb',
+    backgroundColor: '#0090BB',
     opacity: 0.8,
   },
   searchButtonText: {
@@ -424,6 +463,11 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(0, 194, 255, 0.5)',
   },
+  avatarFallback: {
+    backgroundColor: '#00C2FF33',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   userInfo: {
     marginLeft: 12,
     flex: 1,
@@ -447,9 +491,22 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: 'white',
     borderRadius: 16,
-    padding: 24,
-    width: '85%',
-    maxWidth: 400,
+    padding: 20,
+    width: '88%',
+    maxWidth: 420,
+    maxHeight: '82%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#001529',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  modalBody: {
+    maxHeight: 360,
+  },
+  modalBodyContent: {
     alignItems: 'center',
   },
   modalAvatar: {
@@ -460,7 +517,7 @@ const styles = StyleSheet.create({
   },
   modalDisplayName: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#000',
     marginTop: 8,
     textAlign: 'center',
@@ -471,45 +528,82 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textAlign: 'center',
   },
-  modalActions: {
+  modalBio: {
+    color: '#334155',
+    fontSize: 14,
+    marginBottom: 10,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalBioPlaceholder: {
+    color: '#94A3B8',
+    fontSize: 14,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  crewRow: {
     flexDirection: 'row',
-    marginTop: 24,
-    gap: 12,
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  crewText: {
+    color: '#00C2FF',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
+  modalActions: {
+    marginTop: 16,
+    gap: 10,
   },
   modalActionButton: {
-    backgroundColor: '#00C2FF',
     borderRadius: 8,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    marginHorizontal: 2,
-    minWidth: 60,
+    width: '100%',
+    alignItems: 'center',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.12,
     shadowRadius: 2,
   },
-  tinyButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    minWidth: 36,
-    borderRadius: 5,
+  primaryAction: {
+    backgroundColor: '#00C2FF',
+  },
+  connectAction: {
+    backgroundColor: '#0EA5E9',
+  },
+  leaveAction: {
+    backgroundColor: '#EF4444',
+  },
+  closeAction: {
+    backgroundColor: '#E2E8F0',
+  },
+  disabledAction: {
+    opacity: 0.65,
   },
   initials: {
     color: '#00C2FF',
     fontWeight: 'bold',
     fontSize: 16,
   },
-  tinyActionText: {
+  primaryActionText: {
     color: '#fff',
-    fontWeight: '600',
-    fontSize: 11,
+    fontWeight: '700',
+    fontSize: 14,
     textAlign: 'center',
   },
-  modalActionText: {
+  secondaryActionText: {
     color: '#fff',
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  closeActionText: {
+    color: '#1E293B',
+    fontWeight: '700',
+    fontSize: 13,
+    textAlign: 'center',
   },
 });
 
