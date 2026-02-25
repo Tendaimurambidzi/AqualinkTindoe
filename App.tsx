@@ -3751,6 +3751,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     name?: string;
   } | null>(null);
   const [isUnifiedPosting, setIsUnifiedPosting] = useState<boolean>(false);
+  const [unifiedPostProgress, setUnifiedPostProgress] = useState<number | null>(null);
+  const [unifiedPostError, setUnifiedPostError] = useState<string | null>(null);
                     
   // DM subscription - adds messages to pings automatically
   useEffect(() => {
@@ -8971,8 +8973,38 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
     
+    setUnifiedPostError(null);
+    setUnifiedPostProgress(null);
     setIsUnifiedPosting(true);
     try {
+      const trackUploadTask = async (task: any) => {
+        if (!task) return;
+        let unsubscribe: any = null;
+        try {
+          if (typeof task.on === 'function') {
+            unsubscribe = task.on('state_changed', (snapshot: any) => {
+              try {
+                const total = Number(snapshot?.totalBytes || 0);
+                const transferred = Number(snapshot?.bytesTransferred || 0);
+                if (total > 0) {
+                  const percent = Math.max(
+                    1,
+                    Math.min(100, Math.round((transferred / total) * 100)),
+                  );
+                  setUnifiedPostProgress(percent);
+                }
+              } catch {}
+            });
+          }
+          await task;
+          setUnifiedPostProgress(100);
+        } finally {
+          try {
+            if (typeof unsubscribe === 'function') unsubscribe();
+          } catch {}
+        }
+      };
+
       if (unifiedPostMedia) {
         const mediaIsVideo = isVideoAsset(unifiedPostMedia);
         const mediaIsImage = isImageAsset(unifiedPostMedia);
@@ -9052,10 +9084,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             return;
           }
 
-          await storageMod().ref(filePath).putFile(localPath, {
-            contentType: mimeType,
-          });
-          const fileDownloadUrl = await storageMod().ref(filePath).getDownloadURL();
+          const fileRef = storageMod().ref(filePath);
+          await trackUploadTask(
+            fileRef.putFile(localPath, {
+              contentType: mimeType,
+            }),
+          );
+          const fileDownloadUrl = await fileRef.getDownloadURL();
           const docRef = await firestoreMod()
             .collection('waves')
             .add({
@@ -9194,8 +9229,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? 'audio/flac'
           : 'audio/mpeg';
 
-        await storageMod().ref(audioPath).putFile(audioLocal, { contentType: audioCt });
-        const audioDownloadUrl = await storageMod().ref(audioPath).getDownloadURL();
+        const audioRef = storageMod().ref(audioPath);
+        await trackUploadTask(
+          audioRef.putFile(audioLocal, { contentType: audioCt }),
+        );
+        const audioDownloadUrl = await audioRef.getDownloadURL();
 
         const docRef = await firestoreMod()
           .collection('waves')
@@ -9273,10 +9311,39 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     } catch (error) {
       console.error('Unified post error:', error);
-      Alert.alert('Error', 'Failed to create post. Please try again.');
+      const message =
+        (error as any)?.message ||
+        (typeof error === 'string' ? error : 'Failed to create post. Please try again.');
+      setUnifiedPostError(String(message));
+      Alert.alert('Error', `Failed to create post. ${message}`);
     } finally {
       setIsUnifiedPosting(false);
+      setUnifiedPostProgress(null);
     }
+  };
+
+  const openMessageThread = (targetUid: string, targetName?: string) => {
+    if (!targetUid) return;
+
+    const resolvedName = displayHandle(targetUid, targetName || targetUid);
+    const existingThread = messageThreads.find(
+      thread => thread.senderUid === targetUid,
+    );
+
+    setSelectedThread({
+      senderUid: targetUid,
+      senderName: existingThread?.senderName || resolvedName,
+      senderAvatar:
+        existingThread?.senderAvatar || getUserAvatar(targetUid, userData || {}),
+      messages: existingThread?.messages || [],
+    });
+    setSelectedMessageForReply(null);
+    setQuickReplyText('');
+    setIsThreadSelectionMode(false);
+    setSelectedThreadMessages(new Set());
+    setShowPings(false);
+    setShowSendMessage(false);
+    setShowInbox(true);
   };
   
   const closeUnifiedPostModal = () => {
@@ -9284,6 +9351,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setUnifiedPostText('');
     setUnifiedPostMedia(null);
     setUnifiedPostAudio(null);
+    setUnifiedPostError(null);
+    setUnifiedPostProgress(null);
   };
                     
   // Map a user identifier to display label; show "/You" for the signed-in user
@@ -10125,13 +10194,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   clearTimeout(driftAlertTimerRef.current);
                   driftAlertTimerRef.current = null;
                 }
-                setMessageRecipient({
-                  uid: vibeAlert.hostUid,
-                  name: vibeAlert.hostName,
-                });
-                setMessageText('');
-                setMessageAttachment(null);
-                setShowSendMessage(true);
+                openMessageThread(vibeAlert.hostUid, vibeAlert.hostName);
               }}
               hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
               pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11764,110 +11827,124 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </View>
                   )}
 
-                  {/* Quick Reply Input - Only visible when a message is selected */}
-                  {selectedMessageForReply && (
-                    <View style={{
-                      marginTop: 16,
-                      backgroundColor: 'rgba(255,255,255,0.05)',
-                      borderRadius: 8,
-                      padding: 12,
+                  <View style={{
+                    marginTop: 16,
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    borderRadius: 8,
+                    padding: 12,
+                  }}>
+                    <Text style={{
+                      color: 'rgba(255,255,255,0.8)',
+                      fontSize: 12,
+                      marginBottom: 8,
+                      fontWeight: 'bold',
                     }}>
-                      <Text style={{
-                        color: 'rgba(255,255,255,0.8)',
-                        fontSize: 12,
-                        marginBottom: 8,
-                        fontWeight: 'bold',
-                      }}>
-                        Reply to {selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <TextInput
-                          ref={replyInputRef}
-                          style={{
-                            flex: 1,
-                            backgroundColor: 'rgba(255,255,255,0.1)',
-                            borderRadius: 6,
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            color: 'white',
-                            fontSize: 14,
-                            marginRight: 8,
-                          }}
-                          placeholder="Type a message..."
-                          placeholderTextColor="rgba(255,255,255,0.5)"
-                          value={quickReplyText}
-                          onChangeText={setQuickReplyText}
-                          multiline
-                          maxLength={500}
-                          autoFocus={true}
-                        />
-                        <Pressable
-                          style={{
-                            backgroundColor: quickReplyText.trim() ? '#FFD700' : 'rgba(255,255,255,0.2)',
-                            borderRadius: 6,
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                          }}
-                          onPress={async () => {
-                            if (!quickReplyText.trim()) return;
+                      {selectedMessageForReply
+                        ? `Reply to ${selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}`
+                        : `Message ${selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}`}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <TextInput
+                        ref={replyInputRef}
+                        style={{
+                          flex: 1,
+                          backgroundColor: 'rgba(255,255,255,0.1)',
+                          borderRadius: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          color: 'white',
+                          fontSize: 14,
+                          marginRight: 8,
+                        }}
+                        placeholder="Type a message..."
+                        placeholderTextColor="rgba(255,255,255,0.5)"
+                        value={quickReplyText}
+                        onChangeText={setQuickReplyText}
+                        multiline
+                        maxLength={500}
+                        autoFocus={!!selectedMessageForReply}
+                      />
+                      <Pressable
+                        style={{
+                          backgroundColor: quickReplyText.trim() ? '#FFD700' : 'rgba(255,255,255,0.2)',
+                          borderRadius: 6,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                        }}
+                        onPress={async () => {
+                          if (!quickReplyText.trim()) return;
 
-                            try {
-                              const messageData = {
-                                text: quickReplyText.trim(),
-                                createdAt: new Date(),
-                                senderUid: userData?.uid || '',
-                                senderName: userData?.handle || 'You',
-                                read: false,
-                              };
+                          try {
+                            const outgoingText = quickReplyText.trim();
+                            await sendMessage(selectedThread.senderUid, outgoingText);
 
-                              // Add to local thread
-                              const updatedThread = {
-                                ...selectedThread,
-                                messages: [...selectedThread.messages, messageData],
-                              };
-                              setSelectedThread(updatedThread);
+                            const messageData = {
+                              id: `local_${Date.now()}`,
+                              text: outgoingText,
+                              fromUid: auth().currentUser?.uid || '',
+                              createdAt: { toDate: () => new Date() },
+                            };
 
-                              // Update threads state
-                              setMessageThreads(prev => prev.map(thread =>
-                                thread.senderUid === selectedThread.senderUid
-                                  ? updatedThread
-                                  : thread
-                              ));
+                            const updatedThread = {
+                              ...selectedThread,
+                              messages: [...selectedThread.messages, messageData],
+                            };
+                            setSelectedThread(updatedThread);
 
-                              // Send to Firebase
-                              await sendMessage(selectedThread.senderUid, quickReplyText.trim());
+                            setMessageThreads(prev => {
+                              const idx = prev.findIndex(
+                                thread => thread.senderUid === selectedThread.senderUid,
+                              );
+                              if (idx >= 0) {
+                                const next = [...prev];
+                                next[idx] = {
+                                  ...next[idx],
+                                  lastMessage: outgoingText,
+                                  lastMessageTime: { toDate: () => new Date() },
+                                  messages: updatedThread.messages,
+                                };
+                                return next;
+                              }
+                              return [
+                                {
+                                  senderUid: selectedThread.senderUid,
+                                  senderName: selectedThread.senderName,
+                                  senderAvatar: selectedThread.senderAvatar,
+                                  lastMessage: outgoingText,
+                                  lastMessageTime: { toDate: () => new Date() },
+                                  unreadCount: 0,
+                                  messages: updatedThread.messages,
+                                },
+                                ...prev,
+                              ];
+                            });
 
-                              // Clear input and selection
-                              setQuickReplyText('');
-                              setSelectedMessageForReply(null);
-
-                              // Show success feedback
-                              Alert.alert('Sent!', 'Your reply has been sent.');
-                            } catch (error) {
-                              console.error('Error sending quick reply:', error);
-                              Alert.alert('Error', 'Failed to send message. Please try again.');
-                            }
-                          }}
-                          disabled={!quickReplyText.trim()}
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          delayPressIn={0}
-                          delayPressOut={0}
-                          activeOpacity={0.7}
-                          android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
-                        >
-                          <Text style={{
-                            color: quickReplyText.trim() ? '#000' : 'rgba(255,255,255,0.5)',
-                            fontSize: 12,
-                            fontWeight: 'bold',
-                          }}>
-                            Send
-                          </Text>
-                        </Pressable>
-                      </View>
+                            setQuickReplyText('');
+                            setSelectedMessageForReply(null);
+                          } catch (error) {
+                            console.error('Error sending quick reply:', error);
+                            Alert.alert('Error', 'Failed to send message. Please try again.');
+                          }
+                        }}
+                        disabled={!quickReplyText.trim()}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        delayPressIn={0}
+                        delayPressOut={0}
+                        activeOpacity={0.7}
+                        android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
+                      >
+                        <Text style={{
+                          color: quickReplyText.trim() ? '#000' : 'rgba(255,255,255,0.5)',
+                          fontSize: 12,
+                          fontWeight: 'bold',
+                        }}>
+                          Send
+                        </Text>
+                      </Pressable>
                     </View>
-                  )}
+                  </View>
                 </ScrollView>
                 </>
               )}
@@ -12324,7 +12401,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               {/* Text Input */}
               <TextInput
                 placeholder="What's the story?"
-                placeholder="What's the story?"
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 value={unifiedPostText}
                 onChangeText={setUnifiedPostText}
@@ -12333,30 +12409,121 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 numberOfLines={4}
                 textAlignVertical="top"
               />
+
+              {isUnifiedPosting && (
+                <View
+                  style={{
+                    marginTop: 12,
+                    marginBottom: 4,
+                    padding: 10,
+                    borderRadius: 8,
+                    backgroundColor: 'rgba(0,194,255,0.15)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(0,194,255,0.35)',
+                  }}
+                >
+                  <Text style={{ color: '#CFF6FF', fontSize: 12, fontWeight: '700' }}>
+                    Uploading...
+                    {typeof unifiedPostProgress === 'number'
+                      ? ` ${unifiedPostProgress}%`
+                      : ' preparing files'}
+                  </Text>
+                  <View
+                    style={{
+                      marginTop: 8,
+                      height: 6,
+                      borderRadius: 4,
+                      backgroundColor: 'rgba(255,255,255,0.2)',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <View
+                      style={{
+                        height: '100%',
+                        width: `${Math.max(5, Math.min(100, unifiedPostProgress ?? 5))}%`,
+                        backgroundColor: '#00C2FF',
+                      }}
+                    />
+                  </View>
+                </View>
+              )}
+
+              {!!unifiedPostError && !isUnifiedPosting && (
+                <View
+                  style={{
+                    marginTop: 12,
+                    marginBottom: 4,
+                    padding: 10,
+                    borderRadius: 8,
+                    backgroundColor: 'rgba(255,68,68,0.12)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,68,68,0.35)',
+                  }}
+                >
+                  <Text style={{ color: '#FFD9D9', fontSize: 12 }}>
+                    Post failed: {unifiedPostError}
+                  </Text>
+                  <Pressable
+                    onPress={handleUnifiedPost}
+                    style={{
+                      marginTop: 8,
+                      alignSelf: 'flex-start',
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 6,
+                      backgroundColor: '#ff7a00',
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                      Retry Post
+                    </Text>
+                  </Pressable>
+                </View>
+              )}
               
               {/* Action Buttons */}
               <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
                 <Pressable
                   onPress={handleUnifiedCameraCapture}
-                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                  disabled={isUnifiedPosting}
+                  style={[
+                    styles.logbookAction,
+                    { padding: 12, minWidth: 80 },
+                    isUnifiedPosting && { opacity: 0.5 },
+                  ]}
                 >
                   <Text style={styles.logbookActionText}>📷</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleUnifiedGallerySelect}
-                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                  disabled={isUnifiedPosting}
+                  style={[
+                    styles.logbookAction,
+                    { padding: 12, minWidth: 80 },
+                    isUnifiedPosting && { opacity: 0.5 },
+                  ]}
                 >
                   <Text style={styles.logbookActionText}>🖼️</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleSDCardPicker}
-                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                  disabled={isUnifiedPosting}
+                  style={[
+                    styles.logbookAction,
+                    { padding: 12, minWidth: 80 },
+                    isUnifiedPosting && { opacity: 0.5 },
+                  ]}
                 >
                   <Text style={styles.logbookActionText}>📁</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleUnifiedAudioSelect}
-                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                  disabled={isUnifiedPosting}
+                  style={[
+                    styles.logbookAction,
+                    { padding: 12, minWidth: 80 },
+                    isUnifiedPosting && { opacity: 0.5 },
+                  ]}
                 >
                   <Text style={styles.logbookActionText}>🎵</Text>
                 </Pressable>
@@ -12365,6 +12532,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.textComposerButton}
                   onPress={closeUnifiedPostModal}
+                  disabled={isUnifiedPosting}
                 >
                   <Text style={styles.textComposerButtonText}>Cancel</Text>
                 </Pressable>
@@ -12475,16 +12643,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Pressable
                           style={[styles.pingButton, { marginTop: 8 }]}
                           onPress={() => {
-                            setShowPings(false);
-                            setMessageRecipient({
-                              uid: (p as any).fromUid,
-                              name: displayHandle(
-                                (p as any).fromUid,
-                                p.actorName,
-                              ),
-                            });
-                            setMessageText('');
-                            setShowSendMessage(true);
+                            openMessageThread(
+                              (p as any).fromUid,
+                              displayHandle((p as any).fromUid, p.actorName),
+                            );
                           }}
                         >
                           <Text style={{ color: '#00C2FF', fontWeight: '700' }}>
@@ -12509,16 +12671,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <Pressable
                           style={[styles.pingButton, { marginTop: 8 }]}
                           onPress={() => {
-                            setShowPings(false);
-                            setMessageRecipient({
-                              uid: (p as any).fromUid,
-                              name: displayHandle(
-                                (p as any).fromUid,
-                                p.actorName,
-                              ),
-                            });
-                            setMessageText('');
-                            setShowSendMessage(true);
+                            openMessageThread(
+                              (p as any).fromUid,
+                              displayHandle((p as any).fromUid, p.actorName),
+                            );
                           }}
                         >
                           <Text style={{ color: '#00C2FF', fontWeight: '700' }}>
@@ -12531,16 +12687,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           <Pressable
                             style={[styles.pingButton, { flex: 1, marginRight: 4 }]}
                             onPress={() => {
-                              setShowPings(false);
-                              setMessageRecipient({
-                                uid: (p as any).fromUid,
-                                name: displayHandle(
-                                  (p as any).fromUid,
-                                  p.actorName,
-                                ),
-                              });
-                              setMessageText('');
-                              setShowSendMessage(true);
+                              openMessageThread(
+                                (p as any).fromUid,
+                                displayHandle((p as any).fromUid, p.actorName),
+                              );
                             }}
                           >
                             <Text style={{ color: '#00C2FF', fontWeight: '700', fontSize: 12 }}>
@@ -13595,13 +13745,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 onProfilePhotoSelect={setProfilePhoto}
                 onChatUserSelect={(targetUser) => {
                   setShowDeepSearch(false);
-                  setMessageRecipient({
-                    uid: targetUser.uid,
-                    name: targetUser.name,
-                  });
-                  setMessageText('');
-                  setMessageAttachment(null);
-                  setShowSendMessage(true);
+                  openMessageThread(targetUser.uid, targetUser.name);
                 }}
               /> 
             </React.Suspense> 
@@ -14923,9 +15067,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         waveOptionsTarget.authorName || targetUid,
                       );
                       setWaveOptionsTarget(null);
-                      setMessageRecipient({ uid: targetUid, name: targetName });
-                      setMessageText('');
-                      setShowSendMessage(true);
+                      openMessageThread(targetUid, targetName);
                     }}
                   >
                     <Text style={styles.waveOptionsItemTitle}>✉️ Echo Vibe</Text>
@@ -16658,11 +16800,9 @@ const LiveStreamModal = ({
   };
                     
   const sendPrivateMessage = (userId: string, username: string) => {
-    // Open the built-in Send Message modal (writes to Firestore)
+    // Open messaging thread in VIBE ALERTS
     try {
-      setMessageRecipient({ uid: userId, name: username });
-      setMessageText('');
-      setShowSendMessage(true);
+      openMessageThread(userId, username);
     } catch {
       Alert.alert(
         'Send Message',
