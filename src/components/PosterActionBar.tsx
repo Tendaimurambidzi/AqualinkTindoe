@@ -41,6 +41,8 @@ interface PosterActionBarProps {
   onAnchor: () => void;
   onCast: () => void;
   creatorUserId: string;
+  splashSyncStatus?: 'idle' | 'saving' | 'error';
+  onRetrySplash?: () => void;
 }
 
 // Main component
@@ -59,6 +61,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   onAnchor,
   onCast,
   creatorUserId,
+  splashSyncStatus = 'idle',
+  onRetrySplash,
 }) => {
   const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
   const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
@@ -77,6 +81,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   // Connectivity state
   const [isOnline, setIsOnline] = useState(true);
   const hugsCount = Math.max(0, splashesCount);
+  const isSplashSyncing = splashSyncStatus === 'saving';
 
   // Fetch user data for the creator of the post
   useEffect(() => {
@@ -251,8 +256,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Hugs Button (with icon and count) */}
       <Pressable
         onPress={handleHugAction}
+        disabled={isSplashSyncing}
         style={({ pressed }) => [
           styles.textButton,
+          isSplashSyncing && styles.disabledButton,
           pressed && styles.pressedButton
         ]}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
@@ -262,10 +269,28 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <View style={styles.buttonContent}>
           <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>🫂</Text>
           <Text style={[styles.actionLabel, hasHugged ? styles.blueCount : styles.whiteCount]}>
-            {hasHugged ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
+            {isSplashSyncing ? 'Syncing...' : hasHugged ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
           </Text>
         </View>
       </Pressable>
+
+      {splashSyncStatus === 'error' && (
+        <Pressable
+          onPress={onRetrySplash}
+          style={({ pressed }) => [
+            styles.retryButton,
+            pressed && styles.pressedButton
+          ]}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+        >
+          <View style={styles.buttonContent}>
+            <Text style={styles.actionIconSmall}>↻</Text>
+            <Text style={styles.actionLabel}>Retry Hug</Text>
+          </View>
+        </Pressable>
+      )}
 
       {/* Echoes Button (with icon and count) */}
       <Pressable
@@ -281,7 +306,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <View style={styles.buttonContent}>
           <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>📣</Text>
           <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
-            Echo ({echoesCount})
+            {hasEchoed ? 'Echoed' : 'Echo'} ({echoesCount})
           </Text>
         </View>
       </Pressable>
@@ -476,6 +501,20 @@ const styles = StyleSheet.create({
   pressedButton: {
     opacity: 0.6,
     transform: [{ scale: 0.9 }],
+  },
+  disabledButton: {
+    opacity: 0.65,
+  },
+  retryButton: {
+    backgroundColor: '#ff7a00',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    minWidth: 36,
+    minHeight: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 4,
   },
   buttonContent: {
     flexDirection: 'row',

@@ -204,6 +204,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [showProfilePreview, setShowProfilePreview] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [audioControlsVisible, setAudioControlsVisible] = useState(false);
+  const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
   const audioControlsTimerRef = useRef<any>(null);
 
   const revealAudioControlsTemporarily = useCallback(() => {
@@ -473,6 +475,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   }, [item.link]);
 
   const handleAddSplash = useCallback(() => {
+    setLastSplashAction('add');
+    setSplashSyncStatus('saving');
     // IMMEDIATE UI UPDATE - no delay
     const updateFeeds = (feed: Vibe[]) =>
       feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v);
@@ -483,20 +487,27 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     setPostFeed(updateFeeds);
 
     // Database operation in background
-    ensureSplash(item.id).catch((error) => {
-      console.error('Error adding splash:', error);
-      // Revert UI on error
-      const revertFeeds = (feed: Vibe[]) =>
-        feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v);
+    ensureSplash(item.id)
+      .then(() => {
+        setSplashSyncStatus('idle');
+      })
+      .catch((error) => {
+        console.error('Error adding splash:', error);
+        // Revert UI on error
+        const revertFeeds = (feed: Vibe[]) =>
+          feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v);
 
-      setWavesFeed(revertFeeds);
-      setVibesFeed(revertFeeds);
-      setPublicFeed(revertFeeds);
-      setPostFeed(revertFeeds);
-    });
+        setWavesFeed(revertFeeds);
+        setVibesFeed(revertFeeds);
+        setPublicFeed(revertFeeds);
+        setPostFeed(revertFeeds);
+        setSplashSyncStatus('error');
+      });
   }, [item.id, ensureSplash, setWavesFeed, setVibesFeed, setPublicFeed, setPostFeed]);
 
   const handleRemoveSplash = useCallback(() => {
+    setLastSplashAction('remove');
+    setSplashSyncStatus('saving');
     // IMMEDIATE UI UPDATE - no delay
     const updateFeeds = (feed: Vibe[]) =>
       feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v);
@@ -507,18 +518,31 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     setPostFeed(updateFeeds);
 
     // Database operation in background
-    removeSplash(item.id).catch((error) => {
-      console.error('Error removing splash:', error);
-      // Revert UI on error
-      const revertFeeds = (feed: Vibe[]) =>
-        feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v);
+    removeSplash(item.id)
+      .then(() => {
+        setSplashSyncStatus('idle');
+      })
+      .catch((error) => {
+        console.error('Error removing splash:', error);
+        // Revert UI on error
+        const revertFeeds = (feed: Vibe[]) =>
+          feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v);
 
-      setWavesFeed(revertFeeds);
-      setVibesFeed(revertFeeds);
-      setPublicFeed(revertFeeds);
-      setPostFeed(revertFeeds);
-    });
+        setWavesFeed(revertFeeds);
+        setVibesFeed(revertFeeds);
+        setPublicFeed(revertFeeds);
+        setPostFeed(revertFeeds);
+        setSplashSyncStatus('error');
+      });
   }, [item.id, removeSplash, setWavesFeed, setVibesFeed, setPublicFeed, setPostFeed]);
+
+  const handleRetrySplashSync = useCallback(() => {
+    if (lastSplashAction === 'add') {
+      handleAddSplash();
+    } else if (lastSplashAction === 'remove') {
+      handleRemoveSplash();
+    }
+  }, [lastSplashAction, handleAddSplash, handleRemoveSplash]);
 
   const handleEcho = useCallback(() => {
     setEchoWaveId(item.id);
@@ -1332,6 +1356,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           onPearl={handlePearl}
           onAnchor={handleAnchor}
           onCast={handleCast}
+          splashSyncStatus={splashSyncStatus}
+          onRetrySplash={handleRetrySplashSync}
         />
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>

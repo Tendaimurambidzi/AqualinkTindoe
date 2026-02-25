@@ -307,7 +307,6 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           >
             {selectedUser && (
               <>
-                <Text style={styles.modalTitle}>Vibe Hunt Profile</Text>
                 <ScrollView
                   style={styles.modalBody}
                   contentContainerStyle={styles.modalBodyContent}
