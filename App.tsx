@@ -2742,6 +2742,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isThreadSelectionMode, setIsThreadSelectionMode] = useState(false);
   
   const [showInbox, setShowInbox] = useState(false);
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'messages' | 'activity'>('all');
+  const [inboxSearchQuery, setInboxSearchQuery] = useState('');
   const [selectedThread, setSelectedThread] = useState<{
     senderUid: string;
     senderName: string;
@@ -11168,6 +11170,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         animationType="none"
         onRequestClose={() => {
           setShowInbox(false);
+          setInboxFilter('all');
+          setInboxSearchQuery('');
           setSelectedThread(null);
           setIsDeleteMode(false);
           setSelectedNotifications(new Set());
@@ -11282,6 +11286,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     return timeB.getTime() - timeA.getTime(); // Most recent first
                   });
 
+                  const messageCount = unifiedNotifications.filter(item => item.type === 'thread').length;
+                  const activityCount = unifiedNotifications.filter(item => item.type === 'notification').length;
+                  const query = inboxSearchQuery.trim().toLowerCase();
+                  const filteredNotifications = unifiedNotifications.filter(item => {
+                    const matchesFilter =
+                      inboxFilter === 'all' ||
+                      (inboxFilter === 'messages' && item.type === 'thread') ||
+                      (inboxFilter === 'activity' && item.type === 'notification');
+                    if (!matchesFilter) return false;
+
+                    if (!query) return true;
+                    const sender = String(item.senderName || '').toLowerCase();
+                    const message = String(item.message || '').toLowerCase();
+                    return sender.includes(query) || message.includes(query);
+                  });
+
                   if (unifiedNotifications.length === 0) {
                     return (
                       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -11297,10 +11317,85 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                   return (
                     <>
-                      <FlatList
-                      data={unifiedNotifications}
-                      keyExtractor={(item) => item.id}
-                      renderItem={({ item }) => {
+                      <View style={{ marginBottom: 12 }}>
+                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                          <Pressable
+                            onPress={() => setInboxFilter('all')}
+                            style={{
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 14,
+                              backgroundColor: inboxFilter === 'all' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                              All ({unifiedNotifications.length})
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => setInboxFilter('messages')}
+                            style={{
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 14,
+                              backgroundColor: inboxFilter === 'messages' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                              Messages ({messageCount})
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => setInboxFilter('activity')}
+                            style={{
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 14,
+                              backgroundColor: inboxFilter === 'activity' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                              Activity ({activityCount})
+                            </Text>
+                          </Pressable>
+                        </View>
+                        <TextInput
+                          value={inboxSearchQuery}
+                          onChangeText={setInboxSearchQuery}
+                          placeholder="Search by name or message..."
+                          placeholderTextColor="rgba(255,255,255,0.45)"
+                          style={{
+                            color: 'white',
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.2)',
+                            borderRadius: 8,
+                            paddingHorizontal: 12,
+                            paddingVertical: 9,
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                          }}
+                        />
+                      </View>
+                      {filteredNotifications.length === 0 ? (
+                        <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                          <Text style={{ color: 'white', fontSize: 15, fontWeight: '700' }}>
+                            No matching results
+                          </Text>
+                          <Text
+                            style={{
+                              color: 'rgba(255,255,255,0.65)',
+                              fontSize: 13,
+                              marginTop: 6,
+                              textAlign: 'center',
+                            }}
+                          >
+                            Try a different name or keyword.
+                          </Text>
+                        </View>
+                      ) : (
+                        <FlatList
+                        data={filteredNotifications}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => {
                         const getAvatarLetter = (name: string) => {
                           if (!name || name.trim() === '') return '?';
                           const cleanName = name.trim();
@@ -11488,9 +11583,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             </View>
                           </Pressable>
                         );
-                      }}
-                      showsVerticalScrollIndicator={false}
-                    />
+                        }}
+                        showsVerticalScrollIndicator={false}
+                      />
+                      )}
 
                     {/* Selection Action Bar */}
                     {isDeleteMode && (
@@ -12040,6 +12136,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             style={styles.dismissBtn}
             onPress={() => {
               setShowInbox(false);
+              setInboxFilter('all');
+              setInboxSearchQuery('');
               setSelectedThread(null);
               setSelectedMessageForReply(null);
               setIsDeleteMode(false);
