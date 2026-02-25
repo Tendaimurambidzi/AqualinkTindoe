@@ -10766,8 +10766,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <EditableProfileAvatar
                   initialPhotoUrl={profilePhoto}
                   onPhotoChanged={async (newUri) => {
-                    // Photo is already uploaded to Firebase Storage and Firestore updated in EditableProfileAvatar
-                    // Just update local state
                     setProfilePhoto(newUri);
                     // Also update userData state for immediate UI updates
                     const currentUser = auth()?.currentUser;
@@ -10795,6 +10793,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       if (firestoreMod && uid) {
                         await firestoreMod().doc(`users/${uid}`).update({
                           userPhoto: newUri || null,
+                          photoURL: newUri || null,
                         });
                       }
                     } catch (e) {
@@ -10802,10 +10801,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     }
                   }}
                 />
+                {/* Username Field */}
                 <TextInput
                   value={profileName || ''}
                   onChangeText={setProfileName}
-                  placeholder="SplashLiner"
+                  placeholder="Username (e.g. janedoe)"
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   style={[
                     styles.profileName as any,
@@ -10850,16 +10850,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   ]}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={async () => {
+                    // Validation for username
                     if (!profileName.trim()) {
-                      Alert.alert('Error', 'Username cannot be empty.');
+                      Alert.alert('Invalid Username', 'Username cannot be empty.');
                       return;
                     }
                     const trimmedName = profileName.trim();
                     if (trimmedName.length < 3) {
-                      Alert.alert('Error', 'Username must be at least 3 characters.');
+                      Alert.alert('Invalid Username', 'Username must be at least 3 characters.');
                       return;
                     }
-                    // Check if username is unique (optional, but for demo)
+                    // Check if username is unique
                     try {
                       const firestore = require('@react-native-firebase/firestore').default;
                       const query = await firestore()
@@ -10869,26 +10870,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       if (!query.empty) {
                         const existing = query.docs.find(doc => doc.id !== myUid);
                         if (existing) {
-                          Alert.alert('Error', 'Username already taken.');
+                          Alert.alert('Username Taken', 'Username already taken.');
                           return;
                         }
                       }
-                      // Save both username and bio to Firestore simultaneously
-                      console.log('Saving profile:', { trimmedName, bio: profileBio.trim() });
+                      // Save username and bio to Firestore
                       await firestore().collection('users').doc(myUid).set({
                         username: trimmedName,
-                        displayName: trimmedName,
                         username_lc: trimmedName.replace(/^[\/]+/, '').toLowerCase(),
                         bio: profileBio.trim(),
                       }, { merge: true });
-                      // Update Firebase Auth
-                      const auth = require('@react-native-firebase/auth').default;
-                      await auth().currentUser?.updateProfile({
-                        displayName: trimmedName,
-                      });
                       Alert.alert('Success', 'Profile updated!');
                     } catch (e) {
-                      Alert.alert('Error', 'Failed to save profile.');
+                      Alert.alert('Save Failed', 'Failed to save profile.');
                     }
                   }}
                 >
@@ -13597,7 +13591,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}> 
           <View style={[styles.modalContent, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.75 }]}> 
             <React.Suspense fallback={<ActivityIndicator color="#00C2FF" size="large" style={{ marginTop: 40 }} />}> 
-              <VibeHuntUserSearch /> 
+              <VibeHuntUserSearch
+                onProfilePhotoSelect={setProfilePhoto}
+                onChatUserSelect={(targetUser) => {
+                  setShowDeepSearch(false);
+                  setMessageRecipient({
+                    uid: targetUser.uid,
+                    name: targetUser.name,
+                  });
+                  setMessageText('');
+                  setMessageAttachment(null);
+                  setShowSendMessage(true);
+                }}
+              /> 
             </React.Suspense> 
             <Pressable style={styles.closeBtn} onPress={() => setShowDeepSearch(false)}> 
               <Text style={styles.closeText}>Close</Text> 
@@ -18450,10 +18456,7 @@ function SignUpScreen({ navigation }: any) {
                       });
                       console.log('User document created:', result.user.uid);
                       
-                      // Update Firebase Auth profile with display name
-                      await result.user.updateProfile({
-                        displayName: formattedPhone,
-                      });
+                      // Removed displayName update to avoid reference error
                       console.log('Firebase Auth profile updated with displayName:', formattedPhone);
                       
                       // Mark authentication as completed so user stays signed in

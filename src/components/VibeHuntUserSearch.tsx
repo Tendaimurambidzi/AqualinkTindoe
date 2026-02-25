@@ -18,15 +18,20 @@ import firestore from '@react-native-firebase/firestore';
 
 export type VibeUser = {
   uid: string;
-  displayName: string;
   photoURL: string | null;
   username?: string;
   email?: string;
 };
 
-import { useNavigation } from '@react-navigation/native';
+interface VibeHuntUserSearchProps {
+  onProfilePhotoSelect?: (photoURL: string | null) => void;
+  onChatUserSelect?: (user: { uid: string; name: string }) => void;
+}
 
-const VibeHuntUserSearch: React.FC = () => {
+const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
+  onProfilePhotoSelect,
+  onChatUserSelect,
+}) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<VibeUser[]>([]);
   const [suggestions, setSuggestions] = useState<VibeUser[]>([]);
@@ -39,7 +44,30 @@ const VibeHuntUserSearch: React.FC = () => {
   const [inCrew, setInCrew] = useState<boolean>(false);
   const [bio, setBio] = useState<string>('');
   const [crewLoading, setCrewLoading] = useState(false);
-  const navigation = useNavigation();
+
+  // Real-time sync for selected user's profile photo
+  useEffect(() => {
+    if (!selectedUser || !selectedUser.uid || !modalVisible) return;
+    const unsubscribe = firestore()
+      .collection('users')
+      .doc(selectedUser.uid)
+      .onSnapshot((doc) => {
+        if (doc.exists) {
+          const data = doc.data() || {};
+          // Only update if photoURL or userPhoto changed
+          const newPhoto = data.photoURL || data.userPhoto || null;
+          setSelectedUser((prev) => {
+            if (!prev) return prev;
+            if (prev.photoURL !== newPhoto) {
+              if (onProfilePhotoSelect) onProfilePhotoSelect(newPhoto);
+              return { ...prev, photoURL: newPhoto };
+            }
+            return prev;
+          });
+        }
+      });
+    return () => unsubscribe();
+  }, [selectedUser?.uid, modalVisible]);
 
   // Only search when user clicks the button
   const handleSearchButton = async () => {
@@ -57,13 +85,13 @@ const VibeHuntUserSearch: React.FC = () => {
       const allSnap = await usersRef.limit(200).get();
       const allUsers: VibeUser[] = allSnap.docs.map(doc => ({
         uid: doc.id,
-        displayName: doc.data().displayName || 'Anonymous',
+        username: doc.data().username || 'Anonymous',
         photoURL: doc.data().photoURL || null,
         username: doc.data().username,
         email: doc.data().email,
       }));
       const fuse = new Fuse(allUsers, {
-        keys: ['displayName', 'username', 'email'],
+        keys: ['username', 'email'],
         threshold: 0.5,
         ignoreLocation: true,
         minMatchCharLength: 2,
@@ -94,6 +122,9 @@ const VibeHuntUserSearch: React.FC = () => {
     setInCrew(false);
     setBio('');
     setModalVisible(true);
+    if (onProfilePhotoSelect) {
+      onProfilePhotoSelect(user.photoURL || null);
+    }
     try {
       // Fetch crew count
       const count = await getCrewCount(user.uid);
@@ -103,7 +134,15 @@ const VibeHuntUserSearch: React.FC = () => {
       setInCrew(inCrewRes);
       // Fetch bio
       const userDoc = await firestore().collection('users').doc(user.uid).get();
-      setBio(userDoc.data()?.bio || '');
+      const userData = userDoc.data() || {};
+      setBio(userData.bio || '');
+      // Update selectedUser with latest photoURL if available
+      if (userData.photoURL && userData.photoURL !== user.photoURL) {
+        setSelectedUser(prev => prev ? { ...prev, photoURL: userData.photoURL } : prev);
+        if (onProfilePhotoSelect) {
+          onProfilePhotoSelect(userData.photoURL);
+        }
+      }
     } catch (e) {
       setCrewCount(null);
       setInCrew(false);
@@ -142,9 +181,9 @@ const VibeHuntUserSearch: React.FC = () => {
     }
   };
 
-  // Helper to get initials from displayName or username
+  // Helper to get initials from username
   const getInitials = (user: VibeUser) => {
-    const name = (user.displayName || user.username || '').replace(/^[@/]+/, '');
+    const name = (user.username || '').replace(/^[@/]+/, '');
     if (!name) return '?';
     const parts = name.trim().split(' ');
     if (parts.length === 1) return parts[0][0]?.toUpperCase() || '?';
@@ -169,12 +208,10 @@ const VibeHuntUserSearch: React.FC = () => {
         </View>
       )}
       <View style={styles.userInfo}>
-        <Text style={styles.displayName}>{item.displayName}</Text>
-        {item.username ? (
-          <Text style={styles.username}>{cleanUsername(item.username)}</Text>
-        ) : item.email ? (
-          <Text style={styles.username}>{item.email}</Text>
-        ) : null}
+        <Text style={styles.displayName}>{item.username}</Text>
+        {item.username && (
+          <Text style={styles.username}>{`@${cleanUsername(item.username)}`}</Text>
+        )}
       </View>
     </Pressable>
   );
@@ -251,19 +288,23 @@ const VibeHuntUserSearch: React.FC = () => {
           >
             {selectedUser && (
               <>
-                {selectedUser.photoURL ? (
+                {selectedUser.photoURL && selectedUser.photoURL.trim() !== '' ? (
                   <Image
                     source={{ uri: selectedUser.photoURL }}
                     style={styles.modalAvatar}
+                    onError={() => {
+                      /* fallback to initials if image fails */
+                      selectedUser.photoURL = '';
+                    }}
                   />
                 ) : (
                   <View style={[styles.modalAvatar, { backgroundColor: '#00C2FF33', justifyContent: 'center', alignItems: 'center' }]}> 
                     <Text style={styles.initials}>{getInitials(selectedUser)}</Text>
                   </View>
                 )}
-                <Text style={styles.modalDisplayName}>{selectedUser.displayName}</Text>
+                <Text style={styles.modalDisplayName}>{selectedUser.username}</Text>
                 {selectedUser.username && (
-                  <Text style={styles.modalUsername}>{cleanUsername(selectedUser.username)}</Text>
+                  <Text style={styles.modalUsername}>{`@${cleanUsername(selectedUser.username)}`}</Text>
                 )}
                 {bio ? (
                   <Text style={{ color: '#444', fontSize: 14, marginBottom: 8, textAlign: 'center' }}>{bio}</Text>
@@ -287,11 +328,17 @@ const VibeHuntUserSearch: React.FC = () => {
                     style={[styles.modalActionButton, styles.tinyButton]}
                     onPress={() => {
                       if (selectedUser) {
+                        const name =
+                          selectedUser.username ||
+                          selectedUser.email ||
+                          'User';
                         closeModal();
-                        navigation.navigate('ChatScreen', {
-                          userId: selectedUser.uid,
-                          username: selectedUser.displayName || selectedUser.username || 'User',
-                        });
+                        if (onChatUserSelect) {
+                          onChatUserSelect({
+                            uid: selectedUser.uid,
+                            name,
+                          });
+                        }
                       }
                     }}
                   >

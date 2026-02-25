@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "949459497604",
+    "project_id": "aqualink-b5f7c",
+    "storage_bucket": "aqualink-b5f7c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:949459497604:android:263bd73a1cf5872752c8d1",
+        "android_client_info": {
+          "package_name": "com.aqualink.tindo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAf5mNhawAkWRXvVqR9cmLu8QPHkUayFqk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

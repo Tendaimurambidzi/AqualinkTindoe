@@ -38,6 +38,20 @@ const ChatScreen: React.FC<ChatScreenProps> = ({ route }) => {
         to: userId,
         createdAt: firestore.FieldValue.serverTimestamp(),
       });
+    // Trigger VIBE ALERT for recipient
+    try {
+      const app = require('../../App');
+      if (app && app.showVibeAlert) {
+        app.showVibeAlert({
+          hostUid: currentUser.uid,
+          liveId: chatId,
+          hostName: currentUser.displayName || 'You',
+          hostPhoto: currentUser.photoURL || null,
+        });
+      }
+    } catch (e) {
+      // fallback: do nothing
+    }
     setInput('');
   };
 

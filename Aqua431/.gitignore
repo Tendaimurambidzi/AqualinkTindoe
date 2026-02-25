@@ -1,0 +1,15 @@
+# Ignore build and intermediate files
+build/
+app/build/
+android/app/build/
+android/.cxx/
+node_modules/
+*.log
+*.ps1
+*.bundle
+.idea/
+.vscode/
+.DS_Store
+*.apk
+*.tmp
+*.bak

@@ -30,6 +30,9 @@ build/
 local.properties
 *.iml
 *.hprof
+app/.cxx/
+app/build/
+android/app/build/
 .cxx/
 *.keystore
 !debug.keystore
