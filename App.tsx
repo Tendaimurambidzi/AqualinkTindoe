@@ -6,6 +6,7 @@ import React, {
   useRef,
   useCallback,
 } from 'react';
+import Fuse from 'fuse.js';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
 import { createNavigationContainerRef } from '@react-navigation/native';
@@ -928,13 +929,13 @@ const styles = StyleSheet.create({
                     
   // Generic button for logbook-style modals
   primaryBtn: {
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: '#00C2FF',
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderColor: '#00C2FF',
   },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '800' },
   hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
@@ -16007,6 +16008,7 @@ const LiveStreamModal = ({
   };
                     
   const searchInviteCandidates = async () => {
+    setInviteBusy(true);
     try {
       let firestoreMod: any = null;
       try {
@@ -16015,24 +16017,19 @@ const LiveStreamModal = ({
       const q = (inviteQuery || '').trim();
       if (!q || !firestoreMod) {
         setInviteResults([]);
+        setInviteBusy(false);
         return;
       }
-      // Exact match on displayName or email for simplicity
-      const out: Array<{
-        uid: string;
-        name?: string;
-        email?: string;
-        photo?: string;
-      }> = [];
+      // Fetch a batch of users for fuzzy search
+      let users: Array<{ uid: string; name?: string; email?: string; photo?: string }> = [];
       try {
         const snap = await firestoreMod()
           .collection('users')
-          .where('displayName', '==', q.replace(/^@/, ''))
-          .limit(10)
+          .limit(100)
           .get();
         snap.forEach((d: any) => {
           const data = d.data();
-          out.push({
+          users.push({
             uid: d.id,
             name: data?.displayName,
             email: data?.email || null,
@@ -16040,25 +16037,19 @@ const LiveStreamModal = ({
           });
         });
       } catch {}
-      try {
-        const snap2 = await firestoreMod()
-          .collection('users')
-          .where('email', '==', q.toLowerCase())
-          .limit(10)
-          .get();
-        snap2.forEach((d: any) => {
-          const data = d.data();
-          if (!out.find(x => x.uid === d.id))
-            out.push({
-              uid: d.id,
-              name: data?.displayName,
-              email: data?.email || null,
-              photo: data?.photoURL || null,
-            });
-        });
-      } catch {}
-      setInviteResults(out);
-    } catch {}
+      // Fuzzy search using Fuse.js
+      const fuse = new Fuse(users, {
+        keys: ['name', 'email', 'uid'],
+        threshold: 0.4,
+        minMatchCharLength: 2,
+      });
+      const results = fuse.search(q).map(r => r.item).slice(0, 10);
+      setInviteResults(results);
+    } catch (e) {
+      setInviteResults([]);
+    } finally {
+      setInviteBusy(false);
+    }
   };
                     
   const inviteUserToDrift = async (targetUid: string) => {
@@ -17139,6 +17130,7 @@ const LiveStreamModal = ({
       borderWidth: 1,
       alignSelf: 'flex-start',
       marginBottom: 8,
+      backgroundColor: '#00C2FF',
     },
     searchButtonText: {
       color: '#00C2FF',
@@ -17779,11 +17771,14 @@ const LiveStreamModal = ({
               <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
                 <Pressable
                   disabled={inviteBusy}
-                  style={[styles.primaryBtn, { flex: 1 }]}
+                  style={[styles.primaryBtn, { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}
                   onPress={searchInviteCandidates}
                 >
+                  {inviteBusy ? (
+                    <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
+                  ) : null}
                   <Text style={styles.primaryBtnText}>
-                    {inviteBusy ? '...' : 'Search'}
+                    Search
                   </Text>
                 </Pressable>
                 <Pressable
