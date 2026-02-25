@@ -9325,14 +9325,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const openMessageThread = (targetUid: string, targetName?: string) => {
     if (!targetUid) return;
 
-    const resolvedName = displayHandle(targetUid, targetName || targetUid);
+    const cleanThreadName = (rawName?: string) =>
+      String(rawName || '').replace(/\s+IJ$/, '').trim();
+    const resolvedName = cleanThreadName(
+      displayHandle(targetUid, targetName || targetUid),
+    );
     const existingThread = messageThreads.find(
       thread => thread.senderUid === targetUid,
     );
 
     setSelectedThread({
       senderUid: targetUid,
-      senderName: existingThread?.senderName || resolvedName,
+      senderName: cleanThreadName(existingThread?.senderName) || resolvedName,
       senderAvatar:
         existingThread?.senderAvatar || getUserAvatar(targetUid, userData || {}),
       messages: existingThread?.messages || [],
@@ -9354,6 +9358,78 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setUnifiedPostError(null);
     setUnifiedPostProgress(null);
   };
+
+  useEffect(() => {
+    if (!showInbox) return;
+    loadMessageThreads();
+  }, [showInbox]);
+
+  useEffect(() => {
+    if (!showInbox || !selectedThread?.senderUid || !myUid) return;
+
+    const senderUid = selectedThread.senderUid;
+    const cleanThreadName = (rawName?: string) =>
+      String(rawName || '').replace(/\s+IJ$/, '').trim();
+
+    const unsubscribe = firestore()
+      .collection(`users/${myUid}/messages`)
+      .where('fromUid', '==', senderUid)
+      .orderBy('createdAt', 'asc')
+      .limit(200)
+      .onSnapshot(
+        snapshot => {
+          const liveMessages = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+
+          const latest = liveMessages[liveMessages.length - 1] as any;
+          const senderName =
+            cleanThreadName(
+              latest?.fromName || selectedThread.senderName || senderUid,
+            ) || senderUid;
+
+          setSelectedThread(prev => {
+            if (!prev || prev.senderUid !== senderUid) return prev;
+            return {
+              ...prev,
+              senderName,
+              messages: liveMessages,
+            };
+          });
+
+          setMessageThreads(prev => {
+            const index = prev.findIndex(thread => thread.senderUid === senderUid);
+            const nextThread = {
+              senderUid,
+              senderName,
+              senderAvatar:
+                prev[index]?.senderAvatar || getUserAvatar(senderUid, userData || {}),
+              lastMessage: latest?.text || prev[index]?.lastMessage || '',
+              lastMessageTime: latest?.createdAt || prev[index]?.lastMessageTime || null,
+              unreadCount: prev[index]?.unreadCount || 0,
+              messages: liveMessages,
+            };
+
+            if (index >= 0) {
+              const next = [...prev];
+              next[index] = nextThread;
+              return next;
+            }
+            return [nextThread, ...prev];
+          });
+        },
+        error => {
+          console.error('Live thread subscription error:', error);
+        },
+      );
+
+    return () => {
+      try {
+        unsubscribe();
+      } catch {}
+    };
+  }, [showInbox, selectedThread?.senderUid, myUid, userData]);
                     
   // Map a user identifier to display label; show "/You" for the signed-in user
   const displayHandle = useCallback(
@@ -11533,26 +11609,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ) : (
                 // Thread view - individual conversation
                 <>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                  <View style={{ marginBottom: 16 }}>
                     <Text style={[styles.logbookTitle, { textAlign: 'left', flex: 1 }]}>
-                      {selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}
+                      {String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}
                     </Text>
-                    <Pressable
-                      onPress={() => {
-                        setSelectedThread(null);
-                        setSelectedMessageForReply(null);
-                        setIsThreadSelectionMode(false);
-                        setSelectedThreadMessages(new Set());
-                      }}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                      delayPressIn={0}
-                      delayPressOut={0}
-                    >
-                      <Text style={{ color: 'white', fontSize: 16 }}>←</Text>
-                    </Pressable>
                   </View>
                   <ScrollView style={{ flex: 1 }}>
-                  {selectedThread.messages.map((message, index) => (
+                  {selectedThread.messages.length === 0 ? (
+                    <View
+                      style={{
+                        marginTop: 24,
+                        padding: 16,
+                        borderRadius: 8,
+                        backgroundColor: 'rgba(255,255,255,0.06)',
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: 'white',
+                          fontSize: 15,
+                          fontWeight: '700',
+                          marginBottom: 6,
+                        }}
+                      >
+                        No messages yet
+                      </Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>
+                        Start the conversation using the message box below.
+                      </Text>
+                    </View>
+                  ) : selectedThread.messages.map((message, index) => (
                     <Pressable
                       key={message.id || index}
                       style={{
@@ -11840,8 +11926,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       fontWeight: 'bold',
                     }}>
                       {selectedMessageForReply
-                        ? `Reply to ${selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}`
-                        : `Message ${selectedThread.senderName.replace(' IJ', '').replace('IJ', '')}`}
+                        ? `Reply to ${String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}`
+                        : `Message ${String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}`}
                     </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                       <TextInput
