@@ -64,7 +64,7 @@ type Props = {
 const VideoWithTapControls: React.FC<Props> = ({
   source,
   style = {},
-  hideTimeout = 3000,
+  hideTimeout = 4000,
   seekStep = 10,
   paused = false,
   maxBitRate,
@@ -108,19 +108,8 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
 
   useEffect(() => {
-    setInternalPaused(paused);
-  }, [paused]);
-
-  useEffect(() => {
     setIsLoading(true);
   }, [resolvedUri]);
-
-  useEffect(() => {
-    if (!isActive) {
-      setInternalPaused(true);
-      setIsMuted(true);
-    }
-  }, [isActive]);
 
   // Unmute immediately when video becomes active and is playing
   useEffect(() => {
@@ -130,6 +119,7 @@ const VideoWithTapControls: React.FC<Props> = ({
       setIsMuted(true);
     }
   }, [internalPaused, videoCompleted, isActive]);
+
 
   const showControls = useCallback(() => {
     if (hideTimer.current) {
@@ -143,33 +133,10 @@ const VideoWithTapControls: React.FC<Props> = ({
       useNativeDriver: true,
     }).start();
 
-    // Only auto-hide controls after timeout if video is not loading
-    if (!isLoading) {
-      hideTimer.current = setTimeout(() => {
-        hideControls();
-      }, hideTimeout);
-    }
-  }, [hideTimeout, controlsOpacity, isLoading]);
-
-  const showControlsWithTimeout = useCallback((timeout: number) => {
-    if (hideTimer.current) {
-      clearTimeout(hideTimer.current);
-      hideTimer.current = null;
-    }
-    setControlsVisible(true);
-    Animated.timing(controlsOpacity, {
-      toValue: 1,
-      duration: 50, // Reduced from 180ms to 50ms for immediate response
-      useNativeDriver: true,
-    }).start();
-
-    // Auto-hide controls after specified timeout (unless loading)
-    if (!isLoading) {
-      hideTimer.current = setTimeout(() => {
-        hideControls();
-      }, timeout);
-    }
-  }, [controlsOpacity, isLoading]);
+    hideTimer.current = setTimeout(() => {
+      hideControls();
+    }, hideTimeout);
+  }, [hideTimeout, controlsOpacity]);
 
   const hideControls = useCallback(() => {
     if (hideTimer.current) {
@@ -190,6 +157,22 @@ const VideoWithTapControls: React.FC<Props> = ({
       setCurrentTime(t);
     }
   }, [duration]);
+
+  // Autoplay every time the item becomes active in view.
+  useEffect(() => {
+    if (isActive && !paused) {
+      if (videoCompleted) {
+        safeSeek(0);
+        setVideoCompleted(false);
+      }
+      hasCalledOnPlay.current = false;
+      setInternalPaused(false);
+      return;
+    }
+    setInternalPaused(true);
+    setIsMuted(true);
+    hideControls();
+  }, [isActive, paused, videoCompleted, safeSeek, hideControls]);
 
   const onVideoTap = useCallback((event: any) => {
     const { locationX } = event.nativeEvent;
@@ -234,29 +217,17 @@ const VideoWithTapControls: React.FC<Props> = ({
       setVideoCompleted(false);
       setInternalPaused(false);
     } else {
-      const willStartPlaying = internalPaused;
       setInternalPaused(prev => !prev);
-      
-      // If starting playback (pressing play), maximize (if available) and unmute
-      if (willStartPlaying) {
-        setIsMuted(false); // Unmute when starting playback
-        showControlsWithTimeout(3000);
-      } else {
-        showControls();
-      }
+      setIsMuted(false);
+      showControls();
     }
-  }, [videoCompleted, safeSeek, showControls, showControlsWithTimeout, internalPaused, onMaximize]);
+  }, [videoCompleted, safeSeek, showControls]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);
     setIsLoading(false); // Video has loaded
-    if (!internalPaused) {
-      showControlsWithTimeout(3000);
-    } else {
-      showControls();
-    }
     onLoad?.(meta);
-  }, [onLoad, showControlsWithTimeout, internalPaused, showControls]);
+  }, [onLoad]);
 
   const handleProgress = useCallback((data: OnProgressData) => {
     setCurrentTime(data.currentTime);
@@ -274,8 +245,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const handleEnd = useCallback(() => {
     setVideoCompleted(true);
     setInternalPaused(true);
-    showControls();
-  }, [showControls]);
+  }, []);
 
   useEffect(() => {
     if (videoId) {
