@@ -3,7 +3,6 @@ import React, {useRef, useState, useEffect, useCallback, useMemo} from "react";
 import {
   View,
   TouchableWithoutFeedback,
-  TouchableOpacity,
   StyleSheet,
   Animated,
   Text,
@@ -637,20 +636,26 @@ const styles = StyleSheet.create({
   },
   timeContainer: {
     position: 'absolute',
-    bottom: 12,
-    // Push right by 5mm (approx 19px at 96dpi, but use PixelRatio for accuracy if needed)
-    left: SCREEN_WIDTH * 0.18 + 19 + 11, // 11px ≈ 3mm more (total 8mm)
-    width: SCREEN_WIDTH * 0.45, // ~to 3/4 of Gems button (adjust as needed)
+    bottom: 14,
+    left: 14,
+    right: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.55)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    minHeight: 28,
-    maxHeight: 32,
+    backgroundColor: 'rgba(5,12,20,0.62)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    minHeight: 34,
     zIndex: 10,
+  },
+  timeText: {
+    color: '#E6EDF5',
+    fontSize: 13,
+    fontWeight: '700',
+    fontVariant: ['tabular-nums'],
   },
   muteButton: {
     padding: 4,
@@ -690,3 +695,4 @@ const styles = StyleSheet.create({
 });
 
 export default VideoWithTapControls;
+

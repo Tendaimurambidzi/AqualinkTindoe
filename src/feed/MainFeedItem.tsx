@@ -14,6 +14,23 @@ import { formatPresenceLastSeenExact } from '../services/timeUtils';
 import { Asset } from 'react-native-image-picker';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const ui = {
+  colors: {
+    card: '#FFFFFF',
+    border: '#D9E2EF',
+    heading: '#12263A',
+    body: '#243B53',
+    subtle: '#627D98',
+    link: '#0B69FF',
+    accent: '#00A3BF',
+    accentSoft: '#E6F7FB',
+    success: '#1F9D55',
+    danger: '#E12D39',
+  },
+  radius: { md: 12, lg: 16, xl: 20 },
+  spacing: { xs: 4, sm: 8, md: 12, lg: 16 },
+  type: { title: 16, body: 15, caption: 12, meta: 11 },
+};
 let RNVideo: any = null;
 try {
   RNVideo = require('react-native-video').default;
@@ -854,19 +871,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
   return (
     <Pressable>
-      <View
-        style={{
-          marginHorizontal: 0,
-          marginVertical: 5,
-          borderRadius: 0,
-          padding: 10,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 4,
-          elevation: 3,
-        }}
-      >
+      <View style={styles.feedCard}>
         {/* Online Users List - Only show on video posts */}
         {hasVideoMedia && (
           <OnlineUsersList
@@ -882,33 +887,16 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           onClose={() => setShowProfilePreview(false)}
           onChat={handleChatWithUser}
         />
-        <View style={{
-          backgroundColor: 'transparent',
-          marginHorizontal: 0,
-          paddingHorizontal: 0,
-          marginTop: 0,
-          paddingTop: 0,
-          marginBottom: 0,
-          paddingBottom: 0
-        }}>
+        <View style={styles.postBody}>
           {/* Post Header */}
-          <View style={{
-            position: 'relative',
-            alignItems: 'center',
-            marginBottom: 10,
-            paddingHorizontal: 10
-          }}>
+          <View style={styles.postHeader}>
             {/* Menu button positioned absolutely in top-right */}
-            <View style={{ position: 'absolute', top: 0, right: 10 }}>
+            <View style={styles.menuButtonWrap}>
               <Pressable
                 onPress={() => openWaveOptions(item)}
                 style={({ pressed }) => [
-                  { padding: 10 },
-                  pressed && {
-                    opacity: 0.7,
-                    transform: [{ scale: 0.9 }],
-                    backgroundColor: 'rgba(0, 0, 0, 0.3)', // Add dark background when pressed
-                  }
+                  styles.iconPress,
+                  pressed && styles.iconPressActive,
                 ]}
                 hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
                 delayPressIn={0}
@@ -916,31 +904,21 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 activeOpacity={0.7}
                 android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
               >
-                <Text style={{ fontSize: 32 }}>⋮</Text>
+                <Text style={styles.menuIcon}>⋮</Text>
               </Pressable>
             </View>
 
             {/* Centered Profile Info */}
-            <View style={{ alignItems: 'center' }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+            <View style={styles.centeredHeader}>
+              <View style={styles.headerTopRow}>
                 {/* Connect/Disconnect Button */}
                 {item.ownerUid !== myUid && (
                   <Pressable
                     onPress={() => handleToggleVibe(item.ownerUid!, item.authorName || item.user?.name)}
                     style={({ pressed }) => [
-                      {
-                        paddingVertical: 6,
-                        paddingHorizontal: 12,
-                        borderRadius: 15,
-                        borderWidth: 1,
-                        borderColor: isInUserCrew[item.ownerUid!] ? '#ff4444' : '#00C2FF',
-                        backgroundColor: isInUserCrew[item.ownerUid!] ? '#ff4444' : '#00C2FF',
-                        marginRight: 10,
-                      },
-                      pressed && {
-                        opacity: 0.7,
-                        transform: [{ scale: 0.95 }],
-                      }
+                      styles.joinButton,
+                      isInUserCrew[item.ownerUid!] ? styles.joinButtonLeave : styles.joinButtonJoin,
+                      pressed && styles.buttonPressed,
                     ]}
                     hitSlop={{ top: 30, bottom: 30, left: 20, right: 20 }}
                     delayPressIn={0}
@@ -948,11 +926,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     activeOpacity={0.7}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
                   >
-                    <Text style={{
-                      color: 'white',
-                      fontSize: 12,
-                      fontWeight: '600',
-                    }}>
+                    <Text style={styles.joinButtonText}>
                       {isInUserCrew[item.ownerUid!] ? 'Leave Tide' : 'Join Tide'}
                     </Text>
                   </Pressable>
@@ -986,8 +960,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
               {/* Username and Bio directly under avatar */}
               <Text style={{
-                fontWeight: 'bold',
-                fontSize: 14,
+                fontWeight: '700',
+                fontSize: ui.type.title,
+                color: ui.colors.heading,
                 textAlign: 'center',
                 marginBottom: 2
               }}>
@@ -1018,8 +993,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                   >
                     <Text style={{
-                      color: '#8B0000',
-                      fontSize: 12,
+                      color: ui.colors.subtle,
+                      fontSize: ui.type.caption,
                       textAlign: 'center',
                       fontStyle: 'italic'
                     }}>
@@ -1029,8 +1004,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 ) : null;
               })()}
               <Text style={{
-                color: 'gray',
-                fontSize: 12,
+                color: ui.colors.subtle,
+                fontSize: ui.type.caption,
                 textAlign: 'center'
               }}>
                 {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || null)}
@@ -1043,7 +1018,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <>
               {/* Post Text (if any) */}
               {item.captionText && (
-                <View style={{ marginBottom: 10 }}>
+                <View style={styles.captionWrap}>
                   <ClickableTextWithLinks
                     text={
                       expandedPosts[item.id]
@@ -1052,29 +1027,19 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         ? item.captionText.substring(0, 500) + '...'
                         : item.captionText
                     }
-                    style={{ fontSize: 16, lineHeight: 20 }}
+                    style={styles.captionText}
                   />
                 </View>
               )}
 
               {/* Post Link (if any) */}
               {item.link && (
-                <View style={{ marginBottom: 10 }}>
+                <View style={styles.linkWrap}>
                   <Pressable
                     onPress={handleLinkPress}
-                    style={{
-                      backgroundColor: '#E3F2FD',
-                      padding: 8,
-                      borderRadius: 4,
-                      borderWidth: 1,
-                      borderColor: '#2196F3'
-                    }}
+                    style={({ pressed }) => [styles.linkPill, pressed && styles.buttonPressed]}
                   >
-                    <Text style={{
-                      color: '#1976D2',
-                      fontSize: 16,
-                      textDecorationLine: 'underline'
-                    }}>
+                    <Text style={styles.linkText}>
                       {item.link}
                     </Text>
                   </Pressable>
@@ -1379,13 +1344,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
           {/* Read More - positioned above footer */}
           {item.captionText && item.captionText.length > 500 && (
-            <Pressable onPress={handleReadMore} style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}>
-              <Text style={{ color: 'blue', fontSize: 14 }}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
+            <Pressable onPress={handleReadMore} style={styles.readMoreButton}>
+              <Text style={styles.readMoreText}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
             </Pressable>
           )}
         </View>
 
-        <View style={{ height: 2, backgroundColor: 'darkblue', width: '100%', marginHorizontal: -20 }} />
+        <View style={styles.sectionDivider} />
 
         <PosterActionBar
           waveId={item.id}
@@ -1406,23 +1371,23 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           onRetrySplash={handleRetrySplashSync}
         />
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 10, paddingHorizontal: 15 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsRow}>
           <Pressable
             onPress={handleReachPress}
-            style={{ flexDirection: 'row', marginRight: 20 }}
+            style={({ pressed }) => [styles.statChip, pressed && styles.buttonPressed]}
           >
-            <Text style={{ fontSize: 14, color: 'red' }}>👁️ Reach: </Text>
-            <Text style={{ fontSize: 14, color: 'black' }}>{reachCounts[item.id] || 0}</Text>
+            <Text style={styles.statLabel}>👁 Reach: </Text>
+            <Text style={styles.statValue}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
           {item.ownerUid !== myUid && (
-            <Text style={{ fontSize: 11, color: isHereNow ? '#16a34a' : '#6b7280', marginRight: 20, fontWeight: '700' }}>
+            <Text style={[styles.presenceText, { color: isHereNow ? ui.colors.success : ui.colors.subtle }]}>
               {isHereNow ? 'Here Now!' : (status || fallbackAwayText)}
             </Text>
           )}
-          {item.user?.name !== "Tendaimurambidzi" && <Text style={{ fontSize: 14, color: 'red', marginRight: 20 }}>📚 More from creator</Text>}
+          {item.user?.name !== "Tendaimurambidzi" && <Text style={styles.moreFromCreator}>📚 More from creator</Text>}
         </ScrollView>
 
-        <View style={{ marginTop: 15, paddingHorizontal: 15 }}>
+        <View style={styles.echoSection}>
           {/* Echoes Section */}
           {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
             <View style={{ marginTop: 10 }}>
@@ -1440,11 +1405,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       {hasMoreEchoes && (
                         <Pressable
                           onPress={handleLoadMoreEchoes}
-                          style={{ marginTop: 5, marginBottom: 10, alignSelf: 'center' }}
+                          style={({ pressed }) => [styles.loadMoreEchoesBtn, pressed && styles.buttonPressed]}
                           hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
                           disabled={echoExpansionInProgress[item.id]}
                         >
-                          <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
+                          <Text style={styles.loadMoreEchoesText}>
                             Load {Math.min(5, allEchoes.length - pageSize)} more echoes
                           </Text>
                         </Pressable>
@@ -1462,11 +1427,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               {postEchoLists[item.id].length > 1 && (
                 <Pressable
                   onPress={handleEchoToggle}
-                  style={{ marginTop: 5, alignSelf: 'flex-start' }}
+                  style={({ pressed }) => [styles.echoToggleBtn, pressed && styles.buttonPressed]}
                   hitSlop={{top: 40, bottom: 40, left: 40, right: 40}}
                   disabled={echoExpansionInProgress[item.id]}
                 >
-                  <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '600' }}>
+                  <Text style={styles.echoToggleText}>
                     {expandedEchoes[item.id] ? 'View less' : `View all ${postEchoLists[item.id].length} echoes`}
                   </Text>
                 </Pressable>
@@ -1475,13 +1440,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           )}
 
           {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
-            <Text style={{
-              color: 'navy',
-              fontSize: 12,
-              textAlign: 'center',
-              marginTop: 10,
-              fontStyle: 'italic'
-            }}>
+            <Text style={styles.emptyEchoHint}>
               SPL@2026
             </Text>
           )}
@@ -1493,4 +1452,205 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
 MainFeedItem.displayName = 'MainFeedItem';
 
+const styles = StyleSheet.create({
+  feedCard: {
+    marginHorizontal: 0,
+    marginVertical: 6,
+    borderRadius: ui.radius.lg,
+    padding: ui.spacing.md,
+    backgroundColor: ui.colors.card,
+    borderWidth: 1,
+    borderColor: ui.colors.border,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  postBody: {
+    backgroundColor: 'transparent',
+  },
+  postHeader: {
+    position: 'relative',
+    alignItems: 'center',
+    marginBottom: ui.spacing.md,
+    paddingHorizontal: ui.spacing.md,
+  },
+  menuButtonWrap: {
+    position: 'absolute',
+    top: 0,
+    right: ui.spacing.sm,
+  },
+  iconPress: {
+    padding: 10,
+    borderRadius: ui.radius.md,
+  },
+  iconPressActive: {
+    opacity: 0.8,
+    transform: [{ scale: 0.96 }],
+    backgroundColor: 'rgba(15, 23, 42, 0.08)',
+  },
+  menuIcon: {
+    fontSize: 28,
+    color: ui.colors.body,
+    fontWeight: '700',
+  },
+  centeredHeader: {
+    alignItems: 'center',
+  },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: ui.spacing.sm,
+  },
+  joinButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: ui.radius.xl,
+    borderWidth: 1,
+    marginRight: 10,
+  },
+  joinButtonJoin: {
+    borderColor: ui.colors.accent,
+    backgroundColor: ui.colors.accent,
+  },
+  joinButtonLeave: {
+    borderColor: ui.colors.danger,
+    backgroundColor: ui.colors.danger,
+  },
+  joinButtonText: {
+    color: '#fff',
+    fontSize: ui.type.caption,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  buttonPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.97 }],
+  },
+  captionWrap: {
+    marginBottom: ui.spacing.md,
+  },
+  captionText: {
+    fontSize: ui.type.body,
+    lineHeight: 23,
+    color: ui.colors.body,
+  },
+  linkWrap: {
+    marginBottom: ui.spacing.md,
+  },
+  linkPill: {
+    backgroundColor: ui.colors.accentSoft,
+    paddingHorizontal: ui.spacing.md,
+    paddingVertical: ui.spacing.sm,
+    borderRadius: ui.radius.md,
+    borderWidth: 1,
+    borderColor: '#BEE3F8',
+  },
+  linkText: {
+    color: ui.colors.link,
+    fontSize: ui.type.body,
+    textDecorationLine: 'underline',
+    fontWeight: '600',
+  },
+  readMoreButton: {
+    marginTop: ui.spacing.xs,
+    marginBottom: ui.spacing.sm,
+    alignSelf: 'center',
+    paddingHorizontal: ui.spacing.md,
+    paddingVertical: 6,
+    borderRadius: ui.radius.xl,
+    backgroundColor: '#EEF4FF',
+  },
+  readMoreText: {
+    color: ui.colors.link,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: ui.colors.border,
+    width: '100%',
+    marginTop: ui.spacing.sm,
+  },
+  statsRow: {
+    marginTop: ui.spacing.sm,
+    paddingHorizontal: ui.spacing.sm,
+  },
+  statChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: ui.spacing.md,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: ui.colors.border,
+    borderRadius: ui.radius.xl,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  statLabel: {
+    fontSize: 13,
+    color: ui.colors.subtle,
+    marginRight: 6,
+    fontWeight: '700',
+  },
+  statValue: {
+    fontSize: 13,
+    color: ui.colors.heading,
+    fontWeight: '700',
+  },
+  presenceText: {
+    fontSize: ui.type.meta,
+    marginRight: ui.spacing.md,
+    fontWeight: '700',
+    alignSelf: 'center',
+  },
+  moreFromCreator: {
+    fontSize: 13,
+    color: ui.colors.subtle,
+    marginRight: ui.spacing.md,
+    alignSelf: 'center',
+    fontWeight: '600',
+  },
+  echoSection: {
+    marginTop: ui.spacing.lg,
+    paddingHorizontal: ui.spacing.sm,
+  },
+  loadMoreEchoesBtn: {
+    marginTop: ui.spacing.xs,
+    marginBottom: ui.spacing.sm,
+    alignSelf: 'center',
+    paddingHorizontal: ui.spacing.md,
+    paddingVertical: 8,
+    borderRadius: ui.radius.md,
+    backgroundColor: '#EEF6FF',
+  },
+  loadMoreEchoesText: {
+    color: ui.colors.link,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  echoToggleBtn: {
+    marginTop: ui.spacing.xs,
+    alignSelf: 'flex-start',
+    paddingHorizontal: ui.spacing.md,
+    paddingVertical: 8,
+    borderRadius: ui.radius.md,
+    backgroundColor: '#EEF6FF',
+  },
+  echoToggleText: {
+    color: ui.colors.link,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  emptyEchoHint: {
+    color: ui.colors.subtle,
+    fontSize: ui.type.caption,
+    textAlign: 'center',
+    marginTop: ui.spacing.sm,
+    fontStyle: 'italic',
+  },
+});
+
 export default MainFeedItem;
+
