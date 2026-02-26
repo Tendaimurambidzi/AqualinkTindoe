@@ -36,3 +36,16 @@ export const LIVE_RECENT_ENDPOINT = `${BACKEND_BASE_URL}/live/recent`;
 // Toggle backend registration for chartered / private drifts.
 // Set to true once the backend is running and can respond.
 export const ENABLE_CHARTERED_BACKEND = true;
+
+// Optional local overrides from liveConfig.local.ts (ignored by git).
+let localSecrets: Record<string, any> = {};
+try {
+  localSecrets = require('./liveConfig.local');
+} catch {}
+
+// xAI key for in-app AI responses.
+export const XAI_API_KEY = String(localSecrets?.XAI_API_KEY || '');
+export const XAI_MODEL = 'grok-2-latest';
+
+// Internet search key for VIBE HUNT web results (Brave Search API).
+export const VIBE_HUNT_SEARCH_API_KEY = String(localSecrets?.VIBE_HUNT_SEARCH_API_KEY || '');

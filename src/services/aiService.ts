@@ -2,6 +2,41 @@
 
 import functions from '@react-native-firebase/functions';
 import auth from '@react-native-firebase/auth';
+import { XAI_API_KEY, XAI_MODEL } from '../../liveConfig';
+
+async function generateTextViaXAI(prompt: string): Promise<string> {
+  const response = await fetch('https://api.x.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${XAI_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: XAI_MODEL || 'grok-2-latest',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a concise assistant for a social app. Keep responses useful and safe.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`xAI request failed (${response.status}): ${text}`);
+  }
+
+  const payload: any = await response.json();
+  const content = payload?.choices?.[0]?.message?.content;
+  if (!content || typeof content !== 'string') {
+    throw new Error('xAI returned an empty response');
+  }
+  return content.trim();
+}
 
 export async function generateText(prompt: string): Promise<string> {
   try {
@@ -11,9 +46,18 @@ export async function generateText(prompt: string): Promise<string> {
       throw new Error('User must be authenticated to use AI features');
     }
 
-    // Use us-central1 region explicitly to match deployed callable functions.
+    // Prefer direct xAI call when key is configured.
+    if (XAI_API_KEY) {
+      try {
+        return await generateTextViaXAI(prompt);
+      } catch (xaiError) {
+        console.warn('xAI direct call failed, falling back to Firebase callable:', xaiError);
+      }
+    }
+
+    // Fallback to us-central1 callable function.
     const result = await functions('us-central1').httpsCallable('generateAIResponse')({ prompt });
-    return result.data.response;
+    return result?.data?.response || 'AI unavailable - please try again later';
   } catch (error: any) {
     console.error('AI generation error:', error);
     if (error.message?.includes('unauthenticated')) {
@@ -48,7 +92,7 @@ export async function generateEchoSuggestion(postContext?: {
   let prompt = 'Generate a thoughtful and positive echo (comment) for a social media post.';
 
   if (postContext) {
-    const { captionText, mediaType, authorName, hasImage, hasVideo } = postContext;
+    const { captionText, authorName, hasImage, hasVideo } = postContext;
 
     // Build context-aware prompt
     let contextInfo = '';

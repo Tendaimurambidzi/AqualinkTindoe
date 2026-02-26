@@ -11,6 +11,7 @@ import {
   Pressable,
   Modal,
   ScrollView,
+  Linking,
 } from 'react-native';
 import {
   getCrewCount,
@@ -19,12 +20,20 @@ import {
   leaveCrew,
 } from '../services/crewService';
 import firestore from '@react-native-firebase/firestore';
+import { VIBE_HUNT_SEARCH_API_KEY } from '../../liveConfig';
 
 export type VibeUser = {
   uid: string;
   photoURL: string | null;
   username?: string;
   email?: string;
+};
+
+type WebSearchResult = {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
 };
 
 interface VibeHuntUserSearchProps {
@@ -46,7 +55,9 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const [results, setResults] = useState<VibeUser[]>([]);
   const [suggestions, setSuggestions] = useState<VibeUser[]>([]);
   const [loading, setLoading] = useState(false);
+  const [webLoading, setWebLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [webResults, setWebResults] = useState<WebSearchResult[]>([]);
   const [selectedUser, setSelectedUser] = useState<VibeUser | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [crewCount, setCrewCount] = useState<number | null>(null);
@@ -71,11 +82,42 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         });
       });
     return () => unsubscribe();
-  }, [selectedUser?.uid, modalVisible]);
+  }, [modalVisible, onProfilePhotoSelect, selectedUser]);
+
+  const searchWeb = async (query: string): Promise<WebSearchResult[]> => {
+    const q = query.trim();
+    if (!q || !VIBE_HUNT_SEARCH_API_KEY) return [];
+    try {
+      const resp = await fetch(
+        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=8`,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            'X-Subscription-Token': VIBE_HUNT_SEARCH_API_KEY,
+          },
+        },
+      );
+      if (!resp.ok) return [];
+      const payload: any = await resp.json();
+      const items = Array.isArray(payload?.web?.results) ? payload.web.results : [];
+      return items
+        .map((item: any, idx: number) => ({
+          id: String(item.url || item.title || idx),
+          title: String(item.title || item.url || 'Result'),
+          url: String(item.url || ''),
+          description: String(item.description || ''),
+        }))
+        .filter((item: WebSearchResult) => !!item.url);
+    } catch {
+      return [];
+    }
+  };
 
   const handleSearchButton = async () => {
     setError(null);
     setSuggestions([]);
+    setWebResults([]);
     if (!searchQuery.trim()) {
       setResults([]);
       setSuggestions([]);
@@ -83,6 +125,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       return;
     }
     setLoading(true);
+    setWebLoading(true);
     try {
       const usersRef = firestore().collection('users');
       const allSnap = await usersRef.limit(200).get();
@@ -132,18 +175,26 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       if (orderedResults.length === 0) {
         setResults([]);
         setSuggestions([]);
-        setError('Failed: No results.');
+        setError(null);
       } else {
         setResults(orderedResults);
         setSuggestions([]);
         setError(null);
       }
+
+      const web = await searchWeb(searchQuery);
+      setWebResults(web);
+      if (orderedResults.length === 0 && web.length === 0) {
+        setError('Failed: No results.');
+      }
     } catch {
       setResults([]);
       setSuggestions([]);
+      setWebResults([]);
       setError('Search failed. Please try again.');
     } finally {
       setLoading(false);
+      setWebLoading(false);
     }
   };
 
@@ -279,6 +330,39 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
             style={styles.resultsList}
             keyboardShouldPersistTaps="handled"
           />
+        </View>
+      )}
+
+      {(webLoading || webResults.length > 0) && (
+        <View style={styles.resultsContainer}>
+          <Text style={styles.sectionTitle}>Internet Results</Text>
+          {webLoading ? (
+            <ActivityIndicator size="small" color="#00C2FF" style={{ paddingVertical: 12 }} />
+          ) : (
+            <FlatList
+              data={webResults}
+              keyExtractor={item => item.id}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.webItem}
+                  onPress={() => Linking.openURL(item.url)}
+                >
+                  <Text style={styles.webTitle} numberOfLines={1}>
+                    {item.title}
+                  </Text>
+                  <Text style={styles.webUrl} numberOfLines={1}>
+                    {item.url}
+                  </Text>
+                  {!!item.description && (
+                    <Text style={styles.webDescription} numberOfLines={2}>
+                      {item.description}
+                    </Text>
+                  )}
+                </Pressable>
+              )}
+            />
+          )}
         </View>
       )}
 
@@ -445,8 +529,38 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 194, 255, 0.3)',
   },
+  sectionTitle: {
+    color: '#9DDCFF',
+    fontWeight: '700',
+    fontSize: 13,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
   resultsList: {
     padding: 8,
+  },
+  webItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0, 194, 255, 0.25)',
+  },
+  webTitle: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  webUrl: {
+    color: '#58C8FF',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  webDescription: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 16,
   },
   userItem: {
     flexDirection: 'row',
