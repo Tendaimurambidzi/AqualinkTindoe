@@ -99,7 +99,7 @@ interface MainFeedItemProps {
   showAudioModal: boolean;
   capturedMedia: any;
   showLive: boolean;
-  activeVideoId: string;
+  activeVideoId: string | null;
   preloadedVideoIds: Set<string>;
   overlayReadyMap: Record<string, any>;
   isWifi: boolean;
@@ -206,7 +206,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [audioControlsVisible, setAudioControlsVisible] = useState(false);
   const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
+  const [preferFallbackVideoSource, setPreferFallbackVideoSource] = useState(false);
   const audioControlsTimerRef = useRef<any>(null);
+
+  useEffect(() => {
+    setPreferFallbackVideoSource(false);
+  }, [item.id, item.playbackUrl, item.media?.uri]);
 
   const revealAudioControlsTemporarily = useCallback(() => {
     setAudioControlsVisible(true);
@@ -349,6 +354,23 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const audioOnlyPost =
     (!item.playbackUrl && !!item.audio?.uri && !isVideoAsset(item.media)) ||
     (!item.playbackUrl && !!item.media && isAudioAsset(item.media));
+  const playbackUri = String(item.playbackUrl || '');
+  const playbackLooksVideo =
+    /(\.m3u8|\.mp4|\.mov|\.webm|\.mkv)(\?|$)/i.test(playbackUri.toLowerCase()) ||
+    /\/video\//i.test(playbackUri) ||
+    String(item.media?.type || '').toLowerCase().includes('video/');
+  const hasVideoMedia =
+    isVideoAsset(item.media) ||
+    (!isImageAsset(item.media) && !!item.playbackUrl && playbackLooksVideo);
+  const primaryVideoSource =
+    item.playbackUrl && playbackLooksVideo ? String(item.playbackUrl) : String(item.media?.uri || '');
+  const fallbackVideoSource =
+    item.playbackUrl && playbackLooksVideo && item.media?.uri && item.media.uri !== item.playbackUrl
+      ? String(item.media.uri)
+      : '';
+  const videoSourceUri =
+    (preferFallbackVideoSource ? fallbackVideoSource || primaryVideoSource : primaryVideoSource || fallbackVideoSource) ||
+    '';
   const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl && !audioOnlyPost;
   const playSynced = shouldPlay && item.id === activeVideoId;
   const shouldPreload = preloadedVideoIds.has(item.id);
@@ -846,7 +868,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         }}
       >
         {/* Online Users List - Only show on video posts */}
-        {item.media && isVideoAsset(item.media) && (
+        {hasVideoMedia && (
           <OnlineUsersList
             myUid={myUid}
             onUserPress={handleOnlineUserPress}
@@ -1060,40 +1082,64 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               )}
 
               {/* Post Media */}
-              {isVideoAsset(item.media) ? (
+              {hasVideoMedia ? (
                 <View style={{ marginHorizontal: -10, position: 'relative' }}>
-                  <VideoWithTapControls
-                    source={{ uri: item.media?.uri || '' }}
-                    style={[
-                      videoStyleFor(item.id),
-                      {
-                        transform: [
-                          { scaleX: mediaEdits?.mirror ? -1 : 1 },
-                          { scaleY: mediaEdits?.flipVertical ? -1 : 1 },
-                        ],
-                      },
-                    ]}
-                    resizeMode={'contain'}
-                    paused={!playSynced}
-                    playbackRate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
-                    audioVolume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
-                    muted={hasOverlayAudio}
-                    playInBackground={false}
-                    isActive={item.id === activeVideoId}
-                    videoId={item.id}
-                    shouldPreload={shouldPreload}
-                    bufferConfig={{
-                      minBufferMs: 0,
-                      maxBufferMs: 1000,
-                      bufferForPlaybackMs: 0,
-                      bufferForPlaybackAfterRebufferMs: 0,
-                    }}
-                    onPlay={() => {
-                      recordVideoReach(item.id).catch(error => {
-                        console.log('Video reach recording failed:', error.message);
-                      });
-                    }}
-                  />
+                  {videoSourceUri ? (
+                    <VideoWithTapControls
+                      source={{ uri: videoSourceUri }}
+                      style={[
+                        videoStyleFor(item.id),
+                        {
+                          transform: [
+                            { scaleX: mediaEdits?.mirror ? -1 : 1 },
+                            { scaleY: mediaEdits?.flipVertical ? -1 : 1 },
+                          ],
+                        },
+                      ]}
+                      resizeMode={'contain'}
+                      paused={!playSynced}
+                      playbackRate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
+                      audioVolume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
+                      muted={hasOverlayAudio}
+                      playInBackground={false}
+                      isActive={item.id === activeVideoId}
+                      videoId={item.id}
+                      shouldPreload={shouldPreload}
+                      poster={item.image || undefined}
+                      posterResizeMode="contain"
+                      bufferConfig={{
+                        minBufferMs: 3500,
+                        maxBufferMs: 30000,
+                        bufferForPlaybackMs: 220,
+                        bufferForPlaybackAfterRebufferMs: 500,
+                      }}
+                      onError={() => {
+                        if (!preferFallbackVideoSource && fallbackVideoSource) {
+                          setPreferFallbackVideoSource(true);
+                        }
+                      }}
+                      onPlay={() => {
+                        recordVideoReach(item.id).catch(error => {
+                          console.log('Video reach recording failed:', error.message);
+                        });
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={[
+                        videoStyleFor(item.id),
+                        {
+                          justifyContent: 'center',
+                          alignItems: 'center',
+                          backgroundColor: '#0f1724',
+                        },
+                      ]}
+                    >
+                      <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 13 }}>
+                        Video source unavailable
+                      </Text>
+                    </View>
+                  )}
                   {filterOverlayStyle ? (
                     <View
                       pointerEvents="none"

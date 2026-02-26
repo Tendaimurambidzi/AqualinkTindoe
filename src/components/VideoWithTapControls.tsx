@@ -1,5 +1,5 @@
 // VideoWithTapControls.tsx
-import React, {useRef, useState, useEffect, useCallback} from "react";
+import React, {useRef, useState, useEffect, useCallback, useMemo} from "react";
 import {
   View,
   TouchableWithoutFeedback,
@@ -19,8 +19,6 @@ import {
   getCachedVideoPath,
   cacheVideo,
   getVideoManifest,
-  saveVideoManifest,
-  VideoManifest,
 } from '../services/videoCache';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -67,7 +65,7 @@ type Props = {
 const VideoWithTapControls: React.FC<Props> = ({
   source,
   style = {},
-  hideTimeout = 4000,
+  hideTimeout = 3000,
   seekStep = 10,
   paused = false,
   maxBitRate,
@@ -98,20 +96,25 @@ const VideoWithTapControls: React.FC<Props> = ({
 }) => {
   const videoRef = useRef<Video | null>(null);
   const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
-  const [controlsVisible, setControlsVisible] = useState<boolean>(true); // Start with controls visible
-  const controlsOpacity = useRef(new Animated.Value(1)).current; // Start with opacity 1
+  const [controlsVisible, setControlsVisible] = useState<boolean>(false);
+  const controlsOpacity = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<NodeJS.Timeout | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
-  const [isLoading, setIsLoading] = useState<boolean>(true); // Start with loading true
+  const [isLoading, setIsLoading] = useState<boolean>(true); // internal readiness gate
   const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
+  const [resolvedUri, setResolvedUri] = useState<string | null>(null);
 
   useEffect(() => {
     setInternalPaused(paused);
   }, [paused]);
+
+  useEffect(() => {
+    setIsLoading(true);
+  }, [resolvedUri]);
 
   useEffect(() => {
     if (!isActive) {
@@ -238,32 +241,42 @@ const VideoWithTapControls: React.FC<Props> = ({
       // If starting playback (pressing play), maximize (if available) and unmute
       if (willStartPlaying) {
         setIsMuted(false); // Unmute when starting playback
+        showControlsWithTimeout(3000);
+      } else {
+        showControls();
       }
-    }
-    
-    // Show controls and auto-hide after 3 seconds when starting playback
-    if (!internalPaused) {
-      showControlsWithTimeout(3000);
-    } else {
-      showControls();
     }
   }, [videoCompleted, safeSeek, showControls, showControlsWithTimeout, internalPaused, onMaximize]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);
     setIsLoading(false); // Video has loaded
+    if (!internalPaused) {
+      showControlsWithTimeout(3000);
+    } else {
+      showControls();
+    }
     onLoad?.(meta);
-  }, [onLoad]);
+  }, [onLoad, showControlsWithTimeout, internalPaused, showControls]);
 
   const handleProgress = useCallback((data: OnProgressData) => {
     setCurrentTime(data.currentTime);
+    if (data.currentTime > 0 && isLoading) {
+      setIsLoading(false);
+    }
     onProgress?.(data);
-  }, [onProgress]);
+  }, [onProgress, isLoading]);
+
+  const handleBuffer = useCallback((data: any) => {
+    // Keep UI stable on transient buffers; avoid flashing loading overlays.
+    onBuffer?.(data);
+  }, [onBuffer]);
 
   const handleEnd = useCallback(() => {
     setVideoCompleted(true);
     setInternalPaused(true);
-  }, []);
+    showControls();
+  }, [showControls]);
 
   useEffect(() => {
     if (videoId) {
@@ -282,6 +295,69 @@ const VideoWithTapControls: React.FC<Props> = ({
       return () => { alive = false; };
     }
   }, [videoId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const sourceUri =
+      typeof source === 'object' && source && 'uri' in source
+        ? String((source as any).uri || '')
+        : '';
+
+    if (!sourceUri) {
+      setResolvedUri(null);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setResolvedUri(sourceUri);
+
+    const isRemote = /^https?:\/\//i.test(sourceUri);
+    if (!isRemote) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    (async () => {
+      try {
+        const cachedPath = await getCachedVideoPath(sourceUri);
+        if (cachedPath && !cancelled) {
+          const localUri =
+            Platform.OS === 'android' && !cachedPath.startsWith('file://')
+              ? `file://${cachedPath}`
+              : cachedPath;
+          setResolvedUri(localUri);
+        } else if ((isActive || shouldPreload) && !cachedPath) {
+          cacheVideo(sourceUri)
+            .then(path => {
+              if (cancelled) return;
+              const localUri =
+                Platform.OS === 'android' && !path.startsWith('file://')
+                  ? `file://${path}`
+                  : path;
+              setResolvedUri(localUri);
+            })
+            .catch(error => {
+              console.warn('Background video cache failed:', error);
+            });
+        }
+      } catch (error) {
+        console.warn('Video cache lookup failed:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [source, isActive, shouldPreload]);
+
+  const resolvedSource = useMemo(() => {
+    if (typeof source === 'number') return source;
+    const srcObj = source as any;
+    if (!srcObj?.uri || !resolvedUri) return source;
+    return { ...srcObj, uri: resolvedUri };
+  }, [source, resolvedUri]);
 
   useEffect(() => {
     return () => {
@@ -320,11 +396,18 @@ const VideoWithTapControls: React.FC<Props> = ({
       }, hideTimeout);
     }
   }, [currentTime, internalPaused, onPlay, hideTimeout, hideControls]);
+  const posterUri =
+    initialPoster ||
+    fetchedPoster ||
+    (videoCompleted && typeof resolvedSource !== 'number'
+      ? String((resolvedSource as any)?.uri || '')
+      : '');
+
   return (
     <View style={[styles.container, style]}>
       <Video
         ref={videoRef}
-        source={source}
+        source={resolvedSource}
         style={StyleSheet.absoluteFill}
         paused={internalPaused}
         resizeMode={resizeMode}
@@ -345,8 +428,11 @@ const VideoWithTapControls: React.FC<Props> = ({
         preload="auto"
         onLoad={handleLoad}
         onProgress={handleProgress}
-        onBuffer={onBuffer}
-        onError={onError}
+        onBuffer={handleBuffer}
+        onError={(err: any) => {
+          setIsLoading(false);
+          onError?.(err);
+        }}
         onEnd={handleEnd}
       />
       <TouchableWithoutFeedback 
@@ -357,11 +443,15 @@ const VideoWithTapControls: React.FC<Props> = ({
       {/* Show poster overlay when video is paused or completed */}
       {(internalPaused || videoCompleted) && (
         <View style={styles.posterContainer}>
-          <Image 
-            source={{ uri: initialPoster || fetchedPoster || (videoCompleted ? source.uri : null) }} 
-            style={styles.posterImage} 
-            resizeMode={posterResizeMode || 'contain'} 
-          />
+          {posterUri ? (
+            <Image
+              source={{ uri: posterUri }}
+              style={styles.posterImage}
+              resizeMode={posterResizeMode || 'contain'}
+            />
+          ) : (
+            <View style={styles.posterImage} />
+          )}
         </View>
       )}
       {videoCompleted && (

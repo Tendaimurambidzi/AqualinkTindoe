@@ -1997,6 +1997,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
   const [quickReplyText, setQuickReplyText] = useState<string>('');
+  const [isThreadSending, setIsThreadSending] = useState<boolean>(false);
   const [selectedMessageForReply, setSelectedMessageForReply] = useState<any>(null);
                     
   // Clear user-specific state when user changes
@@ -2475,30 +2476,79 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [preservedScrollPosition, setPreservedScrollPosition] = useState<number | null>(null); // Preserve scroll position when navigating to PostDetail
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
   const [preloadedVideoIds, setPreloadedVideoIds] = useState<Set<string>>(new Set()); // Videos to preload (adjacent to active)
+  const activeVideoIdRef = useRef<string | null>(null);
+  const displayFeedRef = useRef<Vibe[]>([]);
+  const activeVideoSwitchTimerRef = useRef<any>(null);
+  const isFeedVideoCandidate = useCallback((candidate: Vibe | null | undefined): boolean => {
+    if (!candidate) return false;
+    const playback = String(candidate.playbackUrl || '').toLowerCase();
+    const playbackLooksVideo =
+      /(\.m3u8|\.mp4|\.mov|\.webm|\.mkv)(\?|$)/i.test(playback) ||
+      /\/video\//i.test(playback) ||
+      String(candidate.media?.type || '').toLowerCase().includes('video/');
+    return (
+      isVideoAsset(candidate.media) ||
+      (!isImageAsset(candidate.media) && !!candidate.playbackUrl && playbackLooksVideo)
+    );
+  }, []);
+  useEffect(() => {
+    activeVideoIdRef.current = activeVideoId;
+  }, [activeVideoId]);
+  useEffect(() => {
+    displayFeedRef.current = displayFeed;
+  }, [displayFeed]);
+  useEffect(() => {
+    return () => {
+      try {
+        if (activeVideoSwitchTimerRef.current) {
+          clearTimeout(activeVideoSwitchTimerRef.current);
+          activeVideoSwitchTimerRef.current = null;
+        }
+      } catch {}
+    };
+  }, []);
   const onViewableItemsChanged = useRef(({ viewableItems, changed }: any) => {
     console.log(`👁️ Viewable items changed:`, viewableItems.map((item: any) => item.item.id));
 
     // Handle video playback logic
     if (viewableItems.length > 0) {
-      const newActiveId = viewableItems[0].item.id;
-      setActiveVideoId(newActiveId);
+      const firstVisibleVideo = viewableItems.find((entry: any) =>
+        isFeedVideoCandidate(entry?.item),
+      )?.item;
+      const viewableIds = viewableItems.map((entry: any) => entry.item?.id).filter(Boolean);
+      const previousActive = activeVideoIdRef.current;
+      const newActiveId =
+        previousActive && viewableIds.includes(previousActive) && isFeedVideoCandidate(
+          displayFeedRef.current.find(feedItem => feedItem.id === previousActive),
+        )
+          ? previousActive
+          : firstVisibleVideo?.id || viewableItems[0].item.id;
+      if (activeVideoSwitchTimerRef.current) {
+        clearTimeout(activeVideoSwitchTimerRef.current);
+        activeVideoSwitchTimerRef.current = null;
+      }
+      activeVideoSwitchTimerRef.current = setTimeout(() => {
+        setActiveVideoId(newActiveId);
+      }, 120);
       
       // Preload adjacent videos (2 above and 2 below the active video)
-      const activeIndex = displayFeed.findIndex(item => item.id === newActiveId);
+      const activeIndex = displayFeedRef.current.findIndex(item => item.id === newActiveId);
       if (activeIndex !== -1) {
         const preloadIds = new Set<string>();
         
         // Add videos adjacent to the active one
-        for (let i = Math.max(0, activeIndex - 2); i <= Math.min(displayFeed.length - 1, activeIndex + 2); i++) {
-          if (displayFeed[i].media && isVideoAsset(displayFeed[i].media)) {
-            preloadIds.add(displayFeed[i].id);
+        for (let i = Math.max(0, activeIndex - 2); i <= Math.min(displayFeedRef.current.length - 1, activeIndex + 2); i++) {
+          const candidate = displayFeedRef.current[i];
+          if (!candidate) continue;
+          if (isFeedVideoCandidate(candidate)) {
+            preloadIds.add(candidate.id);
           }
         }
         
         setPreloadedVideoIds(preloadIds);
       }
     } else {
-      setActiveVideoId(null);
+      // Keep previous active video to avoid visible play/pause flicker during brief viewability gaps.
       setPreloadedVideoIds(new Set());
     }
 
@@ -2561,7 +2611,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return {};
       });
     };
-  }, []);
+  }, [isFeedVideoCandidate]);
 
   // Load viewed posts from AsyncStorage on mount
   useEffect(() => {
@@ -9345,6 +9395,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     });
     setSelectedMessageForReply(null);
     setQuickReplyText('');
+    setIsThreadSending(false);
     setIsThreadSelectionMode(false);
     setSelectedThreadMessages(new Set());
     setShowPings(false);
@@ -10359,7 +10410,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 }}
                 // Ultra-aggressive instant playback - videos start playing when 50% visible
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 50, // video starts playing when 50% pixel is visible
+                  itemVisiblePercentThreshold: 60, // stable activation without frequent pause/resume gaps
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
@@ -11172,6 +11223,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setShowInbox(false);
           setInboxFilter('all');
           setInboxSearchQuery('');
+          setIsThreadSending(false);
           setSelectedThread(null);
           setIsDeleteMode(false);
           setSelectedNotifications(new Set());
@@ -12025,6 +12077,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         ? `Reply to ${String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}`
                         : `Message ${String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}`}
                     </Text>
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.55)',
+                        fontSize: 11,
+                        marginBottom: 8,
+                        textAlign: 'right',
+                      }}
+                    >
+                      {quickReplyText.length}/500
+                    </Text>
                     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                       <TextInput
                         ref={replyInputRef}
@@ -12045,10 +12107,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         multiline
                         maxLength={500}
                         autoFocus={!!selectedMessageForReply}
+                        editable={!isThreadSending}
                       />
                       <Pressable
                         style={{
-                          backgroundColor: quickReplyText.trim() ? '#FFD700' : 'rgba(255,255,255,0.2)',
+                          backgroundColor: quickReplyText.trim() && !isThreadSending ? '#FFD700' : 'rgba(255,255,255,0.2)',
                           borderRadius: 6,
                           paddingHorizontal: 12,
                           paddingVertical: 8,
@@ -12056,9 +12119,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           alignItems: 'center',
                         }}
                         onPress={async () => {
-                          if (!quickReplyText.trim()) return;
+                          if (!quickReplyText.trim() || isThreadSending) return;
 
                           try {
+                            setIsThreadSending(true);
                             const outgoingText = quickReplyText.trim();
                             await sendMessage(selectedThread.senderUid, outgoingText);
 
@@ -12108,9 +12172,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           } catch (error) {
                             console.error('Error sending quick reply:', error);
                             Alert.alert('Error', 'Failed to send message. Please try again.');
+                          } finally {
+                            setIsThreadSending(false);
                           }
                         }}
-                        disabled={!quickReplyText.trim()}
+                        disabled={!quickReplyText.trim() || isThreadSending}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         delayPressIn={0}
                         delayPressOut={0}
@@ -12118,11 +12184,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
                       >
                         <Text style={{
-                          color: quickReplyText.trim() ? '#000' : 'rgba(255,255,255,0.5)',
+                          color: quickReplyText.trim() && !isThreadSending ? '#000' : 'rgba(255,255,255,0.5)',
                           fontSize: 12,
                           fontWeight: 'bold',
                         }}>
-                          Send
+                          {isThreadSending ? 'Sending...' : 'Send'}
                         </Text>
                       </Pressable>
                     </View>
@@ -12138,6 +12204,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               setShowInbox(false);
               setInboxFilter('all');
               setInboxSearchQuery('');
+              setIsThreadSending(false);
               setSelectedThread(null);
               setSelectedMessageForReply(null);
               setIsDeleteMode(false);
