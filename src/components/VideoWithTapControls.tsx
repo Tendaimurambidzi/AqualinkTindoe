@@ -13,7 +13,6 @@ import {
   Pressable,
 } from "react-native";
 import Video, {OnProgressData} from "react-native-video";
-import NetInfo from '@react-native-community/netinfo';
 import {
   getCachedVideoPath,
   cacheVideo,
@@ -56,7 +55,7 @@ type Props = {
   resizeMode?: string;
   isActive?: boolean;
   onTap?: () => void;
-  onMaximize?: () => void; // New prop for maximizing video
+  onMaximize?: () => void; // Reserved for maximize action
   videoId?: string; // Add videoId prop to fetch poster
   shouldPreload?: boolean; // New prop to control preloading
 };
@@ -89,7 +88,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   resizeMode = 'contain',
   isActive = true,
   onTap,
-  onMaximize, // New prop
+  onMaximize: _onMaximize,
   videoId,
   shouldPreload = false,
 }) => {
@@ -101,11 +100,12 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(true); // Default muted
+  const [isMuted, setIsMuted] = useState<boolean>(typeof muted === 'boolean' ? muted : true);
   const [isLoading, setIsLoading] = useState<boolean>(true); // internal readiness gate
   const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
+  const wasActiveRef = useRef<boolean>(false);
 
   useEffect(() => {
     setIsLoading(true);
@@ -121,6 +121,12 @@ const VideoWithTapControls: React.FC<Props> = ({
   }, [internalPaused, videoCompleted, isActive]);
 
 
+  useEffect(() => {
+    if (typeof muted === 'boolean') {
+      setIsMuted(muted);
+    }
+  }, [muted]);
+
   const showControls = useCallback(() => {
     if (hideTimer.current) {
       clearTimeout(hideTimer.current);
@@ -134,7 +140,11 @@ const VideoWithTapControls: React.FC<Props> = ({
     }).start();
 
     hideTimer.current = setTimeout(() => {
-      hideControls();
+      Animated.timing(controlsOpacity, {
+        toValue: 0,
+        duration: 50,
+        useNativeDriver: true,
+      }).start(() => setControlsVisible(false));
     }, hideTimeout);
   }, [hideTimeout, controlsOpacity]);
 
@@ -158,15 +168,21 @@ const VideoWithTapControls: React.FC<Props> = ({
     }
   }, [duration]);
 
-  // Autoplay every time the item becomes active in view.
+  // Autoplay on entry to active view only.
+  // If a video reached end, keep replay state while active; reset only after leaving and returning.
   useEffect(() => {
+    const becameActive = isActive && !wasActiveRef.current;
+    wasActiveRef.current = isActive;
+
     if (isActive && !paused) {
-      if (videoCompleted) {
-        safeSeek(0);
-        setVideoCompleted(false);
+      if (becameActive) {
+        if (videoCompleted) {
+          safeSeek(0);
+          setVideoCompleted(false);
+        }
+        hasCalledOnPlay.current = false;
+        setInternalPaused(false);
       }
-      hasCalledOnPlay.current = false;
-      setInternalPaused(false);
       return;
     }
     setInternalPaused(true);
@@ -186,19 +202,17 @@ const VideoWithTapControls: React.FC<Props> = ({
     } else if (locationX > rightThird) {
       safeSeek(currentTime + seekStep);
     } else {
-      // Center tap - just show controls, don't navigate
-      // onTap?.(); // Removed navigation on center tap
+      onTap?.();
     }
     // Always show controls when tapping anywhere on video
     showControls();
-  }, [currentTime, seekStep, safeSeek, showControls]);
+  }, [currentTime, seekStep, safeSeek, showControls, onTap]);
 
   const onToggleMute = useCallback(() => {
-    const willUnmute = isMuted; // If currently muted, this action will unmute
     setIsMuted(prev => !prev);
     
     showControls();
-  }, [isMuted, showControls, onMaximize]);
+  }, [showControls]);
 
   const onRewind = useCallback(() => {
     safeSeek(currentTime - seekStep);

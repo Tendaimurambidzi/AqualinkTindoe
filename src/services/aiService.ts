@@ -40,12 +40,6 @@ async function generateTextViaXAI(prompt: string): Promise<string> {
 
 export async function generateText(prompt: string): Promise<string> {
   try {
-    // Ensure user is authenticated
-    const currentUser = auth().currentUser;
-    if (!currentUser) {
-      throw new Error('User must be authenticated to use AI features');
-    }
-
     // Prefer direct xAI call when key is configured.
     if (XAI_API_KEY) {
       try {
@@ -53,6 +47,12 @@ export async function generateText(prompt: string): Promise<string> {
       } catch (xaiError) {
         console.warn('xAI direct call failed, falling back to Firebase callable:', xaiError);
       }
+    }
+
+    // Firebase callable fallback requires auth.
+    const currentUser = auth().currentUser;
+    if (!currentUser) {
+      return 'Please sign in to use AI features';
     }
 
     // Fallback to us-central1 callable function.

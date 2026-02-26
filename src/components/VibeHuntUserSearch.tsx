@@ -86,29 +86,79 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
 
   const searchWeb = async (query: string): Promise<WebSearchResult[]> => {
     const q = query.trim();
-    if (!q || !VIBE_HUNT_SEARCH_API_KEY) return [];
-    try {
-      const resp = await fetch(
-        `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=8`,
-        {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            'X-Subscription-Token': VIBE_HUNT_SEARCH_API_KEY,
-          },
-        },
-      );
-      if (!resp.ok) return [];
-      const payload: any = await resp.json();
-      const items = Array.isArray(payload?.web?.results) ? payload.web.results : [];
-      return items
+    if (!q) return [];
+
+    const normalize = (items: any[]): WebSearchResult[] =>
+      items
         .map((item: any, idx: number) => ({
-          id: String(item.url || item.title || idx),
-          title: String(item.title || item.url || 'Result'),
-          url: String(item.url || ''),
-          description: String(item.description || ''),
+          id: String(item.url || item.link || item.title || idx),
+          title: String(item.title || item.name || item.link || 'Result'),
+          url: String(item.url || item.link || ''),
+          description: String(item.description || item.snippet || item.body || ''),
         }))
         .filter((item: WebSearchResult) => !!item.url);
+
+    if (VIBE_HUNT_SEARCH_API_KEY) {
+      try {
+        const braveResp = await fetch(
+          `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=8`,
+          {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              'X-Subscription-Token': VIBE_HUNT_SEARCH_API_KEY,
+            },
+          },
+        );
+        if (braveResp.ok) {
+          const payload: any = await braveResp.json();
+          const braveItems = Array.isArray(payload?.web?.results) ? payload.web.results : [];
+          const braveResults = normalize(braveItems);
+          if (braveResults.length > 0) return braveResults;
+        }
+      } catch {}
+
+      try {
+        const serpResp = await fetch(
+          `https://serpapi.com/search.json?engine=google&q=${encodeURIComponent(q)}&api_key=${encodeURIComponent(VIBE_HUNT_SEARCH_API_KEY)}`,
+        );
+        if (serpResp.ok) {
+          const payload: any = await serpResp.json();
+          const serpItems = Array.isArray(payload?.organic_results) ? payload.organic_results : [];
+          const serpResults = normalize(serpItems);
+          if (serpResults.length > 0) return serpResults;
+        }
+      } catch {}
+    }
+
+    try {
+      const ddgResp = await fetch(
+        `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_redirect=1&no_html=1&skip_disambig=1`,
+      );
+      if (!ddgResp.ok) return [];
+      const payload: any = await ddgResp.json();
+      const topicItems: any[] = [];
+      const related = Array.isArray(payload?.RelatedTopics) ? payload.RelatedTopics : [];
+      related.forEach((entry: any) => {
+        if (entry?.FirstURL) {
+          topicItems.push({
+            title: entry.Text || entry.FirstURL,
+            url: entry.FirstURL,
+            description: entry.Text || '',
+          });
+        } else if (Array.isArray(entry?.Topics)) {
+          entry.Topics.forEach((child: any) => {
+            if (child?.FirstURL) {
+              topicItems.push({
+                title: child.Text || child.FirstURL,
+                url: child.FirstURL,
+                description: child.Text || '',
+              });
+            }
+          });
+        }
+      });
+      return normalize(topicItems).slice(0, 8);
     } catch {
       return [];
     }
