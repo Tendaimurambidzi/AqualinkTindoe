@@ -569,11 +569,11 @@ const styles = StyleSheet.create({
   },
   videoHint: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
   mediaPreview: { flex: 1, width: '100%', resizeMode: 'contain' },
-  postedWaveContainer: { flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  postedWaveContainer: { flex: 1, width: '100%', alignItems: 'stretch', justifyContent: 'flex-start', overflow: 'hidden' },
   postedWaveMedia: {
     width: '100%',
     height: undefined,
-    alignSelf: 'center',
+    alignSelf: 'stretch',
     backgroundColor: 'transparent',
   },
   postedWaveCaption: {
@@ -4410,20 +4410,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const videoStyleFor = useCallback(
     (id: string) => {
-      const ar = 9 / 16; // Use fixed aspect ratio for consistent full-width display
-      const width = SCREEN_WIDTH; // Full screen width to fill entire device width
-      const height = (width / ar) * 0.5; // Reduced height by half for 3-post view
+      const ar = videoAspectMap[id] || 9 / 16; // Use actual media aspect when known
+      const width = SCREEN_WIDTH; // Always full device width
+      const rawHeight = width / ar;
+      const height = Math.min(SCREEN_HEIGHT * 0.92, Math.max(260, rawHeight));
       return [
         styles.postedWaveMedia,
         {
           width,
           height,
-          alignSelf: 'center',
+          alignSelf: 'stretch',
           backgroundColor: 'transparent', // Override yellow background
         },
       ] as any;
     },
-    [], // Remove videoAspectMap dependency since we use fixed aspect ratio
+    [videoAspectMap],
   );
   const [bufferingMap, setBufferingMap] = useState<Record<string, boolean>>({});
   const bufferingTimeoutsRef = useRef<Record<string, any>>({});
