@@ -1911,7 +1911,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
   // View tracking state
   const [reachCounts, setReachCounts] = useState<Record<string, number>>({});
-  const [viewTimers, setViewTimers] = useState<Record<string, NodeJS.Timeout>>({});
+  const viewTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
   
   // Notification sound player
@@ -2507,111 +2507,88 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, []);
-  const onViewableItemsChanged = useRef(({ viewableItems, changed }: any) => {
-    console.log(`👁️ Viewable items changed:`, viewableItems.map((item: any) => item.item.id));
+  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
+    const safeViewableItems = Array.isArray(viewableItems) ? viewableItems : [];
 
-    // Handle video playback logic
-    if (viewableItems.length > 0) {
-      const firstVisibleVideo = viewableItems.find((entry: any) =>
+    if (safeViewableItems.length > 0) {
+      const firstVisibleVideo = safeViewableItems.find((entry: any) =>
         isFeedVideoCandidate(entry?.item),
       )?.item;
-      const viewableIds = viewableItems.map((entry: any) => entry.item?.id).filter(Boolean);
+      const viewableIds = safeViewableItems
+        .map((entry: any) => entry?.item?.id)
+        .filter(Boolean);
       const previousActive = activeVideoIdRef.current;
       const newActiveId =
-        previousActive && viewableIds.includes(previousActive) && isFeedVideoCandidate(
+        previousActive &&
+        viewableIds.includes(previousActive) &&
+        isFeedVideoCandidate(
           displayFeedRef.current.find(feedItem => feedItem.id === previousActive),
         )
           ? previousActive
-          : firstVisibleVideo?.id || viewableItems[0].item.id;
-      if (activeVideoSwitchTimerRef.current) {
-        clearTimeout(activeVideoSwitchTimerRef.current);
-        activeVideoSwitchTimerRef.current = null;
+          : firstVisibleVideo?.id || safeViewableItems[0]?.item?.id;
+
+      if (newActiveId) {
+        if (activeVideoSwitchTimerRef.current) {
+          clearTimeout(activeVideoSwitchTimerRef.current);
+          activeVideoSwitchTimerRef.current = null;
+        }
+        activeVideoSwitchTimerRef.current = setTimeout(() => {
+          setActiveVideoId(newActiveId);
+        }, 120);
       }
-      activeVideoSwitchTimerRef.current = setTimeout(() => {
-        setActiveVideoId(newActiveId);
-      }, 120);
-      
-      // Preload adjacent videos (2 above and 2 below the active video)
+
       const activeIndex = displayFeedRef.current.findIndex(item => item.id === newActiveId);
       if (activeIndex !== -1) {
         const preloadIds = new Set<string>();
-        
-        // Add videos adjacent to the active one
-        for (let i = Math.max(0, activeIndex - 2); i <= Math.min(displayFeedRef.current.length - 1, activeIndex + 2); i++) {
+        for (
+          let i = Math.max(0, activeIndex - 2);
+          i <= Math.min(displayFeedRef.current.length - 1, activeIndex + 2);
+          i++
+        ) {
           const candidate = displayFeedRef.current[i];
-          if (!candidate) continue;
-          if (isFeedVideoCandidate(candidate)) {
+          if (candidate && isFeedVideoCandidate(candidate)) {
             preloadIds.add(candidate.id);
           }
         }
-        
         setPreloadedVideoIds(preloadIds);
       }
     } else {
-      // Keep previous active video to avoid visible play/pause flicker during brief viewability gaps.
       setPreloadedVideoIds(new Set());
     }
 
-    // Handle view tracking for reach counting
-    const currentlyViewableIds = new Set(viewableItems.map((item: any) => item.item.id));
-    
-    // Clear timers for items that are no longer viewable
-    setViewTimers(prevTimers => {
-      const newTimers = { ...prevTimers };
-      Object.keys(newTimers).forEach(postId => {
-        if (!currentlyViewableIds.has(postId)) {
-          console.log(`⏰ Clearing timer for non-viewable post ${postId}`);
-          clearTimeout(newTimers[postId]);
-          delete newTimers[postId];
-        }
-      });
-      return newTimers;
+    const currentlyViewableIds = new Set(
+      safeViewableItems.map((item: any) => item?.item?.id).filter(Boolean),
+    );
+    const timers = viewTimersRef.current;
+
+    Object.keys(timers).forEach(postId => {
+      if (!currentlyViewableIds.has(postId)) {
+        clearTimeout(timers[postId]);
+        delete timers[postId];
+      }
     });
 
-    // Start timers for newly viewable items
-    viewableItems.forEach((viewableItem: any) => {
-      const postId = viewableItem.item.id;
-      console.log(`👁️ Post ${postId} became viewable`);
-      
-      setViewTimers(prevTimers => {
-        // Don't start a new timer if one already exists
-        if (prevTimers[postId]) {
-          console.log(`⏰ Timer already exists for post ${postId}`);
-          return prevTimers;
+    safeViewableItems.forEach((viewableItem: any) => {
+      const postId = viewableItem?.item?.id;
+      if (!postId || timers[postId]) return;
+      timers[postId] = setTimeout(() => {
+        recordAutomaticReach(postId);
+        const activeTimer = viewTimersRef.current[postId];
+        if (activeTimer) {
+          clearTimeout(activeTimer);
+          delete viewTimersRef.current[postId];
         }
-
-        console.log(`⏰ Starting 10-second view timer for post ${postId}`);
-
-        // Start 10-second view timer
-        const timer = setTimeout(() => {
-          console.log(`🎯 10-second view timer fired for post ${postId}`);
-          recordAutomaticReach(postId);
-          // Remove timer after it fires
-          setViewTimers(prev => {
-            const newTimers = { ...prev };
-            delete newTimers[postId];
-            return newTimers;
-          });
-        }, 10000); // 10 seconds
-
-        return {
-          ...prevTimers,
-          [postId]: timer
-        };
-      });
+      }, 10000);
     });
   });
 
   // Cleanup view timers on unmount
   useEffect(() => {
     return () => {
-      // Clear all active view timers
-      setViewTimers(prevTimers => {
-        Object.values(prevTimers).forEach(timer => clearTimeout(timer));
-        return {};
-      });
+      Object.values(viewTimersRef.current).forEach(timer => clearTimeout(timer));
+      viewTimersRef.current = {};
     };
-  }, [isFeedVideoCandidate]);
+  }, []);
 
   // Load viewed posts from AsyncStorage on mount
   useEffect(() => {
@@ -2694,6 +2671,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [hasMoreItems, setHasMoreItems] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const paginationInFlightRef = useRef(false);
+  const lastEndReachedTsRef = useRef(0);
                     
   const [showProfile, setShowProfile] = useState<boolean>(false);
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
@@ -5522,8 +5501,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   // Function to load more feed items
   const loadMoreFeedItems = useCallback(async () => {
-    if (isLoadingMore) return;
+    if (isLoadingMore || paginationInFlightRef.current || !hasMoreItems) return;
     
+    paginationInFlightRef.current = true;
     setIsLoadingMore(true);
     try {
       let firestoreMod: any = null;
@@ -5751,9 +5731,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch (error) {
       console.warn('Error loading more feed items:', error);
     } finally {
+      paginationInFlightRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, lastLoadedDoc]);
+  }, [isLoadingMore, lastLoadedDoc, hasMoreItems]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -10384,10 +10365,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
-                removeClippedSubviews={false}
-                maxToRenderPerBatch={5}
-                windowSize={11}
-                initialNumToRender={3}
+                removeClippedSubviews={Platform.OS === 'android'}
+                maxToRenderPerBatch={4}
+                windowSize={9}
+                initialNumToRender={2}
+                updateCellsBatchingPeriod={50}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -10415,7 +10397,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
-                  // Load more items when reaching the end
+                  const now = Date.now();
+                  if (now - lastEndReachedTsRef.current < 1000) return;
+                  lastEndReachedTsRef.current = now;
+                  if (paginationInFlightRef.current || isLoadingMore || !hasMoreItems) return;
                   try {
                     loadMoreFeedItems();
                   } catch (error) {

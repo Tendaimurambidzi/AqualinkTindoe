@@ -11,8 +11,8 @@ export async function generateText(prompt: string): Promise<string> {
       throw new Error('User must be authenticated to use AI features');
     }
 
-    // Use us-central1 region explicitly
-    const result = await functions().httpsCallable('generateAIResponse')({ prompt });
+    // Use us-central1 region explicitly to match deployed callable functions.
+    const result = await functions('us-central1').httpsCallable('generateAIResponse')({ prompt });
     return result.data.response;
   } catch (error: any) {
     console.error('AI generation error:', error);
@@ -156,5 +156,5 @@ export async function generateVideoScriptWithGrok(theme: string, duration: strin
 
 export async function generateVideoConceptWithGrok(prompt: string): Promise<string> {
   const enhancedPrompt = `Develop a complete video concept based on: "${prompt}". Include theme, style, target audience, key scenes, music suggestions, and production notes.`;
-  return await generateText(prompt);
+  return await generateText(enhancedPrompt);
 }

@@ -80,8 +80,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
   // Connectivity state
   const [isOnline, setIsOnline] = useState(true);
-  const hugsCount = Math.max(0, splashesCount);
-  const isSplashSyncing = splashSyncStatus === 'saving';
 
   // Fetch user data for the creator of the post
   useEffect(() => {
@@ -256,10 +254,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Hugs Button (with icon and count) */}
       <Pressable
         onPress={handleHugAction}
-        disabled={isSplashSyncing}
+        
         style={({ pressed }) => [
           styles.textButton,
-          isSplashSyncing && styles.disabledButton,
+          
           pressed && styles.pressedButton
         ]}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
@@ -269,7 +267,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <View style={styles.buttonContent}>
           <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>🫂</Text>
           <Text style={[styles.actionLabel, hasHugged ? styles.blueCount : styles.whiteCount]}>
-            {isSplashSyncing ? 'Syncing...' : hasHugged ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
+            {hasHugged ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
           </Text>
         </View>
       </Pressable>
@@ -541,7 +539,7 @@ const styles = StyleSheet.create({
   },
   actionLabel: {
     fontSize: 13,
-    color: '#ccc',
+    color: '#fff',
     marginRight: 2,
   },
   huggedLabel: {
@@ -592,7 +590,7 @@ const styles = StyleSheet.create({
     color: '#00ff88', // Green for counts > 0
   },
   inactiveIconCount: {
-    color: '#ccc', // Grey for count = 0
+    color: '#fff', // Grey for count = 0
   },
   // Modal styles
   modalOverlay: {
@@ -638,7 +636,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    color: '#ccc',
+    color: '#fff',
     fontSize: 16,
   },
   emptyContainer: {
@@ -646,7 +644,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    color: '#ccc',
+    color: '#fff',
     fontSize: 16,
   },
   huggersList: {
@@ -681,7 +679,7 @@ const styles = StyleSheet.create({
   },
   huggerTimestamp: {
     fontSize: 12,
-    color: '#ccc',
+    color: '#fff',
     marginTop: 2,
   },
   modalActions: {
@@ -703,6 +701,7 @@ const styles = StyleSheet.create({
 });
 
 export default PosterActionBar;
+
 
 
 
