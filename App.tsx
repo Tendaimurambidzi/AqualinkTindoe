@@ -5958,15 +5958,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .onSnapshot((snapshot) => {
         const followingUids = new Set(snapshot.docs.map(doc => doc.id));
         
-        // Update isInUserCrew for all users based on current following status
+        // Keep connection status authoritative from Firestore.
         setIsInUserCrew(prev => {
-          const updated = { ...prev };
-          // Set following status for all users in the snapshot
-          snapshot.docs.forEach(doc => {
-            updated[doc.id] = true;
+          const updated: { [uid: string]: boolean } = {};
+          Object.keys(prev).forEach(uid => {
+            updated[uid] = followingUids.has(uid);
           });
-          // For users not in following but previously marked as connected, keep their status
-          // unless we have explicit information they're not followed
+          followingUids.forEach(uid => {
+            updated[uid] = true;
+          });
           return updated;
         });
       }, (error) => {
@@ -6744,11 +6744,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Use the new sendEcho transaction
       await sendEcho(echoWaveId, text, replyingToEcho?.id);
       
-      // Update local echo counts
-      setVibesFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      setPublicFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      setPostFeed(prev => prev.map(v => v.id === echoWaveId ? { ...v, counts: { ...v.counts, echoes: (v.counts?.echoes || 0) + 1 } } : v));
-      
       // Reload echoes list
       loadPostEchoes(currentWave.id);
                     
@@ -7411,32 +7406,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Close the echo input immediately after sending
       setExpandedEchoPost(null);
                     
-      // Update local echo count for immediate UI feedback
-      setVibesFeed(prev => prev.map(vibe => 
-        vibe.id === waveId 
-          ? { ...vibe, counts: { 
-              ...vibe.counts,
-              echoes: (vibe.counts?.echoes || 0) + 1,
-            }}
-          : vibe
-      ));
-      setPublicFeed(prev => prev.map(vibe => 
-        vibe.id === waveId 
-          ? { ...vibe, counts: { 
-              ...vibe.counts,
-              echoes: (vibe.counts?.echoes || 0) + 1,
-            }}
-          : vibe
-      ));
-      setPostFeed(prev => prev.map(vibe => 
-        vibe.id === waveId 
-          ? { ...vibe, counts: { 
-              ...vibe.counts,
-              echoes: (vibe.counts?.echoes || 0) + 1,
-            }}
-          : vibe
-      ));
-                    
       // Refresh echo list for this post
       loadPostEchoes(waveId);
                     
@@ -7638,8 +7607,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const isCurrentlyConnected = isInUserCrew[targetUid];
 
       if (isCurrentlyConnected) {
-        // Disconnect vibe - optimistically decrement crew count
-        setOptimisticCrewCounts(prev => ({ ...prev, [targetUid]: (prev[targetUid] || 0) - 1 }));
         console.log(`[DEBUG] Disconnecting from ${targetUid}`);
         await leaveCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
@@ -7647,8 +7614,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         loadCrewCounts();
         await loadDriftWatchers();
       } else {
-        // Connect vibe - optimistically increment crew count
-        setOptimisticCrewCounts(prev => ({ ...prev, [targetUid]: (prev[targetUid] || 0) + 1 }));
         console.log(`[DEBUG] Connecting to ${targetUid}`);
         await joinCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
@@ -7656,16 +7621,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         loadCrewCounts();
         await loadDriftWatchers();
       }
+    } catch (e: any) {
+      console.error('Toggle vibe error:', e);
+      notifyError(e?.message || 'Could not update tide connection right now');
     } finally {
       setCrewLoading(false);
-      // Clear optimistic crew count after a delay to allow real-time listener to update
-      setTimeout(() => {
-        setOptimisticCrewCounts(prev => {
-          const newCounts = { ...prev };
-          delete newCounts[targetUid];
-          return newCounts;
-        });
-      }, 5000); // 5 seconds should be enough for real-time update
+      // Use live Firestore listeners as the source of truth for crew counts.
+      setOptimisticCrewCounts(prev => {
+        const next = { ...prev };
+        delete next[targetUid];
+        return next;
+      });
     }
   };
 

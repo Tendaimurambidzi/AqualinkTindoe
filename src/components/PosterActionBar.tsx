@@ -304,7 +304,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         <View style={styles.buttonContent}>
           <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>📣</Text>
           <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
-            {hasEchoed ? 'Echoed' : 'Echo'} ({echoesCount})
+            {hasEchoed ? 'Echoed' : 'Echo'} ({Math.max(0, echoesCount)})
           </Text>
         </View>
       </Pressable>
@@ -701,6 +701,7 @@ const styles = StyleSheet.create({
 });
 
 export default PosterActionBar;
+
 
 
 

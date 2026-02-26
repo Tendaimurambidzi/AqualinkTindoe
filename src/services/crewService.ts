@@ -21,7 +21,7 @@ export async function joinCrew(targetUid: string): Promise<{ success: boolean }>
 
   console.log(`[DEBUG] crewService.joinCrew: Calling Firebase function for ${user.uid} -> ${targetUid}`);
   
-  const joinCrewFn = functions().httpsCallable('joinCrew');
+  const joinCrewFn = functions('us-central1').httpsCallable('joinCrew');
   const result = await joinCrewFn({ targetUid });
   
   console.log(`[DEBUG] crewService.joinCrew: Firebase function returned:`, result?.data);
@@ -112,7 +112,7 @@ export async function getBoarding(limit: number = 50): Promise<string[]> {
     .limit(limit)
     .get();
 
-  return boardingSnapshot.docs.map(doc => doc.id);
+  return followingSnapshot.docs.map(doc => doc.id);
 }
 
 /**
@@ -138,5 +138,5 @@ export async function getBoardingCount(targetUid: string): Promise<number> {
     .collection('following')
     .get();
 
-  return boardingSnapshot.size;
+  return followingSnapshot.size;
 }
