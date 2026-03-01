@@ -82,7 +82,7 @@ import {
 import { uploadPost } from './src/services/uploadPost';
 import { removeSplash, ensureSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
-import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest } from './src/services/aiService';
+import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest, generateMediaCaptionSuggestion } from './src/services/aiService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import MainFeedItem from './src/feed/MainFeedItem';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
@@ -3767,6 +3767,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [capturedMediaEdits, setCapturedMediaEdits] =
     useState<MediaEdits>(defaultMediaEdits);
   const [waveCaption, setWaveCaption] = useState<string>('');
+  const [isAIMediaCaptioning, setIsAIMediaCaptioning] = useState<boolean>(false);
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
   const [showMediaEditorModal, setShowMediaEditorModal] =
     useState<boolean>(false);
@@ -9739,6 +9740,63 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
   }, [capturedMedia?.uri, attachedAudio?.uri]);
+
+  const handleAIMediaCaptionSuggest = useCallback(async () => {
+    if (!capturedMedia?.uri) {
+      Alert.alert('No media', 'Select media first to generate a caption.');
+      return;
+    }
+    setIsAIMediaCaptioning(true);
+    try {
+      const editsSummary = [
+        capturedMediaEdits.filter !== 'none' ? `filter:${capturedMediaEdits.filter}` : null,
+        Number(capturedMediaEdits.brightness || 0) !== 0
+          ? `brightness:${capturedMediaEdits.brightness}`
+          : null,
+        Number(capturedMediaEdits.contrast || 0) !== 0
+          ? `contrast:${capturedMediaEdits.contrast}`
+          : null,
+        Number(capturedMediaEdits.vignette || 0) > 0
+          ? `vignette:${capturedMediaEdits.vignette}`
+          : null,
+        capturedMediaEdits.mirror ? 'mirror:on' : null,
+        capturedMediaEdits.flipVertical ? 'flipVertical:on' : null,
+      ]
+        .filter(Boolean)
+        .join(', ');
+
+      const suggestion = await generateMediaCaptionSuggestion({
+        mediaKind: isVideoAsset(capturedMedia) ? 'video' : 'image',
+        mimeType: capturedMedia.type || undefined,
+        fileName: capturedMedia.fileName || undefined,
+        width: capturedMedia.width || undefined,
+        height: capturedMedia.height || undefined,
+        durationSec: isVideoAsset(capturedMedia) ? playbackDuration || undefined : undefined,
+        hasAudioOverlay: !!attachedAudio?.uri,
+        editsSummary,
+        currentCaption: waveCaption || textComposerText || '',
+      });
+      setWaveCaption(suggestion);
+    } catch (error) {
+      console.error('AI media caption suggest failed', error);
+      notifyError('AI media caption failed.');
+    } finally {
+      setIsAIMediaCaptioning(false);
+    }
+  }, [
+    attachedAudio?.uri,
+    capturedMedia,
+    capturedMediaEdits.brightness,
+    capturedMediaEdits.contrast,
+    capturedMediaEdits.filter,
+    capturedMediaEdits.flipVertical,
+    capturedMediaEdits.mirror,
+    capturedMediaEdits.vignette,
+    notifyError,
+    playbackDuration,
+    textComposerText,
+    waveCaption,
+  ]);
                     
   const onPostWave = async () => {
     if (!capturedMedia) {
@@ -15030,6 +15088,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               }}
               multiline
             />
+            <Pressable
+              style={[
+                styles.primaryBtn,
+                { backgroundColor: '#FF6B00', marginTop: 10 },
+                isAIMediaCaptioning && { opacity: 0.7 },
+              ]}
+              onPress={handleAIMediaCaptionSuggest}
+              disabled={isAIMediaCaptioning}
+            >
+              {isAIMediaCaptioning ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.primaryBtnText}>AI Caption</Text>
+              )}
+            </Pressable>
           </View>
                     
           {/* Editor Controls */}

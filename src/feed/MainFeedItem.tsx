@@ -13,7 +13,7 @@ import firestore from '@react-native-firebase/firestore';
 import { formatPresenceLastSeenExact } from '../services/timeUtils';
 import { Asset } from 'react-native-image-picker';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ui = {
   colors: {
     card: '#FFFFFF',
@@ -1054,6 +1054,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       source={{ uri: videoSourceUri }}
                       style={[
                         videoStyleFor(item.id),
+                        { maxHeight: SCREEN_HEIGHT * 0.68 },
                         {
                           transform: [
                             { scaleX: mediaEdits?.mirror ? -1 : 1 },
@@ -1093,6 +1094,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     <View
                       style={[
                         videoStyleFor(item.id),
+                        { maxHeight: SCREEN_HEIGHT * 0.68 },
                         {
                           justifyContent: 'center',
                           alignItems: 'center',
@@ -1350,8 +1352,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           )}
         </View>
 
-        <View style={styles.sectionDivider} />
-
         <PosterActionBar
           waveId={item.id}
           currentUserId={myUid || ''}
@@ -1387,6 +1387,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           {item.user?.name !== "Tendaimurambidzi" && <Text style={styles.moreFromCreator}>📚 More from creator</Text>}
         </ScrollView>
 
+        {(postEchoLists[item.id] && postEchoLists[item.id].length > 0) ? (
         <View style={styles.echoSection}>
           {/* Echoes Section */}
           {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
@@ -1439,12 +1440,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             </View>
           )}
 
-          {(!postEchoLists[item.id] || postEchoLists[item.id].length === 0) && (
-            <Text style={styles.emptyEchoHint}>
-              SPL@2026
-            </Text>
-          )}
         </View>
+        ) : null}
       </View>
     </Pressable>
   );
@@ -1455,17 +1452,17 @@ MainFeedItem.displayName = 'MainFeedItem';
 const styles = StyleSheet.create({
   feedCard: {
     marginHorizontal: 0,
-    marginVertical: 6,
+    marginVertical: 0,
     borderRadius: ui.radius.lg,
     padding: ui.spacing.md,
     backgroundColor: ui.colors.card,
-    borderWidth: 1,
-    borderColor: ui.colors.border,
+    borderWidth: 0,
+    borderColor: 'transparent',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0,
     shadowRadius: 12,
-    elevation: 2,
+    elevation: 0,
   },
   postBody: {
     backgroundColor: 'transparent',

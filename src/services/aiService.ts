@@ -77,6 +77,58 @@ export async function generateVibeSuggestion(): Promise<string> {
   return await generateText(prompt);
 }
 
+export type MediaCaptionContext = {
+  mediaKind: 'image' | 'video';
+  mimeType?: string;
+  fileName?: string;
+  width?: number;
+  height?: number;
+  durationSec?: number;
+  hasAudioOverlay?: boolean;
+  editsSummary?: string;
+  currentCaption?: string;
+};
+
+export async function generateMediaCaptionSuggestion(
+  context: MediaCaptionContext,
+): Promise<string> {
+  const {
+    mediaKind,
+    mimeType,
+    fileName,
+    width,
+    height,
+    durationSec,
+    hasAudioOverlay,
+    editsSummary,
+    currentCaption,
+  } = context;
+
+  const sizeHint =
+    width && height ? `${width}x${height}` : 'unknown dimensions';
+  const durationHint =
+    mediaKind === 'video' && durationSec
+      ? `${Math.max(1, Math.round(durationSec))}s`
+      : 'n/a';
+  const audioHint =
+    mediaKind === 'video'
+      ? hasAudioOverlay
+        ? 'with overlay audio'
+        : 'no overlay audio'
+      : hasAudioOverlay
+      ? 'with attached audio'
+      : 'no attached audio';
+
+  const prompt =
+    `Generate exactly one custom social caption for this ${mediaKind} post.\n` +
+    `Media details: kind=${mediaKind}, mime=${mimeType || 'unknown'}, fileName=${fileName || 'unknown'}, size=${sizeHint}, duration=${durationHint}, audio=${audioHint}.\n` +
+    `Edits applied: ${editsSummary || 'none'}.\n` +
+    `Existing draft caption: "${(currentCaption || '').trim() || 'none'}".\n` +
+    'Rules: return only the caption text, no quotes, no numbering, no hashtags spam, maximum 140 characters, natural and specific.';
+
+  return await generateText(prompt);
+}
+
 export async function generateSearchSuggestion(): Promise<string> {
   const prompt = 'Suggest a creative username or keyword for searching users in a social app.';
   return await generateText(prompt);
