@@ -1048,7 +1048,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
               {/* Post Media */}
               {hasVideoMedia ? (
-                <View style={{ marginHorizontal: -10, position: 'relative' }}>
+                <View style={{ marginHorizontal: 0, position: 'relative' }}>
                   {videoSourceUri ? (
                     <VideoWithTapControls
                       source={{ uri: videoSourceUri }}
@@ -1306,11 +1306,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Pressable
               onPress={handleTextPostPress}
               style={[
-                expandedPosts[item.id] ? { minHeight: ((SCREEN_WIDTH) / (9/16)) * 0.5 } : videoStyleFor(item.id),
-                expandedPosts[item.id] ? {} : { overflow: 'hidden' }
+                styles.textOnlyPost,
+                expandedPosts[item.id] ? styles.textOnlyPostExpanded : null,
               ]}
             >
-              <Text style={{ fontSize: 16, lineHeight: 20, flex: expandedPosts[item.id] ? 0 : 1 }}>
+              <Text style={{ fontSize: 16, lineHeight: 22 }}>
                 {expandedPosts[item.id]
                   ? item.captionText
                   : item.captionText.length > 500
@@ -1352,24 +1352,26 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           )}
         </View>
 
-        <PosterActionBar
-          waveId={item.id}
-          currentUserId={myUid || ''}
-          splashesCount={item.counts?.splashes || 0}
-          echoesCount={item.counts?.echoes || 0}
-          pearlsCount={0}
-          isAnchored={false}
-          isCasted={false}
-          creatorUserId={item.ownerUid!}
-          onAdd={handleAddSplash}
-          onRemove={handleRemoveSplash}
-          onEcho={handleEcho}
-          onPearl={handlePearl}
-          onAnchor={handleAnchor}
-          onCast={handleCast}
-          splashSyncStatus={splashSyncStatus}
-          onRetrySplash={handleRetrySplashSync}
-        />
+        <View style={styles.posterActionWrap}>
+          <PosterActionBar
+            waveId={item.id}
+            currentUserId={myUid || ''}
+            splashesCount={item.counts?.splashes || 0}
+            echoesCount={item.counts?.echoes || 0}
+            pearlsCount={0}
+            isAnchored={false}
+            isCasted={false}
+            creatorUserId={item.ownerUid!}
+            onAdd={handleAddSplash}
+            onRemove={handleRemoveSplash}
+            onEcho={handleEcho}
+            onPearl={handlePearl}
+            onAnchor={handleAnchor}
+            onCast={handleCast}
+            splashSyncStatus={splashSyncStatus}
+            onRetrySplash={handleRetrySplashSync}
+          />
+        </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsRow}>
           <Pressable
@@ -1453,9 +1455,10 @@ const styles = StyleSheet.create({
   feedCard: {
     marginHorizontal: 0,
     marginVertical: 0,
-    borderRadius: ui.radius.lg,
-    padding: ui.spacing.md,
-    backgroundColor: ui.colors.card,
+    borderRadius: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    backgroundColor: 'transparent',
     borderWidth: 0,
     borderColor: 'transparent',
     shadowColor: '#0F172A',
@@ -1552,7 +1555,7 @@ const styles = StyleSheet.create({
   },
   readMoreButton: {
     marginTop: ui.spacing.xs,
-    marginBottom: ui.spacing.sm,
+    marginBottom: 0,
     alignSelf: 'center',
     paddingHorizontal: ui.spacing.md,
     paddingVertical: 6,
@@ -1563,6 +1566,19 @@ const styles = StyleSheet.create({
     color: ui.colors.link,
     fontSize: 13,
     fontWeight: '700',
+  },
+  textOnlyPost: {
+    paddingHorizontal: ui.spacing.md,
+    paddingVertical: ui.spacing.sm,
+    minHeight: 96,
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
+  textOnlyPostExpanded: {
+    minHeight: 0,
+  },
+  posterActionWrap: {
+    marginTop: 2,
   },
   sectionDivider: {
     height: 1,
