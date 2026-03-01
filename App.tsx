@@ -82,10 +82,12 @@ import {
 import { uploadPost } from './src/services/uploadPost';
 import { removeSplash, ensureSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
-import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest, generateMediaCaptionSuggestion } from './src/services/aiService';
+import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest, generateMediaCaptionSuggestion, generateSearchBackedExploreResponse, generateStudyHubResponse } from './src/services/aiService';
+import { registerNoticeBoard } from './src/services/schoolService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import MainFeedItem from './src/feed/MainFeedItem';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
+import { appTokens } from './src/theme/tokens';
 import MediaEditor, {
   defaultMediaEdits,
   MediaEdits,
@@ -150,6 +152,37 @@ const isImageAsset = (asset: Asset | null | undefined): boolean => {
   const uri = String(asset.uri || '').toLowerCase();
   return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
 };
+
+const inferMediaSceneHints = (
+  rawInputs: Array<string | null | undefined>,
+): string[] => {
+  const blob = rawInputs
+    .filter(Boolean)
+    .map(v => String(v).toLowerCase())
+    .join(' ');
+  if (!blob) return [];
+
+  const rules: Array<{ hint: string; rx: RegExp }> = [
+    { hint: 'dancing/performance', rx: /\b(dance|dancing|choreo|choreography|freestyle|performance)\b/i },
+    { hint: 'flooded river / fast water flow', rx: /\b(flood|flooded|river|waterfall|rapid|overflow|torrent)\b/i },
+    { hint: 'gym/workout/fitness', rx: /\b(gym|workout|fitness|exercise|training|lift)\b/i },
+    { hint: 'football/soccer', rx: /\b(football|soccer|goal|pitch|match)\b/i },
+    { hint: 'basketball', rx: /\b(basketball|hoop|nba|dunk)\b/i },
+    { hint: 'beach/ocean/waves', rx: /\b(beach|ocean|sea|waves|shore|coast)\b/i },
+    { hint: 'city/urban street scene', rx: /\b(city|urban|street|traffic|downtown)\b/i },
+    { hint: 'nature/outdoors', rx: /\b(nature|forest|mountain|outdoor|sunset|sunrise)\b/i },
+    { hint: 'pets/animals', rx: /\b(dog|cat|puppy|kitten|pet|animal)\b/i },
+    { hint: 'party/celebration', rx: /\b(party|celebration|birthday|wedding|event)\b/i },
+  ];
+
+  return rules.filter(r => r.rx.test(blob)).map(r => r.hint);
+};
+
+const NOTICE_REG_LOCAL_KEY = 'notice_board_registration_local';
+const NOTICE_ADS_LOCAL_KEY = 'notice_board_ads_local';
+const ADVENTURE_HISTORY_LOCAL_KEY = 'adventure_space_recent_queries';
+const STUDY_HISTORY_LOCAL_KEY = 'study_hub_recent_queries';
+const SAVED_SOURCES_LOCAL_KEY = 'saved_learning_sources';
                     
 type Vibe = {
   id: string;
@@ -178,6 +211,15 @@ type SearchResult = {
   id: string;
   label: string;
   extra?: Record<string, any>;
+};
+
+type WebReference = {
+  id: string;
+  title: string;
+  url: string;
+  description?: string;
+  source?: 'explore' | 'study';
+  savedAt?: number;
 };
                     
 type Ping = {
@@ -929,16 +971,147 @@ const styles = StyleSheet.create({
                     
   // Generic button for logbook-style modals
   primaryBtn: {
-    backgroundColor: '#00C2FF',
+    backgroundColor: appTokens.colors.accentStrong,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#00C2FF',
+    borderColor: appTokens.colors.accentStrong,
   },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '800' },
   hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
+  panelIntro: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13,
+    marginBottom: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+    lineHeight: 18,
+  },
+  sectionHeader: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  quickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  responseCard: {
+    marginBottom: 12,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  emptyStateCard: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  emptyStateTitle: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  emptyStateText: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  searchChip: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  searchChipText: {
+    color: 'white',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  sourceCard: {
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  sourceTitle: {
+    color: 'white',
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  sourceUrl: {
+    color: 'rgba(180,220,255,0.9)',
+    marginTop: 6,
+    fontSize: 12,
+  },
+  sourceActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  secondaryMiniBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  secondaryMiniBtnText: {
+    color: 'white',
+    fontWeight: '700',
+  },
+  savedItem: {
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: 'rgba(0,194,255,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.5)',
+  },
+  savedItemText: {
+    color: '#CDEFFF',
+    fontWeight: '600',
+  },
+  toolGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  toolButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.45)',
+    backgroundColor: 'rgba(0,194,255,0.1)',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+  },
+  toolButtonTitle: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  toolButtonHint: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 11,
+    marginTop: 4,
+  },
                     
   // Old sheet styles, kept for reference or other modals if needed
   sheetOverlay: {
@@ -2686,6 +2859,38 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showExplore, setShowExplore] = useState<boolean>(false);
   const [showNotice, setShowNotice] = useState<boolean>(false);
   const [showSchoolMode, setShowSchoolMode] = useState<boolean>(false);
+  const [exploreSearchQuery, setExploreSearchQuery] = useState<string>('');
+  const [exploreSearchResponse, setExploreSearchResponse] = useState<string>('');
+  const [exploreResults, setExploreResults] = useState<WebReference[]>([]);
+  const [exploreRecentQueries, setExploreRecentQueries] = useState<string[]>([]);
+  const [isExploreSearching, setIsExploreSearching] = useState<boolean>(false);
+  const [studyHubQuery, setStudyHubQuery] = useState<string>('');
+  const [studyHubResponse, setStudyHubResponse] = useState<string>('');
+  const [studyHubResults, setStudyHubResults] = useState<WebReference[]>([]);
+  const [studyRecentQueries, setStudyRecentQueries] = useState<string[]>([]);
+  const [isStudySearching, setIsStudySearching] = useState<boolean>(false);
+  const [savedLearningSources, setSavedLearningSources] = useState<Record<string, WebReference>>({});
+  const [noticeOrgName, setNoticeOrgName] = useState<string>('');
+  const [noticeOrgType, setNoticeOrgType] = useState<string>('');
+  const [noticeEmail, setNoticeEmail] = useState<string>('');
+  const [noticePhone, setNoticePhone] = useState<string>('');
+  const [noticeBio, setNoticeBio] = useState<string>('');
+  const [noticeRegistered, setNoticeRegistered] = useState<boolean>(false);
+  const [noticeRegistrationId, setNoticeRegistrationId] = useState<string>('');
+  const [noticeAdText, setNoticeAdText] = useState<string>('');
+  const [noticeAdMedia, setNoticeAdMedia] = useState<Asset | null>(null);
+  const [noticePosting, setNoticePosting] = useState<boolean>(false);
+  const [noticeLoading, setNoticeLoading] = useState<boolean>(false);
+  const [noticeAds, setNoticeAds] = useState<Array<{
+    id: string;
+    uid?: string;
+    text?: string;
+    mediaUrl?: string | null;
+    mediaType?: string | null;
+    mediaName?: string | null;
+    orgName?: string | null;
+    createdAt?: any;
+  }>>([]);
   const [showBridge, setShowBridge] = useState<boolean>(false);
   const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
   const [showAIModal, setShowAIModal] = useState<boolean>(false);
@@ -2878,6 +3083,106 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     (msg: string, avatar: any = null) => showToast('negative', msg, 2000, avatar),
     [showToast],
   );
+
+  const savedExploreSources = useMemo(
+    () =>
+      Object.values(savedLearningSources)
+        .filter(item => item.source === 'explore')
+        .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)),
+    [savedLearningSources],
+  );
+
+  const savedStudySources = useMemo(
+    () =>
+      Object.values(savedLearningSources)
+        .filter(item => item.source === 'study')
+        .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0)),
+    [savedLearningSources],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [exploreRaw, studyRaw, savedRaw] = await Promise.all([
+          AsyncStorage.getItem(ADVENTURE_HISTORY_LOCAL_KEY),
+          AsyncStorage.getItem(STUDY_HISTORY_LOCAL_KEY),
+          AsyncStorage.getItem(SAVED_SOURCES_LOCAL_KEY),
+        ]);
+        if (cancelled) return;
+        if (exploreRaw) {
+          const parsed = JSON.parse(exploreRaw);
+          if (Array.isArray(parsed)) setExploreRecentQueries(parsed.slice(0, 8));
+        }
+        if (studyRaw) {
+          const parsed = JSON.parse(studyRaw);
+          if (Array.isArray(parsed)) setStudyRecentQueries(parsed.slice(0, 8));
+        }
+        if (savedRaw) {
+          const parsed = JSON.parse(savedRaw);
+          if (parsed && typeof parsed === 'object') setSavedLearningSources(parsed);
+        }
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const rememberSearchQuery = useCallback(
+    async (kind: 'explore' | 'study', query: string) => {
+      const normalized = String(query || '').trim();
+      if (!normalized) return;
+      const key =
+        kind === 'explore'
+          ? ADVENTURE_HISTORY_LOCAL_KEY
+          : STUDY_HISTORY_LOCAL_KEY;
+      const setter =
+        kind === 'explore' ? setExploreRecentQueries : setStudyRecentQueries;
+      setter(prev => {
+        const next = [
+          normalized,
+          ...prev.filter(item => item.toLowerCase() !== normalized.toLowerCase()),
+        ].slice(0, 8);
+        AsyncStorage.setItem(key, JSON.stringify(next)).catch(() => {});
+        return next;
+      });
+    },
+    [],
+  );
+
+  const toggleSavedSource = useCallback(async (item: WebReference) => {
+    setSavedLearningSources(prev => {
+      const next: Record<string, WebReference> = { ...prev };
+      if (next[item.id]) {
+        delete next[item.id];
+      } else {
+        next[item.id] = { ...item, savedAt: Date.now() };
+      }
+      AsyncStorage.setItem(SAVED_SOURCES_LOCAL_KEY, JSON.stringify(next)).catch(
+        () => {},
+      );
+      return next;
+    });
+  }, []);
+
+  const openReferenceUrl = useCallback(
+    async (url: string) => {
+      const safeUrl = String(url || '').trim();
+      if (!safeUrl) return;
+      try {
+        const supported = await Linking.canOpenURL(safeUrl);
+        if (!supported) {
+          notifyError('Could not open this source link.');
+          return;
+        }
+        await Linking.openURL(safeUrl);
+      } catch {
+        notifyError('Could not open this source link.');
+      }
+    },
+    [notifyError],
+  );
                     
   const handleSendTextStory = useCallback(async () => {
     const trimmed = textComposerText.trim();
@@ -3042,6 +3347,431 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setIsAILoading(false);
     }
   }, [notifyError]);
+
+  const searchWebReferences = useCallback(async (query: string): Promise<WebReference[]> => {
+    const q = String(query || '').trim();
+    if (!q) return [];
+
+    const normalize = (items: any[]) =>
+      items
+        .map((item: any, idx: number) => ({
+          id: String(item.url || item.link || item.title || idx),
+          title: String(item.title || item.name || item.link || 'Result'),
+          url: String(item.url || item.link || ''),
+          description: String(item.description || item.snippet || item.body || item.Text || ''),
+        }))
+        .filter((item: any) => !!item.url);
+
+    const key = (() => {
+      try {
+        const cfg = require('./liveConfig');
+        return String(cfg?.VIBE_HUNT_SEARCH_API_KEY || '');
+      } catch {
+        return '';
+      }
+    })();
+
+    if (key) {
+      try {
+        const braveResp = await fetch(
+          `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=8`,
+          {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              'X-Subscription-Token': key,
+            },
+          },
+        );
+        if (braveResp.ok) {
+          const payload: any = await braveResp.json();
+          const braveItems = Array.isArray(payload?.web?.results) ? payload.web.results : [];
+          const braveResults = normalize(braveItems);
+          if (braveResults.length) return braveResults;
+        }
+      } catch {}
+    }
+
+    try {
+      const ddgResp = await fetch(
+        `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_redirect=1&no_html=1&skip_disambig=1`,
+      );
+      if (!ddgResp.ok) return [];
+      const payload: any = await ddgResp.json();
+      const topics: any[] = [];
+      const related = Array.isArray(payload?.RelatedTopics) ? payload.RelatedTopics : [];
+      related.forEach((entry: any) => {
+        if (entry?.FirstURL) {
+          topics.push({
+            title: entry.Text || entry.FirstURL,
+            url: entry.FirstURL,
+            description: entry.Text || '',
+          });
+        } else if (Array.isArray(entry?.Topics)) {
+          entry.Topics.forEach((child: any) => {
+            if (child?.FirstURL) {
+              topics.push({
+                title: child.Text || child.FirstURL,
+                url: child.FirstURL,
+                description: child.Text || '',
+              });
+            }
+          });
+        }
+      });
+      return normalize(topics).slice(0, 8);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const handleAIExploreWithSearch = useCallback(
+    async (theme: string, subheading?: string, customQuery?: string) => {
+      const query = String(customQuery || [theme, subheading, exploreSearchQuery].filter(Boolean).join(' ')).trim();
+      if (!query) return;
+      setIsExploreSearching(true);
+      setIsAILoading(true);
+      try {
+        const web = await searchWebReferences(query);
+        await rememberSearchQuery('explore', query);
+        setExploreResults((web || []).map(item => ({ ...item, source: 'explore' })));
+        const findings = web.slice(0, 6).map(
+          item => `${item.title} — ${item.description || item.url} (${item.url})`,
+        );
+        const response = await generateSearchBackedExploreResponse({
+          query,
+          webFindings: findings,
+        });
+        setExploreSearchResponse(response);
+        setAiResponse(response);
+      } catch (error) {
+        console.error('AI explore search failed', error);
+        notifyError('Explore search failed.');
+      } finally {
+        setIsExploreSearching(false);
+        setIsAILoading(false);
+      }
+    },
+    [exploreSearchQuery, notifyError, rememberSearchQuery, searchWebReferences],
+  );
+
+  const handleAIStudyHubSearch = useCallback(
+    async (subheading?: string, customQuery?: string) => {
+      const query = String(customQuery ?? studyHubQuery ?? '').trim();
+      if (!query) {
+        notifyError('Enter a topic to search in Study Hub.');
+        return;
+      }
+      setIsStudySearching(true);
+      setIsAILoading(true);
+      try {
+        const combined = [query, subheading].filter(Boolean).join(' ');
+        const web = await searchWebReferences(combined);
+        await rememberSearchQuery('study', combined);
+        setStudyHubResults((web || []).map(item => ({ ...item, source: 'study' })));
+        const findings = web.slice(0, 8).map(
+          item => `${item.title} — ${item.description || item.url} (${item.url})`,
+        );
+        const response = await generateStudyHubResponse({
+          query,
+          subheading,
+          webFindings: findings,
+        });
+        setStudyHubResponse(response);
+        setAiResponse(response);
+      } catch (error) {
+        console.error('Study hub search failed', error);
+        notifyError('Study Hub search failed.');
+      } finally {
+        setIsStudySearching(false);
+        setIsAILoading(false);
+      }
+    },
+    [notifyError, rememberSearchQuery, searchWebReferences, studyHubQuery],
+  );
+
+  const loadNoticeBoardData = useCallback(async () => {
+    const currentUid = auth().currentUser?.uid;
+    setNoticeLoading(true);
+    try {
+      if (currentUid) {
+        const regDoc = await firestore()
+          .collection('notice_board_registrations')
+          .doc(currentUid)
+          .get();
+        const regData: any = regDoc.data() || null;
+        const active = !!(regDoc.exists && regData?.enabled !== false);
+        setNoticeRegistered(active);
+        setNoticeRegistrationId(regData?.registrationId || (active ? currentUid : ''));
+        if (active) {
+          setNoticeOrgName(regData?.orgName || noticeOrgName);
+          setNoticeOrgType(regData?.orgType || noticeOrgType);
+          setNoticeEmail(regData?.email || noticeEmail);
+          setNoticePhone(regData?.phone || noticePhone);
+          setNoticeBio(regData?.bio || noticeBio);
+        }
+      } else {
+        setNoticeRegistered(false);
+        setNoticeRegistrationId('');
+      }
+
+      const adsSnap = await firestore()
+        .collection('notice_board_ads')
+        .orderBy('createdAt', 'desc')
+        .limit(30)
+        .get();
+      const ads = adsSnap.docs.map(doc => ({
+        id: doc.id,
+        ...(doc.data() as any),
+      }));
+      setNoticeAds(ads as any);
+    } catch (e) {
+      console.warn('Load notice board data failed', e);
+      try {
+        const localRegRaw = await AsyncStorage.getItem(NOTICE_REG_LOCAL_KEY);
+        const localReg = localRegRaw ? JSON.parse(localRegRaw) : null;
+        if (localReg && (!currentUid || localReg.uid === currentUid)) {
+          setNoticeRegistered(true);
+          setNoticeRegistrationId(localReg.registrationId || '');
+          setNoticeOrgName(localReg.orgName || noticeOrgName);
+          setNoticeOrgType(localReg.orgType || noticeOrgType);
+          setNoticeEmail(localReg.email || noticeEmail);
+          setNoticePhone(localReg.phone || noticePhone);
+          setNoticeBio(localReg.bio || noticeBio);
+        }
+      } catch {}
+      try {
+        const localAdsRaw = await AsyncStorage.getItem(NOTICE_ADS_LOCAL_KEY);
+        const localAds = localAdsRaw ? JSON.parse(localAdsRaw) : [];
+        if (Array.isArray(localAds)) {
+          setNoticeAds(localAds);
+        }
+      } catch {}
+    } finally {
+      setNoticeLoading(false);
+    }
+  }, [noticeBio, noticeEmail, noticeOrgName, noticeOrgType, noticePhone]);
+
+  useEffect(() => {
+    if (!showNotice) return;
+    loadNoticeBoardData();
+  }, [showNotice, loadNoticeBoardData]);
+
+  const handleNoticeBoardRegister = useCallback(async () => {
+    const currentUser = auth().currentUser;
+    if (!currentUser?.uid) {
+      Alert.alert('Sign in required', 'Please sign in to register for Bulletin Board.');
+      return;
+    }
+    const payload = {
+      orgName: noticeOrgName.trim(),
+      orgType: noticeOrgType.trim(),
+      email: noticeEmail.trim(),
+      phone: noticePhone.trim(),
+      bio: noticeBio.trim(),
+      uid: currentUser.uid,
+    };
+    if (!payload.orgName || !payload.orgType || !payload.email) {
+      Alert.alert('Missing details', 'Organization name, type, and email are required.');
+      return;
+    }
+
+    try {
+      let remoteResult: { ok: boolean; registrationId?: string; message?: string } | null = null;
+      try {
+        remoteResult = await registerNoticeBoard(payload);
+      } catch (e) {
+        console.warn('Notice register backend call failed, continuing with local activation:', e);
+      }
+
+      const registrationId =
+        remoteResult?.registrationId || `${currentUser.uid}-${Date.now()}`;
+      const registrationDoc = {
+        ...payload,
+        registrationId,
+        enabled: true, // free for now; payment can gate this later
+        localOnly: !remoteResult?.ok,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      let firestoreSaved = false;
+      try {
+        await firestore()
+          .collection('notice_board_registrations')
+          .doc(currentUser.uid)
+          .set(registrationDoc, { merge: true });
+        firestoreSaved = true;
+      } catch (firestoreErr) {
+        console.warn('Notice register Firestore write failed, using AsyncStorage fallback:', firestoreErr);
+      }
+
+      await AsyncStorage.setItem(
+        NOTICE_REG_LOCAL_KEY,
+        JSON.stringify({
+          ...payload,
+          uid: currentUser.uid,
+          registrationId,
+          enabled: true,
+          localOnly: !firestoreSaved,
+          updatedAt: Date.now(),
+        }),
+      );
+
+      setNoticeRegistered(true);
+      setNoticeRegistrationId(registrationId);
+      notifySuccess('Registration complete. You can post adverts now.');
+    } catch (e) {
+      console.error('Notice registration failed', e);
+      // Last-resort local success path
+      const registrationId = `${currentUser.uid}-${Date.now()}`;
+      await AsyncStorage.setItem(
+        NOTICE_REG_LOCAL_KEY,
+        JSON.stringify({
+          ...payload,
+          uid: currentUser.uid,
+          registrationId,
+          enabled: true,
+          localOnly: true,
+          updatedAt: Date.now(),
+        }),
+      );
+      setNoticeRegistered(true);
+      setNoticeRegistrationId(registrationId);
+      notifySuccess('Registration completed locally. You can post adverts now.');
+    }
+  }, [
+    noticeBio,
+    noticeEmail,
+    noticeOrgName,
+    noticeOrgType,
+    noticePhone,
+    notifyError,
+    notifySuccess,
+  ]);
+
+  const pickNoticeAdMedia = useCallback(async () => {
+    try {
+      const result = await launchImageLibrary({
+        mediaType: 'mixed',
+        selectionLimit: 1,
+        includeExtra: true,
+      });
+      if (result.didCancel) return;
+      const asset = result.assets?.[0] || null;
+      if (asset?.uri) {
+        setNoticeAdMedia(asset);
+      }
+    } catch (e) {
+      console.warn('Pick notice media failed', e);
+      notifyError('Could not select media.');
+    }
+  }, [notifyError]);
+
+  const handlePublishNoticeAd = useCallback(async () => {
+    const currentUser = auth().currentUser;
+    if (!currentUser?.uid) {
+      Alert.alert('Sign in required', 'Please sign in to publish adverts.');
+      return;
+    }
+    if (!noticeRegistered) {
+      Alert.alert('Registration required', 'Register first to publish on Bulletin Board.');
+      return;
+    }
+    const text = noticeAdText.trim();
+    if (!text && !noticeAdMedia?.uri) {
+      Alert.alert('Missing advert', 'Add text or media for your advert.');
+      return;
+    }
+
+    setNoticePosting(true);
+    try {
+      let mediaUrl: string | null = null;
+      let mediaType: string | null = noticeAdMedia?.type || null;
+      let mediaName: string | null = noticeAdMedia?.fileName || null;
+      let mediaPath: string | null = null;
+
+      if (noticeAdMedia?.uri) {
+        let localPath = String(noticeAdMedia.uri);
+        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+          localPath = localPath.replace('file://', '');
+        }
+        const safeName = String(noticeAdMedia.fileName || `advert_${Date.now()}`)
+          .replace(/[^A-Za-z0-9._-]/g, '_');
+        mediaPath = `notice-board/${currentUser.uid}/${Date.now()}_${safeName}`;
+        try {
+          await storage().ref(mediaPath).putFile(localPath, {
+            contentType: mediaType || undefined,
+          });
+          mediaUrl = await storage().ref(mediaPath).getDownloadURL();
+        } catch (uploadErr) {
+          console.warn('Notice media upload failed, using local URI fallback:', uploadErr);
+          mediaUrl = noticeAdMedia.uri || null;
+          mediaPath = null;
+        }
+      }
+
+      const advertPayload = {
+        uid: currentUser.uid,
+        text,
+        mediaUrl,
+        mediaPath,
+        mediaType,
+        mediaName,
+        orgName: noticeOrgName || null,
+        registrationId: noticeRegistrationId || null,
+        paidPlan: false, // free for now
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      };
+
+      let cloudSaved = false;
+      try {
+        await firestore().collection('notice_board_ads').add(advertPayload);
+        cloudSaved = true;
+      } catch (writeErr) {
+        console.warn('Notice advert Firestore write failed, using local store fallback:', writeErr);
+      }
+
+      if (!cloudSaved) {
+        const localRaw = await AsyncStorage.getItem(NOTICE_ADS_LOCAL_KEY);
+        const localAds = localRaw ? JSON.parse(localRaw) : [];
+        const next = Array.isArray(localAds) ? localAds : [];
+        next.unshift({
+          id: `local-${Date.now()}`,
+          uid: currentUser.uid,
+          text,
+          mediaUrl,
+          mediaPath,
+          mediaType,
+          mediaName,
+          orgName: noticeOrgName || null,
+          registrationId: noticeRegistrationId || null,
+          paidPlan: false,
+          createdAt: Date.now(),
+          localOnly: true,
+        });
+        await AsyncStorage.setItem(NOTICE_ADS_LOCAL_KEY, JSON.stringify(next.slice(0, 30)));
+      }
+
+      setNoticeAdText('');
+      setNoticeAdMedia(null);
+      notifySuccess('Advert posted to Bulletin Board.');
+      loadNoticeBoardData();
+    } catch (e) {
+      console.error('Publish notice advert failed', e);
+      notifyError('Could not publish advert.');
+    } finally {
+      setNoticePosting(false);
+    }
+  }, [
+    loadNoticeBoardData,
+    noticeAdMedia,
+    noticeAdText,
+    noticeOrgName,
+    noticeRegistered,
+    noticeRegistrationId,
+    notifyError,
+    notifySuccess,
+  ]);
                     
   // Advanced AI Handlers
   const handleAIPersonalizedAdvice = useCallback(async (userContext: string, requestType: string) => {
@@ -3714,12 +4444,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setIsAIEchoSuggesting(true);
     try {
       // Build post context for AI
+      const sceneHints = echoPostData
+        ? inferMediaSceneHints([
+            echoPostData.captionText,
+            echoPostData.media?.fileName,
+            echoPostData.media?.uri,
+            echoPostData.playbackUrl || '',
+            echoPostData.image || '',
+          ])
+        : [];
       const postContext = echoPostData ? {
         captionText: echoPostData.captionText,
         mediaType: echoPostData.media?.type,
         authorName: echoPostData.authorName,
         hasImage: !!(echoPostData.image || (echoPostData.media?.type?.startsWith('image/'))),
-        hasVideo: !!(echoPostData.playbackUrl || (echoPostData.media?.type?.startsWith('video/')))
+        hasVideo: !!(echoPostData.playbackUrl || (echoPostData.media?.type?.startsWith('video/'))),
+        mediaUrl: echoPostData.playbackUrl || echoPostData.media?.uri || undefined,
+        previewImageUrl: echoPostData.image || undefined,
+        fileName: echoPostData.media?.fileName || undefined,
+        sceneHints,
       } : undefined;
 
       const suggestion = await generateEchoSuggestion(postContext);
@@ -4300,10 +5043,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const waveDoc = await firestore().collection('waves').doc(echoWaveId).get();
         if (waveDoc.exists) {
           const data = waveDoc.data();
+          const mediaUri =
+            data?.media?.uri ||
+            data?.playbackUrl ||
+            data?.mediaUrl ||
+            data?.image ||
+            null;
+          const mediaType = data?.media?.type || data?.mediaType || undefined;
+          const mediaNameGuess = (() => {
+            const src = String(data?.mediaPath || mediaUri || '');
+            if (!src) return undefined;
+            const clean = src.split('?')[0];
+            const last = clean.substring(clean.lastIndexOf('/') + 1);
+            return last || undefined;
+          })();
           const postData: Vibe = {
             id: waveDoc.id,
-            captionText: data?.caption || '',
-            media: data?.media || null,
+            captionText: data?.captionText || data?.caption || data?.text || '',
+            media: mediaUri
+              ? ({ uri: mediaUri, type: mediaType, fileName: mediaNameGuess } as any)
+              : data?.media || null,
             audio: data?.audio || null,
             playbackUrl: data?.playbackUrl || null,
             muxStatus: data?.muxStatus || null,
@@ -4393,14 +5152,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const ar = videoAspectMap[id] || 9 / 16; // Use actual media aspect when known
       const width = SCREEN_WIDTH; // Always full device width
       const rawHeight = width / ar;
-      const height = Math.min(SCREEN_HEIGHT * 0.92, Math.max(260, rawHeight));
+      const height = Math.min(SCREEN_HEIGHT * 0.68, Math.max(140, rawHeight));
       return [
         styles.postedWaveMedia,
         {
           width,
           height,
           alignSelf: 'stretch',
-          backgroundColor: 'transparent', // Override yellow background
+          backgroundColor: appTokens.colors.mediaBackdrop,
         },
       ] as any;
     },
@@ -6434,44 +7193,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Otherwise, use the video or image file name
     return w.media.fileName || extractBaseName(w.media.uri) || 'Vibe';
   };
-                    
-  const explore = useMemo(
-    () => [
-      {
-        title: 'Tidal Trends',
-        desc: 'User-voted "rising SplashLines" of social hacks, viral trends, or fun memes.',
-      },
-      {
-        title: 'SplashLine Radar',
-        desc: 'Real-time global alerts and user-submitted spots with an AR overlay.',
-      },
-      {
-        title: 'Crew Quests',
-        desc: 'Collaborative challenges like beach cleanups or sharing sunset sail stories.',
-      },
-      {
-        title: 'Siren Stories',
-        desc: 'Bite-sized narratives from ocean explorers with voiceover audio and ambient sounds.',
-      },
-      {
-        title: 'Reef Reels',
-        desc: 'Short videos of marine life with haptic feedback and glow-in-the-dark filters.',
-      },
-      {
-        title: 'Treasure Tides',
-        desc: 'Gamified hunts for virtual ocean artifacts with real-world map tie-ins.',
-      },
-      {
-        title: 'Mystic Depths',
-        desc: 'A spooky-fun section for ocean myths, ghost ships, and bioluminescent wonders.',
-      },
-      {
-        title: 'Buoy Banter',
-        desc: 'Quick Q&A or polls on ocean trivia with AI-generated "sea shanty" jingles.',
-      },
-    ],
-    [],
-  );
                     
   // Shared helper to update counts with update() then merge fallback
   // Note: counts for splashes/echoes are updated server-side via Cloud Functions triggers
@@ -9774,6 +10495,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         durationSec: isVideoAsset(capturedMedia) ? playbackDuration || undefined : undefined,
         hasAudioOverlay: !!attachedAudio?.uri,
         editsSummary,
+        sceneHints: inferMediaSceneHints([
+          capturedMedia.fileName,
+          capturedMedia.uri,
+          waveCaption,
+          textComposerText,
+        ]),
+        localPreviewObserved: true,
         currentCaption: waveCaption || textComposerText || '',
       });
       setWaveCaption(suggestion);
@@ -10675,14 +11403,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   style={styles.topItem}
                   onPress={() => {
                     showTopBar();
-                    Alert.alert('Placeholder', 'Reserved for future feature.');
+                    Alert.alert('Tools', 'Additional tools will appear here.');
                   }}
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.placeholderIcon}>🔮</Text>
-                  <Text style={styles.topLabel}>PLACE HOLDER</Text>
+                  <Text style={styles.topLabel}>TOOLS</Text>
                 </Pressable>
               </ScrollView>
             )}
@@ -13036,29 +13764,130 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>SET SAIL</Text>
+              <Text style={styles.logbookTitle}>ADVENTURE SPACE</Text>
               <ScrollView>
-                {explore.map(t => (
-                  <Pressable
-                    key={t.title}
-                    style={styles.logbookAction}
-                    onPress={() => handleAIExploreContent(t.title, t.desc)}
-                  >
-                    <Text style={styles.logbookActionText}>{t.title}</Text>
-                    <Text
-                      style={[
-                        styles.hint,
-                        {
-                          fontFamily:
-                            Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-                          marginTop: 4,
-                        },
-                      ]}
+                <Text style={styles.panelIntro}>
+                  Search the web with AI guidance and save useful sources.
+                </Text>
+                <TextInput
+                  placeholder="Search topic, place, trend, or idea..."
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  style={styles.logbookInput}
+                  value={exploreSearchQuery}
+                  onChangeText={setExploreSearchQuery}
+                />
+                <Pressable
+                  style={[styles.primaryBtn, { marginBottom: 12 }]}
+                  onPress={() => handleAIExploreWithSearch(exploreSearchQuery || 'adventure space')}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {isExploreSearching ? 'Searching...' : 'Search'}
+                  </Text>
+                </Pressable>
+                <View style={styles.quickRow}>
+                  {['travel ideas', 'tech trends', 'business insights', 'nearby events'].map(topic => (
+                    <Pressable
+                      key={`adv-quick-${topic}`}
+                      style={styles.searchChip}
+                      onPress={() => {
+                        setExploreSearchQuery(topic);
+                        handleAIExploreWithSearch(topic, undefined, topic);
+                      }}
                     >
-                      {t.desc}
+                      <Text style={styles.searchChipText}>{topic}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                {isExploreSearching && (
+                  <ActivityIndicator color="#00C2FF" size="small" style={{ marginBottom: 8 }} />
+                )}
+                {exploreRecentQueries.length > 0 && (
+                  <View style={[styles.logbookAction, { borderBottomWidth: 0, marginBottom: 6 }]}>
+                    <Text style={styles.sectionHeader}>Recent searches</Text>
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                      {exploreRecentQueries.map(item => (
+                        <Pressable
+                          key={`explore-q-${item}`}
+                          style={styles.searchChip}
+                          onPress={() => {
+                            setExploreSearchQuery(item);
+                            handleAIExploreWithSearch(item, undefined, item);
+                          }}
+                        >
+                          <Text style={styles.searchChipText}>{item}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                )}
+                {!!exploreSearchResponse && (
+                  <View style={styles.responseCard}>
+                    <Text style={[styles.hint, { color: 'white', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' }]}>
+                      {exploreSearchResponse}
                     </Text>
-                  </Pressable>
-                ))}
+                  </View>
+                )}
+                {exploreResults.length > 0 && (
+                  <View style={[styles.logbookAction, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.sectionHeader}>Sources</Text>
+                    {exploreResults.map(item => {
+                      const isSaved = !!savedLearningSources[item.id];
+                      return (
+                        <View key={`explore-src-${item.id}`} style={styles.sourceCard}>
+                          <Text style={styles.sourceTitle}>{item.title}</Text>
+                          {!!item.description && (
+                            <Text style={[styles.hint, { color: 'white', marginTop: 4 }]} numberOfLines={3}>
+                              {item.description}
+                            </Text>
+                          )}
+                          <Text style={styles.sourceUrl} numberOfLines={1}>
+                            {item.url}
+                          </Text>
+                          <View style={styles.sourceActions}>
+                            <Pressable
+                              style={[styles.primaryBtn, { flex: 1, paddingVertical: 8 }]}
+                              onPress={() => openReferenceUrl(item.url)}
+                            >
+                              <Text style={styles.primaryBtnText}>Open</Text>
+                            </Pressable>
+                            <Pressable
+                              style={styles.secondaryMiniBtn}
+                              onPress={() => toggleSavedSource({ ...item, source: 'explore' })}
+                            >
+                              <Text style={styles.secondaryMiniBtnText}>
+                                {isSaved ? 'Saved' : 'Save'}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                {savedExploreSources.length > 0 && (
+                  <View style={[styles.logbookAction, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.sectionHeader}>Saved</Text>
+                    {savedExploreSources.slice(0, 4).map(item => (
+                      <Pressable
+                        key={`saved-explore-${item.id}`}
+                        style={styles.savedItem}
+                        onPress={() => openReferenceUrl(item.url)}
+                      >
+                        <Text style={styles.savedItemText} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                {!isExploreSearching && !exploreSearchResponse && exploreResults.length === 0 && (
+                  <View style={styles.emptyStateCard}>
+                    <Text style={styles.emptyStateTitle}>Start with a search</Text>
+                    <Text style={styles.emptyStateText}>
+                      Results and AI summary will appear here.
+                    </Text>
+                  </View>
+                )}
               </ScrollView>
             </View>
           </View>
@@ -13097,52 +13926,113 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>NOTICE BOARD</Text>
               <ScrollView>
-                <Text style={styles.logbookActionText}>
-                  Register your organization
-                </Text>
-                <TextInput
-                  placeholder="Organization name"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={styles.logbookInput}
-                />
-                <TextInput
-                  placeholder="Type (Public/Private)"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={styles.logbookInput}
-                />
-                <TextInput
-                  placeholder="Official email"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={styles.logbookInput}
-                  keyboardType="email-address"
-                />
-                <TextInput
-                  placeholder="Phone number"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={styles.logbookInput}
-                  keyboardType="phone-pad"
-                />
-                <TextInput
-                  placeholder="Short bio / About"
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={[styles.logbookInput, { height: 100 }]}
-                  multiline
-                />
-                <Pressable style={[styles.primaryBtn, { marginTop: 16 }]}>
-                  <Text style={styles.primaryBtnText}>Submit</Text>
-                </Pressable>
-                <Text
-                  style={[
-                    styles.hint,
-                    {
-                      fontFamily:
-                        Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-                      marginTop: 8,
-                    },
-                  ]}
-                >
-                  After approval, you can post public notices/adverts here.
-                </Text>
+                {noticeLoading ? (
+                  <ActivityIndicator color="#00C2FF" size="large" />
+                ) : (
+                  <>
+                    {!noticeRegistered ? (
+                      <>
+                        <Text style={styles.logbookActionText}>Register your organization</Text>
+                        <TextInput
+                          placeholder="Organization name"
+                          placeholderTextColor="rgba(255,255,255,0.4)"
+                          style={styles.logbookInput}
+                          value={noticeOrgName}
+                          onChangeText={setNoticeOrgName}
+                        />
+                        <TextInput
+                          placeholder="Type (Public/Private)"
+                          placeholderTextColor="rgba(255,255,255,0.4)"
+                          style={styles.logbookInput}
+                          value={noticeOrgType}
+                          onChangeText={setNoticeOrgType}
+                        />
+                        <TextInput
+                          placeholder="Official email"
+                          placeholderTextColor="rgba(255,255,255,0.4)"
+                          style={styles.logbookInput}
+                          keyboardType="email-address"
+                          value={noticeEmail}
+                          onChangeText={setNoticeEmail}
+                        />
+                        <TextInput
+                          placeholder="Phone number"
+                          placeholderTextColor="rgba(255,255,255,0.4)"
+                          style={styles.logbookInput}
+                          keyboardType="phone-pad"
+                          value={noticePhone}
+                          onChangeText={setNoticePhone}
+                        />
+                        <TextInput
+                          placeholder="Short bio / About"
+                          placeholderTextColor="rgba(255,255,255,0.4)"
+                          style={[styles.logbookInput, { height: 100 }]}
+                          multiline
+                          value={noticeBio}
+                          onChangeText={setNoticeBio}
+                        />
+                        <Pressable style={[styles.primaryBtn, { marginTop: 16 }]} onPress={handleNoticeBoardRegister}>
+                          <Text style={styles.primaryBtnText}>Register (Free for now)</Text>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.logbookAction}>
+                          <Text style={styles.logbookActionText}>Bulletin Board Publisher</Text>
+                          <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
+                            Registered as {noticeOrgName || 'organization'} | Paid API coming later.
+                          </Text>
+                        </View>
+                        <TextInput
+                          placeholder="Type your advert..."
+                          placeholderTextColor="rgba(255,255,255,0.4)"
+                          style={[styles.logbookInput, { height: 110 }]}
+                          multiline
+                          value={noticeAdText}
+                          onChangeText={setNoticeAdText}
+                        />
+                        <Pressable style={styles.logbookAction} onPress={pickNoticeAdMedia}>
+                          <Text style={styles.logbookActionText}>
+                            {noticeAdMedia?.fileName ? `Attached: ${noticeAdMedia.fileName}` : 'Attach image/video'}
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.primaryBtn, { marginTop: 10, opacity: noticePosting ? 0.7 : 1 }]}
+                          onPress={handlePublishNoticeAd}
+                          disabled={noticePosting}
+                        >
+                          {noticePosting ? (
+                            <ActivityIndicator color="white" size="small" />
+                          ) : (
+                            <Text style={styles.primaryBtnText}>Send Advert</Text>
+                          )}
+                        </Pressable>
+                      </>
+                    )}
+                    <Text style={[styles.logbookActionText, { marginTop: 16 }]}>Recent adverts</Text>
+                    {noticeAds.length === 0 ? (
+                      <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 8 }]}>
+                        No adverts yet.
+                      </Text>
+                    ) : (
+                      noticeAds.map(ad => (
+                        <View key={ad.id} style={styles.logbookAction}>
+                          <Text style={styles.logbookActionText}>{ad.orgName || 'Advertiser'}</Text>
+                          {!!ad.text && (
+                            <Text style={[styles.hint, { color: 'white', marginTop: 4 }]}>{ad.text}</Text>
+                          )}
+                          {!!ad.mediaUrl && (
+                            <Pressable onPress={() => Linking.openURL(ad.mediaUrl || '')}>
+                              <Text style={[styles.hint, { marginTop: 6, textDecorationLine: 'underline' }]}>
+                                Open media attachment
+                              </Text>
+                            </Pressable>
+                          )}
+                        </View>
+                      ))
+                    )}
+                  </>
+                )}
               </ScrollView>
             </View>
           </View>
@@ -13179,126 +14069,149 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>SCHOOL MODE</Text>
+              <Text style={styles.logbookTitle}>STUDY HUB</Text>
               <ScrollView>
-                {[
-                  {
-                    icon: '🎥',
-                    title: 'Sea of Lessons',
-                    desc: 'Browse educational videos',
-                    action: () => handleAISchoolFeedback('Sea of Lessons - Educational Videos'),
-                  },
-                  {
-                    icon: '❓',
-                    title: 'Deep Dive',
-                    desc: 'Take a quiz challenge',
-                    action: () => handleAISchoolFeedback('Deep Dive - Quiz Challenges'),
-                  },
-                  {
-                    icon: '🏝️',
-                    title: 'My Shore',
-                    desc: 'View your learning profile',
-                    action: () => {
-                      setShowSchoolMode(false);
-                      setShowProfile(true);
-                    },
-                  },
-                  {
-                    icon: '🌊',
-                    title: 'Ask the Tide',
-                    desc: 'Get AI-powered answers',
-                    action: () => handleAISchoolFeedback('Ask the Tide - AI Answers'),
-                  },
-                  {
-                    icon: '🪸',
-                    title: 'Pearl Rewards',
-                    desc: 'Earn learning points',
-                    action: () => {
-                      setShowSchoolMode(false);
-                      setShowPearls(true);
-                    },
-                  },
-                  {
-                    icon: '🐋',
-                    title: 'Join a Crew',
-                    desc: 'Find study groups',
-                    action: () => handleAISchoolFeedback('Join a Crew - Study Groups'),
-                  },
-                  {
-                    icon: '🧭',
-                    title: 'School Currents',
-                    desc: 'Structured curriculum',
-                    action: () => handleAISchoolFeedback('School Currents - Curriculum'),
-                  },
-                  {
-                    icon: '⚓',
-                    title: "Teacher's Dock",
-                    desc: 'Educator resources',
-                    action: () => handleAISchoolFeedback("Teacher's Dock - Educator Resources"),
-                  },
-                  {
-                    icon: '🪙',
-                    title: 'Ocean Library',
-                    desc: 'Download resources',
-                    action: () => handleAISchoolFeedback('Ocean Library - Resources'),
-                  },
-                  {
-                    icon: '🌅',
-                    title: 'Mind Drift',
-                    desc: 'Focus and productivity',
-                    action: () => {
-                      Alert.alert('Mind Drift', 'Focus Tools:', [
-                        {
-                          text: 'Pomodoro Timer',
-                          onPress: () =>
-                            Alert.alert(
-                              'Timer Started',
-                              '25-minute focus session started!',
-                            ),
-                        },
-                        {
-                          text: 'Meditation',
-                          onPress: () =>
-                            Alert.alert(
-                              'Coming Soon',
-                              'Guided meditation for focus coming soon!',
-                            ),
-                        },
-                        {
-                          text: 'Study Music',
-                          onPress: () =>
-                            Alert.alert(
-                              'Coming Soon',
-                              'Focus music playlists on the way!',
-                            ),
-                        },
-                        { text: 'Cancel', style: 'cancel' },
-                      ]);
-                    },
-                  },
-                ].map(item => (
+                <View style={styles.logbookAction}>
+                  <Text style={styles.sectionHeader}>Study search</Text>
+                  <Text style={styles.panelIntro}>
+                    Search educational content, get AI explanation, and keep references.
+                  </Text>
+                  <TextInput
+                    placeholder="Search subject, chapter, or concept..."
+                    placeholderTextColor="rgba(255,255,255,0.4)"
+                    style={[styles.logbookInput, { marginTop: 8 }]}
+                    value={studyHubQuery}
+                    onChangeText={setStudyHubQuery}
+                  />
                   <Pressable
-                    key={item.title}
-                    style={styles.logbookAction}
-                    onPress={item.action}
+                    style={[styles.primaryBtn, { marginTop: 8 }]}
+                    onPress={() => handleAIStudyHubSearch()}
                   >
-                    <Text style={styles.logbookActionText}>
-                      {item.icon} {item.title}
-                    </Text>
-                    <Text
-                      style={[
-                        styles.hint,
-                        {
-                          fontFamily:
-                            Platform.OS === 'ios' ? 'Courier New' : 'monospace',
-                          marginTop: 4,
-                        },
-                      ]}
-                    >
-                      {item.desc}
+                    <Text style={styles.primaryBtnText}>
+                      {isStudySearching ? 'Searching...' : 'Search'}
                     </Text>
                   </Pressable>
-                ))}
+                  <View style={styles.quickRow}>
+                    {['mathematics', 'science', 'history', 'english grammar'].map(sub => (
+                      <Pressable
+                        key={sub}
+                        style={styles.searchChip}
+                        onPress={() => handleAIStudyHubSearch(sub)}
+                      >
+                        <Text style={styles.searchChipText}>{sub}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  {isStudySearching && (
+                    <ActivityIndicator color="#00C2FF" size="small" style={{ marginTop: 8 }} />
+                  )}
+                  {studyRecentQueries.length > 0 && (
+                    <View style={{ marginTop: 10 }}>
+                      <Text style={styles.sectionHeader}>Recent searches</Text>
+                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                        {studyRecentQueries.map(item => (
+                          <Pressable
+                            key={`study-q-${item}`}
+                            style={styles.searchChip}
+                            onPress={() => {
+                              setStudyHubQuery(item);
+                              handleAIStudyHubSearch(undefined, item);
+                            }}
+                          >
+                            <Text style={styles.searchChipText}>{item}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                  {!!studyHubResponse && (
+                    <View style={styles.responseCard}>
+                      <Text style={[styles.hint, { color: 'white', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' }]}>
+                        {studyHubResponse}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+                {studyHubResults.length > 0 && (
+                  <View style={[styles.logbookAction, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.sectionHeader}>References</Text>
+                    {studyHubResults.map(item => {
+                      const isSaved = !!savedLearningSources[item.id];
+                      return (
+                        <View key={`study-src-${item.id}`} style={styles.sourceCard}>
+                          <Text style={styles.sourceTitle}>{item.title}</Text>
+                          {!!item.description && (
+                            <Text style={[styles.hint, { color: 'white', marginTop: 4 }]} numberOfLines={3}>
+                              {item.description}
+                            </Text>
+                          )}
+                          <Text style={styles.sourceUrl} numberOfLines={1}>
+                            {item.url}
+                          </Text>
+                          <View style={styles.sourceActions}>
+                            <Pressable
+                              style={[styles.primaryBtn, { flex: 1, paddingVertical: 8 }]}
+                              onPress={() => openReferenceUrl(item.url)}
+                            >
+                              <Text style={styles.primaryBtnText}>Open</Text>
+                            </Pressable>
+                            <Pressable
+                              style={styles.secondaryMiniBtn}
+                              onPress={() => toggleSavedSource({ ...item, source: 'study' })}
+                            >
+                              <Text style={styles.secondaryMiniBtnText}>
+                                {isSaved ? 'Saved' : 'Save'}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+                {savedStudySources.length > 0 && (
+                  <View style={[styles.logbookAction, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.sectionHeader}>Saved</Text>
+                    {savedStudySources.slice(0, 4).map(item => (
+                      <Pressable
+                        key={`saved-study-${item.id}`}
+                        style={styles.savedItem}
+                        onPress={() => openReferenceUrl(item.url)}
+                      >
+                        <Text style={styles.savedItemText} numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+                {!isStudySearching && !studyHubResponse && studyHubResults.length === 0 && (
+                  <View style={styles.emptyStateCard}>
+                    <Text style={styles.emptyStateTitle}>Search to begin learning</Text>
+                    <Text style={styles.emptyStateText}>
+                      AI notes and source references will appear here.
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.logbookAction}>
+                  <Text style={styles.sectionHeader}>Learning tools</Text>
+                  <View style={styles.toolGrid}>
+                    <Pressable
+                      style={styles.toolButton}
+                      onPress={() => handleAIStudyTip(studyHubQuery || 'general study habits')}
+                    >
+                      <Text style={styles.toolButtonTitle}>Study tip</Text>
+                      <Text style={styles.toolButtonHint}>Get a focused tip</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.toolButton}
+                      onPress={() => handleAIQuizQuestion(studyHubQuery || 'general knowledge')}
+                    >
+                      <Text style={styles.toolButtonTitle}>Quiz prompt</Text>
+                      <Text style={styles.toolButtonHint}>Generate practice questions</Text>
+                    </Pressable>
+                  </View>
+                </View>
               </ScrollView>
             </View>
           </View>
@@ -14864,7 +15777,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       paused={isPaused || !editorPlaying}
                       rate={Math.max(0.5, Math.min(2, Number(capturedMediaEdits.playbackRate || 1)))}
                       volume={Math.max(0, Math.min(2, Number(capturedMediaEdits.volumeBoost || 1)))}
-                      muted={true} // Mute video preview by default
+                      muted={!!attachedAudio?.uri}
                       disableFocus={true}
                       playInBackground={false}
                       playWhenInactive={false}
@@ -15136,6 +16049,45 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 </Pressable>
               ))}
             </ScrollView>
+            {capturedMedia?.uri &&
+              RNVideo &&
+              isVideoAsset(capturedMedia) && (
+                <View
+                  style={{
+                    marginTop: 10,
+                    marginHorizontal: 16,
+                    borderRadius: 10,
+                    overflow: 'hidden',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    backgroundColor: 'rgba(0,0,0,0.35)',
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.88)',
+                      fontSize: 12,
+                      fontWeight: '700',
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                    }}
+                  >
+                    Final Preview (with sound)
+                  </Text>
+                  <RNVideo
+                    source={{ uri: String(capturedMedia.uri) }}
+                    style={{ width: '100%', height: 180, backgroundColor: 'black' }}
+                    resizeMode="contain"
+                    controls
+                    muted={false}
+                    paused={isPaused || releasing}
+                    repeat
+                    playInBackground={false}
+                    playWhenInactive={false}
+                    ignoreSilentSwitch="ignore"
+                  />
+                </View>
+              )}
             <View
               style={{
                 flexDirection: 'row',
@@ -19174,7 +20126,7 @@ function SignInScreen({ navigation }: any) {
         <Text style={authStyles.title}>Welcome back</Text>
                     
         <Field
-          label="Email/Phone Number/Phone Number"
+          label="Email or phone number"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -19445,7 +20397,7 @@ function PostDetailScreen({ route, navigation }: any) {
             <VideoWithTapControls
               source={{ uri: String(post.playbackUrl || post.media.uri) }}
               style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
-              resizeMode="contain"
+              resizeMode="cover"
               paused={!isFocused}
               muted={true} // Start muted in full screen, unmute when play is pressed
               maxBitRate={1500000}

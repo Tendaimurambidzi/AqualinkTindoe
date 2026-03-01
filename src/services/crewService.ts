@@ -20,16 +20,60 @@ export async function joinCrew(targetUid: string): Promise<{ success: boolean }>
   if (user.uid === targetUid) throw new Error('Cannot join your own crew.');
 
   console.log(`[DEBUG] crewService.joinCrew: Calling Firebase function for ${user.uid} -> ${targetUid}`);
-  
-  const joinCrewFn = functions('us-central1').httpsCallable('joinCrew');
-  const result = await joinCrewFn({ targetUid });
-  
-  console.log(`[DEBUG] crewService.joinCrew: Firebase function returned:`, result?.data);
-  
-  if (result?.data?.success) {
-    return { success: true };
-  } else {
+
+  try {
+    const joinCrewFn = functions('us-central1').httpsCallable('joinCrew');
+    const result = await joinCrewFn({ targetUid });
+
+    console.log(`[DEBUG] crewService.joinCrew: Firebase function returned:`, result?.data);
+
+    if (result?.data?.success) {
+      return { success: true };
+    }
     throw new Error(result?.data?.message || 'Failed to join crew');
+  } catch (fnError) {
+    console.warn('[DEBUG] crewService.joinCrew callable failed, applying Firestore fallback:', fnError);
+
+    const meDoc = await firestore().collection('users').doc(user.uid).get();
+    const meData: any = meDoc.data() || {};
+    const myName =
+      meData?.displayName ||
+      meData?.username ||
+      meData?.name ||
+      user.displayName ||
+      'Anonymous';
+    const myPhoto = meData?.userPhoto || meData?.photoURL || null;
+    const now = firestore.FieldValue.serverTimestamp();
+
+    await firestore()
+      .collection('users')
+      .doc(targetUid)
+      .collection('crew')
+      .doc(user.uid)
+      .set(
+        {
+          uid: user.uid,
+          name: myName,
+          photo: myPhoto,
+          joinedAt: now,
+        },
+        { merge: true },
+      );
+
+    await firestore()
+      .collection('users')
+      .doc(user.uid)
+      .collection('following')
+      .doc(targetUid)
+      .set(
+        {
+          uid: targetUid,
+          joinedAt: now,
+        },
+        { merge: true },
+      );
+
+    return { success: true };
   }
 }
 

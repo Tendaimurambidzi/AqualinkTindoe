@@ -12,24 +12,25 @@ import database from '@react-native-firebase/database';
 import firestore from '@react-native-firebase/firestore';
 import { formatPresenceLastSeenExact } from '../services/timeUtils';
 import { Asset } from 'react-native-image-picker';
+import { appTokens } from '../theme/tokens';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const ui = {
   colors: {
-    card: '#FFFFFF',
-    border: '#D9E2EF',
-    heading: '#12263A',
-    body: '#243B53',
-    subtle: '#627D98',
-    link: '#0B69FF',
-    accent: '#00A3BF',
-    accentSoft: '#E6F7FB',
-    success: '#1F9D55',
-    danger: '#E12D39',
+    card: appTokens.colors.surface,
+    border: appTokens.colors.border,
+    heading: appTokens.colors.heading,
+    body: appTokens.colors.body,
+    subtle: appTokens.colors.subtle,
+    link: appTokens.colors.link,
+    accent: appTokens.colors.accent,
+    accentSoft: appTokens.colors.surfaceMuted,
+    success: appTokens.colors.success,
+    danger: appTokens.colors.danger,
   },
-  radius: { md: 12, lg: 16, xl: 20 },
-  spacing: { xs: 4, sm: 8, md: 12, lg: 16 },
-  type: { title: 16, body: 15, caption: 12, meta: 11 },
+  radius: { md: appTokens.radius.md, lg: appTokens.radius.lg, xl: appTokens.radius.xl },
+  spacing: { xs: appTokens.spacing.xs, sm: appTokens.spacing.sm, md: appTokens.spacing.md, lg: appTokens.spacing.lg },
+  type: { title: appTokens.type.title, body: appTokens.type.body, caption: appTokens.type.caption, meta: appTokens.type.meta },
 };
 let RNVideo: any = null;
 try {
@@ -288,9 +289,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     };
 
     if (!ownerUid) {
-      const exact = formatPresenceLastSeenExact(postFallbackTs);
       setIsHereNow(false);
-      setStatus(exact ? `Last Seen: ${exact}` : `Last Seen: ${formatPresenceLastSeenExact(new Date())}`);
+      setStatus('Away Since: ...');
       return;
     }
 
@@ -320,13 +320,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         setStatus('Here Now!');
         return;
       }
-      const resolvedLastSeen = mostRecentLastSeen || mostRecentActive || postFallbackTs;
+      const resolvedLastSeen = mostRecentLastSeen || mostRecentActive || null;
       const exact =
         formatPresenceLastSeenExact(resolvedLastSeen) ||
-        formatPresenceLastSeenExact(postFallbackTs) ||
-        formatPresenceLastSeenExact(new Date());
+        formatPresenceLastSeenExact(userData[ownerUid]?.lastSeen || null);
       setIsHereNow(false);
-      setStatus(`Away Since: ${exact}`);
+      setStatus(exact ? `Away Since: ${exact}` : 'Away Since: ...');
     };
 
     refreshStatus();
@@ -353,7 +352,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       unsubscribeFs();
       presenceRef.off('value', onPresence);
     };
-  }, [item.ownerUid, myUid, userData, (item as any)?.createdAt, (item as any)?.timestamp]);
+  }, [item.ownerUid, myUid, userData]);
 
   // Calculate play conditions
   const isAnyModalOpen = showMakeWaves || showAudioModal || !!capturedMedia || showLive;
@@ -395,10 +394,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
   const mediaEdits = item.mediaEdits || null;
   const fallbackAwayText = (() => {
-    const exact =
-      formatPresenceLastSeenExact((item as any)?.createdAt || (item as any)?.timestamp) ||
-      formatPresenceLastSeenExact(new Date());
-    return `Away Since: ${exact}`;
+    const exact = formatPresenceLastSeenExact(userData[item.ownerUid || '']?.lastSeen || null);
+    return exact ? `Away Since: ${exact}` : 'Away Since: ...';
   })();
 
   const filterOverlayStyle = (() => {
@@ -1062,7 +1059,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                           ],
                         },
                       ]}
-                      resizeMode={'contain'}
+                      resizeMode={'cover'}
                       paused={!playSynced}
                       playbackRate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
                       audioVolume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
@@ -1072,7 +1069,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       videoId={item.id}
                       shouldPreload={shouldPreload}
                       poster={item.image || undefined}
-                      posterResizeMode="contain"
+                      posterResizeMode="cover"
                       bufferConfig={{
                         minBufferMs: 3500,
                         maxBufferMs: 30000,
@@ -1345,7 +1342,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           )}
 
           {/* Read More - positioned above footer */}
-          {item.captionText && item.captionText.length > 500 && (
+          {textOnlyStory && item.captionText && item.captionText.length > 500 && (
             <Pressable onPress={handleReadMore} style={styles.readMoreButton}>
               <Text style={styles.readMoreText}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
             </Pressable>
@@ -1578,7 +1575,7 @@ const styles = StyleSheet.create({
     minHeight: 0,
   },
   posterActionWrap: {
-    marginTop: 2,
+    marginTop: 0,
   },
   sectionDivider: {
     height: 1,

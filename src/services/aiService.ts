@@ -86,7 +86,50 @@ export type MediaCaptionContext = {
   durationSec?: number;
   hasAudioOverlay?: boolean;
   editsSummary?: string;
+  sceneHints?: string[];
+  localPreviewObserved?: boolean;
+  mediaUrl?: string;
+  previewImageUrl?: string;
   currentCaption?: string;
+};
+
+const summarizeVisionFromImage = async (
+  imageUrl?: string,
+): Promise<string | null> => {
+  if (!XAI_API_KEY || !imageUrl) return null;
+  try {
+    const response = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${XAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: XAI_MODEL || 'grok-3-mini',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Describe visible scene content in one short sentence. Focus on concrete subject/action.',
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'What is happening in this media?' },
+              { type: 'image_url', image_url: { url: imageUrl } },
+            ],
+          },
+        ],
+        temperature: 0.2,
+      }),
+    });
+    if (!response.ok) return null;
+    const payload: any = await response.json();
+    const content = payload?.choices?.[0]?.message?.content;
+    return typeof content === 'string' ? content.trim() : null;
+  } catch {
+    return null;
+  }
 };
 
 export async function generateMediaCaptionSuggestion(
@@ -101,6 +144,10 @@ export async function generateMediaCaptionSuggestion(
     durationSec,
     hasAudioOverlay,
     editsSummary,
+    sceneHints,
+    localPreviewObserved,
+    mediaUrl,
+    previewImageUrl,
     currentCaption,
   } = context;
 
@@ -118,13 +165,23 @@ export async function generateMediaCaptionSuggestion(
       : hasAudioOverlay
       ? 'with attached audio'
       : 'no attached audio';
+  const hintText =
+    sceneHints && sceneHints.length > 0
+      ? sceneHints.join(', ')
+      : 'none';
+  const visionHint = await summarizeVisionFromImage(
+    previewImageUrl || (mediaKind === 'image' ? mediaUrl : undefined),
+  );
 
   const prompt =
     `Generate exactly one custom social caption for this ${mediaKind} post.\n` +
     `Media details: kind=${mediaKind}, mime=${mimeType || 'unknown'}, fileName=${fileName || 'unknown'}, size=${sizeHint}, duration=${durationHint}, audio=${audioHint}.\n` +
+    `Local scene hints from filename/path/caption: ${hintText}.\n` +
+    `Visual scene summary: ${visionHint || 'not available'}.\n` +
+    `Local preview observed before posting: ${localPreviewObserved ? 'yes' : 'no'}.\n` +
     `Edits applied: ${editsSummary || 'none'}.\n` +
     `Existing draft caption: "${(currentCaption || '').trim() || 'none'}".\n` +
-    'Rules: return only the caption text, no quotes, no numbering, no hashtags spam, maximum 140 characters, natural and specific.';
+    'Rules: return only the caption text, no quotes, no numbering, no hashtags spam, maximum 140 characters. Be concrete and content-specific (for example dancing, flood water, football), never generic placeholders like "nice visual".';
 
   return await generateText(prompt);
 }
@@ -140,11 +197,24 @@ export async function generateEchoSuggestion(postContext?: {
   authorName?: string;
   hasImage?: boolean;
   hasVideo?: boolean;
+  mediaUrl?: string;
+  previewImageUrl?: string;
+  fileName?: string;
+  sceneHints?: string[];
 }): Promise<string> {
   let prompt = 'Generate a thoughtful and positive echo (comment) for a social media post.';
 
   if (postContext) {
-    const { captionText, authorName, hasImage, hasVideo } = postContext;
+    const {
+      captionText,
+      authorName,
+      hasImage,
+      hasVideo,
+      mediaUrl,
+      previewImageUrl,
+      fileName,
+      sceneHints,
+    } = postContext;
 
     // Build context-aware prompt
     let contextInfo = '';
@@ -157,12 +227,24 @@ export async function generateEchoSuggestion(postContext?: {
     if (hasVideo) {
       contextInfo += 'The post includes a video. ';
     }
+    if (fileName) {
+      contextInfo += `Media file name hint: "${fileName}". `;
+    }
+    if (sceneHints && sceneHints.length) {
+      contextInfo += `Scene hints: ${sceneHints.join(', ')}. `;
+    }
     if (authorName) {
       contextInfo += `Posted by ${authorName}. `;
     }
+    const visionHint = await summarizeVisionFromImage(
+      previewImageUrl || (hasImage ? mediaUrl : undefined),
+    );
+    if (visionHint) {
+      contextInfo += `Visual summary: ${visionHint}. `;
+    }
 
     if (contextInfo.trim()) {
-      prompt = `Generate a thoughtful and positive echo (comment) for this social media post. ${contextInfo}Make the echo relevant to the content and engaging.`;
+      prompt = `Generate one thoughtful and positive echo (comment) for this social media post. ${contextInfo}Make the echo specific to what is happening in the media, not generic.`;
     }
   }
 
@@ -196,6 +278,40 @@ export async function generateExploreContent(theme: string, contentType: 'story'
   };
 
   const prompt = prompts[contentType] || `Generate engaging content about "${theme}" for exploration and learning.`;
+  return await generateText(prompt);
+}
+
+export async function generateSearchBackedExploreResponse(input: {
+  query: string;
+  webFindings?: string[];
+}): Promise<string> {
+  const findings = (input.webFindings || []).filter(Boolean).slice(0, 8);
+  const findingsText = findings.length ? findings.join('\n') : 'No external findings provided.';
+  const prompt =
+    `You are helping in Adventure Space (Explore Mode).\n` +
+    `User query: "${input.query}".\n` +
+    `Web findings:\n${findingsText}\n` +
+    `Task: Provide a concise, practical response with:\n` +
+    `1) A direct answer\n2) 3 quick facts\n3) 2 suggested next searches\n` +
+    `Keep it accurate, non-generic, and easy to read.`;
+  return await generateText(prompt);
+}
+
+export async function generateStudyHubResponse(input: {
+  query: string;
+  subheading?: string;
+  webFindings?: string[];
+}): Promise<string> {
+  const findings = (input.webFindings || []).filter(Boolean).slice(0, 10);
+  const findingsText = findings.length ? findings.join('\n') : 'No external findings provided.';
+  const prompt =
+    `You are a Study Hub AI tutor.\n` +
+    `Study topic: "${input.query}".\n` +
+    `Subheading: "${input.subheading || 'General'}".\n` +
+    `Web findings:\n${findingsText}\n` +
+    `Task: Give a learner-friendly answer with:\n` +
+    `1) Simple explanation\n2) Key points\n3) Practice question\n4) Suggested references from findings\n` +
+    `Be specific and educational.`;
   return await generateText(prompt);
 }
 
