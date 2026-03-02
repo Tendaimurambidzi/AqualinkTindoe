@@ -2798,39 +2798,50 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (callRingbackActiveRef.current) return;
     callRingbackActiveRef.current = true;
     if (callRingbackRef.current) return;
-    try {
-      const tone = new Sound('notification.wav', Sound.MAIN_BUNDLE, error => {
-        if (error) {
-          callRingbackActiveRef.current = false;
-          try {
-            tone.release();
-          } catch {}
-          return;
-        }
-        callRingbackRef.current = tone;
-        try {
-          tone.setNumberOfLoops(-1);
-        } catch {}
-        try {
-          tone.setVolume(0.9);
-        } catch {}
-        tone.play(success => {
-          if (!success) {
-            stopCallRingback();
+    const candidates = ['downfall_3_208028', 'notification', 'falcon'];
+    const tryLoad = (idx: number) => {
+      if (idx >= candidates.length) {
+        callRingbackActiveRef.current = false;
+        return;
+      }
+      let tone: Sound | null = null;
+      try {
+        tone = new Sound(candidates[idx], Sound.MAIN_BUNDLE, error => {
+          if (error || !tone) {
+            try {
+              tone?.release();
+            } catch {}
+            tryLoad(idx + 1);
+            return;
           }
+          callRingbackRef.current = tone;
+          try {
+            tone.setNumberOfLoops(-1);
+          } catch {}
+          try {
+            tone.setVolume(1.0);
+          } catch {}
+          tone.play(success => {
+            if (!success) {
+              stopCallRingback();
+            }
+          });
         });
-      });
-    } catch {
-      callRingbackActiveRef.current = false;
-    }
+      } catch {
+        try {
+          tone?.release();
+        } catch {}
+        tryLoad(idx + 1);
+      }
+    };
+    tryLoad(0);
   }, [stopCallRingback]);
 
   useEffect(() => {
     const isOutgoingRinging =
       !!outgoingDirectCall &&
       !activeDirectCall &&
-      outgoingDirectCall.status === 'ringing' &&
-      outgoingDirectCall.callerUid === myUid;
+      outgoingDirectCall.status === 'ringing';
     if (isOutgoingRinging) {
       startCallRingback();
     } else {
@@ -2838,7 +2849,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [
     activeDirectCall,
-    myUid,
     outgoingDirectCall,
     startCallRingback,
     stopCallRingback,
@@ -18333,6 +18343,8 @@ const DirectCallModal = ({
   const [showVideoJoinWatchdog, setShowVideoJoinWatchdog] = useState(false);
   const [showJoinRecovery, setShowJoinRecovery] = useState(false);
   const [joinAttemptNonce, setJoinAttemptNonce] = useState(0);
+  const autoRetryJoinTimerRef = useRef<any>(null);
+  const autoRetryJoinCountRef = useRef(0);
 
   const rtcUid = useMemo(() => {
     const source =
@@ -18452,22 +18464,20 @@ const DirectCallModal = ({
           }
           throw lastErr || new Error('joinChannel failed');
         };
-
-        const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
-        if (isV4) {
-          engineIsV4Ref.current = true;
-          const engine = Agora.createAgoraRtcEngine();
-          engineRef.current = engine;
-          try {
-            engine.initialize?.({
-              appId,
-              channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
-            });
-          } catch {}
+        const ensurePublishedMedia = (engine: any, mode: DirectCallMode) => {
           try {
             engine.enableAudio?.();
           } catch {}
-          if (call.callType === 'video') {
+          try {
+            engine.enableLocalAudio?.(true);
+          } catch {}
+          try {
+            engine.muteLocalAudioStream?.(false);
+          } catch {}
+          try {
+            engine.setEnableSpeakerphone?.(true);
+          } catch {}
+          if (mode === 'video') {
             try {
               engine.enableVideo?.();
             } catch {}
@@ -18488,25 +18498,57 @@ const DirectCallModal = ({
                 autoSubscribeVideo: true,
               });
             } catch {}
-          } else {
-            try {
-              engine.disableVideo?.();
-            } catch {}
-            try {
-              engine.muteLocalVideoStream?.(true);
-            } catch {}
+            return;
           }
+          try {
+            engine.disableVideo?.();
+          } catch {}
+          try {
+            engine.enableLocalVideo?.(false);
+          } catch {}
+          try {
+            engine.muteLocalVideoStream?.(true);
+          } catch {}
+          try {
+            engine.updateChannelMediaOptions?.({
+              publishMicrophoneTrack: true,
+              publishCameraTrack: false,
+              autoSubscribeAudio: true,
+              autoSubscribeVideo: false,
+            });
+          } catch {}
+        };
+
+        const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
+        if (isV4) {
+          engineIsV4Ref.current = true;
+          const engine = Agora.createAgoraRtcEngine();
+          engineRef.current = engine;
+          try {
+            engine.initialize?.({
+              appId,
+              channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
+            });
+          } catch {}
+          try {
+            engine.enableAudio?.();
+          } catch {}
+          ensurePublishedMedia(engine, call.callType);
           try {
             engine.registerEventHandler?.({
               onJoinChannelSuccess: () => {
                 setIsJoined(true);
                 setIsReconnecting(false);
                 setShowJoinRecovery(false);
+                autoRetryJoinCountRef.current = 0;
+                ensurePublishedMedia(engine, call.callType);
               },
               onRejoinChannelSuccess: () => {
                 setIsJoined(true);
                 setIsReconnecting(false);
                 setShowJoinRecovery(false);
+                autoRetryJoinCountRef.current = 0;
+                ensurePublishedMedia(engine, call.callType);
               },
               onUserJoined: (_conn: any, uid: number) => {
                 setRemoteUid(Number(uid));
@@ -18534,29 +18576,14 @@ const DirectCallModal = ({
           try {
             engine.enableAudio?.();
           } catch {}
-          if (call.callType === 'video') {
-            try {
-              engine.enableVideo?.();
-            } catch {}
-            try {
-              engine.enableLocalVideo?.(true);
-            } catch {}
-            try {
-              engine.muteLocalVideoStream?.(false);
-            } catch {}
-            try {
-              engine.startPreview?.();
-            } catch {}
-          } else {
-            try {
-              engine.muteLocalVideoStream?.(true);
-            } catch {}
-          }
+          ensurePublishedMedia(engine, call.callType);
           try {
             engine.addListener?.('JoinChannelSuccess', () => {
               setIsJoined(true);
               setIsReconnecting(false);
               setShowJoinRecovery(false);
+              autoRetryJoinCountRef.current = 0;
+              ensurePublishedMedia(engine, call.callType);
             });
           } catch {}
           try {
@@ -18564,6 +18591,8 @@ const DirectCallModal = ({
               setIsJoined(true);
               setIsReconnecting(false);
               setShowJoinRecovery(false);
+              autoRetryJoinCountRef.current = 0;
+              ensurePublishedMedia(engine, call.callType);
             });
           } catch {}
           try {
@@ -18616,12 +18645,19 @@ const DirectCallModal = ({
           joinTimeoutRef.current = null;
         }
       } catch {}
+      try {
+        if (autoRetryJoinTimerRef.current) {
+          clearTimeout(autoRetryJoinTimerRef.current);
+          autoRetryJoinTimerRef.current = null;
+        }
+      } catch {}
       setElapsedSec(0);
       setIsJoined(false);
       setRemoteUid(null);
       setIsReconnecting(false);
       setShowVideoJoinWatchdog(false);
       setShowJoinRecovery(false);
+      autoRetryJoinCountRef.current = 0;
       if (engineRef.current) {
         try {
           engineRef.current.leaveChannel?.();
@@ -18647,6 +18683,30 @@ const DirectCallModal = ({
     staticToken,
     visible,
   ]);
+
+  useEffect(() => {
+    if (autoRetryJoinTimerRef.current) {
+      clearTimeout(autoRetryJoinTimerRef.current);
+      autoRetryJoinTimerRef.current = null;
+    }
+    if (!visible || isJoined || !showJoinRecovery) return;
+    if (autoRetryJoinCountRef.current >= 3) return;
+    autoRetryJoinTimerRef.current = setTimeout(() => {
+      autoRetryJoinCountRef.current += 1;
+      setShowJoinRecovery(false);
+      setShowVideoJoinWatchdog(false);
+      setIsReconnecting(true);
+      setRemoteUid(null);
+      setIsJoined(false);
+      setJoinAttemptNonce(prev => prev + 1);
+    }, 2200);
+    return () => {
+      if (autoRetryJoinTimerRef.current) {
+        clearTimeout(autoRetryJoinTimerRef.current);
+        autoRetryJoinTimerRef.current = null;
+      }
+    };
+  }, [isJoined, showJoinRecovery, visible]);
 
   useEffect(() => {
     if (joinTimeoutRef.current) {
@@ -18943,7 +19003,7 @@ const DirectCallModal = ({
                   <Text style={{ color: 'white' }}>Remote video connected</Text>
                 </View>
               )
-            ) : role === 'caller' && !cameraMuted ? (
+            ) : !cameraMuted ? (
               <View style={{ flex: 1 }}>
                 {AVView ? (
                   <AVView
@@ -18986,7 +19046,11 @@ const DirectCallModal = ({
                     alignItems: 'center',
                   }}
                 >
-                  <Text style={{ color: 'white' }}>Ringing {counterpart}...</Text>
+                  <Text style={{ color: 'white' }}>
+                    {role === 'caller'
+                      ? `Ringing ${counterpart}...`
+                      : `Connecting to ${counterpart}...`}
+                  </Text>
                 </View>
               </View>
             ) : (
