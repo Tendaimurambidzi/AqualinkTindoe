@@ -11240,6 +11240,38 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     [clearCallDocSubscription, mapDirectCallDoc, myUid],
   );
 
+  const fetchDirectCallAgoraToken = useCallback(
+    async (channelName: string): Promise<string | null> => {
+      const chan = String(channelName || '').trim();
+      if (!chan) return null;
+      try {
+        const cfgLocal = (() => {
+          try {
+            return require('./liveConfig');
+          } catch {
+            return null;
+          }
+        })();
+        const tokenEndpoint = String(cfgLocal?.AGORA_TOKEN_ENDPOINT || '').trim();
+        if (!tokenEndpoint) return null;
+        const q = `?channel=${encodeURIComponent(
+          chan,
+        )}&role=publisher&uid=0&expire=3600`;
+        const timeout = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('token-timeout')), 3500);
+        });
+        const resp: any = await Promise.race([fetch(`${tokenEndpoint}${q}`), timeout]);
+        if (!resp?.ok) return null;
+        const json = await resp.json();
+        const token = String(json?.token || '').trim();
+        return token || null;
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
+
   const startDirectCall = useCallback(
     async (
       mode: DirectCallMode,
@@ -11287,6 +11319,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       try {
         const callRef = firestore().collection(`users/${myUid}/direct_calls`).doc();
+        const channelName = `aqua_call_${callRef.id}`.replace(/[^A-Za-z0-9_]/g, '_');
+        const freshToken = await fetchDirectCallAgoraToken(channelName);
         const payload: Omit<DirectCallSession, 'id'> & { createdAt: any } = {
           callerUid: myUid,
           calleeUid,
@@ -11294,12 +11328,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           calleeName,
           callerAvatar: auth()?.currentUser?.photoURL || null,
           calleeAvatar: null,
-          channelName: `aqua_call_${callRef.id}`.replace(/[^A-Za-z0-9_]/g, '_'),
+          channelName,
           callType: mode,
           status: 'ringing',
           createdAt: firestore.FieldValue.serverTimestamp(),
           endedBy: null,
-          agoraToken: null,
+          agoraToken: freshToken || null,
         };
         const calleeCallRef = firestore()
           .collection(`users/${calleeUid}/direct_calls`)
@@ -11413,6 +11447,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       outgoingDirectCall,
       profileName,
       selectedThread,
+      fetchDirectCallAgoraToken,
       watchDirectCallDoc,
     ],
   );
@@ -11444,22 +11479,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const peerCallRef = firestore()
         .collection(`users/${call.callerUid}/direct_calls`)
         .doc(call.id);
+      const freshToken =
+        call.agoraToken || (await fetchDirectCallAgoraToken(call.channelName));
       const batch = firestore().batch();
       const patch = {
         status: 'accepted',
         acceptedAt: firestore.FieldValue.serverTimestamp(),
+        agoraToken: freshToken || null,
       };
       batch.set(myCallRef, patch, { merge: true });
       batch.set(peerCallRef, patch, { merge: true });
       await batch.commit();
       setIncomingDirectCall(null);
-      setActiveDirectCall({ ...call, status: 'accepted' });
+      setActiveDirectCall({
+        ...call,
+        status: 'accepted',
+        agoraToken: freshToken || call.agoraToken || null,
+      });
       setActiveDirectCallRole('callee');
       watchDirectCallDoc(call.id, 'callee');
     } catch (err: any) {
       Alert.alert('Call failed', err?.message || 'Could not accept this call.');
     }
-  }, [incomingDirectCall, myUid, watchDirectCallDoc]);
+  }, [fetchDirectCallAgoraToken, incomingDirectCall, myUid, watchDirectCallDoc]);
 
   const declineIncomingDirectCall = useCallback(async () => {
     const call = incomingDirectCall;
@@ -18430,9 +18472,31 @@ const DirectCallModal = ({
             seenTokens.add(token);
           }
         };
+        let endpointToken: string | null = null;
+        try {
+          const tokenEndpoint = String(cfg?.AGORA_TOKEN_ENDPOINT || '').trim();
+          if (tokenEndpoint && call.channelName) {
+            const q = `?channel=${encodeURIComponent(
+              String(call.channelName),
+            )}&role=publisher&uid=0&expire=3600`;
+            const timeout = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('token-timeout')), 3000);
+            });
+            const resp: any = await Promise.race([
+              fetch(`${tokenEndpoint}${q}`),
+              timeout,
+            ]);
+            if (resp?.ok) {
+              const json = await resp.json();
+              const tok = String(json?.token || '').trim();
+              endpointToken = tok || null;
+            }
+          }
+        } catch {}
         pushToken(call.agoraToken);
-        pushToken(staticToken);
+        pushToken(endpointToken);
         pushToken(null);
+        pushToken(staticToken);
 
         const uidCandidates = Array.from(new Set([Number(rtcUid) || 0, 0]));
 
@@ -18441,21 +18505,29 @@ const DirectCallModal = ({
           isV4Engine: boolean,
           mode: DirectCallMode,
         ) => {
+          const attemptJoin = async (token: string | null, uid: number) => {
+            if (typeof engine.joinChannel !== 'function') {
+              throw new Error('joinChannel unavailable');
+            }
+            const joinPromise = isV4Engine
+              ? engine.joinChannel?.(token, call.channelName, uid, {
+                  clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+                  publishMicrophoneTrack: true,
+                  publishCameraTrack: mode === 'video',
+                  autoSubscribeAudio: true,
+                  autoSubscribeVideo: mode === 'video',
+                })
+              : engine.joinChannel?.(token, call.channelName, uid);
+            const timeout = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('join-timeout')), 4500);
+            });
+            return Promise.race([joinPromise, timeout]);
+          };
           let lastErr: any = null;
           for (const token of tokenCandidates) {
             for (const uid of uidCandidates) {
               try {
-                if (isV4Engine) {
-                  await engine.joinChannel?.(token, call.channelName, uid, {
-                    clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
-                    publishMicrophoneTrack: true,
-                    publishCameraTrack: mode === 'video',
-                    autoSubscribeAudio: true,
-                    autoSubscribeVideo: mode === 'video',
-                  });
-                } else {
-                  await engine.joinChannel?.(token, call.channelName, uid);
-                }
+                await attemptJoin(token, uid);
                 return;
               } catch (err) {
                 lastErr = err;
