@@ -19300,13 +19300,6 @@ const LiveStreamModal = ({
   const [tokenInput, setTokenInput] = useState<string>('');
   const [uidInput, setUidInput] = useState<string>('0');
   const [liveUid, setLiveUid] = useState<number>(0);
-  const isSetupValid = useMemo(() => {
-    const hasChannel = !!(channelInput || '').trim();
-    const uidStr = (uidInput || '').trim();
-    const hasUid = uidStr === '' || /^\d+$/.test(uidStr);
-    // Don't require token or title - server can provide token, users can add title
-    return hasChannel && hasUid;
-  }, [channelInput, uidInput]);
   const [isStartingLive, setIsStartingLive] = useState(false);
   const [liveTitle, setLiveTitle] = useState<string>('');
   const [liveDesc, setLiveDesc] = useState<string>(
@@ -19686,49 +19679,81 @@ const LiveStreamModal = ({
     (async () => {
       try {
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
-        let tok = liveToken || staticToken || null;
-        const chan = liveChannel || defaultChannel;
-        const uidNum = Number.isFinite(liveUid as any)
-          ? (liveUid as any as number)
-          : 0;
-        // Fallback: fetch token from backend if not present
-        if (!tok) {
-          try {
-            const cfgLocal = (() => {
-              try {
-                return require('./liveConfig');
-              } catch {
-                return null;
-              }
-            })();
-            const tokenEndpoint: string =
-              (cfgLocal && cfgLocal.AGORA_TOKEN_ENDPOINT) || '';
-            if (tokenEndpoint) {
-              const q = `?channel=${encodeURIComponent(
-                chan,
-              )}&role=publisher&uid=${encodeURIComponent(String(uidNum))}`;
-              const resp = await fetch(`${tokenEndpoint}${q}`);
-              if (resp.ok) {
-                const json = await resp.json();
-                if (json?.token) tok = String(json.token);
-              }
-            }
-          } catch {}
+        const chan = String(liveChannel || defaultChannel || '').trim();
+        if (!chan) {
+          setStartError('Channel is missing. Please try Start Drift again.');
+          return;
         }
-        if (isV4) {
-          try {
-            await engine.joinChannel(tok, chan, uidNum, {
-              publishMicrophoneTrack: true,
-              publishCameraTrack: true,
-            });
-          } catch {}
-        } else {
-          try {
-            await engine.joinChannel(tok, chan, uidNum);
-          } catch {}
+        const uidBase = Number.isFinite(liveUid as any)
+          ? Number(liveUid as any)
+          : 0;
+        const uidCandidates = Array.from(new Set([uidBase, 0]));
+        const tokenCandidates: Array<string | null> = [];
+        const addToken = (value: any) => {
+          const t = String(value || '').trim();
+          if (!t) {
+            if (!tokenCandidates.includes(null)) tokenCandidates.push(null);
+            return;
+          }
+          if (!tokenCandidates.includes(t)) tokenCandidates.push(t);
+        };
+        addToken(liveToken);
+        addToken(staticToken);
+        // Fallback: fetch token from backend if not present
+        try {
+          const cfgLocal = (() => {
+            try {
+              return require('./liveConfig');
+            } catch {
+              return null;
+            }
+          })();
+          const tokenEndpoint: string =
+            (cfgLocal && cfgLocal.AGORA_TOKEN_ENDPOINT) || '';
+          if (tokenEndpoint) {
+            const q = `?channel=${encodeURIComponent(
+              chan,
+            )}&role=publisher&uid=${encodeURIComponent(String(uidBase || 0))}`;
+            const resp = await fetch(`${tokenEndpoint}${q}`);
+            if (resp.ok) {
+              const json = await resp.json();
+              addToken(json?.token);
+            }
+          }
+        } catch {}
+        let joined = false;
+        let lastErr: any = null;
+        for (const tok of tokenCandidates) {
+          for (const uidNum of uidCandidates) {
+            try {
+              if (isV4) {
+                await engine.joinChannel(tok, chan, uidNum, {
+                  publishMicrophoneTrack: true,
+                  publishCameraTrack: true,
+                  autoSubscribeAudio: true,
+                  autoSubscribeVideo: true,
+                });
+              } else {
+                await engine.joinChannel(tok, chan, uidNum);
+              }
+              joined = true;
+              setStartError(null);
+              break;
+            } catch (err) {
+              lastErr = err;
+            }
+          }
+          if (joined) break;
+        }
+        if (!joined) {
+          const msg = String(
+            (lastErr as any)?.message || 'Could not join this drift channel.',
+          );
+          setStartError(msg);
         }
       } catch (e) {
         console.warn('Join channel failed', e);
+        setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
   }, [isLiveStarted, liveUid, liveToken, liveChannel]);
@@ -19845,29 +19870,39 @@ const LiveStreamModal = ({
     setStartError(null);
     setIsStartingLive(true);
     try {
+      const me = auth?.()?.currentUser;
+      const currentUserUid = String(me?.uid || '').trim();
+      if (!currentUserUid) {
+        setStartError('Please sign in first.');
+        return;
+      }
       // Ensure camera/mic permissions (Android) so inline preview can render
       if (Platform.OS === 'android') {
         const ok = await ensureCamMicPermissionsAndroid();
         if (!ok) {
           setStartError('Camera/Mic permission required');
-          setIsStartingLive(false);
           return;
         }
       }
       // Use user-provided values (fallback to config)
-      const chan = (channelInput || '').trim() || defaultChannel;
+      const enteredChan = String(channelInput || '').trim();
+      const baseChan =
+        enteredChan ||
+        String(defaultChannel || '').trim() ||
+        `drift_${currentUserUid.slice(0, 8)}_${Date.now()}`;
+      const chan = baseChan.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
       const initialTok = (tokenInput || '').trim() || staticToken || null;
-      const uidNum = parseInt(uidInput || '0', 10);
-                    
-      // Get current user UID for backend
-      let currentUserUid = 'unknown';
-      try {
-        const authMod = require('@react-native-firebase/auth').default;
-        const user = authMod?.().currentUser;
-        if (user) {
-          currentUserUid = user.uid;
+      let uidNum = parseInt(uidInput || '0', 10);
+      if (!Number.isFinite(uidNum) || uidNum < 0) {
+        uidNum = 0;
+      }
+      if (uidNum === 0) {
+        let hash = 0;
+        for (let i = 0; i < currentUserUid.length; i += 1) {
+          hash = (hash * 31 + currentUserUid.charCodeAt(i)) >>> 0;
         }
-      } catch {}
+        uidNum = (hash % 2147483646) + 1;
+      }
                     
       // Optional: notify backend we're starting and fetch a fresh token/liveId
       try {
@@ -19907,6 +19942,7 @@ const LiveStreamModal = ({
       } catch {
         setLiveToken(initialTok || null);
       }
+      setChannelInput(chan);
       setLiveChannel(chan);
       setLiveUid(Number.isFinite(uidNum) ? uidNum : 0);
       setIsLiveStarted(true);
@@ -22441,12 +22477,12 @@ const LiveStreamModal = ({
                   style={editorStyles.liveSetupInput}
                 />
                 <Pressable
-                  disabled={!isSetupValid || isStartingLive}
+                  disabled={isStartingLive}
                   style={[
                     styles.primaryBtn,
                     {
                       marginTop: 10,
-                      opacity: isSetupValid && !isStartingLive ? 1 : 0.6,
+                      opacity: isStartingLive ? 0.6 : 1,
                     },
                   ]}
                   onPress={startLiveNow}
