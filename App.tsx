@@ -3924,7 +3924,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         await rememberSearchQuery('explore', query);
         setExploreResults((web || []).map(item => ({ ...item, source: 'explore' })));
         const findings = web.slice(0, 6).map(
-          item => `${item.title} ï¿½ ${item.description || item.url} (${item.url})`,
+          item => `${item.title} - ${item.description || item.url} (${item.url})`,
         );
         const response = await generateSearchBackedExploreResponse({
           query,
@@ -3960,7 +3960,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         await rememberSearchQuery('study', combined);
         setStudyHubResults((web || []).map(item => ({ ...item, source: 'study' })));
         const findings = web.slice(0, 8).map(
-          item => `${item.title} ï¿½ ${item.description || item.url} (${item.url})`,
+          item => `${item.title} - ${item.description || item.url} (${item.url})`,
         );
         const response = await generateStudyHubResponse({
           query,
@@ -8558,8 +8558,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const waveId = wave.id;
       const deep = `drift://wave/${encodeURIComponent(waveId)}`;
       const web = `https://drift.link/w/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `ï¿½${wave.captionText}ï¿½` : 'my vibe';
-      const msg = `Cast Vibe ï¿½ Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
+      const caption = wave.captionText ? `"${wave.captionText}"` : 'my vibe';
+      const msg = `Cast Vibe - Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to cast the net right now.');
@@ -8569,8 +8569,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const waveId = wave.id;
       const link = `aqualink://wave/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `ï¿½${wave.captionText}ï¿½` : 'my splashline';
-      const msg = `Cast SplashLine ï¿½ Check out ${caption}\n\n${link}`;
+      const caption = wave.captionText ? `"${wave.captionText}"` : 'my splashline';
+      const msg = `Cast SplashLine - Check out ${caption}\n\n${link}`;
       await Share.share({ title: 'Cast SplashLine', message: msg });
     } catch {
       showOceanDialog(
@@ -9783,7 +9783,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const name = profileName || accountCreationHandle || '@your_handle';
       const deep = uid ? `drift://user/${uid}` : 'drift://home';
       const web = uid ? `https://drift.link/u/${uid}` : 'https://drift.link/';
-      const msg = `Cast Vibe ï¿½ Check out my Aura ${name}!\n\n${web}\n(Open in app: ${deep})`;
+      const msg = `Cast Vibe - Check out my Aura ${name}!\n\n${web}\n(Open in app: ${deep})`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
@@ -12409,7 +12409,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
               </View>
               <Text style={styles.driftAlertText}>
-                Open Sea Vibe ï¿½ {vibeAlert.hostName}
+                Open Sea Vibe - {vibeAlert.hostName}
               </Text>
             </Pressable>
             <Pressable
@@ -14159,8 +14159,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 >
                                   <Text style={styles.messageAttachmentDownloadText}>
                                     {isDownloading
-                                      ? `? Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
-                                      : '? Download'}
+                                      ? `⬇ Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
+                                      : '⬇ Download'}
                                   </Text>
                                 </Pressable>
                               );
@@ -14676,7 +14676,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             ? new Date(
                                 waveStats[w.id]!.createdAt!,
                               ).toLocaleString()
-                            : 'ï¿½'}
+                            : 'Unknown'}
                         </Text>
                         <View
                           style={{
@@ -16658,13 +16658,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             Platform.OS === 'ios' ? 'Courier New' : 'monospace',
                         }}
                       >
-                        ? Change Country
+                        🌍 Change Country
                       </Text>
                     </Pressable>
                     {selectedCountry === 'Zimbabwe' && (
                       <>
                         <Text style={styles.logbookActionText}>
-                          Zimbabwe ï¿½ Sources of funds
+                          Zimbabwe - Sources of funds
                         </Text>
                         <Text style={styles.subLabel}>NMB Bank</Text>
                         <TextInput
@@ -16692,7 +16692,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     {selectedCountry === 'Kenya' && (
                       <>
                         <Text style={styles.logbookActionText}>
-                          Kenya ï¿½ Sources of funds
+                          Kenya - Sources of funds
                         </Text>
                         <Text style={styles.subLabel}>KCB Bank</Text>
                         <TextInput
@@ -16801,7 +16801,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {[
                   'Algeria', 'Angola', 'Benin', 'Botswana', 'Burkina Faso', 'Burundi',
                   'Cabo Verde', 'Cameroon', 'Central African Republic', 'Chad', 'Comoros',
-                  'Congo', 'Cï¿½te d\'Ivoire', 'Djibouti', 'Egypt', 'Equatorial Guinea',
+                  'Congo', 'Cote d\'Ivoire', 'Djibouti', 'Egypt', 'Equatorial Guinea',
                   'Eritrea', 'Eswatini', 'Ethiopia', 'Gabon', 'Gambia', 'Ghana', 'Guinea',
                   'Guinea-Bissau', 'Kenya', 'Lesotho', 'Liberia', 'Libya', 'Madagascar',
                   'Malawi', 'Mali', 'Mauritania', 'Mauritius', 'Morocco', 'Mozambique',
@@ -17779,7 +17779,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 disabled={releasing}
               >
                 <Text style={[editorStyles.doneButtonText, { color: '#FFFFFF' }]}>
-                  {releasing ? 'Releasingï¿½' : 'Release Wave'}
+                  {releasing ? 'Releasing...' : 'Release Wave'}
                 </Text>
               </Pressable>
             </View>
@@ -19839,7 +19839,7 @@ const LiveStreamModal = ({
     }
     Alert.alert(
       'Make Moderator',
-      `Make @${username} a moderator? They will be able to:\nï¿½ Mute/Unmute users\nï¿½ Remove messages\nï¿½ Timeout users`,
+      `Make @${username} a moderator? They will be able to:\n- Mute/Unmute users\n- Remove messages\n- Timeout users`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -20115,7 +20115,7 @@ const LiveStreamModal = ({
       }
       Alert.alert(
         'Co-host Invitation',
-        `Invite @${username} to co-host this live? They will be able to:\nï¿½ Control audio/video\nï¿½ Manage users\nï¿½ Share screen`,
+        `Invite @${username} to co-host this live? They will be able to:\n- Control audio/video\n- Manage users\n- Share screen`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -20638,8 +20638,8 @@ const LiveStreamModal = ({
                 <View style={userManagementStyles.userDetails}>
                   <Text style={userManagementStyles.username}>
                     {user.username}
-                    {moderators.includes(user.id) ? ' ? Mod' : ''}
-                    {coHosts.includes(user.id) ? ' ? Co-host' : ''}
+                    {moderators.includes(user.id) ? ' 🛡️ Mod' : ''}
+                    {coHosts.includes(user.id) ? ' 🎤 Co-host' : ''}
                   </Text>
                   <Text style={userManagementStyles.userStatus}>
                     {(user.isSpeaking ? 'Speaking ' : '') +
@@ -20940,7 +20940,7 @@ const LiveStreamModal = ({
                 { alignItems: 'center', justifyContent: 'center' },
               ]}
             >
-              <Text style={{ color: 'white' }}>Initializing previewï¿½</Text>
+              <Text style={{ color: 'white' }}>Initializing preview...</Text>
             </View>
           ))}
         {isLiveStarted && liveComments.length > 0 && (
@@ -21620,7 +21620,7 @@ const LiveStreamModal = ({
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
-                placeholder="Say somethingï¿½"
+                placeholder="Say something..."
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 style={[styles.input, { flex: 1, margin: 0 }]}
                 autoFocus
@@ -21794,7 +21794,7 @@ const LiveStreamModal = ({
                   onPress={startLiveNow}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {isStartingLive ? 'Startingï¿½' : 'Start Drift'}
+                    {isStartingLive ? 'Starting...' : 'Start Drift'}
                   </Text>
                 </Pressable>
                 {startError ? (
@@ -22851,7 +22851,7 @@ function PostDetailScreen({ route, navigation }: any) {
           }}
         >
           <Text style={{ color: 'white', fontSize: 16 }}>
-            {isFollowing ? '? Connected' : '+ Connect SplashLine'}
+            {isFollowing ? '✓ Connected' : '+ Connect SplashLine'}
           </Text>
         </Pressable>
       )}
@@ -23384,7 +23384,7 @@ const App: React.FC = () => {
                           fontStyle: 'italic',
                         }}
                       >
-                        Navigating the seasï¿½
+                        Navigating the seas...
                       </Text>
                     </View>
                   ) : user ? (
