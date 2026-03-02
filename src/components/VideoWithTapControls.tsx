@@ -101,6 +101,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
+  const [suppressAutoPlayUntilInactive, setSuppressAutoPlayUntilInactive] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(typeof muted === 'boolean' ? muted : true);
   const [isLoading, setIsLoading] = useState<boolean>(true); // internal readiness gate
   const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
@@ -175,6 +176,16 @@ const VideoWithTapControls: React.FC<Props> = ({
     wasActiveRef.current = isActive;
 
     if (isActive && !paused) {
+      // Keep video paused on the same active item after completion/reset.
+      // Once user leaves and comes back (becameActive), autoplay again.
+      if (suppressAutoPlayUntilInactive) {
+        if (becameActive) {
+          setSuppressAutoPlayUntilInactive(false);
+        } else {
+          setInternalPaused(true);
+          return;
+        }
+      }
       if (becameActive || internalPaused) {
         if (videoCompleted) {
           safeSeek(0);
@@ -188,7 +199,15 @@ const VideoWithTapControls: React.FC<Props> = ({
     setInternalPaused(true);
     setIsMuted(true);
     hideControls();
-  }, [isActive, paused, internalPaused, videoCompleted, safeSeek, hideControls]);
+  }, [
+    isActive,
+    paused,
+    internalPaused,
+    videoCompleted,
+    safeSeek,
+    hideControls,
+    suppressAutoPlayUntilInactive,
+  ]);
 
   const onVideoTap = useCallback((event: any) => {
     const { locationX } = event.nativeEvent;
@@ -229,11 +248,14 @@ const VideoWithTapControls: React.FC<Props> = ({
 
   const onPlayPause = useCallback(() => {
     if (videoCompleted) {
-      // Replay video from beginning
+      // Reset to start but keep paused on current page.
       safeSeek(0);
       setVideoCompleted(false);
-      setInternalPaused(false);
+      setInternalPaused(true);
+      setSuppressAutoPlayUntilInactive(true);
+      showControls();
     } else {
+      setSuppressAutoPlayUntilInactive(false);
       setInternalPaused(prev => !prev);
       if (!forceMuted) {
         setIsMuted(false);
@@ -264,6 +286,8 @@ const VideoWithTapControls: React.FC<Props> = ({
   const handleEnd = useCallback(() => {
     setVideoCompleted(true);
     setInternalPaused(true);
+    // Prevent immediate auto-restart on the same feed item after completion.
+    setSuppressAutoPlayUntilInactive(true);
   }, []);
 
   useEffect(() => {

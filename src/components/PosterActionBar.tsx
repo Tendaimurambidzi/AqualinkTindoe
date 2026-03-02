@@ -237,7 +237,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
       >
         <View style={styles.buttonContent}>
-          <Text style={[styles.actionIcon, (hasHugged && Math.max(0, splashesCount) > 0) && styles.hugActive]}>🫂</Text>
+          <Text style={[styles.actionIcon, (hasHugged && Math.max(0, splashesCount) > 0) && styles.hugActive]}>
+            {'\uD83E\uDEC2'}
+          </Text>
           <Text style={[styles.actionLabel, (hasHugged && Math.max(0, splashesCount) > 0) ? styles.blueCount : styles.whiteCount]}>
             {(hasHugged && Math.max(0, splashesCount) > 0) ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
           </Text>
@@ -258,7 +260,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>↻</Text>
+            <Text style={styles.actionIconSmall}>{'\u21BB'}</Text>
             <Text style={styles.actionLabel}>Retry Hug</Text>
           </View>
         </Pressable>
@@ -278,7 +280,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
       >
         <View style={styles.buttonContent}>
-          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>📣</Text>
+          <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
+            {'\uD83D\uDCE3'}
+          </Text>
           <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
             {hasEchoed ? 'Echoed' : 'Echo'} ({Math.max(0, echoesCount)})
           </Text>
@@ -300,7 +304,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>↻</Text>
+            <Text style={styles.actionIconSmall}>{'\uD83D\uDC8E'}</Text>
             <Text style={styles.actionLabel}>Gems</Text>
           </View>
         </Pressable>
@@ -321,7 +325,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>↻</Text>
+            <Text style={styles.actionIconSmall}>{'\u2693\uFE0F'}</Text>
             <Text style={styles.actionLabel}>Anchor</Text>
           </View>
         </Pressable>
@@ -342,7 +346,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>↻</Text>
+            <Text style={styles.actionIconSmall}>{'\uD83D\uDCE1'}</Text>
             <Text style={styles.actionLabel}>Cast</Text>
           </View>
         </Pressable>
@@ -366,7 +370,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             onPress={() => setShowHuggersDropdown(false)}
             style={styles.closeButton}
           >
-            <Text style={styles.closeButtonText}>✕</Text>
+            <Text style={styles.closeButtonText}>{'\u2715'}</Text>
           </Pressable>
           {loadingHuggers ? (
             <View style={styles.loadingContainer}>
