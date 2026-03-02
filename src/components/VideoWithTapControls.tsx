@@ -18,6 +18,7 @@ import {
   cacheVideo,
   getVideoManifest,
 } from '../services/videoCache';
+import { appTokens } from '../theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -106,26 +107,25 @@ const VideoWithTapControls: React.FC<Props> = ({
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
   const wasActiveRef = useRef<boolean>(false);
+  const forceMuted = muted === true;
 
   useEffect(() => {
     setIsLoading(true);
   }, [resolvedUri]);
 
-  // Unmute immediately when video becomes active and is playing
+  // Keep mute state controlled by props when provided (e.g. overlay audio mode),
+  // otherwise use local autoplay behavior.
   useEffect(() => {
+    if (typeof muted === 'boolean') {
+      setIsMuted(muted);
+      return;
+    }
     if (!internalPaused && !videoCompleted && isActive) {
       setIsMuted(false);
     } else if (!isActive) {
       setIsMuted(true);
     }
-  }, [internalPaused, videoCompleted, isActive]);
-
-
-  useEffect(() => {
-    if (typeof muted === 'boolean') {
-      setIsMuted(muted);
-    }
-  }, [muted]);
+  }, [internalPaused, videoCompleted, isActive, muted]);
 
   const showControls = useCallback(() => {
     if (hideTimer.current) {
@@ -175,7 +175,7 @@ const VideoWithTapControls: React.FC<Props> = ({
     wasActiveRef.current = isActive;
 
     if (isActive && !paused) {
-      if (becameActive) {
+      if (becameActive || internalPaused) {
         if (videoCompleted) {
           safeSeek(0);
           setVideoCompleted(false);
@@ -188,7 +188,7 @@ const VideoWithTapControls: React.FC<Props> = ({
     setInternalPaused(true);
     setIsMuted(true);
     hideControls();
-  }, [isActive, paused, videoCompleted, safeSeek, hideControls]);
+  }, [isActive, paused, internalPaused, videoCompleted, safeSeek, hideControls]);
 
   const onVideoTap = useCallback((event: any) => {
     const { locationX } = event.nativeEvent;
@@ -209,10 +209,13 @@ const VideoWithTapControls: React.FC<Props> = ({
   }, [currentTime, seekStep, safeSeek, showControls, onTap]);
 
   const onToggleMute = useCallback(() => {
+    if (forceMuted) {
+      return;
+    }
     setIsMuted(prev => !prev);
     
     showControls();
-  }, [showControls]);
+  }, [forceMuted, showControls]);
 
   const onRewind = useCallback(() => {
     safeSeek(currentTime - seekStep);
@@ -232,10 +235,12 @@ const VideoWithTapControls: React.FC<Props> = ({
       setInternalPaused(false);
     } else {
       setInternalPaused(prev => !prev);
-      setIsMuted(false);
+      if (!forceMuted) {
+        setIsMuted(false);
+      }
       showControls();
     }
-  }, [videoCompleted, safeSeek, showControls]);
+  }, [forceMuted, videoCompleted, safeSeek, showControls]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta.duration || 0);
@@ -565,7 +570,7 @@ const VideoWithTapControls: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: "black",
+    backgroundColor: appTokens.colors.mediaBackdrop,
     overflow: "hidden",
   },
   controlsContainer: {
@@ -636,7 +641,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   timeText: {
-    color: '#E6EDF5',
+    color: appTokens.colors.surface,
     fontSize: 13,
     fontWeight: '700',
     fontVariant: ['tabular-nums'],

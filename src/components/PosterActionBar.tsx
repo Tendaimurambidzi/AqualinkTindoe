@@ -1,10 +1,10 @@
 // Import necessary components and hooks
 import React, { useState, useEffect, memo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, Pressable, Modal, FlatList } from 'react-native';
+import { View, Text, StyleSheet, Alert, ScrollView, Pressable, Modal, FlatList } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
-import functions from '@react-native-firebase/functions';
 import NetInfo from '@react-native-community/netinfo';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { appTokens } from '../theme/tokens';
 
 // Function to fetch user data by ID
 const fetchUserData = async (userId: string) => {
@@ -66,8 +66,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 }) => {
   const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
   const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
-  const [hugActionInProgress, setHugActionInProgress] = useState(false);
-  const [hugInitialized, setHugInitialized] = useState(false);
 
   // State for huggers dropdown
   const [showHuggersDropdown, setShowHuggersDropdown] = useState(false);
@@ -75,23 +73,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   const [huggersList, setHuggersList] = useState<Hugger[]>([]);
   const [loadingHuggers, setLoadingHuggers] = useState(false);
 
-  // State for creator user data
-  const [creatorUserData, setCreatorUserData] = useState<any>(null);
-
   // Connectivity state
   const [isOnline, setIsOnline] = useState(true);
-
-  // Fetch user data for the creator of the post
-  useEffect(() => {
-    const fetchCreatorUserData = async () => {
-      const userData = await fetchUserData(creatorUserId);
-      setCreatorUserData(userData);
-    };
-
-    if (creatorUserId) {
-      fetchCreatorUserData();
-    }
-  }, [creatorUserId]);
 
   // Monitor connectivity
   useEffect(() => {
@@ -117,7 +100,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           .get();
         
         setHasHugged(splashDoc.exists);
-        setHugInitialized(true);
 
         const echoQuery = await firestore()
           .collection(`waves/${waveId}/echoes`)
@@ -129,7 +111,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         setHasEchoed(echoQuery && !echoQuery.empty);
       } catch (error) {
         console.error('Error checking interactions:', error);
-        setHugInitialized(true); // Set to true even on error to allow interaction
       }
     };
     checkInteractions();
@@ -185,24 +166,22 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         .orderBy('createdAt', 'desc')
         .get();
       
-      const huggers = [];
-      for (const doc of splashesSnap.docs) {
-        const splashData = doc.data();
-        const userId = doc.id; // The document ID is the user ID
-        if (userId) {
+      const huggers = await Promise.all(
+        splashesSnap.docs.map(async doc => {
+          const splashData = doc.data();
+          const userId = doc.id;
+          if (!userId) return null;
           const userData = await fetchUserData(userId);
-          if (userData) {
-            huggers.push({
-              id: userId,
-              name: userData.displayName || userData.username || 'Unknown User',
-              photo: userData.photoURL || userData.userPhoto,
-              timestamp: splashData.createdAt,
-            });
-          }
-        }
-      }
-      
-      setHuggersList(huggers);
+          if (!userData) return null;
+          return {
+            id: userId,
+            name: userData.displayName || userData.username || 'Unknown User',
+            photo: userData.photoURL || userData.userPhoto,
+            timestamp: splashData.createdAt,
+          };
+        }),
+      );
+      setHuggersList(huggers.filter(Boolean) as Hugger[]);
       setShowHuggersDropdown(true);
     } catch (error) {
       console.error('Error fetching huggers:', error);
@@ -210,11 +189,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     } finally {
       setLoadingHuggers(false);
     }
-  };
-
-  const handleHugPress = () => {
-    // Show huggers list
-    fetchHuggers();
   };
 
   const handleHugAction = () => {
@@ -237,9 +211,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     onCast();
   };
 
-  // Get creator profile picture URL, with fallback to default
-  const creatorProfilePicture = creatorUserData?.userPhoto || creatorUserData?.photoURL || 'https://via.placeholder.com/100x100.png?text=No+Photo';
-
   return (
 
     <>
@@ -254,20 +225,21 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Hugs Button (with icon and count) */}
       <Pressable
         onPress={handleHugAction}
-        
         style={({ pressed }) => [
           styles.textButton,
           
           pressed && styles.pressedButton
         ]}
+        accessibilityRole="button"
+        accessibilityLabel={(hasHugged && Math.max(0, splashesCount) > 0) ? 'Remove hug' : 'Hug this post'}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
       >
         <View style={styles.buttonContent}>
-          <Text style={[styles.actionIcon, hasHugged && styles.hugActive]}>🫂</Text>
-          <Text style={[styles.actionLabel, hasHugged ? styles.blueCount : styles.whiteCount]}>
-            {hasHugged ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
+          <Text style={[styles.actionIcon, (hasHugged && Math.max(0, splashesCount) > 0) && styles.hugActive]}>🫂</Text>
+          <Text style={[styles.actionLabel, (hasHugged && Math.max(0, splashesCount) > 0) ? styles.blueCount : styles.whiteCount]}>
+            {(hasHugged && Math.max(0, splashesCount) > 0) ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
           </Text>
         </View>
       </Pressable>
@@ -279,6 +251,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.retryButton,
             pressed && styles.pressedButton
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="Retry hug sync"
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
@@ -297,6 +271,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           styles.textButton,
           pressed && styles.pressedButton
         ]}
+        accessibilityRole="button"
+        accessibilityLabel="Echo this post"
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
@@ -317,12 +293,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="Send gem"
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>💎</Text>
+            <Text style={styles.actionIconSmall}>↻</Text>
             <Text style={styles.actionLabel}>Gems</Text>
           </View>
         </Pressable>
@@ -336,12 +314,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="Anchor this post"
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>⚓</Text>
+            <Text style={styles.actionIconSmall}>↻</Text>
             <Text style={styles.actionLabel}>Anchor</Text>
           </View>
         </Pressable>
@@ -355,49 +335,20 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             styles.textButton,
             pressed && styles.pressedButton
           ]}
+          accessibilityRole="button"
+          accessibilityLabel="Cast this post"
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>📡</Text>
+            <Text style={styles.actionIconSmall}>↻</Text>
             <Text style={styles.actionLabel}>Cast</Text>
           </View>
         </Pressable>
       )}
 
-      {/* Placeholder Button 1 */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.textButton,
-          pressed && styles.pressedButton
-        ]}
-        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-      >
-        <View style={styles.buttonContent}>
-          <Text style={styles.actionIconSmall}>🍴</Text>
-          <Text style={styles.actionLabel}>Placeholder 1</Text>
-        </View>
-      </Pressable>
-
-      {/* Placeholder Button 2 */}
-      <Pressable
-        style={({ pressed }) => [
-          styles.textButton,
-          pressed && styles.pressedButton
-        ]}
-        hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-        pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-        android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-      >
-        <View style={styles.buttonContent}>
-          <Text style={styles.actionIconSmall}>🐚</Text>
-          <Text style={styles.actionLabel}>Placeholder 2</Text>
-        </View>
-      </Pressable>
-    </ScrollView>
+      </ScrollView>
 
     {/* Huggers Dropdown Modal */}
     <Modal
@@ -452,7 +403,7 @@ const styles = StyleSheet.create({
   actionBar: {
     paddingVertical: 4,
     paddingHorizontal: 0,
-    backgroundColor: 'grey',
+    backgroundColor: '#4b5563',
     borderRadius: 0,
     marginHorizontal: 0,
     marginBottom: 0,
@@ -463,7 +414,7 @@ const styles = StyleSheet.create({
   textButtonsBar: {
     paddingVertical: 4,
     paddingHorizontal: 0,
-    backgroundColor: 'grey',
+    backgroundColor: '#4b5563',
     borderRadius: 0,
     marginHorizontal: 0,
     marginBottom: 0,
@@ -486,7 +437,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   textButton: {
-    backgroundColor: '#ff4444',
+    backgroundColor: appTokens.colors.danger,
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -504,7 +455,7 @@ const styles = StyleSheet.create({
     opacity: 0.65,
   },
   retryButton: {
-    backgroundColor: '#ff7a00',
+    backgroundColor: '#f59e0b',
     borderRadius: 8,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -539,7 +490,7 @@ const styles = StyleSheet.create({
   },
   actionLabel: {
     fontSize: 13,
-    color: '#fff',
+    color: appTokens.colors.surface,
     marginRight: 2,
   },
   huggedLabel: {
@@ -552,7 +503,7 @@ const styles = StyleSheet.create({
     color: '#1e88e5',
   },
   whiteCount: {
-    color: '#fff',
+    color: appTokens.colors.surface,
   },
   actionIconSmall: {
     fontSize: 16,
@@ -701,6 +652,8 @@ const styles = StyleSheet.create({
 });
 
 export default PosterActionBar;
+
+
 
 
 

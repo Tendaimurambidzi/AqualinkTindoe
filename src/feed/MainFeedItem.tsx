@@ -1,4 +1,4 @@
-import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput, StyleSheet } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -37,6 +37,13 @@ try {
   RNVideo = require('react-native-video').default;
 } catch {}
 
+const STORY_THEMES = [
+  { colors: ['#0f172a', '#1e3a8a'] as [string, string], accent: '#bfdbfe' },
+  { colors: ['#1f2937', '#0f766e'] as [string, string], accent: '#99f6e4' },
+  { colors: ['#312e81', '#6d28d9'] as [string, string], accent: '#ddd6fe' },
+  { colors: ['#3f1d2e', '#9a3412'] as [string, string], accent: '#fed7aa' },
+];
+
 const isAudioAsset = (asset: Asset | null | undefined): boolean => {
   if (!asset) return false;
   const t = String(asset.type || '').toLowerCase();
@@ -57,6 +64,7 @@ type Vibe = {
   id: string;
   media?: Asset | null;
   audio?: { uri: string; name?: string } | null;
+  postType?: string | null;
   mediaEdits?: {
     filter?: 'none' | 'warm' | 'cool' | 'mono' | 'vivid';
     brightness?: number;
@@ -222,6 +230,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [showProfilePreview, setShowProfilePreview] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [audioControlsVisible, setAudioControlsVisible] = useState(false);
+  const [overlayAudioLoaded, setOverlayAudioLoaded] = useState(false);
+  const [overlayAudioStarted, setOverlayAudioStarted] = useState(false);
   const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
   const [preferFallbackVideoSource, setPreferFallbackVideoSource] = useState(false);
@@ -230,6 +240,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   useEffect(() => {
     setPreferFallbackVideoSource(false);
   }, [item.id, item.playbackUrl, item.media?.uri]);
+
+  useEffect(() => {
+    setOverlayAudioLoaded(false);
+    setOverlayAudioStarted(false);
+  }, [item.id, item.audio?.uri]);
 
   const revealAudioControlsTemporarily = useCallback(() => {
     setAudioControlsVisible(true);
@@ -367,17 +382,32 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         600_000,
       );
 
-  const audioOnlyPost =
-    (!item.playbackUrl && !!item.audio?.uri && !isVideoAsset(item.media)) ||
-    (!item.playbackUrl && !!item.media && isAudioAsset(item.media));
+  const mediaUri = String(item.media?.uri || '').trim();
+  const mediaType = String(item.media?.type || '').toLowerCase();
+  const explicitPostType = String(item.postType || '').toLowerCase();
+  const isExplicitVideo = explicitPostType === 'video';
+  const isExplicitImage = explicitPostType === 'image';
+  const isExplicitAudio = explicitPostType === 'audio';
   const playbackUri = String(item.playbackUrl || '');
   const playbackLooksVideo =
+    isExplicitVideo ||
     /(\.m3u8|\.mp4|\.mov|\.webm|\.mkv)(\?|$)/i.test(playbackUri.toLowerCase()) ||
     /\/video\//i.test(playbackUri) ||
-    String(item.media?.type || '').toLowerCase().includes('video/');
+    mediaType.includes('video/');
   const hasVideoMedia =
+    isExplicitVideo ||
     isVideoAsset(item.media) ||
-    (!isImageAsset(item.media) && !!item.playbackUrl && playbackLooksVideo);
+    (!isExplicitImage && !isImageAsset(item.media) && !!item.playbackUrl && playbackLooksVideo) ||
+    (mediaUri.length > 0 && mediaType.startsWith('video/'));
+  const hasImageMedia =
+    mediaUri.length > 0 &&
+    (isExplicitImage || isImageAsset(item.media) || (!hasVideoMedia && mediaType.startsWith('image/')));
+  const audioOnlyPost =
+    (isExplicitAudio ||
+      (!item.playbackUrl && !!item.audio?.uri && !hasVideoMedia && !hasImageMedia) ||
+      (!item.playbackUrl && !!item.media && isAudioAsset(item.media) && !hasVideoMedia && !hasImageMedia)) &&
+    !hasVideoMedia &&
+    !hasImageMedia;
   const primaryVideoSource =
     item.playbackUrl && playbackLooksVideo ? String(item.playbackUrl) : String(item.media?.uri || '');
   const fallbackVideoSource =
@@ -387,16 +417,31 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const videoSourceUri =
     (preferFallbackVideoSource ? fallbackVideoSource || primaryVideoSource : primaryVideoSource || fallbackVideoSource) ||
     '';
-  const hasOverlayAudio = !!item.audio?.uri && !item.playbackUrl && !audioOnlyPost;
-  const playSynced = shouldPlay && item.id === activeVideoId;
+  // Always honor overlay audio on visual posts so image/video + audio plays as intended.
+  const hasOverlayAudio = !!item.audio?.uri && !audioOnlyPost && (hasVideoMedia || hasImageMedia);
+  const overlayReady = !hasOverlayAudio || overlayAudioLoaded;
+  const audioPlaySynced = shouldPlay && item.id === activeVideoId && overlayReady;
+  const videoPlaySynced =
+    shouldPlay &&
+    item.id === activeVideoId &&
+    (!hasOverlayAudio || !hasVideoMedia || overlayAudioStarted);
   const shouldPreload = preloadedVideoIds.has(item.id);
   const near = Math.abs(index - currentIndex) <= 1;
+  const hasUnknownMediaFile =
+    !!item.media && mediaUri.length > 0 && !hasVideoMedia && !hasImageMedia && !audioOnlyPost;
+  const hasRenderableMedia = hasVideoMedia || audioOnlyPost || hasImageMedia || hasUnknownMediaFile;
   const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
   const mediaEdits = item.mediaEdits || null;
   const fallbackAwayText = (() => {
     const exact = formatPresenceLastSeenExact(userData[item.ownerUid || '']?.lastSeen || null);
     return exact ? `Away Since: ${exact}` : 'Away Since: ...';
   })();
+  const storyTheme = useMemo(() => {
+    const seed = String(item.id || '')
+      .split('')
+      .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+    return STORY_THEMES[seed % STORY_THEMES.length];
+  }, [item.id]);
 
   const filterOverlayStyle = (() => {
     const f = mediaEdits?.filter || 'none';
@@ -491,13 +536,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   }, [item.id, setExpandedPosts]);
 
   const handleImageReveal = useCallback(() => {
+    if (!hasImageMedia) return;
     if (!revealedImages.has(item.id)) {
       setRevealedImages(prev => new Set(prev).add(item.id));
       recordImageReach(item.id).catch(error => {
         console.log('Image reach recording failed:', error.message);
       });
     }
-  }, [item.id, revealedImages, setRevealedImages, recordImageReach]);
+  }, [hasImageMedia, item.id, revealedImages, setRevealedImages, recordImageReach]);
 
   const handleTextPostPress = useCallback(() => {
     setPreservedScrollPosition(currentIndex);
@@ -1011,7 +1057,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           </View>
 
           {/* Post Content - Text or Media */}
-          {(item.media || item.audio?.uri) ? (
+          {hasRenderableMedia ? (
             <>
               {/* Post Text (if any) */}
               {item.captionText && (
@@ -1045,7 +1091,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
               {/* Post Media */}
               {hasVideoMedia ? (
-                <View style={{ marginHorizontal: 0, position: 'relative' }}>
+                <View style={{ marginHorizontal: 0, position: 'relative', backgroundColor: '#000' }}>
                   {videoSourceUri ? (
                     <VideoWithTapControls
                       source={{ uri: videoSourceUri }}
@@ -1060,7 +1106,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         },
                       ]}
                       resizeMode={'cover'}
-                      paused={!playSynced}
+                      paused={!videoPlaySynced}
                       playbackRate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
                       audioVolume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
                       muted={hasOverlayAudio}
@@ -1095,7 +1141,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         {
                           justifyContent: 'center',
                           alignItems: 'center',
-                          backgroundColor: '#0f1724',
+                          backgroundColor: '#000',
                         },
                       ]}
                     >
@@ -1151,13 +1197,20 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     <RNVideo
                       source={{ uri: String(item.audio?.uri || '') }}
                       audioOnly
-                      paused={!playSynced}
+                      paused={!audioPlaySynced}
                       rate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
                       volume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
                       style={{ width: 1, height: 1, opacity: 0 }}
                       playInBackground={false}
                       playWhenInactive={false}
                       ignoreSilentSwitch="ignore"
+                      onLoad={() => setOverlayAudioLoaded(true)}
+                      onError={() => setOverlayAudioLoaded(true)}
+                      onProgress={(e: any) => {
+                        if (!overlayAudioStarted && Number(e?.currentTime || 0) > 0) {
+                          setOverlayAudioStarted(true);
+                        }
+                      }}
                     />
                   ) : null}
                 </View>
@@ -1170,7 +1223,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     minHeight: 180,
                     justifyContent: 'center',
                     alignItems: 'center',
-                    backgroundColor: '#0f1724',
+                    backgroundColor: '#000',
                     paddingVertical: 20,
                     paddingHorizontal: 14,
                   }}
@@ -1181,7 +1234,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       source={{ uri: String(item.audio?.uri || item.media?.uri || '') }}
                       audioOnly
                       controls={audioControlsVisible}
-                      paused={!playSynced}
+                      paused={!audioPlaySynced}
                       rate={Math.max(0.5, Math.min(2, Number(mediaEdits?.playbackRate || 1)))}
                       volume={Math.max(0, Math.min(2, Number(mediaEdits?.volumeBoost || 1)))}
                       style={{ width: SCREEN_WIDTH - 28, height: 64 }}
@@ -1193,7 +1246,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     <Text style={{ color: '#9ab4cf' }}>Audio player unavailable</Text>
                   )}
                 </Pressable>
-              ) : item.media && !isImageAsset(item.media) ? (
+              ) : hasUnknownMediaFile ? (
                 <View
                   style={{
                     marginHorizontal: 0,
@@ -1201,7 +1254,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     minHeight: 180,
                     justifyContent: 'center',
                     alignItems: 'center',
-                    backgroundColor: '#0f1724',
+                    backgroundColor: '#000',
                     paddingVertical: 20,
                     paddingHorizontal: 14,
                   }}
@@ -1210,11 +1263,19 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 </View>
               ) : (
                 <Pressable onPress={handleImageReveal}>
-                  <View style={{ position: 'relative', marginHorizontal: 0, width: SCREEN_WIDTH }}>
+                  <View
+                    style={{
+                      position: 'relative',
+                      marginHorizontal: 0,
+                      width: SCREEN_WIDTH,
+                      backgroundColor: '#000',
+                    }}
+                  >
                     <Image
-                      source={{ uri: item.media?.uri || '' }}
+                      source={{ uri: mediaUri }}
                       style={[
                         videoStyleFor(item.id),
+                        { backgroundColor: '#000' },
                         {
                           transform: [
                             { scaleX: mediaEdits?.mirror ? -1 : 1 },
@@ -1267,32 +1328,23 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         {s.emoji}
                       </Text>
                     ))}
-                    {!revealedImages.has(item.id) && (
-                      <View style={{
-                        position: 'absolute',
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        backgroundColor: 'rgba(255, 255, 0, 0.3)',
-                        justifyContent: 'center',
-                        alignItems: 'center'
-                      }}>
-                        <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
-                          Tap to reveal
-                        </Text>
-                      </View>
-                      )}
                   </View>
                   {hasOverlayAudio && RNVideo ? (
                     <RNVideo
                       source={{ uri: String(item.audio?.uri || '') }}
                       audioOnly
-                      paused={!playSynced}
+                      paused={!audioPlaySynced}
                       style={{ width: 1, height: 1, opacity: 0 }}
                       playInBackground={false}
                       playWhenInactive={false}
                       ignoreSilentSwitch="ignore"
+                      onLoad={() => setOverlayAudioLoaded(true)}
+                      onError={() => setOverlayAudioLoaded(true)}
+                      onProgress={(e: any) => {
+                        if (!overlayAudioStarted && Number(e?.currentTime || 0) > 0) {
+                          setOverlayAudioStarted(true);
+                        }
+                      }}
                     />
                   ) : null}
                 </Pressable>
@@ -1303,25 +1355,32 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             <Pressable
               onPress={handleTextPostPress}
               style={[
-                styles.textOnlyPost,
-                expandedPosts[item.id] ? styles.textOnlyPostExpanded : null,
+                styles.textStoryWrap,
+                expandedPosts[item.id] ? styles.textStoryWrapExpanded : null,
               ]}
             >
-              <Text style={{ fontSize: 16, lineHeight: 22 }}>
-                {expandedPosts[item.id]
-                  ? item.captionText
-                  : item.captionText.length > 500
-                  ? item.captionText.substring(0, 500) + '... '
-                  : item.captionText}
-                {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] && (
-                  <Text
-                    style={{ color: '#00C2FF', fontSize: 16, fontWeight: '600' }}
-                    onPress={handleReadMore}
-                  >
-                    Read More
-                  </Text>
-                )}
-              </Text>
+              <LinearGradient
+                colors={storyTheme.colors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.textStoryCard}
+              >
+                <ClickableTextWithLinks
+                  text={
+                    expandedPosts[item.id]
+                      ? item.captionText
+                      : item.captionText.length > 500
+                      ? item.captionText.substring(0, 500) + '...'
+                      : item.captionText
+                  }
+                  style={styles.textStoryBody}
+                />
+                {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] ? (
+                  <Pressable onPress={handleReadMore}>
+                    <Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>Read More</Text>
+                  </Pressable>
+                ) : null}
+              </LinearGradient>
             </Pressable>
           )}
 
@@ -1470,7 +1529,7 @@ const styles = StyleSheet.create({
   postHeader: {
     position: 'relative',
     alignItems: 'center',
-    marginBottom: ui.spacing.md,
+    marginBottom: ui.spacing.sm,
     paddingHorizontal: ui.spacing.md,
   },
   menuButtonWrap: {
@@ -1526,6 +1585,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.97 }],
   },
   captionWrap: {
+    paddingHorizontal: ui.spacing.md,
     marginBottom: ui.spacing.md,
   },
   captionText: {
@@ -1534,6 +1594,7 @@ const styles = StyleSheet.create({
     color: ui.colors.body,
   },
   linkWrap: {
+    paddingHorizontal: ui.spacing.md,
     marginBottom: ui.spacing.md,
   },
   linkPill: {
@@ -1564,15 +1625,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
-  textOnlyPost: {
-    paddingHorizontal: ui.spacing.md,
-    paddingVertical: ui.spacing.sm,
-    minHeight: 96,
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
+  textStoryWrap: {
+    width: SCREEN_WIDTH,
+    paddingHorizontal: 0,
+    marginBottom: 0,
   },
-  textOnlyPostExpanded: {
+  textStoryWrapExpanded: {
     minHeight: 0,
+  },
+  textStoryCard: {
+    width: '100%',
+    minHeight: 260,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  textStoryBody: {
+    color: '#F8FAFC',
+    fontSize: 22,
+    lineHeight: 32,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  textStoryMore: {
+    marginTop: 16,
+    fontSize: 13,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   posterActionWrap: {
     marginTop: 0,
@@ -1584,8 +1665,9 @@ const styles = StyleSheet.create({
     marginTop: ui.spacing.sm,
   },
   statsRow: {
-    marginTop: ui.spacing.sm,
-    paddingHorizontal: ui.spacing.sm,
+    marginTop: 6,
+    paddingHorizontal: ui.spacing.md,
+    paddingBottom: ui.spacing.xs,
   },
   statChip: {
     flexDirection: 'row',
@@ -1623,8 +1705,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   echoSection: {
-    marginTop: ui.spacing.lg,
-    paddingHorizontal: ui.spacing.sm,
+    marginTop: ui.spacing.md,
+    paddingHorizontal: ui.spacing.md,
   },
   loadMoreEchoesBtn: {
     marginTop: ui.spacing.xs,

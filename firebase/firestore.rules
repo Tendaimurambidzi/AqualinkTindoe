@@ -116,6 +116,25 @@ service cloud.firestore {
         allow read, update, delete: if isOwner(uid);
         allow create: if isAuthed();
       }
+
+      // Direct calls: both participants can read/write their mirrored call docs.
+      // Caller writes to both users/{callerUid}/direct_calls/{callId}
+      // and users/{calleeUid}/direct_calls/{callId}.
+      match /direct_calls/{callId} {
+        allow read: if isOwner(uid);
+
+        allow create: if isAuthed()
+          && request.resource.data.callerUid is string
+          && request.resource.data.calleeUid is string
+          && (uid == request.resource.data.callerUid || uid == request.resource.data.calleeUid)
+          && (request.auth.uid == request.resource.data.callerUid || request.auth.uid == request.resource.data.calleeUid);
+
+        allow update, delete: if isAuthed()
+          && resource.data.callerUid is string
+          && resource.data.calleeUid is string
+          && (uid == resource.data.callerUid || uid == resource.data.calleeUid)
+          && (request.auth.uid == resource.data.callerUid || request.auth.uid == resource.data.calleeUid);
+      }
     }
 
     // Connections (followers) - new collection for follow system

@@ -39,6 +39,8 @@ type WebSearchResult = {
 interface VibeHuntUserSearchProps {
   onProfilePhotoSelect?: (photoURL: string | null) => void;
   onChatUserSelect?: (user: { uid: string; name: string }) => void;
+  onAudioCallUserSelect?: (user: { uid: string; name: string }) => void;
+  onVideoCallUserSelect?: (user: { uid: string; name: string }) => void;
 }
 
 const normalizeText = (value?: string | null) =>
@@ -50,6 +52,8 @@ const normalizeText = (value?: string | null) =>
 const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   onProfilePhotoSelect,
   onChatUserSelect,
+  onAudioCallUserSelect,
+  onVideoCallUserSelect,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [results, setResults] = useState<VibeUser[]>([]);
@@ -480,20 +484,46 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
                 </ScrollView>
 
                 <View style={styles.modalActions}>
-                  <Pressable
-                    style={[styles.modalActionButton, styles.primaryAction]}
-                    onPress={() => {
-                      if (!selectedUser) return;
-                      const name =
-                        selectedUser.username || selectedUser.email || 'User';
-                      closeModal();
-                      if (onChatUserSelect) {
-                        onChatUserSelect({ uid: selectedUser.uid, name });
-                      }
-                    }}
-                  >
-                    <Text style={styles.primaryActionText}>Message</Text>
-                  </Pressable>
+                  <View style={styles.communicationActionsRow}>
+                    <Pressable
+                      style={[styles.modalActionButton, styles.primaryAction, styles.messageAction]}
+                      onPress={() => {
+                        if (!selectedUser) return;
+                        const name =
+                          selectedUser.username || selectedUser.email || 'User';
+                        closeModal();
+                        if (onChatUserSelect) {
+                          onChatUserSelect({ uid: selectedUser.uid, name });
+                        }
+                      }}
+                    >
+                      <Text style={styles.primaryActionText}>Message</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.iconActionButton, styles.audioAction]}
+                      onPress={() => {
+                        if (!selectedUser) return;
+                        const name =
+                          selectedUser.username || selectedUser.email || 'User';
+                        closeModal();
+                        onAudioCallUserSelect?.({ uid: selectedUser.uid, name });
+                      }}
+                    >
+                      <Text style={styles.iconActionText}>📞</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.iconActionButton, styles.videoAction]}
+                      onPress={() => {
+                        if (!selectedUser) return;
+                        const name =
+                          selectedUser.username || selectedUser.email || 'User';
+                        closeModal();
+                        onVideoCallUserSelect?.({ uid: selectedUser.uid, name });
+                      }}
+                    >
+                      <Text style={styles.iconActionText}>🎥</Text>
+                    </Pressable>
+                  </View>
                   <Pressable
                     style={[
                       styles.modalActionButton,
@@ -718,6 +748,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
     gap: 10,
   },
+  communicationActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+  },
   modalActionButton: {
     borderRadius: 8,
     paddingVertical: 10,
@@ -732,6 +768,30 @@ const styles = StyleSheet.create({
   },
   primaryAction: {
     backgroundColor: '#00C2FF',
+  },
+  messageAction: {
+    flex: 1,
+  },
+  iconActionButton: {
+    width: 48,
+    height: 44,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#0B1220',
+  },
+  audioAction: {
+    borderColor: '#10B981',
+    backgroundColor: 'rgba(16,185,129,0.22)',
+  },
+  videoAction: {
+    borderColor: '#2563EB',
+    backgroundColor: 'rgba(37,99,235,0.22)',
+  },
+  iconActionText: {
+    fontSize: 18,
   },
   connectAction: {
     backgroundColor: '#0EA5E9',
@@ -771,3 +831,5 @@ const styles = StyleSheet.create({
 });
 
 export default VibeHuntUserSearch;
+
+

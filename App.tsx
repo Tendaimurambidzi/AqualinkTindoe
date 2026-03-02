@@ -75,6 +75,7 @@ import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
 import {
   getCrewCount,
+  getBoardingCount,
   isInCrew,
   joinCrew,
   leaveCrew,
@@ -88,6 +89,7 @@ import CreatePostScreen from './src/screens/CreatePostScreen';
 import MainFeedItem from './src/feed/MainFeedItem';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
 import { appTokens } from './src/theme/tokens';
+import SectionHeaderRow from './src/components/SectionHeaderRow';
 import MediaEditor, {
   defaultMediaEdits,
   MediaEdits,
@@ -122,8 +124,6 @@ const FORCE_SIGN_OUT_ON_START = true;
 const STATS_OVERLAY_HEIGHT = 220;
                     
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const TEXT_STORY_PLACEHOLDER =
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAF/wJ+XmYjAAAAAElFTkSuQmCC';
                     
 const isVideoAsset = (asset: Asset | null | undefined): boolean => {
   if (!asset) return false;
@@ -183,6 +183,11 @@ const NOTICE_ADS_LOCAL_KEY = 'notice_board_ads_local';
 const ADVENTURE_HISTORY_LOCAL_KEY = 'adventure_space_recent_queries';
 const STUDY_HISTORY_LOCAL_KEY = 'study_hub_recent_queries';
 const SAVED_SOURCES_LOCAL_KEY = 'saved_learning_sources';
+const LOCAL_JOINED_TIDES_KEY_PREFIX = 'local_joined_tides_';
+const LOCAL_HUGGED_WAVES_KEY_PREFIX = 'local_hugged_waves_';
+const LOCAL_HUGS_MADE_KEY_PREFIX = 'local_hugs_made_';
+const ADVENTURE_QUICK_TOPICS = ['travel ideas', 'tech trends', 'business insights', 'nearby events'];
+const STUDY_QUICK_TOPICS = ['mathematics', 'science', 'history', 'english grammar'];
                     
 type Vibe = {
   id: string;
@@ -190,6 +195,7 @@ type Vibe = {
   audio?: { uri: string; name?: string } | null;
   mediaEdits?: MediaEdits | null;
   captionText: string;
+  postType?: string | null;
   playbackUrl?: string | null; // server-muxed single stream
   muxStatus?: 'pending' | 'ready' | 'failed';
   authorName?: string | null; // display handle (e.g., "/Tindoe")
@@ -220,6 +226,26 @@ type WebReference = {
   description?: string;
   source?: 'explore' | 'study';
   savedAt?: number;
+};
+
+type DirectCallMode = 'audio' | 'video';
+type DirectCallStatus = 'ringing' | 'accepted' | 'declined' | 'ended' | 'missed';
+type DirectCallSession = {
+  id: string;
+  callerUid: string;
+  calleeUid: string;
+  callerName?: string | null;
+  calleeName?: string | null;
+  callerAvatar?: string | null;
+  calleeAvatar?: string | null;
+  channelName: string;
+  callType: DirectCallMode;
+  status: DirectCallStatus;
+  createdAt?: any;
+  acceptedAt?: any;
+  endedAt?: any;
+  endedBy?: string | null;
+  agoraToken?: string | null;
 };
                     
 type Ping = {
@@ -384,6 +410,12 @@ const formatNotificationMessage = (notification: {
   
   // Format based on notification type with username included and no icons
   switch (notification.type) {
+    case 'call_missed':
+      return notification.message || `${username} missed your call`;
+    case 'call_invite':
+      return notification.message || `${username} is calling you`;
+    case 'call_declined':
+      return notification.message || `${username} declined your call`;
     case 'echo':
     case 'splash':
     case 'octopus_hug':
@@ -406,6 +438,15 @@ type VibeAlert = {
   liveId: string;
   hostName: string;
   hostPhoto: string | null;
+};
+
+type LiveInviteNotice = {
+  id: string;
+  liveId: string;
+  fromUid: string;
+  fromName: string;
+  fromPhoto?: string | null;
+  liveTitle?: string | null;
 };
                     
 const toJSDate = (ts: any) => {
@@ -600,14 +641,14 @@ const styles = StyleSheet.create({
                     
   videoSpace: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#f0f2f5',
+    backgroundColor: '#000000',
     zIndex: 0,
     overflow: 'hidden',
   },
   videoSpaceInner: {
     flex: 1,
     justifyContent: 'center',
-    backgroundColor: 'white',
+    backgroundColor: '#000000',
   },
   videoHint: { color: 'rgba(255,255,255,0.5)', fontSize: 12 },
   mediaPreview: { flex: 1, width: '100%', resizeMode: 'contain' },
@@ -804,12 +845,13 @@ const styles = StyleSheet.create({
   closeBtn: {
     alignSelf: 'center',
     marginVertical: 12,
+    minHeight: 36,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#C53A31',
     borderWidth: 1,
-    borderColor: 'rgba(255, 59, 48, 0.4)',
+    borderColor: '#C53A31',
   },
   closeText: { color: 'white', fontWeight: '700' },
                     
@@ -837,9 +879,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logbookAction: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.45)',
+    backgroundColor: 'rgba(0,194,255,0.12)',
   },
   logbookActionText: {
     color: 'rgba(220,220,240,0.9)',
@@ -873,16 +919,70 @@ const styles = StyleSheet.create({
   },
   textComposerButton: {
     flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
+    minHeight: 38,
+    paddingVertical: 7,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderColor: 'rgba(255,255,255,0.35)',
     alignItems: 'center',
     marginHorizontal: 4,
+    justifyContent: 'center',
+  },
+  textComposerCancelBtn: {
+    backgroundColor: '#5B4B8A',
+    borderColor: '#5B4B8A',
+  },
+  textComposerSubmitBtn: {
+    backgroundColor: '#1282A2',
+    borderColor: '#1282A2',
   },
   textComposerButtonText: {
     color: 'white',
     fontWeight: '700',
+  },
+  createPostActionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+    gap: 8,
+  },
+  createPostActionBtn: {
+    flex: 1,
+    minHeight: 52,
+    borderRadius: 24,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    backgroundColor: '#1282A2',
+    borderWidth: 1,
+    borderColor: '#1282A2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createPostCameraBtn: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  createPostGalleryBtn: {
+    backgroundColor: '#14B8A6',
+    borderColor: '#14B8A6',
+  },
+  createPostSdBtn: {
+    backgroundColor: '#F59E0B',
+    borderColor: '#F59E0B',
+  },
+  createPostMusicBtn: {
+    backgroundColor: '#8B5CF6',
+    borderColor: '#8B5CF6',
+  },
+  createPostActionIcon: {
+    fontSize: 19,
+    marginBottom: 4,
+  },
+  createPostActionLabel: {
+    color: '#E8FBFF',
+    fontSize: 10,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   bridgeSettingButton: {
     padding: 12,
@@ -971,15 +1071,17 @@ const styles = StyleSheet.create({
                     
   // Generic button for logbook-style modals
   primaryBtn: {
-    backgroundColor: appTokens.colors.accentStrong,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 8,
+    backgroundColor: '#1282A2',
+    minHeight: 40,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
     alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
-    borderColor: appTokens.colors.accentStrong,
+    borderColor: '#1282A2',
   },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '800' },
+  primaryBtnText: { color: '#FFFFFF', fontWeight: '800', letterSpacing: 0.2 },
   hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
   panelIntro: {
     color: 'rgba(255,255,255,0.85)',
@@ -994,10 +1096,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  sectionActionText: {
+    color: appTokens.colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '700',
+  },
   quickRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    marginTop: 2,
     marginBottom: 10,
   },
   responseCard: {
@@ -1007,6 +1120,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.18)',
+  },
+  errorCard: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(225,45,57,0.7)',
+    backgroundColor: 'rgba(225,45,57,0.14)',
+  },
+  errorCardText: {
+    color: '#FFD7DB',
+    fontSize: 12,
   },
   emptyStateCard: {
     marginTop: 12,
@@ -1032,12 +1157,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(0,194,255,0.55)',
+    backgroundColor: 'rgba(0,194,255,0.12)',
   },
   searchChipText: {
-    color: 'white',
+    color: '#D8F5FF',
     fontSize: 12,
+    fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
   },
   sourceCard: {
@@ -1064,15 +1190,15 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   secondaryMiniBtn: {
-    paddingVertical: 8,
+    paddingVertical: 7,
     paddingHorizontal: 12,
-    borderRadius: 8,
+    borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.4)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(0,194,255,0.6)',
+    backgroundColor: 'rgba(0,194,255,0.14)',
   },
   secondaryMiniBtnText: {
-    color: 'white',
+    color: '#D8F5FF',
     fontWeight: '700',
   },
   savedItem: {
@@ -1096,8 +1222,8 @@ const styles = StyleSheet.create({
   toolButton: {
     flex: 1,
     borderWidth: 1,
-    borderColor: 'rgba(0,194,255,0.45)',
-    backgroundColor: 'rgba(0,194,255,0.1)',
+    borderColor: 'rgba(0,194,255,0.65)',
+    backgroundColor: 'rgba(0,194,255,0.14)',
     borderRadius: 10,
     paddingVertical: 10,
     paddingHorizontal: 10,
@@ -1232,24 +1358,341 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginTop: 6,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#5B4B8A',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: '#5B4B8A',
   },
   dismissText: { color: 'white', fontWeight: '700' },
   secondaryBtn: {
     alignSelf: 'center',
     marginTop: 6,
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#2C6E49',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderColor: '#2C6E49',
   },
-  secondaryBtnText: { color: 'white', fontWeight: '700' },
+  secondaryBtnText: { color: '#F3FFF8', fontWeight: '700' },
+  attachActionBtn: {
+    minHeight: 40,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.6)',
+    backgroundColor: 'rgba(0,194,255,0.14)',
+  },
+  attachActionBtnText: {
+    color: '#D8F5FF',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  messageAttachmentActions: {
+    marginTop: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+  },
+  messageAttachmentActionBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(158,216,255,0.45)',
+    backgroundColor: 'rgba(158,216,255,0.12)',
+  },
+  messageAttachmentActionText: {
+    color: '#BFE7FF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  messageAttachmentDownloadBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(125,255,175,0.45)',
+    backgroundColor: 'rgba(125,255,175,0.15)',
+  },
+  messageAttachmentDownloadBtnActive: {
+    borderColor: 'rgba(0,194,255,0.7)',
+    backgroundColor: 'rgba(0,194,255,0.2)',
+  },
+  messageAttachmentDownloadText: {
+    color: '#D9FFEA',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  messageAttachmentProgressTrack: {
+    width: 112,
+    height: 5,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    overflow: 'hidden',
+  },
+  messageAttachmentProgressFill: {
+    height: '100%',
+    backgroundColor: '#00C2FF',
+  },
+  threadHeaderCard: {
+    marginBottom: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  threadHeaderTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  threadHeaderTitle: {
+    color: 'white',
+    fontWeight: '800',
+    fontSize: 19,
+    flex: 1,
+    marginRight: 10,
+  },
+  threadCallActionRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  threadCallIconBtn: {
+    width: 44,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  threadCallIconText: {
+    fontSize: 18,
+    color: 'white',
+    fontWeight: '800',
+  },
+  threadCallActionBtn: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  threadCallAudioBtn: {
+    backgroundColor: 'rgba(16,185,129,0.22)',
+    borderColor: 'rgba(16,185,129,0.82)',
+  },
+  threadCallVideoBtn: {
+    backgroundColor: 'rgba(37,99,235,0.22)',
+    borderColor: 'rgba(37,99,235,0.84)',
+  },
+  threadCallEndBtn: {
+    backgroundColor: 'rgba(225,45,57,0.2)',
+    borderColor: 'rgba(225,45,57,0.72)',
+  },
+  threadCallActionText: {
+    color: 'white',
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  threadCallStatusCard: {
+    marginTop: 8,
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  threadCallStatusTitle: {
+    color: '#DDF5FF',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  threadRingingInline: {
+    marginTop: 8,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.45)',
+    backgroundColor: 'rgba(0,194,255,0.1)',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  callFullScreenRoot: {
+    flex: 1,
+    backgroundColor: '#050B15',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingTop: 64,
+    paddingBottom: 38,
+  },
+  callFullScreenCenter: {
+    alignItems: 'center',
+    marginTop: 60,
+  },
+  callFullScreenLabel: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 14,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  callFullScreenName: {
+    color: 'white',
+    marginTop: 12,
+    fontSize: 34,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  callFullScreenStatus: {
+    color: 'rgba(255,255,255,0.82)',
+    marginTop: 8,
+    fontSize: 16,
+  },
+  callFullScreenBottom: {
+    alignItems: 'center',
+  },
+  callInviteBackdrop: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.65)',
+    padding: 20,
+  },
+  callInviteCard: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,194,255,0.5)',
+    backgroundColor: '#081427',
+    paddingHorizontal: 16,
+    paddingVertical: 18,
+  },
+  callInviteTitle: {
+    color: '#D3F0FF',
+    fontSize: 13,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  callInviteCaller: {
+    color: 'white',
+    marginTop: 8,
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  callInviteMode: {
+    color: 'rgba(255,255,255,0.78)',
+    marginTop: 4,
+    fontSize: 13,
+  },
+  callInviteActions: {
+    marginBottom: 6,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+  },
+  callInviteActionBtn: {
+    flex: 1,
+    minHeight: 42,
+    borderRadius: 11,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callInviteDeclineBtn: {
+    borderColor: '#E12D39',
+    backgroundColor: 'rgba(225,45,57,0.24)',
+  },
+  callInviteAcceptBtn: {
+    borderColor: '#00C853',
+    backgroundColor: 'rgba(0,200,83,0.24)',
+  },
+  callInviteActionText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  callControlDock: {
+    position: 'absolute',
+    left: 14,
+    right: 14,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(4,10,22,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+  },
+  callControlTopRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  callControlBtn: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 6,
+  },
+  callControlPrimary: {
+    borderColor: 'rgba(0,194,255,0.68)',
+    backgroundColor: 'rgba(0,194,255,0.18)',
+  },
+  callControlDanger: {
+    borderColor: 'rgba(225,45,57,0.8)',
+    backgroundColor: 'rgba(225,45,57,0.22)',
+  },
+  callControlMuted: {
+    borderColor: 'rgba(148,163,184,0.8)',
+    backgroundColor: 'rgba(148,163,184,0.22)',
+  },
+  callControlIcon: {
+    fontSize: 18,
+    marginBottom: 3,
+  },
+  callControlLabel: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  callEndBtn: {
+    marginTop: 8,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#D83A2E',
+    backgroundColor: '#D83A2E',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callEndBtnText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  makeWavesPrimaryAction: {
+    backgroundColor: 'rgba(0,194,255,0.16)',
+    borderColor: 'rgba(0,194,255,0.9)',
+  },
+  makeWavesSecondaryAction: {
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -1411,7 +1854,7 @@ const styles = StyleSheet.create({
   },
 });
 const editorStyles = StyleSheet.create({
-  editorRoot: { flex: 1, backgroundColor: 'transparent' },
+  editorRoot: { flex: 1, backgroundColor: '#000' },
   stage: {
     flex: 1,
     position: 'relative',
@@ -1689,7 +2132,7 @@ const AFRICAN_COUNTRIES = [
 // Payment details are only configured for these countries
 const SUPPORTED_PEARL_COUNTRIES = ['Zimbabwe', 'Kenya'];
                     
-// ⬆️ put near other top-level helpers, outside components
+// Keep near other top-level helpers, outside components
 export const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
   if (Platform.OS !== 'android') return true;
   try {
@@ -1811,15 +2254,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   
   // Debug logging for myUid changes
   useEffect(() => {
-    console.log('🔍 InnerApp myUid changed:', myUid);
+    console.log('UID change:', myUid);
   }, [myUid]);
 
   // Automatic view tracking with 10-second dwell time
   const recordAutomaticReach = async (postId: string) => {
     try {
-      console.log(`📊 Starting automatic reach recording for post ${postId}`);
-      console.log(`🔍 Current user state:`, user);
-      console.log(`🔍 Current myUid:`, myUid);
+      console.log(`Starting automatic reach recording for post ${postId}`);
+      console.log(`Current user state:`, user);
+      console.log(`Current myUid:`, myUid);
 
       // Check authentication - use both state and direct auth check
       let currentUser = user;
@@ -1827,25 +2270,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         try {
           const authMod = require('@react-native-firebase/auth').default;
           currentUser = authMod().currentUser;
-          console.log(`🔍 Direct auth check - currentUser:`, currentUser);
+          console.log(`Direct auth check - currentUser:`, currentUser);
         } catch (error) {
-          console.log(`❌ Could not get auth module:`, error);
+          console.log(`? Could not get auth module:`, error);
         }
       }
 
       const currentUid = currentUser?.uid || null;
-      console.log(`🔍 Final uid check:`, currentUid);
+      console.log(`Final uid check:`, currentUid);
 
       // Check authentication first
       if (!currentUid) {
-        console.log(`❌ No user authentication for reach recording`);
-        Alert.alert('Authentication Required', 'Please sign in to track post views.');
+        console.log(`? No user authentication for reach recording`);
         return;
       }
 
       // Check if already viewed in this session
       if (viewedPosts.has(postId)) {
-        console.log(`❌ Post ${postId} already viewed in this session`);
+        console.log(`? Post ${postId} already viewed in this session`);
         return;
       }
 
@@ -1853,18 +2295,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const viewedKey = `viewed_${postId}_${currentUid}`;
       const hasViewed = await AsyncStorage.getItem(viewedKey);
       if (hasViewed) {
-        console.log(`❌ Post ${postId} already viewed previously`);
+        console.log(`? Post ${postId} already viewed previously`);
         setViewedPosts(prev => new Set(prev).add(postId));
         return;
       }
 
-      console.log(`✅ Recording reach for post ${postId}`);
+      console.log(`? Recording reach for post ${postId}`);
 
       // Record the reach
       const recordReachFn = functions().httpsCallable('recordVideoReach');
       const result = await recordReachFn({ postId });
 
-      console.log(`📈 Reach recording result:`, result.data);
+      console.log(`Reach recording result:`, result.data);
 
       if (result.data && result.data.success) {
         // Mark as viewed
@@ -1877,20 +2319,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           [postId]: (prev[postId] || 0) + 1
         }));
 
-        console.log(`🎉 Reach recorded for post ${postId}, new count: ${(reachCounts[postId] || 0) + 1}`);
+        console.log(`Reach recorded for post ${postId}, new count: ${(reachCounts[postId] || 0) + 1}`);
 
         // Refresh reach counts from server after a short delay
         setTimeout(() => {
           loadReachCounts([postId]);
         }, 1000);
       } else {
-        console.log(`❌ Reach recording failed:`, result.data);
-        Alert.alert('View Recording Failed', 'Could not record post view. Please try again.');
+        console.log(`? Reach recording failed:`, result.data);
       }
 
     } catch (error) {
-      console.error('❌ Automatic reach recording error:', error);
-      Alert.alert('Error', `Failed to record view: ${error.message || 'Unknown error'}`);
+      console.error('? Automatic reach recording error:', error);
     }
   };
                     
@@ -1903,7 +2343,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
     if (!authMod) return;
     const sub = authMod().onAuthStateChanged((u: any) => {
-      console.log('🔐 InnerApp auth state changed:', u ? `User: ${u.uid}` : 'No user');
+      console.log('InnerApp auth state changed:', u ? `User: ${u.uid}` : 'No user');
       setUser(u);
       setIsCurrentUserOnline(!!u);
       if (!u) {
@@ -2170,7 +2610,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
   const [quickReplyText, setQuickReplyText] = useState<string>('');
+  const [threadMessageAttachment, setThreadMessageAttachment] =
+    useState<Asset | null>(null);
   const [isThreadSending, setIsThreadSending] = useState<boolean>(false);
+  const [activeAttachmentDownloads, setActiveAttachmentDownloads] = useState<
+    Record<string, boolean>
+  >({});
+  const [attachmentDownloadProgress, setAttachmentDownloadProgress] = useState<
+    Record<string, number>
+  >({});
   const [selectedMessageForReply, setSelectedMessageForReply] = useState<any>(null);
                     
   // Clear user-specific state when user changes
@@ -2585,6 +3033,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? { uri: mediaUri }
               : null,
             captionText: data.captionText || data.caption || data.text || '',
+            postType: data.postType || null,
             link: data.link || null,
             playbackUrl: data.playbackUrl,
             mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
@@ -2864,11 +3313,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [exploreResults, setExploreResults] = useState<WebReference[]>([]);
   const [exploreRecentQueries, setExploreRecentQueries] = useState<string[]>([]);
   const [isExploreSearching, setIsExploreSearching] = useState<boolean>(false);
+  const [exploreSearchError, setExploreSearchError] = useState<string>('');
   const [studyHubQuery, setStudyHubQuery] = useState<string>('');
   const [studyHubResponse, setStudyHubResponse] = useState<string>('');
   const [studyHubResults, setStudyHubResults] = useState<WebReference[]>([]);
   const [studyRecentQueries, setStudyRecentQueries] = useState<string[]>([]);
   const [isStudySearching, setIsStudySearching] = useState<boolean>(false);
+  const [studySearchError, setStudySearchError] = useState<string>('');
   const [savedLearningSources, setSavedLearningSources] = useState<Record<string, WebReference>>({});
   const [noticeOrgName, setNoticeOrgName] = useState<string>('');
   const [noticeOrgType, setNoticeOrgType] = useState<string>('');
@@ -2907,6 +3358,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [myBoardingCount, setMyBoardingCount] = useState<number>(0);
   const [isInUserCrew, setIsInUserCrew] = useState<{ [uid: string]: boolean }>(
     {},
+  );
+  const [localJoinedTides, setLocalJoinedTides] = useState<Set<string>>(
+    new Set(),
+  );
+  const [localHuggedWaves, setLocalHuggedWaves] = useState<Set<string>>(
+    new Set(),
   );
   const [optimisticCrewCounts, setOptimisticCrewCounts] = useState<{ [uid: string]: number }>({});
   const [crewLoading, setCrewLoading] = useState<boolean>(false);
@@ -2984,6 +3441,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     senderAvatar: any;
     messages: Array<any>;
   } | null>(null);
+  const [incomingDirectCall, setIncomingDirectCall] =
+    useState<DirectCallSession | null>(null);
+  const [outgoingDirectCall, setOutgoingDirectCall] =
+    useState<DirectCallSession | null>(null);
+  const [activeDirectCall, setActiveDirectCall] =
+    useState<DirectCallSession | null>(null);
+  const [activeDirectCallRole, setActiveDirectCallRole] = useState<
+    'caller' | 'callee' | null
+  >(null);
+  const callDocUnsubRef = useRef<null | (() => void)>(null);
+  const callTimeoutRef = useRef<any>(null);
                     
   // Update timestamps every second
   useEffect(() => {
@@ -3051,11 +3519,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const msg =
         kind === 'positive'
           ? rawMsg
-          : rawMsg.endsWith('😞') ||
-            rawMsg.endsWith('😔') ||
-            rawMsg.endsWith('☹️')
+          : rawMsg.endsWith('⚠️')
           ? rawMsg
-          : `${rawMsg} ☹️`;
+          : `${rawMsg} ⚠️`;
       if (toastTimerRef.current) {
         clearTimeout(toastTimerRef.current as any);
         toastTimerRef.current = null;
@@ -3166,6 +3632,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     });
   }, []);
 
+  const clearSearchHistory = useCallback(async (kind: 'explore' | 'study') => {
+    const key =
+      kind === 'explore' ? ADVENTURE_HISTORY_LOCAL_KEY : STUDY_HISTORY_LOCAL_KEY;
+    const setter = kind === 'explore' ? setExploreRecentQueries : setStudyRecentQueries;
+    setter([]);
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch {}
+  }, []);
+
+  const clearSavedSourcesFor = useCallback(async (kind: 'explore' | 'study') => {
+    setSavedLearningSources(prev => {
+      const next: Record<string, WebReference> = {};
+      Object.entries(prev).forEach(([id, item]) => {
+        if (item.source !== kind) {
+          next[id] = item;
+        }
+      });
+      AsyncStorage.setItem(SAVED_SOURCES_LOCAL_KEY, JSON.stringify(next)).catch(
+        () => {},
+      );
+      return next;
+    });
+  }, []);
+
   const openReferenceUrl = useCallback(
     async (url: string) => {
       const safeUrl = String(url || '').trim();
@@ -3203,16 +3694,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           accountCreationHandle ||
           auth?.()?.currentUser?.displayName ||
           null;
-        const placeholderMedia: Asset = {
-          uri: TEXT_STORY_PLACEHOLDER,
-          type: 'image/png',
-        };
         handlePostPublished({
           id: result.id,
-          media: placeholderMedia,
+          media: null,
           audio: null,
           captionText: trimmed,
-          playbackUrl: result.mediaUrl || null,
+          playbackUrl: null,
           muxStatus: null,
           authorName: author,
           ownerUid,
@@ -3429,6 +3916,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     async (theme: string, subheading?: string, customQuery?: string) => {
       const query = String(customQuery || [theme, subheading, exploreSearchQuery].filter(Boolean).join(' ')).trim();
       if (!query) return;
+      setExploreSearchError('');
       setIsExploreSearching(true);
       setIsAILoading(true);
       try {
@@ -3436,7 +3924,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         await rememberSearchQuery('explore', query);
         setExploreResults((web || []).map(item => ({ ...item, source: 'explore' })));
         const findings = web.slice(0, 6).map(
-          item => `${item.title} — ${item.description || item.url} (${item.url})`,
+          item => `${item.title} ï¿½ ${item.description || item.url} (${item.url})`,
         );
         const response = await generateSearchBackedExploreResponse({
           query,
@@ -3446,6 +3934,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setAiResponse(response);
       } catch (error) {
         console.error('AI explore search failed', error);
+        setExploreSearchError('Could not complete search. Check connection and try again.');
         notifyError('Explore search failed.');
       } finally {
         setIsExploreSearching(false);
@@ -3462,6 +3951,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         notifyError('Enter a topic to search in Study Hub.');
         return;
       }
+      setStudySearchError('');
       setIsStudySearching(true);
       setIsAILoading(true);
       try {
@@ -3470,7 +3960,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         await rememberSearchQuery('study', combined);
         setStudyHubResults((web || []).map(item => ({ ...item, source: 'study' })));
         const findings = web.slice(0, 8).map(
-          item => `${item.title} — ${item.description || item.url} (${item.url})`,
+          item => `${item.title} ï¿½ ${item.description || item.url} (${item.url})`,
         );
         const response = await generateStudyHubResponse({
           query,
@@ -3481,6 +3971,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setAiResponse(response);
       } catch (error) {
         console.error('Study hub search failed', error);
+        setStudySearchError('Could not complete study search. Check connection and try again.');
         notifyError('Study Hub search failed.');
       } finally {
         setIsStudySearching(false);
@@ -4290,6 +4781,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ? { uri, name: extra.audioName || 'Audio' }
         : null,
       captionText: extra.caption || '',
+      postType: extra.postType || null,
       mediaEdits: extra.mediaEdits || extra.editorState || extra.edits || null,
       playbackUrl: extra.playbackUrl || null,
       muxStatus: extra.muxStatus || null,
@@ -4666,6 +5158,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   >([]);
   const [driftWatchers, setDriftWatchers] = useState<string[]>([]);
   const [vibeAlert, setVibeAlert] = useState<VibeAlert | null>(null);
+  const [incomingLiveInvite, setIncomingLiveInvite] = useState<LiveInviteNotice | null>(null);
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
   const flickerAnim = useRef(new Animated.Value(0)).current;
@@ -4683,7 +5176,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         crewService.getCrew(user.uid, 200),
       ]);
       const crewIds = crewMembers.map((member: any) => member.uid);
-      const unique = Array.from(new Set([...boardingList, ...crewIds]));
+      const unique = Array.from(
+        new Set([...boardingList, ...crewIds, ...Array.from(localJoinedTides)]),
+      );
       setDriftWatchers(unique);
     } catch (error) {
       console.warn('Could not load drift watchers', error);
@@ -4809,6 +5304,57 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
     return () => unsubscribe && unsubscribe();
   }, [watchersKey, driftWatchers, showVibeAlert]);
+
+  // Direct live invites pushed to the invited user's inbox.
+  useEffect(() => {
+    const me = auth?.()?.currentUser;
+    if (!me?.uid) {
+      setIncomingLiveInvite(null);
+      return;
+    }
+    const unsub = firestore()
+      .collection(`users/${me.uid}/live_invites`)
+      .where('status', '==', 'pending')
+      .limit(10)
+      .onSnapshot(
+        snap => {
+          const docs = snap?.docs || [];
+          const doc =
+            docs
+              .slice()
+              .sort(
+                (a: any, b: any) =>
+                  toJSDate((b.data() || {}).createdAt).getTime() -
+                  toJSDate((a.data() || {}).createdAt).getTime(),
+              )[0] || null;
+          if (!doc) {
+            setIncomingLiveInvite(null);
+            return;
+          }
+          const data = doc.data() || {};
+          if (!data?.liveId || !data?.fromUid) {
+            setIncomingLiveInvite(null);
+            return;
+          }
+          setIncomingLiveInvite({
+            id: doc.id,
+            liveId: String(data.liveId),
+            fromUid: String(data.fromUid),
+            fromName: String(data.fromName || 'Host'),
+            fromPhoto: data.fromPhoto || null,
+            liveTitle: data.liveTitle || null,
+          });
+        },
+        () => {
+          // keep silent if listener fails; app still works without invites stream
+        },
+      );
+    return () => {
+      try {
+        unsub && unsub();
+      } catch {}
+    };
+  }, [user?.uid]);
   // Request to drift with a live host (viewer-side action)
   const requestToDriftForLiveId = useCallback(
     async (liveId: string, hostName?: string) => {
@@ -4855,7 +5401,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const [editorPlaying, setEditorPlaying] = useState(true);
   const [audioUnpaused, setAudioUnpaused] = useState(true);
-  const overlayAudioDelayMs = 80; // small delay to align overlay audio with video start
+  const overlayAudioDelayMs = 0; // start overlay audio immediately with video
   const editorVideoRef = React.useRef<any>(null);
   const editorAudioRef = React.useRef<any>(null);
   const audioDelayTimerRef = React.useRef<any>(null);
@@ -6087,6 +6633,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 ? { uri: String(finalUri) }
                 : null,
               captionText: mediaCaption || feedText,
+              postType: data?.postType || null,
               link: data.link || null,
               playbackUrl: playbackUrl,
               mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
@@ -6209,7 +6756,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 // Create crew status based on actual following relationships
                 const crewStatus: Record<string, boolean> = {};
                 uniqueUserIds.forEach(userId => {
-                  crewStatus[userId] = followingList.includes(userId);
+                  crewStatus[userId] =
+                    followingList.includes(userId) ||
+                    localJoinedTides.has(userId);
                 });
 
                 // Update the global crew status state with actual connection status
@@ -6221,7 +6770,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 // Fallback: set all to false if loading fails
                 const crewStatus: Record<string, boolean> = {};
                 uniqueUserIds.forEach(userId => {
-                  crewStatus[userId] = false;
+                  crewStatus[userId] = localJoinedTides.has(userId);
                 });
                 setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
               }
@@ -6341,6 +6890,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? { uri: String(finalUri) }
               : null,
             captionText: mediaCaption || feedText,
+            postType: data?.postType || null,
             link: data.link || null,
             playbackUrl: playbackUrl,
             mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
@@ -6917,253 +7467,361 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Could add 'follow' action here
   };
                     
+  const isPermissionDeniedError = (e: any): boolean => {
+    const msg = String(e?.code || e?.message || '').toLowerCase();
+    return msg.includes('permission-denied') || msg.includes('permission denied');
+  };
+
+  const inferMimeFromName = (nameOrUri: string): string => {
+    const value = String(nameOrUri || '').toLowerCase();
+    if (/\.(jpg|jpeg)$/.test(value)) return 'image/jpeg';
+    if (/\.png$/.test(value)) return 'image/png';
+    if (/\.webp$/.test(value)) return 'image/webp';
+    if (/\.gif$/.test(value)) return 'image/gif';
+    if (/\.mp4$/.test(value)) return 'video/mp4';
+    if (/\.mov$/.test(value)) return 'video/quicktime';
+    if (/\.mkv$/.test(value)) return 'video/x-matroska';
+    if (/\.m4a$/.test(value)) return 'audio/mp4';
+    if (/\.mp3$/.test(value)) return 'audio/mpeg';
+    if (/\.wav$/.test(value)) return 'audio/wav';
+    if (/\.aac$/.test(value)) return 'audio/aac';
+    return 'application/octet-stream';
+  };
+
+  const getMessagePreviewText = (message: any): string => {
+    const text = String(message?.text || '').trim();
+    if (text) return text;
+    if (message?.attachmentUrl || message?.attachmentName) {
+      const at = String(message?.attachmentType || '').toLowerCase();
+      if (at.startsWith('image/')) return '🖼️ Image attachment';
+      if (at.startsWith('video/')) return '🎥 Video attachment';
+      if (at.startsWith('audio/')) return '🎵 Audio attachment';
+      return '📎 Attachment';
+    }
+    return '';
+  };
+
+  const normalizeAttachment = (asset: Asset | null | undefined): Asset | null => {
+    if (!asset?.uri) return null;
+    const inferredName =
+      asset.fileName ||
+      String(asset.uri).split('?')[0].split('#')[0].split('/').pop() ||
+      `attachment_${Date.now()}`;
+    const inferredType = asset.type || inferMimeFromName(inferredName);
+    return {
+      ...asset,
+      fileName: inferredName,
+      type: inferredType,
+      uri: String(asset.uri),
+    };
+  };
+
+  const downloadMessageAttachment = async (
+    attachmentUrl: string,
+    attachmentName?: string | null,
+    progressKey?: string,
+  ) => {
+    const sourceUrl = String(attachmentUrl || '').trim();
+    if (!sourceUrl) return;
+    const key = String(progressKey || sourceUrl);
+    if (activeAttachmentDownloads[key]) return;
+    setActiveAttachmentDownloads(prev => ({ ...prev, [key]: true }));
+    setAttachmentDownloadProgress(prev => ({ ...prev, [key]: 0 }));
+    try {
+      if (Platform.OS === 'android' && Platform.Version < 29) {
+        try {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
+            {
+              title: 'Storage permission',
+              message: 'Allow storage access to save this attachment.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+            },
+          );
+          if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+            Alert.alert('Permission needed', 'Storage permission is required to download files.');
+            return;
+          }
+        } catch {}
+      }
+      const rawName =
+        String(attachmentName || '').trim() ||
+        String(sourceUrl).split('?')[0].split('#')[0].split('/').pop() ||
+        `attachment_${Date.now()}`;
+      const safeName = rawName.replace(/[^A-Za-z0-9._-]/g, '_');
+      const baseDir =
+        Platform.OS === 'android'
+          ? RNFS.DownloadDirectoryPath || RNFS.ExternalDirectoryPath
+          : RNFS.DocumentDirectoryPath;
+      const destination = `${baseDir}/${Date.now()}_${safeName}`;
+      const task = RNFS.downloadFile({
+        fromUrl: sourceUrl,
+        toFile: destination,
+        progressInterval: 120,
+        progressDivider: 2,
+        progress: event => {
+          const total = Number(event.contentLength || 0);
+          if (total <= 0) return;
+          const ratio = Number(event.bytesWritten || 0) / total;
+          const progressPct = Math.max(1, Math.min(99, Math.round(ratio * 100)));
+          setAttachmentDownloadProgress(prev => {
+            if (prev[key] === progressPct) return prev;
+            return { ...prev, [key]: progressPct };
+          });
+        },
+      });
+      const result = await task.promise;
+      if (result.statusCode < 200 || result.statusCode >= 300) {
+        throw new Error(`Download failed (${result.statusCode})`);
+      }
+      setAttachmentDownloadProgress(prev => ({ ...prev, [key]: 100 }));
+      try {
+        if (Platform.OS === 'android') {
+          await RNFS.scanFile(destination);
+        }
+      } catch {}
+      Alert.alert('Downloaded', `Saved to ${destination}`);
+      setTimeout(() => {
+        setAttachmentDownloadProgress(prev => {
+          const { [key]: _omit, ...rest } = prev;
+          return rest;
+        });
+      }, 900);
+    } catch (error: any) {
+      Alert.alert('Download failed', error?.message || 'Could not download attachment.');
+      setAttachmentDownloadProgress(prev => {
+        const { [key]: _omit, ...rest } = prev;
+        return rest;
+      });
+    } finally {
+      setActiveAttachmentDownloads(prev => {
+        const { [key]: _omit, ...rest } = prev;
+        return rest;
+      });
+    }
+  };
+
+  const pickAttachmentFromSDCard = async (): Promise<Asset | null> => {
+    try {
+      const result = await AudioPicker.pickAudio();
+      if (!result || !result.uri) return null;
+      const fileName = result.name || String(result.uri).split('/').pop() || `file_${Date.now()}`;
+      const mimeType = String(result.type || '');
+      return {
+        uri: String(result.uri),
+        fileName,
+        type: mimeType || undefined,
+      } as Asset;
+    } catch (err: any) {
+      if (err?.code === 'CANCELLED') return null;
+      Alert.alert('SD Card Error', err?.message || 'Failed to open SD card picker');
+      return null;
+    }
+  };
+
   const onSendMessage = async () => {
     if (!messageText.trim() && !messageAttachment) return;
+    if (!messageRecipient?.uid) return;
+    const recipientName = messageRecipient.name || 'User';
     const user = auth().currentUser;
     if (!user) {
       Alert.alert('Not signed in', 'You must be signed in to send messages.');
       return;
     }
 
-    // Set sending state for visual feedback
     setIsSending(true);
-
-    let attachmentUrl: string | null = null;
-    let attachmentType: string | null = null;
-    let attachmentName: string | null = null;
-    let uploadedPath: string | null = null;
-    let storageMod: any = null;
-    let firestoreMod: any = null;
-    let authMod: any = null;
-
     try {
-      // Initialize Firebase modules
-      try {
-        storageMod = require('@react-native-firebase/storage').default;
-      } catch {}
-      try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
-      } catch {}
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-
-      if (storageMod && firestoreMod && authMod) {
-        const a = authMod();
-        const uid = a.currentUser?.uid;
-        if (!uid) {
-          Alert.alert('Sign in required', 'Please sign in to send messages.');
-          setIsSending(false);
-          return;
-        }
-
-        // Handle attachment upload if present (using same logic as onPostWave)
-        if (messageAttachment) {
-          const nameGuessRaw = messageAttachment.fileName || 'attachment';
-          const type = (messageAttachment.type || '').toLowerCase();
-          const sanitizedBase = nameGuessRaw
-            .replace(/[^A-Za-z0-9._-]/g, '_')
-            .replace(/_{2,}/g, '_');
-          const baseNoExt = sanitizedBase.includes('.')
-            ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
-            : sanitizedBase;
-          const ext = sanitizedBase.includes('.')
-            ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
-            : type.startsWith('video/')
-            ? 'mp4'
-            : type.startsWith('image/')
-            ? 'jpg'
-            : type.startsWith('audio/')
-            ? 'm4a'
-            : 'dat';
-          const filePath = `users/${uid}/messages/${Date.now()}_${baseNoExt}.${ext}`;
-
-          // Normalize local URI for putFile
-          let localPath = String(messageAttachment.uri || '');
-          try {
-            localPath = decodeURI(localPath);
-          } catch {}
-          if (Platform.OS === 'android' && localPath.startsWith('file://')) {
-            localPath = localPath.replace('file://', '');
-          }
-          // Handle content:// URIs by copying to cache before upload
-          if (Platform.OS === 'android' && /^content:/.test(localPath)) {
-            try {
-              const RNFS = require('react-native-fs');
-              const safeExt = (
-                ext || (type.startsWith('video/') ? 'mp4' : type.startsWith('audio/') ? 'm4a' : 'dat')
-              ).replace(/[^A-Za-z0-9]/g, '');
-              const copyDest = `${
-                RNFS.CachesDirectoryPath
-              }/msg_${Date.now()}.${safeExt}`;
-              await RNFS.copyFile(String(messageAttachment.uri), copyDest);
-              localPath = copyDest;
-            } catch (e) {
-              console.warn('Attachment content copy before upload failed', e);
-              Alert.alert('Upload Error', 'Could not access the selected file for upload.');
-              setIsSending(false);
-              return;
-            }
-          }
-          if (!localPath) {
-            Alert.alert('Upload error', 'Could not resolve a local path for the selected media.');
-            setIsSending(false);
-            return;
-          }
-
-          // Set contentType based on media type
-          const uploadContentType = type || (type.startsWith('video/') ? 'video/mp4' : type.startsWith('audio/') ? 'audio/m4a' : 'application/octet-stream');
-
-          await storageMod()
-            .ref(filePath)
-            .putFile(localPath, { contentType: uploadContentType });
-
-          attachmentUrl = await storageMod().ref(filePath).getDownloadURL();
-          attachmentType = type;
-          attachmentName = messageAttachment.fileName || null;
-          uploadedPath = filePath;
-        }
-
-        // Send to recipient's inbox
-        await firestoreMod()
-          .collection(`users/${messageRecipient.uid}/messages`)
-          .add({
-            text: messageText.trim(),
-            fromUid: user.uid,
-            fromName: user.displayName || 'Anonymous',
-            route: 'Pings',
-            type: 'message',
-            createdAt: firestoreMod.FieldValue.serverTimestamp(),
-            attachmentUrl,
-            attachmentType,
-            attachmentName,
-          });
-
-        // Send to recipient's mentions for push notifications
-        await firestoreMod()
-          .collection(`users/${messageRecipient.uid}/mentions`)
-          .add({
-            text: messageText.trim(),
-            fromUid: user.uid,
-            fromName: user.displayName || 'Anonymous',
-            fromPhoto: user.photoURL || null,
-            route: 'Pings',
-            createdAt: firestoreMod.FieldValue.serverTimestamp(),
-            type: 'message',
-            attachmentUrl,
-            attachmentType,
-            attachmentName,
-          });
-
-        // Send push notification
-        try {
-          const fromUsername = await fetchUserUsername(user.uid);
-          const addPingFn = functions().httpsCallable('addPing');
-          await addPingFn({
-            recipientUid: messageRecipient.uid,
-            type: 'message',
-            text: messageText.trim(),
-            fromUid: user.uid,
-            fromName: fromUsername,
-            fromPhoto: user.photoURL || null,
-            attachmentUrl,
-            attachmentType,
-          });
-        } catch (error) {
-          console.error('Error sending message notification:', error);
-        }
-
-        // Success - reset form and show confirmation
-        setShowSendMessage(false);
-        setMessageText('');
-        setMessageAttachment(null);
-        setIsSending(false);
-        notifySuccess('Ping sent!');
-        showOceanDialog(
-          'Message Sent',
-          `Your message to ${messageRecipient.name} has been cast into the sea!`,
-        );
-      } else {
-        Alert.alert('Backend not ready', 'Firebase modules not available.');
-        setIsSending(false);
+      const normalizedAttachment = normalizeAttachment(messageAttachment);
+      const sendResult = await sendMessage(
+        messageRecipient.uid,
+        messageText.trim(),
+        normalizedAttachment,
+      );
+      if (normalizedAttachment && !sendResult?.attachmentUrl) {
+        throw new Error('Attachment was not uploaded. Please retry.');
       }
+      setShowSendMessage(false);
+      setMessageText('');
+      setMessageAttachment(null);
+      notifySuccess('Ping sent!');
+      showOceanDialog(
+        'Message Sent',
+        `Your message to ${recipientName} has been cast into the sea!`,
+      );
     } catch (e: any) {
       console.warn('Send message failed', e);
       const msg = (e && (e.message || (typeof e === 'string' ? e : ''))) || 'Unknown error';
       Alert.alert('Send failed', `Could not send your message. ${msg}`);
+    } finally {
       setIsSending(false);
     }
   };
                     
-  const sendMessage = async (recipientUid: string, messageText: string) => {
+  const sendMessage = async (
+    recipientUid: string,
+    messageText: string,
+    attachment?: Asset | null,
+  ): Promise<{
+    attachmentUrl: string | null;
+    attachmentType: string | null;
+    attachmentName: string | null;
+    localOnly?: boolean;
+  }> => {
     const user = auth().currentUser;
     if (!user) {
       throw new Error('User not signed in');
     }
 
-    // Don't send if we don't have a proper username
-    const senderName = userData?.handle || user.displayName;
-    if (!senderName || senderName === 'You' || senderName === 'Anonymous') {
-      throw new Error('Username not available');
-    }
+    const senderName = userData?.handle || user.displayName || 'User';
 
     let firestoreMod: any = null;
     let functionsMod: any = null;
+    let storageMod: any = null;
 
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
       functionsMod = require('@react-native-firebase/functions').default;
+      storageMod = require('@react-native-firebase/storage').default;
     } catch {}
 
     if (!firestoreMod || !functionsMod) {
       throw new Error('Firebase modules not available');
     }
 
-    // Send to recipient's inbox
-    await firestoreMod()
-      .collection(`users/${recipientUid}/messages`)
-      .add({
-        text: messageText,
-        fromUid: user.uid,
-        fromName: senderName,
-        route: 'Pings',
-        type: 'message',
-        createdAt: firestoreMod.FieldValue.serverTimestamp(),
-        attachmentUrl: null,
-        attachmentType: null,
-        attachmentName: null,
-      });
+    const normalizedAttachment = normalizeAttachment(attachment);
 
-    // Send to recipient's mentions for push notifications
-    await firestoreMod()
-      .collection(`users/${recipientUid}/mentions`)
-      .add({
-        text: messageText,
-        fromUid: user.uid,
-        fromName: senderName,
-        fromPhoto: user.photoURL || null,
-        route: 'Pings',
-        createdAt: firestoreMod.FieldValue.serverTimestamp(),
-        type: 'message',
-        attachmentUrl: null,
-        attachmentType: null,
-        attachmentName: null,
-      });
+    let attachmentUrl: string | null = null;
+    let attachmentType: string | null = null;
+    let attachmentName: string | null = null;
 
-    // Send push notification
+    if (normalizedAttachment?.uri && storageMod) {
+      const nameGuessRaw = normalizedAttachment.fileName || 'attachment';
+      const type = String(normalizedAttachment.type || '').toLowerCase();
+      const sanitizedBase = nameGuessRaw
+        .replace(/[^A-Za-z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_');
+      const baseNoExt = sanitizedBase.includes('.')
+        ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+        : sanitizedBase;
+      const ext = sanitizedBase.includes('.')
+        ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
+        : type.startsWith('video/')
+        ? 'mp4'
+        : type.startsWith('image/')
+        ? 'jpg'
+        : type.startsWith('audio/')
+        ? 'm4a'
+        : 'dat';
+      const originalUri = String(normalizedAttachment.uri || '');
+      const uploadContentType =
+        (type && (type.startsWith('video/') || type.startsWith('image/') || type.startsWith('audio/'))
+          ? type
+          : inferMimeFromName(String(normalizedAttachment.fileName || '')) ||
+            inferMimeFromName(originalUri));
+      try {
+        // Match post-upload path normalization flow used elsewhere in the app.
+        let localPath = originalUri;
+        try {
+          localPath = decodeURI(localPath);
+        } catch {}
+        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+          localPath = localPath.replace('file://', '');
+        }
+        if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+          try {
+            const fsMod = RNFS || require('react-native-fs');
+            const safeExt = (ext || 'dat').replace(/[^A-Za-z0-9]/g, '');
+            const copyDest = `${fsMod.CachesDirectoryPath}/msg_${Date.now()}.${safeExt}`;
+            await fsMod.copyFile(String(originalUri), copyDest);
+            localPath = copyDest;
+          } catch (copyErr) {
+            console.warn('Attachment content copy before upload failed', copyErr);
+          }
+        }
+
+        const storagePathCandidates = [
+          `posts/${user.uid}/messages/${Date.now()}_${baseNoExt}.${ext}`,
+          `users/${user.uid}/messages/${Date.now()}_${baseNoExt}.${ext}`,
+        ];
+        let uploadedPath: string | null = null;
+        let lastUploadErr: any = null;
+        for (const storagePath of storagePathCandidates) {
+          try {
+            const uploadRef = storageMod().ref(storagePath);
+            await uploadRef.putFile(localPath, { contentType: uploadContentType });
+            uploadedPath = storagePath;
+            break;
+          } catch (uploadErr: any) {
+            lastUploadErr = uploadErr;
+          }
+        }
+        if (!uploadedPath) {
+          throw lastUploadErr || new Error('Attachment upload failed');
+        }
+        attachmentUrl = await storageMod().ref(uploadedPath).getDownloadURL();
+        attachmentType = type || uploadContentType;
+        attachmentName = normalizedAttachment.fileName || null;
+      } catch (uploadErr) {
+        console.warn('Message attachment upload failed', uploadErr);
+        throw new Error('Attachment upload failed. Please choose the file again and retry.');
+      }
+    }
+
+    const payloadText = (messageText || '').trim() || (attachmentName ? '[Attachment]' : '');
+
+    try {
+      await firestoreMod()
+        .collection(`users/${recipientUid}/messages`)
+        .add({
+          text: payloadText,
+          fromUid: user.uid,
+          fromName: senderName,
+          route: 'Pings',
+          type: 'message',
+          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          attachmentUrl,
+          attachmentType,
+          attachmentName,
+        });
+
+      await firestoreMod()
+        .collection(`users/${recipientUid}/mentions`)
+        .add({
+          text: payloadText,
+          fromUid: user.uid,
+          fromName: senderName,
+          fromPhoto: user.photoURL || null,
+          route: 'Pings',
+          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          type: 'message',
+          attachmentUrl,
+          attachmentType,
+          attachmentName,
+        });
+    } catch (e: any) {
+      if (isPermissionDeniedError(e)) {
+        return { attachmentUrl, attachmentType, attachmentName, localOnly: true };
+      }
+      throw e;
+    }
+
     try {
       const addPingFn = functionsMod().httpsCallable('addPing');
       await addPingFn({
         recipientUid: recipientUid,
         type: 'message',
-        text: `${senderName} has echoed back your echo`,
+        text: payloadText || `${senderName} sent you a message`,
         fromUid: user.uid,
         fromName: senderName,
         fromPhoto: user.photoURL || null,
+        attachmentUrl,
+        attachmentType,
       });
     } catch (error) {
       console.error('Error sending message notification:', error);
     }
+    return { attachmentUrl, attachmentType, attachmentName };
   };
                     
   const formatTime = (secs: number) => {
@@ -7207,7 +7865,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         'How would you like to show appreciation?',
         [
           {
-            text: '💧 Regular Splash',
+            text: '💦 Regular Splash',
             onPress: () => onSplash('regular'),
           },
           { text: 'Cancel', style: 'cancel' },
@@ -7270,10 +7928,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               { merge: true }
             );
           // Update local state
-          setUserStats(prev => ({
-            ...prev,
-            [statField]: Math.max(0, prev[statField] - 1),
-          }));
+          setUserStats(prev => {
+            const nextValue = Math.max(0, (prev as any)[statField] - 1);
+            const next: any = {
+              ...prev,
+              [statField]: nextValue,
+            };
+            if (statField === 'hugsMade') {
+              persistLocalHugsMade(nextValue);
+            }
+            return next;
+          });
+          if (statField === 'hugsMade') {
+            setLocalHuggedWaves(prev => {
+              const next = new Set(prev);
+              next.delete(waveId);
+              persistLocalHuggedWaves(next);
+              return next;
+            });
+          }
         } catch (err) {
           console.error('Error removing splash:', err);
           // Do not show any alert or notification on removal failure
@@ -7311,14 +7984,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               { merge: true }
             );
           // Update local state
-          setUserStats(prev => ({
-            ...prev,
-            [statField]: prev[statField] + 1,
-          }));
+          setUserStats(prev => {
+            const nextValue = ((prev as any)[statField] || 0) + 1;
+            const next: any = {
+              ...prev,
+              [statField]: nextValue,
+            };
+            if (statField === 'hugsMade') {
+              persistLocalHugsMade(nextValue);
+            }
+            return next;
+          });
+          if (statField === 'hugsMade') {
+            setLocalHuggedWaves(prev => {
+              const next = new Set(prev);
+              next.add(waveId);
+              persistLocalHuggedWaves(next);
+              return next;
+            });
+          }
           // Send ping notification to wave owner
           if (currentWave.ownerUid && currentWave.ownerUid !== user.uid) {
             const userName = profileName || user.displayName || 'Someone';
-            const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💧';
+            const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💦';
             const splashText = splashType === 'octopus_hug' ? 'sent an octopus hug' : 'glowed';
             // Always use the poster's name from the feed for notifications
             let posterName = '';
@@ -7870,8 +8558,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const waveId = wave.id;
       const deep = `drift://wave/${encodeURIComponent(waveId)}`;
       const web = `https://drift.link/w/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `“${wave.captionText}”` : 'my vibe';
-      const msg = `Cast Vibe — Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
+      const caption = wave.captionText ? `ï¿½${wave.captionText}ï¿½` : 'my vibe';
+      const msg = `Cast Vibe ï¿½ Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to cast the net right now.');
@@ -7881,8 +8569,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const waveId = wave.id;
       const link = `aqualink://wave/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `“${wave.captionText}”` : 'my splashline';
-      const msg = `Cast SplashLine — Check out ${caption}\n\n${link}`;
+      const caption = wave.captionText ? `ï¿½${wave.captionText}ï¿½` : 'my splashline';
+      const msg = `Cast SplashLine ï¿½ Check out ${caption}\n\n${link}`;
       await Share.share({ title: 'Cast SplashLine', message: msg });
     } catch {
       showOceanDialog(
@@ -7937,6 +8625,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const user = auth().currentUser;
       if (!user) {
         Alert.alert('Sign in required', 'Please sign in to hug.');
+        return;
+      }
+      if (localHuggedWaves.has(wave.id)) {
+        notifySuccess('you already hugged this vibe');
         return;
       }
                     
@@ -8031,12 +8723,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           },
         }, { merge: true });
                     
-      // Update local userStats immediately for real-time MY AURA display
-      setUserStats(prev => ({
-        ...prev,
-        hugsMade: prev.hugsMade + 1,
-      }));
-                    
       // Update local vibe counts immediately for real-time display
       setVibesFeed(prev => prev.map(vibe => 
         vibe.id === wave.id 
@@ -8068,9 +8754,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // }
                     
       // Show success message immediately without any sound
+      setLocalHuggedWaves(prev => {
+        const next = new Set(prev);
+        next.add(wave.id);
+        persistLocalHuggedWaves(next);
+        return next;
+      });
+      setUserStats(prev => {
+        const next = { ...prev, hugsMade: (prev.hugsMade || 0) + 1 };
+        persistLocalHugsMade(next.hugsMade);
+        return next;
+      });
       notifySuccess('you have hugged this vibe');
     } catch (error) {
       console.error('Hug error:', error);
+      setLocalHuggedWaves(prev => {
+        if (prev.has(wave.id)) return prev;
+        const next = new Set(prev);
+        next.add(wave.id);
+        persistLocalHuggedWaves(next);
+        return next;
+      });
+      setUserStats(prev => {
+        const next = { ...prev, hugsMade: (prev.hugsMade || 0) + 1 };
+        persistLocalHugsMade(next.hugsMade);
+        return next;
+      });
       notifySuccess('you have hugged this vibe');
     }
   };
@@ -8238,6 +8947,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.log(`[DEBUG] handleJoinCrew: joinCrew function completed for ${targetUid}`);
       
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
+      setLocalJoinedTides(prev => {
+        const next = new Set(prev);
+        next.add(targetUid);
+        persistLocalJoinedTides(next);
+        return next;
+      });
       notifySuccess(`Connected to ${targetName || 'user'}'s wave`);
       loadCrewCounts();
       await loadDriftWatchers();
@@ -8245,6 +8960,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.log(`[DEBUG] handleJoinCrew: UI updated for connection to ${targetUid}`);
     } catch (e) {
       console.error('Connect wave error:', e);
+      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          next.add(targetUid);
+          persistLocalJoinedTides(next);
+          return next;
+        });
+        loadCrewCounts();
+        await loadDriftWatchers();
+        return;
+      }
       let msg = 'Could not connect wave right now';
       if (e && (e.message || (typeof e === 'string'))) {
         msg = e.message || e.toString();
@@ -8261,16 +8988,120 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       await leaveCrew(targetUid);
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
+      setLocalJoinedTides(prev => {
+        const next = new Set(prev);
+        next.delete(targetUid);
+        persistLocalJoinedTides(next);
+        return next;
+      });
       notifySuccess(`Disconnected from ${targetName || 'user'}'s wave`);
       loadCrewCounts();
       await loadDriftWatchers();
     } catch (e) {
       console.error('Disconnect wave error:', e);
+      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          next.delete(targetUid);
+          persistLocalJoinedTides(next);
+          return next;
+        });
+        loadCrewCounts();
+        await loadDriftWatchers();
+        return;
+      }
       notifyError('Could not disconnect wave right now');
     } finally {
       setCrewLoading(false);
     }
   };
+
+  const persistLocalJoinedTides = useCallback(
+    async (next: Set<string>) => {
+      const uid = auth().currentUser?.uid;
+      if (!uid) return;
+      try {
+        await AsyncStorage.setItem(
+          `${LOCAL_JOINED_TIDES_KEY_PREFIX}${uid}`,
+          JSON.stringify(Array.from(next)),
+        );
+      } catch {}
+    },
+    [],
+  );
+
+  const persistLocalHuggedWaves = useCallback(
+    async (next: Set<string>) => {
+      const uid = auth().currentUser?.uid;
+      if (!uid) return;
+      try {
+        await AsyncStorage.setItem(
+          `${LOCAL_HUGGED_WAVES_KEY_PREFIX}${uid}`,
+          JSON.stringify(Array.from(next)),
+        );
+      } catch {}
+    },
+    [],
+  );
+
+  const persistLocalHugsMade = useCallback(async (nextValue: number) => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) return;
+    try {
+      await AsyncStorage.setItem(
+        `${LOCAL_HUGS_MADE_KEY_PREFIX}${uid}`,
+        String(Math.max(0, Math.floor(nextValue || 0))),
+      );
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) {
+      setLocalJoinedTides(new Set());
+      setLocalHuggedWaves(new Set());
+      return;
+    }
+    (async () => {
+      try {
+        const [joinedRaw, huggedRaw, hugsMadeRaw] = await Promise.all([
+          AsyncStorage.getItem(`${LOCAL_JOINED_TIDES_KEY_PREFIX}${uid}`),
+          AsyncStorage.getItem(`${LOCAL_HUGGED_WAVES_KEY_PREFIX}${uid}`),
+          AsyncStorage.getItem(`${LOCAL_HUGS_MADE_KEY_PREFIX}${uid}`),
+        ]);
+        const joinedList = joinedRaw ? JSON.parse(joinedRaw) : [];
+        const huggedList = huggedRaw ? JSON.parse(huggedRaw) : [];
+        const joinedSet = new Set(
+          Array.isArray(joinedList)
+            ? joinedList.map((v: any) => String(v)).filter(Boolean)
+            : [],
+        );
+        const huggedSet = new Set(
+          Array.isArray(huggedList)
+            ? huggedList.map((v: any) => String(v)).filter(Boolean)
+            : [],
+        );
+        setLocalJoinedTides(joinedSet);
+        setLocalHuggedWaves(huggedSet);
+        setMyBoardingCount(prev => Math.max(prev, joinedSet.size));
+        if (joinedSet.size) {
+          const crewStatus: Record<string, boolean> = {};
+          joinedSet.forEach(tid => {
+            crewStatus[tid] = true;
+          });
+          setIsInUserCrew(prev => ({ ...prev, ...crewStatus }));
+        }
+        const localHugsMade = Math.max(0, Number(hugsMadeRaw || 0));
+        if (localHugsMade > 0) {
+          setUserStats(prev => ({
+            ...prev,
+            hugsMade: Math.max(prev.hugsMade || 0, localHugsMade),
+          }));
+        }
+      } catch {}
+    })();
+  }, [user?.uid]);
 
   // Record Video Reach function with crash-resistant error handling
   const recordVideoReach = async (postId: string) => {
@@ -8332,6 +9163,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.log(`[DEBUG] Disconnecting from ${targetUid}`);
         await leaveCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          next.delete(targetUid);
+          persistLocalJoinedTides(next);
+          return next;
+        });
         notifySuccess(`Disconnected from ${targetName || 'user'}`);
         loadCrewCounts();
         await loadDriftWatchers();
@@ -8339,12 +9176,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.log(`[DEBUG] Connecting to ${targetUid}`);
         await joinCrew(targetUid);
         setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          next.add(targetUid);
+          persistLocalJoinedTides(next);
+          return next;
+        });
         notifySuccess(`Connected to ${targetName || 'user'}`);
         loadCrewCounts();
         await loadDriftWatchers();
       }
     } catch (e: any) {
       console.error('Toggle vibe error:', e);
+      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
+        const shouldConnect = !isInUserCrew[targetUid];
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: shouldConnect }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          if (shouldConnect) {
+            next.add(targetUid);
+          } else {
+            next.delete(targetUid);
+          }
+          persistLocalJoinedTides(next);
+          return next;
+        });
+        notifySuccess('Tide connection updated');
+        return;
+      }
       notifyError(e?.message || 'Could not update tide connection right now');
     } finally {
       setCrewLoading(false);
@@ -8441,10 +9300,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const user = auth().currentUser;
       if (!user) return;
-      const count = await getCrewCount(user.uid);
-      setMyCrewCount(count);
+      const [crewCount, boardingCount] = await Promise.all([
+        getCrewCount(user.uid),
+        getBoardingCount(user.uid),
+      ]);
+      setMyCrewCount(crewCount);
+      setMyBoardingCount(Math.max(boardingCount, localJoinedTides.size));
     } catch (e) {
       console.error('Load crew counts error:', e);
+      setMyBoardingCount(localJoinedTides.size);
     }
   };
 
@@ -8599,7 +9463,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             senderUid,
             senderName: message.fromName || 'Unknown User',
             senderAvatar: getUserAvatar(senderUid, userData || {}),
-            lastMessage: message.text || 'Attachment',
+            lastMessage: getMessagePreviewText(message) || 'Message',
             lastMessageTime: message.createdAt,
             unreadCount: 0, // We'll implement read status later
             messages: [],
@@ -8716,6 +9580,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setIsInUserCrew(prev => ({ ...prev, [targetUid]: inCrew }));
     } catch (e) {
       console.error('Check crew status error:', e);
+      if (localJoinedTides.has(targetUid)) {
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
+      }
     }
   };
   const runSplashAnimation = () => {
@@ -8916,7 +9783,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const name = profileName || accountCreationHandle || '@your_handle';
       const deep = uid ? `drift://user/${uid}` : 'drift://home';
       const web = uid ? `https://drift.link/u/${uid}` : 'https://drift.link/';
-      const msg = `Cast Vibe — Check out my Aura ${name}!\n\n${web}\n(Open in app: ${deep})`;
+      const msg = `Cast Vibe ï¿½ Check out my Aura ${name}!\n\n${web}\n(Open in app: ${deep})`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
@@ -10009,17 +10876,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         
         const ownerUid = auth?.()?.currentUser?.uid || null;
         const author = profileName || accountCreationHandle || auth?.()?.currentUser?.displayName || null;
-        const placeholderMedia: Asset = {
-          uri: TEXT_STORY_PLACEHOLDER,
-          type: 'image/png',
-        };
-        
         handlePostPublished({
           id: result.id,
-          media: placeholderMedia,
+          media: null,
           audio: null,
           captionText: trimmedText,
-          playbackUrl: result.mediaUrl || null,
+          playbackUrl: null,
           muxStatus: null,
           authorName: author,
           ownerUid,
@@ -10128,7 +10990,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               senderName,
               senderAvatar:
                 prev[index]?.senderAvatar || getUserAvatar(senderUid, userData || {}),
-              lastMessage: latest?.text || prev[index]?.lastMessage || '',
+              lastMessage:
+                getMessagePreviewText(latest) ||
+                prev[index]?.lastMessage ||
+                'Message',
               lastMessageTime: latest?.createdAt || prev[index]?.lastMessageTime || null,
               unreadCount: prev[index]?.unreadCount || 0,
               messages: liveMessages,
@@ -10153,6 +11018,503 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, [showInbox, selectedThread?.senderUid, myUid, userData]);
+
+  const clearCallDocSubscription = useCallback(() => {
+    if (callDocUnsubRef.current) {
+      try {
+        callDocUnsubRef.current();
+      } catch {}
+      callDocUnsubRef.current = null;
+    }
+  }, []);
+
+  const mapDirectCallDoc = useCallback((doc: any): DirectCallSession | null => {
+    if (!doc?.exists) return null;
+    const data = doc.data?.() || doc.data || {};
+    const callType: DirectCallMode = data?.callType === 'video' ? 'video' : 'audio';
+    const statusRaw = String(data?.status || 'ringing').toLowerCase();
+    const status: DirectCallStatus =
+      statusRaw === 'accepted' ||
+      statusRaw === 'declined' ||
+      statusRaw === 'ended' ||
+      statusRaw === 'missed'
+        ? (statusRaw as DirectCallStatus)
+        : 'ringing';
+    return {
+      id: String(doc.id || ''),
+      callerUid: String(data?.callerUid || ''),
+      calleeUid: String(data?.calleeUid || ''),
+      callerName: data?.callerName || null,
+      calleeName: data?.calleeName || null,
+      callerAvatar: data?.callerAvatar || null,
+      calleeAvatar: data?.calleeAvatar || null,
+      channelName: String(data?.channelName || ''),
+      callType,
+      status,
+      createdAt: data?.createdAt,
+      acceptedAt: data?.acceptedAt,
+      endedAt: data?.endedAt,
+      endedBy: data?.endedBy || null,
+      agoraToken: data?.agoraToken || null,
+    };
+  }, []);
+
+  const watchDirectCallDoc = useCallback(
+    (callId: string, role: 'caller' | 'callee') => {
+      const trimmedId = String(callId || '').trim();
+      if (!trimmedId || !myUid) return;
+      clearCallDocSubscription();
+      try {
+        callDocUnsubRef.current = firestore()
+          .collection(`users/${myUid}/direct_calls`)
+          .doc(trimmedId)
+          .onSnapshot(
+            snap => {
+              const call = mapDirectCallDoc(snap);
+              if (!call) return;
+              if (call.status === 'accepted') {
+                if (callTimeoutRef.current) {
+                  clearTimeout(callTimeoutRef.current);
+                  callTimeoutRef.current = null;
+                }
+                setActiveDirectCall(call);
+                setActiveDirectCallRole(role);
+                setIncomingDirectCall(prev =>
+                  prev && prev.id === call.id ? null : prev,
+                );
+                setOutgoingDirectCall(prev =>
+                  prev && prev.id === call.id ? null : prev,
+                );
+                return;
+              }
+              if (call.status === 'ringing') {
+                if (role === 'caller') {
+                  setOutgoingDirectCall(call);
+                }
+                return;
+              }
+              const endStatusLabel =
+                call.status === 'declined'
+                  ? 'declined'
+                  : call.status === 'missed'
+                  ? 'missed'
+                  : 'ended';
+              if (callTimeoutRef.current) {
+                clearTimeout(callTimeoutRef.current);
+                callTimeoutRef.current = null;
+              }
+              setIncomingDirectCall(prev =>
+                prev && prev.id === call.id ? null : prev,
+              );
+              setOutgoingDirectCall(prev =>
+                prev && prev.id === call.id ? null : prev,
+              );
+              setActiveDirectCall(prev =>
+                prev && prev.id === call.id ? null : prev,
+              );
+              setActiveDirectCallRole(null);
+              clearCallDocSubscription();
+              if (role === 'caller' && endStatusLabel !== 'ended') {
+                Alert.alert(
+                  'Call update',
+                  `Your ${call.callType} call was ${endStatusLabel}.`,
+                );
+              }
+            },
+            err => {
+              console.warn('Direct call listener error', err);
+            },
+          );
+      } catch (err) {
+        console.warn('Could not subscribe to direct call', err);
+      }
+    },
+    [clearCallDocSubscription, mapDirectCallDoc, myUid],
+  );
+
+  const startDirectCall = useCallback(
+    async (
+      mode: DirectCallMode,
+      targetUser?: { uid: string; name?: string } | null,
+    ) => {
+      const targetUid = String(
+        targetUser?.uid || selectedThread?.senderUid || '',
+      ).trim();
+      if (!myUid || !targetUid) {
+        Alert.alert('Call unavailable', 'Open a chat thread or pick a user.');
+        return;
+      }
+      if (incomingDirectCall || outgoingDirectCall || activeDirectCall) {
+        Alert.alert('Call in progress', 'Finish the current call first.');
+        return;
+      }
+      if (mode === 'video') {
+        const ok = await ensureCamMicPermissionsAndroid();
+        if (!ok) return;
+      } else if (Platform.OS === 'android') {
+        try {
+          const mic = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+            {
+              title: 'Microphone permission',
+              message: 'Microphone access is needed for audio calls.',
+              buttonPositive: 'Allow',
+              buttonNegative: 'Deny',
+            },
+          );
+          if (mic !== PermissionsAndroid.RESULTS.GRANTED) return;
+        } catch {}
+      }
+
+      const calleeUid = targetUid;
+      if (!calleeUid) return;
+      const callerName =
+        profileName ||
+        accountCreationHandle ||
+        auth()?.currentUser?.displayName ||
+        'User';
+      const calleeName =
+        String(targetUser?.name || selectedThread?.senderName || '').trim() ||
+        'User';
+
+      try {
+        const callRef = firestore().collection(`users/${myUid}/direct_calls`).doc();
+        const payload: Omit<DirectCallSession, 'id'> & { createdAt: any } = {
+          callerUid: myUid,
+          calleeUid,
+          callerName,
+          calleeName,
+          callerAvatar: auth()?.currentUser?.photoURL || null,
+          calleeAvatar: null,
+          channelName: `aqua_call_${callRef.id}`.replace(/[^A-Za-z0-9_]/g, '_'),
+          callType: mode,
+          status: 'ringing',
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          endedBy: null,
+          agoraToken: null,
+        };
+        const calleeCallRef = firestore()
+          .collection(`users/${calleeUid}/direct_calls`)
+          .doc(callRef.id);
+        const batch = firestore().batch();
+        batch.set(callRef, payload as any, { merge: true });
+        batch.set(calleeCallRef, payload as any, { merge: true });
+        await batch.commit();
+
+        const newCall: DirectCallSession = {
+          ...(payload as any),
+          id: callRef.id,
+        };
+        setOutgoingDirectCall(newCall);
+        setActiveDirectCall(null);
+        setActiveDirectCallRole(null);
+        watchDirectCallDoc(callRef.id, 'caller');
+
+        try {
+          await firestore()
+            .collection(`users/${calleeUid}/mentions`)
+            .add({
+              type: 'call_invite',
+              text: `${callerName} is calling you (${mode})`,
+              fromUid: myUid,
+              fromName: callerName,
+              route: 'Pings',
+              callId: callRef.id,
+              callType: mode,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
+          await firestore()
+            .collection('notifications')
+            .add({
+              type: 'call_invite',
+              toUserId: calleeUid,
+              fromUid: myUid,
+              fromName: callerName,
+              fromUserHandle: callerName,
+              message: `${callerName} is calling you (${mode})`,
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+              callId: callRef.id,
+              callType: mode,
+            });
+        } catch {}
+
+        if (callTimeoutRef.current) {
+          clearTimeout(callTimeoutRef.current);
+          callTimeoutRef.current = null;
+        }
+        callTimeoutRef.current = setTimeout(async () => {
+          try {
+            const snap = await callRef.get();
+            const current = mapDirectCallDoc(snap);
+            if (current && current.status === 'ringing') {
+              const patch = {
+                status: 'missed',
+                endedAt: firestore.FieldValue.serverTimestamp(),
+                endedBy: myUid,
+              };
+              const timeoutBatch = firestore().batch();
+              timeoutBatch.set(callRef, patch, { merge: true });
+              timeoutBatch.set(calleeCallRef, patch, { merge: true });
+              await timeoutBatch.commit();
+              try {
+                await firestore()
+                  .collection(`users/${calleeUid}/mentions`)
+                  .add({
+                    type: 'call_missed',
+                    text: `Missed ${mode} call from ${callerName}`,
+                    fromUid: myUid,
+                    fromName: callerName,
+                    route: 'Pings',
+                    callId: callRef.id,
+                    callType: mode,
+                    createdAt: firestore.FieldValue.serverTimestamp(),
+                  });
+                await firestore()
+                  .collection('notifications')
+                  .add({
+                    type: 'call_missed',
+                    toUserId: calleeUid,
+                    fromUid: myUid,
+                    fromName: callerName,
+                    fromUserHandle: callerName,
+                    message: `Missed ${mode} call from ${callerName}`,
+                    read: false,
+                    createdAt: firestore.FieldValue.serverTimestamp(),
+                    callId: callRef.id,
+                    callType: mode,
+                  });
+              } catch {}
+            }
+          } catch {}
+        }, 35000);
+      } catch (err: any) {
+        console.warn('Failed to start direct call', err);
+        Alert.alert(
+          'Call failed',
+          err?.message || 'Could not start the call. Please try again.',
+        );
+      }
+    },
+    [
+      activeDirectCall,
+      accountCreationHandle,
+      incomingDirectCall,
+      mapDirectCallDoc,
+      myUid,
+      outgoingDirectCall,
+      profileName,
+      selectedThread,
+      watchDirectCallDoc,
+    ],
+  );
+
+  const acceptIncomingDirectCall = useCallback(async () => {
+    const call = incomingDirectCall;
+    if (!call?.id || !myUid) return;
+    if (call.callType === 'video') {
+      const ok = await ensureCamMicPermissionsAndroid();
+      if (!ok) return;
+    } else if (Platform.OS === 'android') {
+      try {
+        const mic = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone permission',
+            message: 'Microphone access is needed for audio calls.',
+            buttonPositive: 'Allow',
+            buttonNegative: 'Deny',
+          },
+        );
+        if (mic !== PermissionsAndroid.RESULTS.GRANTED) return;
+      } catch {}
+    }
+    try {
+      const myCallRef = firestore()
+        .collection(`users/${myUid}/direct_calls`)
+        .doc(call.id);
+      const peerCallRef = firestore()
+        .collection(`users/${call.callerUid}/direct_calls`)
+        .doc(call.id);
+      const batch = firestore().batch();
+      const patch = {
+        status: 'accepted',
+        acceptedAt: firestore.FieldValue.serverTimestamp(),
+      };
+      batch.set(myCallRef, patch, { merge: true });
+      batch.set(peerCallRef, patch, { merge: true });
+      await batch.commit();
+      setIncomingDirectCall(null);
+      setActiveDirectCall({ ...call, status: 'accepted' });
+      setActiveDirectCallRole('callee');
+      watchDirectCallDoc(call.id, 'callee');
+    } catch (err: any) {
+      Alert.alert('Call failed', err?.message || 'Could not accept this call.');
+    }
+  }, [incomingDirectCall, myUid, watchDirectCallDoc]);
+
+  const declineIncomingDirectCall = useCallback(async () => {
+    const call = incomingDirectCall;
+    if (!call?.id || !myUid) {
+      setIncomingDirectCall(null);
+      return;
+    }
+    try {
+      const myCallRef = firestore()
+        .collection(`users/${myUid}/direct_calls`)
+        .doc(call.id);
+      const peerCallRef = firestore()
+        .collection(`users/${call.callerUid}/direct_calls`)
+        .doc(call.id);
+      const batch = firestore().batch();
+      const patch = {
+        status: 'declined',
+        endedBy: myUid,
+        endedAt: firestore.FieldValue.serverTimestamp(),
+      };
+      batch.set(myCallRef, patch, { merge: true });
+      batch.set(peerCallRef, patch, { merge: true });
+      await batch.commit();
+      try {
+        await firestore()
+          .collection('notifications')
+          .add({
+            type: 'call_declined',
+            toUserId: call.callerUid,
+            fromUid: myUid,
+            fromName: call.calleeName || 'User',
+            fromUserHandle: call.calleeName || 'User',
+            message: `${call.calleeName || 'User'} declined your ${call.callType} call`,
+            read: false,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+            callId: call.id,
+            callType: call.callType,
+          });
+      } catch {}
+    } catch {}
+    setIncomingDirectCall(null);
+  }, [incomingDirectCall, myUid]);
+
+  const endActiveDirectCall = useCallback(async () => {
+    const call = activeDirectCall || outgoingDirectCall || incomingDirectCall;
+    if (call?.id && myUid) {
+      try {
+        const myCallRef = firestore()
+          .collection(`users/${myUid}/direct_calls`)
+          .doc(call.id);
+        const peerUid = call.callerUid === myUid ? call.calleeUid : call.callerUid;
+        const peerCallRef = firestore()
+          .collection(`users/${peerUid}/direct_calls`)
+          .doc(call.id);
+        const batch = firestore().batch();
+        const endedWhileRinging =
+          call.status === 'ringing' &&
+          call.callerUid === myUid &&
+          !activeDirectCall;
+        const nextStatus = endedWhileRinging ? 'missed' : 'ended';
+        const patch = {
+          status: nextStatus,
+          endedBy: myUid,
+          endedAt: firestore.FieldValue.serverTimestamp(),
+        };
+        batch.set(myCallRef, patch, { merge: true });
+        batch.set(peerCallRef, patch, { merge: true });
+        await batch.commit();
+        if (endedWhileRinging) {
+          try {
+            await firestore()
+              .collection(`users/${peerUid}/mentions`)
+              .add({
+                type: 'call_missed',
+                text: `Missed ${call.callType} call from ${call.callerName || 'User'}`,
+                fromUid: myUid,
+                fromName: call.callerName || 'User',
+                route: 'Pings',
+                callId: call.id,
+                callType: call.callType,
+                createdAt: firestore.FieldValue.serverTimestamp(),
+              });
+            await firestore()
+              .collection('notifications')
+              .add({
+                type: 'call_missed',
+                toUserId: peerUid,
+                fromUid: myUid,
+                fromName: call.callerName || 'User',
+                fromUserHandle: call.callerName || 'User',
+                message: `Missed ${call.callType} call from ${call.callerName || 'User'}`,
+                read: false,
+                createdAt: firestore.FieldValue.serverTimestamp(),
+                callId: call.id,
+                callType: call.callType,
+              });
+          } catch {}
+        }
+      } catch {}
+    }
+    setIncomingDirectCall(null);
+    setOutgoingDirectCall(null);
+    setActiveDirectCall(null);
+    setActiveDirectCallRole(null);
+    clearCallDocSubscription();
+  }, [
+    activeDirectCall,
+    clearCallDocSubscription,
+    incomingDirectCall,
+    myUid,
+    outgoingDirectCall,
+  ]);
+
+  useEffect(() => {
+    if (!myUid) return;
+    const unsubscribe = firestore()
+      .collection(`users/${myUid}/direct_calls`)
+      .limit(40)
+      .onSnapshot(
+        snapshot => {
+          const candidates = snapshot.docs
+            .map(mapDirectCallDoc)
+            .filter(Boolean) as DirectCallSession[];
+          if (candidates.length === 0) return;
+          const latest = [...candidates]
+            .sort((a, b) => {
+              const aTs = a?.createdAt?.toDate?.()?.getTime?.() || 0;
+              const bTs = b?.createdAt?.toDate?.()?.getTime?.() || 0;
+              return bTs - aTs;
+            })
+            .find(
+              c =>
+                c.status === 'ringing' &&
+                c.calleeUid === myUid &&
+                c.callerUid !== myUid,
+            );
+          if (!latest) return;
+          if (activeDirectCall?.id || outgoingDirectCall?.id) return;
+          setIncomingDirectCall(prev => {
+            if (prev?.id === latest.id) return prev;
+            return latest;
+          });
+        },
+        err => {
+          console.warn('Incoming calls listener failed', err);
+        },
+      );
+    return () => {
+      try {
+        unsubscribe();
+      } catch {}
+    };
+  }, [activeDirectCall?.id, mapDirectCallDoc, myUid, outgoingDirectCall?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (callTimeoutRef.current) {
+        clearTimeout(callTimeoutRef.current);
+        callTimeoutRef.current = null;
+      }
+      clearCallDocSubscription();
+    };
+  }, [clearCallDocSubscription]);
                     
   // Map a user identifier to display label; show "/You" for the signed-in user
   const displayHandle = useCallback(
@@ -10752,8 +12114,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }
           }
         }
-        const canServerMergeOverlay =
-          !!overlayAudioStoragePath && isVideoAsset(capturedMedia);
+        // Keep video+audio overlays client-driven in feed (muted video + overlay audio),
+        // which is more reliable than backend mux for current release behavior.
+        const canServerMergeOverlay = false;
         const docRef = await firestoreMod()
           .collection('waves')
           .add({
@@ -10862,6 +12225,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           : null,
         mediaEdits: capturedMediaEdits,
         captionText: finalCaption,
+        postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
         playbackUrl:
           (overlayAudioStoragePath && isVideoAsset(capturedMedia)) ||
           !isVideoAsset(capturedMedia)
@@ -11045,7 +12409,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
               </View>
               <Text style={styles.driftAlertText}>
-                Open Sea Vibe • {vibeAlert.hostName}
+                Open Sea Vibe ï¿½ {vibeAlert.hostName}
               </Text>
             </Pressable>
             <Pressable
@@ -11069,6 +12433,55 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             </Pressable>
           </View>
         </Animated.View>
+      )}
+      {incomingLiveInvite && (
+        <View
+          pointerEvents="box-none"
+          style={[
+            styles.driftAlertContainer,
+            { top: (insets.top || 0) + 78 },
+          ]}
+        >
+          <View style={[styles.driftAlertButton, { paddingVertical: 10 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={styles.driftAlertAvatar}>
+                {incomingLiveInvite.fromPhoto ? (
+                  <Image
+                    source={{ uri: incomingLiveInvite.fromPhoto }}
+                    style={styles.driftAlertAvatarImage}
+                  />
+                ) : (
+                  <Text style={styles.driftAlertInitials}>
+                    {incomingLiveInvite.fromName.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: 'white', fontWeight: '800' }}>
+                  Live Invite
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.9)' }}>
+                  {incomingLiveInvite.fromName} invited you to{' '}
+                  {incomingLiveInvite.liveTitle || 'Drift Expo'}
+                </Text>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
+                onPress={() => respondToLiveInvite('ignore')}
+              >
+                <Text style={styles.secondaryBtnText}>Ignore</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.primaryBtn, { flex: 1 }]}
+                onPress={() => respondToLiveInvite('join')}
+              >
+                <Text style={styles.primaryBtnText}>Join</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       )}
       {/* Facebook-like Header */}
       <View style={{ height: 50, backgroundColor: '#4267B2', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
@@ -11101,14 +12514,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View
               style={{
                 flex: 1,
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 20,
+                alignItems: 'stretch',
+                justifyContent: 'flex-start',
                 backgroundColor: '#f0f2f5',
               }}
-            >
-              {/* Empty feed - no placeholder content */}
-            </View>
+            />
           ) : (
             <>
               <ErrorBoundary>
@@ -11290,6 +12700,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleDropWave}
+                  accessibilityRole="button"
+                  accessibilityLabel="Drop a wave"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11301,6 +12713,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeAlerts}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open vibe alerts"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11321,6 +12735,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeHunt}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open vibe hunt"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11333,6 +12749,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleMyAura}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open my aura"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11344,6 +12762,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeOut}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open adventure space"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11355,6 +12775,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeMode}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open study hub"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11366,6 +12788,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleAiAssistant}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open AI assistant"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11377,6 +12801,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeBoard}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open bulletin board"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11391,6 +12817,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     showTopBar();
                     setShowBridge(true);
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open command centre"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11405,6 +12833,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     showTopBar();
                     Alert.alert('Tools', 'Additional tools will appear here.');
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open tools"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -11539,7 +12969,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             >
               {oceanEchoNoticeText}
             </Text>
-            <Text style={{ fontSize: 20 }}>📣</Text>
+            <Text style={{ fontSize: 20 }}>🌊</Text>
           </Animated.View>
         </View>
       )}
@@ -11962,6 +13392,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setInboxFilter('all');
           setInboxSearchQuery('');
           setIsThreadSending(false);
+          setThreadMessageAttachment(null);
           setSelectedThread(null);
           setIsDeleteMode(false);
           setSelectedNotifications(new Set());
@@ -12495,10 +13926,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ) : (
                 // Thread view - individual conversation
                 <>
-                  <View style={{ marginBottom: 16 }}>
-                    <Text style={[styles.logbookTitle, { textAlign: 'left', flex: 1 }]}>
-                      {String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}
-                    </Text>
+                  <View style={styles.threadHeaderCard}>
+                    <View style={styles.threadHeaderTopRow}>
+                      <Text style={styles.threadHeaderTitle}>
+                        {String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}
+                      </Text>
+                      <View style={styles.threadCallActionRow}>
+                        <Pressable
+                          style={[styles.threadCallIconBtn, styles.threadCallAudioBtn]}
+                          disabled={!!outgoingDirectCall || !!activeDirectCall}
+                          onPress={() => startDirectCall('audio')}
+                        >
+                          <Text style={styles.threadCallIconText}>📞</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.threadCallIconBtn, styles.threadCallVideoBtn]}
+                          disabled={!!outgoingDirectCall || !!activeDirectCall}
+                          onPress={() => startDirectCall('video')}
+                        >
+                          <Text style={styles.threadCallIconText}>🎥</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                    {!!outgoingDirectCall && !activeDirectCall && (
+                      <View style={styles.threadRingingInline}>
+                        <Text style={styles.threadCallStatusTitle}>
+                          Calling...
+                        </Text>
+                      </View>
+                    )}
                   </View>
                   <ScrollView style={{ flex: 1 }}>
                   {selectedThread.messages.length === 0 ? (
@@ -12668,17 +14124,68 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           fontSize: 13,
                           lineHeight: 18,
                         }}>
-                          {message.text}
+                          {getMessagePreviewText(message)}
                         </Text>
                         {message.attachmentUrl && (
-                          <Text style={{
-                            color: 'rgba(255,255,255,0.7)',
-                            fontSize: 11,
-                            marginTop: 4,
-                            fontStyle: 'italic',
-                          }}>
-                            📎 Attachment
-                          </Text>
+                          <View style={styles.messageAttachmentActions}>
+                            <Pressable
+                              style={styles.messageAttachmentActionBtn}
+                              onPress={() => {
+                                Linking.openURL(String(message.attachmentUrl)).catch(() => {});
+                              }}
+                            >
+                              <Text style={styles.messageAttachmentActionText}>
+                                📎 Open attachment
+                              </Text>
+                            </Pressable>
+                            {(() => {
+                              const downloadKey = `thread-${message.id || String(message.attachmentUrl)}`;
+                              const isDownloading = !!activeAttachmentDownloads[downloadKey];
+                              const progress = attachmentDownloadProgress[downloadKey];
+                              return (
+                                <Pressable
+                                  style={[
+                                    styles.messageAttachmentDownloadBtn,
+                                    isDownloading && styles.messageAttachmentDownloadBtnActive,
+                                  ]}
+                                  disabled={isDownloading}
+                                  onPress={() =>
+                                    downloadMessageAttachment(
+                                      String(message.attachmentUrl),
+                                      String(message.attachmentName || ''),
+                                      downloadKey,
+                                    )
+                                  }
+                                >
+                                  <Text style={styles.messageAttachmentDownloadText}>
+                                    {isDownloading
+                                      ? `? Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
+                                      : '? Download'}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })()}
+                            {!!activeAttachmentDownloads[`thread-${message.id || String(message.attachmentUrl)}`] && (
+                              <View style={styles.messageAttachmentProgressTrack}>
+                                <View
+                                  style={[
+                                    styles.messageAttachmentProgressFill,
+                                    {
+                                      width: `${Math.max(
+                                        6,
+                                        Math.min(
+                                          100,
+                                          attachmentDownloadProgress[
+                                            `thread-${message.id || String(message.attachmentUrl)}`
+                                          ] || 6,
+                                        ),
+                                      )}%`,
+                                    },
+                                  ]}
+                                />
+                              </View>
+                            )}
+                          </View>
                         )}
                       </View>
                     </Pressable>
@@ -12849,7 +14356,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       />
                       <Pressable
                         style={{
-                          backgroundColor: quickReplyText.trim() && !isThreadSending ? '#FFD700' : 'rgba(255,255,255,0.2)',
+                          backgroundColor:
+                            (quickReplyText.trim() || threadMessageAttachment) && !isThreadSending
+                              ? '#FFD700'
+                              : 'rgba(255,255,255,0.2)',
                           borderRadius: 6,
                           paddingHorizontal: 12,
                           paddingVertical: 8,
@@ -12857,18 +14367,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           alignItems: 'center',
                         }}
                         onPress={async () => {
-                          if (!quickReplyText.trim() || isThreadSending) return;
+                          if ((!quickReplyText.trim() && !threadMessageAttachment) || isThreadSending) return;
 
                           try {
                             setIsThreadSending(true);
                             const outgoingText = quickReplyText.trim();
-                            await sendMessage(selectedThread.senderUid, outgoingText);
+                            const sendResult = await sendMessage(
+                              selectedThread.senderUid,
+                              outgoingText,
+                              threadMessageAttachment,
+                            );
 
                             const messageData = {
                               id: `local_${Date.now()}`,
                               text: outgoingText,
                               fromUid: auth().currentUser?.uid || '',
                               createdAt: { toDate: () => new Date() },
+                              attachmentUrl: sendResult?.attachmentUrl || null,
+                              attachmentType: sendResult?.attachmentType || null,
+                              attachmentName: sendResult?.attachmentName || null,
                             };
 
                             const updatedThread = {
@@ -12906,15 +14423,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             });
 
                             setQuickReplyText('');
+                            setThreadMessageAttachment(null);
                             setSelectedMessageForReply(null);
                           } catch (error) {
                             console.error('Error sending quick reply:', error);
-                            Alert.alert('Error', 'Failed to send message. Please try again.');
+                            const errMsg =
+                              (error as any)?.message ||
+                              (typeof error === 'string' ? error : 'Please try again.');
+                            Alert.alert('Error', `Failed to send message. ${errMsg}`);
                           } finally {
                             setIsThreadSending(false);
                           }
                         }}
-                        disabled={!quickReplyText.trim() || isThreadSending}
+                        disabled={(!quickReplyText.trim() && !threadMessageAttachment) || isThreadSending}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         delayPressIn={0}
                         delayPressOut={0}
@@ -12922,12 +14443,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         android_ripple={{ color: 'rgba(255, 215, 0, 0.3)', borderless: false }}
                       >
                         <Text style={{
-                          color: quickReplyText.trim() && !isThreadSending ? '#000' : 'rgba(255,255,255,0.5)',
+                          color: (quickReplyText.trim() || threadMessageAttachment) && !isThreadSending ? '#000' : 'rgba(255,255,255,0.5)',
                           fontSize: 12,
                           fontWeight: 'bold',
                         }}>
-                          {isThreadSending ? 'Sending...' : 'Send'}
+                        {isThreadSending ? 'Sending...' : 'Send'}
                         </Text>
+                      </Pressable>
+                    </View>
+                    {threadMessageAttachment ? (
+                      <View style={{ marginTop: 10, padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}>
+                        <Text style={{ color: 'white', fontSize: 12 }}>
+                          📎 {threadMessageAttachment.fileName || threadMessageAttachment.uri}
+                        </Text>
+                        <Pressable onPress={() => setThreadMessageAttachment(null)} style={{ marginTop: 6 }}>
+                          <Text style={{ color: '#9ED8FF', fontSize: 12, fontWeight: '700' }}>Remove attachment</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                      <Pressable
+                        style={[styles.attachActionBtn, { flex: 1 }]}
+                        onPress={async () => {
+                          try {
+                            const result = await launchImageLibrary({
+                              mediaType: 'mixed',
+                              selectionLimit: 1,
+                              presentationStyle: 'fullScreen',
+                            });
+                            if (result.assets?.[0]) {
+                              setThreadMessageAttachment(result.assets[0]);
+                            }
+                          } catch (error) {
+                            console.error('Thread phone attachment error:', error);
+                          }
+                        }}
+                      >
+                        <Text style={styles.attachActionBtnText}>Attach Phone</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.attachActionBtn, { flex: 1 }]}
+                        onPress={async () => {
+                          const picked = await pickAttachmentFromSDCard();
+                          if (picked) setThreadMessageAttachment(picked);
+                        }}
+                      >
+                        <Text style={styles.attachActionBtnText}>Attach SD Card</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -12943,6 +14504,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               setInboxFilter('all');
               setInboxSearchQuery('');
               setIsThreadSending(false);
+              setThreadMessageAttachment(null);
               setSelectedThread(null);
               setSelectedMessageForReply(null);
               setIsDeleteMode(false);
@@ -13114,7 +14676,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             ? new Date(
                                 waveStats[w.id]!.createdAt!,
                               ).toLocaleString()
-                            : '—'}
+                            : 'ï¿½'}
                         </Text>
                         <View
                           style={{
@@ -13193,7 +14755,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showMakeWaves}
         transparent
-        animationType="none"
+        animationType="fade"
         onRequestClose={() => setShowMakeWaves(false)}
       >
         <View
@@ -13215,16 +14777,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
-                <Pressable style={styles.logbookAction} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                <Pressable style={[styles.logbookAction, styles.makeWavesPrimaryAction]} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                  pressRetentionOffset={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   delayPressIn={0}
                   delayPressOut={0}
                   activeOpacity={0.7}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
                   <Text style={styles.logbookActionText}>Say Something</Text>
                 </Pressable>
-                <Pressable style={styles.logbookAction} onPress={goDrift}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                <Pressable style={[styles.logbookAction, styles.makeWavesSecondaryAction]} onPress={goDrift}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                  pressRetentionOffset={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   delayPressIn={0}
                   delayPressOut={0}
                   activeOpacity={0.7}
@@ -13412,10 +14976,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }}
                 >
                   <Text style={{ color: '#CFF6FF', fontSize: 12, fontWeight: '700' }}>
-                    Uploading...
+                    {unifiedPostMedia || unifiedPostAudio ? 'Uploading...' : 'Posting story...'}
                     {typeof unifiedPostProgress === 'number'
                       ? ` ${unifiedPostProgress}%`
-                      : ' preparing files'}
+                      : unifiedPostMedia || unifiedPostAudio
+                      ? ' preparing files'
+                      : ' publishing'}
                   </Text>
                   <View
                     style={{
@@ -13471,55 +15037,59 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               )}
               
               {/* Action Buttons */}
-              <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+              <View style={styles.createPostActionRow}>
                 <Pressable
                   onPress={handleUnifiedCameraCapture}
                   disabled={isUnifiedPosting}
                   style={[
-                    styles.logbookAction,
-                    { padding: 12, minWidth: 80 },
+                    styles.createPostActionBtn,
+                    styles.createPostCameraBtn,
                     isUnifiedPosting && { opacity: 0.5 },
                   ]}
                 >
-                  <Text style={styles.logbookActionText}>📷</Text>
+                  <Text style={styles.createPostActionIcon}>📷</Text>
+                  <Text style={styles.createPostActionLabel}>Camera</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleUnifiedGallerySelect}
                   disabled={isUnifiedPosting}
                   style={[
-                    styles.logbookAction,
-                    { padding: 12, minWidth: 80 },
+                    styles.createPostActionBtn,
+                    styles.createPostGalleryBtn,
                     isUnifiedPosting && { opacity: 0.5 },
                   ]}
                 >
-                  <Text style={styles.logbookActionText}>🖼️</Text>
+                  <Text style={styles.createPostActionIcon}>🖼️</Text>
+                  <Text style={styles.createPostActionLabel}>Gallery</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleSDCardPicker}
                   disabled={isUnifiedPosting}
                   style={[
-                    styles.logbookAction,
-                    { padding: 12, minWidth: 80 },
+                    styles.createPostActionBtn,
+                    styles.createPostSdBtn,
                     isUnifiedPosting && { opacity: 0.5 },
                   ]}
                 >
-                  <Text style={styles.logbookActionText}>📁</Text>
+                  <Text style={styles.createPostActionIcon}>💾</Text>
+                  <Text style={styles.createPostActionLabel}>SD Card</Text>
                 </Pressable>
                 <Pressable
                   onPress={handleUnifiedAudioSelect}
                   disabled={isUnifiedPosting}
                   style={[
-                    styles.logbookAction,
-                    { padding: 12, minWidth: 80 },
+                    styles.createPostActionBtn,
+                    styles.createPostMusicBtn,
                     isUnifiedPosting && { opacity: 0.5 },
                   ]}
                 >
-                  <Text style={styles.logbookActionText}>🎵</Text>
+                  <Text style={styles.createPostActionIcon}>🎵</Text>
+                  <Text style={styles.createPostActionLabel}>Music</Text>
                 </Pressable>
               </View>
               <View style={styles.textComposerButtonRow}>
                 <Pressable
-                  style={styles.textComposerButton}
+                  style={[styles.textComposerButton, styles.textComposerCancelBtn]}
                   onPress={closeUnifiedPostModal}
                   disabled={isUnifiedPosting}
                 >
@@ -13528,7 +15098,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={[
                     styles.textComposerButton,
-                    { backgroundColor: '#00C2FF' },
+                    styles.textComposerSubmitBtn,
                   ]}
                   onPress={handleUnifiedPost}
                   disabled={isUnifiedPosting}
@@ -13744,7 +15314,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showExplore}
         transparent
-        animationType="none"
+        animationType="fade"
         onRequestClose={() => setShowExplore(false)}
       >
         <View
@@ -13765,7 +15335,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             )}
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>ADVENTURE SPACE</Text>
-              <ScrollView>
+              <ScrollView keyboardShouldPersistTaps="handled">
                 <Text style={styles.panelIntro}>
                   Search the web with AI guidance and save useful sources.
                 </Text>
@@ -13779,13 +15349,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Pressable
                   style={[styles.primaryBtn, { marginBottom: 12 }]}
                   onPress={() => handleAIExploreWithSearch(exploreSearchQuery || 'adventure space')}
+                  accessibilityRole="button"
+                  accessibilityLabel="Search Adventure Space"
                 >
                   <Text style={styles.primaryBtnText}>
                     {isExploreSearching ? 'Searching...' : 'Search'}
                   </Text>
                 </Pressable>
                 <View style={styles.quickRow}>
-                  {['travel ideas', 'tech trends', 'business insights', 'nearby events'].map(topic => (
+                  {ADVENTURE_QUICK_TOPICS.map(topic => (
                     <Pressable
                       key={`adv-quick-${topic}`}
                       style={styles.searchChip}
@@ -13793,6 +15365,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setExploreSearchQuery(topic);
                         handleAIExploreWithSearch(topic, undefined, topic);
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Quick search ${topic}`}
                     >
                       <Text style={styles.searchChipText}>{topic}</Text>
                     </Pressable>
@@ -13803,7 +15377,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
                 {exploreRecentQueries.length > 0 && (
                   <View style={[styles.logbookAction, { borderBottomWidth: 0, marginBottom: 6 }]}>
-                    <Text style={styles.sectionHeader}>Recent searches</Text>
+                    <SectionHeaderRow
+                      title="Recent searches"
+                      actionLabel="Clear"
+                      onActionPress={() => clearSearchHistory('explore')}
+                      containerStyle={styles.sectionHeaderRow}
+                      titleStyle={styles.sectionHeader}
+                      actionStyle={styles.sectionActionText}
+                    />
                     <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                       {exploreRecentQueries.map(item => (
                         <Pressable
@@ -13818,6 +15399,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </Pressable>
                       ))}
                     </View>
+                  </View>
+                )}
+                {!!exploreSearchError && (
+                  <View style={styles.errorCard}>
+                    <Text style={styles.errorCardText}>{exploreSearchError}</Text>
                   </View>
                 )}
                 {!!exploreSearchResponse && (
@@ -13866,7 +15452,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
                 {savedExploreSources.length > 0 && (
                   <View style={[styles.logbookAction, { borderBottomWidth: 0 }]}>
-                    <Text style={styles.sectionHeader}>Saved</Text>
+                    <SectionHeaderRow
+                      title="Saved"
+                      actionLabel="Clear"
+                      onActionPress={() => clearSavedSourcesFor('explore')}
+                      containerStyle={styles.sectionHeaderRow}
+                      titleStyle={styles.sectionHeader}
+                      actionStyle={styles.sectionActionText}
+                    />
                     {savedExploreSources.slice(0, 4).map(item => (
                       <Pressable
                         key={`saved-explore-${item.id}`}
@@ -13882,11 +15475,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
                 {!isExploreSearching && !exploreSearchResponse && exploreResults.length === 0 && (
                   <View style={styles.emptyStateCard}>
-                    <Text style={styles.emptyStateTitle}>Start with a search</Text>
+                    <Text style={styles.emptyStateTitle}>Adventure Space is ready</Text>
                     <Text style={styles.emptyStateText}>
-                      Results and AI summary will appear here.
+                      Search a topic above to get AI guidance and trusted web sources.
                     </Text>
                   </View>
+                )}
+                {!!exploreSearchError && (
+                  <Pressable
+                    style={[styles.primaryBtn, { marginTop: 10 }]}
+                    onPress={() =>
+                      handleAIExploreWithSearch(
+                        exploreSearchQuery || exploreRecentQueries[0] || 'adventure space',
+                      )
+                    }
+                  >
+                    <Text style={styles.primaryBtnText}>Retry</Text>
+                  </Pressable>
                 )}
               </ScrollView>
             </View>
@@ -13904,7 +15509,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showNotice}
         transparent
-        animationType="none"
+        animationType="fade"
         onRequestClose={() => setShowNotice(false)}
       >
         <View
@@ -13972,7 +15577,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           onChangeText={setNoticeBio}
                         />
                         <Pressable style={[styles.primaryBtn, { marginTop: 16 }]} onPress={handleNoticeBoardRegister}>
-                          <Text style={styles.primaryBtnText}>Register (Free for now)</Text>
+                          <Text style={styles.primaryBtnText}>Register Organization</Text>
                         </Pressable>
                       </>
                     ) : (
@@ -13980,7 +15585,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         <View style={styles.logbookAction}>
                           <Text style={styles.logbookActionText}>Bulletin Board Publisher</Text>
                           <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
-                            Registered as {noticeOrgName || 'organization'} | Paid API coming later.
+                            Registered as {noticeOrgName || 'organization'}.
                           </Text>
                         </View>
                         <TextInput
@@ -14049,7 +15654,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <Modal
         visible={showSchoolMode}
         transparent
-        animationType="none"
+        animationType="fade"
         onRequestClose={() => setShowSchoolMode(false)}
       >
         <View
@@ -14070,7 +15675,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             )}
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>STUDY HUB</Text>
-              <ScrollView>
+              <ScrollView keyboardShouldPersistTaps="handled">
                 <View style={styles.logbookAction}>
                   <Text style={styles.sectionHeader}>Study search</Text>
                   <Text style={styles.panelIntro}>
@@ -14083,20 +15688,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     value={studyHubQuery}
                     onChangeText={setStudyHubQuery}
                   />
-                  <Pressable
-                    style={[styles.primaryBtn, { marginTop: 8 }]}
-                    onPress={() => handleAIStudyHubSearch()}
-                  >
+                <Pressable
+                  style={[styles.primaryBtn, { marginTop: 8 }]}
+                  onPress={() => handleAIStudyHubSearch()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Search Study Hub"
+                >
                     <Text style={styles.primaryBtnText}>
                       {isStudySearching ? 'Searching...' : 'Search'}
                     </Text>
                   </Pressable>
                   <View style={styles.quickRow}>
-                    {['mathematics', 'science', 'history', 'english grammar'].map(sub => (
+                    {STUDY_QUICK_TOPICS.map(sub => (
                       <Pressable
                         key={sub}
                         style={styles.searchChip}
                         onPress={() => handleAIStudyHubSearch(sub)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Quick study search ${sub}`}
                       >
                         <Text style={styles.searchChipText}>{sub}</Text>
                       </Pressable>
@@ -14107,7 +15716,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   )}
                   {studyRecentQueries.length > 0 && (
                     <View style={{ marginTop: 10 }}>
-                      <Text style={styles.sectionHeader}>Recent searches</Text>
+                      <SectionHeaderRow
+                        title="Recent searches"
+                        actionLabel="Clear"
+                        onActionPress={() => clearSearchHistory('study')}
+                        containerStyle={styles.sectionHeaderRow}
+                        titleStyle={styles.sectionHeader}
+                        actionStyle={styles.sectionActionText}
+                      />
                       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                         {studyRecentQueries.map(item => (
                           <Pressable
@@ -14129,6 +15745,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <Text style={[styles.hint, { color: 'white', fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace' }]}>
                         {studyHubResponse}
                       </Text>
+                    </View>
+                  )}
+                  {!!studySearchError && (
+                    <View style={styles.errorCard}>
+                      <Text style={styles.errorCardText}>{studySearchError}</Text>
                     </View>
                   )}
                 </View>
@@ -14171,7 +15792,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
                 {savedStudySources.length > 0 && (
                   <View style={[styles.logbookAction, { borderBottomWidth: 0 }]}>
-                    <Text style={styles.sectionHeader}>Saved</Text>
+                    <SectionHeaderRow
+                      title="Saved"
+                      actionLabel="Clear"
+                      onActionPress={() => clearSavedSourcesFor('study')}
+                      containerStyle={styles.sectionHeaderRow}
+                      titleStyle={styles.sectionHeader}
+                      actionStyle={styles.sectionActionText}
+                    />
                     {savedStudySources.slice(0, 4).map(item => (
                       <Pressable
                         key={`saved-study-${item.id}`}
@@ -14187,9 +15815,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
                 {!isStudySearching && !studyHubResponse && studyHubResults.length === 0 && (
                   <View style={styles.emptyStateCard}>
-                    <Text style={styles.emptyStateTitle}>Search to begin learning</Text>
+                    <Text style={styles.emptyStateTitle}>Study Hub is ready</Text>
                     <Text style={styles.emptyStateText}>
-                      AI notes and source references will appear here.
+                      Start with a subject or concept to get AI notes and references.
                     </Text>
                   </View>
                 )}
@@ -14212,6 +15840,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Pressable>
                   </View>
                 </View>
+                {!!studySearchError && (
+                  <Pressable
+                    style={[styles.primaryBtn, { marginTop: 10 }]}
+                    onPress={() =>
+                      handleAIStudyHubSearch(
+                        undefined,
+                        studyHubQuery || studyRecentQueries[0] || 'general learning',
+                      )
+                    }
+                  >
+                    <Text style={styles.primaryBtnText}>Retry</Text>
+                  </Pressable>
+                )}
               </ScrollView>
             </View>
           </View>
@@ -14262,7 +15903,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       }
                     }}
                   >
-                    <Text style={[styles.logbookActionText, { fontSize: 18 }]}>🛡️ Safe Harbor</Text>
+                    <Text style={[styles.logbookActionText, { fontSize: 18 }]}>🛟 Safe Harbor</Text>
                     <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
                       {safeHarborExpanded ? 'Hide guardian controls' : 'Reveal guardian controls'}
                     </Text>
@@ -14293,7 +15934,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🧐 Lifeguard Alerts</Text>
+                          <Text style={styles.logbookActionText}>🚨 Lifeguard Alerts</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>AI monitors content for safety</Text>
                         </View>
                         <Pressable
@@ -14314,7 +15955,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🫂 Buddy System</Text>
+                          <Text style={styles.logbookActionText}>🤝 Buddy System</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Parent/guardian can monitor activity</Text>
                         </View>
                         <Pressable
@@ -14356,7 +15997,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🔒 Hide Restricted Content</Text>
+                          <Text style={styles.logbookActionText}>🙈 Hide Restricted Content</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Filter mature or sensitive content</Text>
                         </View>
                         <Pressable
@@ -14447,7 +16088,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     { flexDirection: 'row', justifyContent: 'space-between' },
                   ]}
                 >
-                  <Text style={styles.logbookActionText}>Wi‑Fi‑Only HD</Text>
+                  <Text style={styles.logbookActionText}>Wi-Fi-Only HD</Text>
                   <Pressable
                     onPress={() =>
                       saveBridge({ wifiOnlyHD: !bridge.wifiOnlyHD })
@@ -14646,12 +16287,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           <View
             style={{
               flexDirection: 'row',
+              alignItems: 'center',
               justifyContent: 'space-between',
               marginTop: 12,
             }}
           >
             <Pressable
-              style={[styles.closeBtn, { flex: 1, backgroundColor: 'red' }]}
+              style={[styles.closeBtn, { flex: 1, backgroundColor: 'red', marginVertical: 0, minHeight: 42, justifyContent: 'center' }]}
               onPress={async () => {
                 try {
                   await auth().signOut();
@@ -14667,7 +16309,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             </Pressable>
             <View style={{ width: 12 }} />
             <Pressable
-              style={[styles.dismissBtn, { flex: 1 }]}
+              style={[styles.dismissBtn, { flex: 1, marginTop: 0, minHeight: 42, justifyContent: 'center' }]}
               onPress={() => setShowBridge(false)}
             >
               <Text style={styles.dismissText}>Close</Text>
@@ -14710,7 +16352,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                     {[
                       { key: 'school', label: 'School Mode', icon: '🎓' },
-                      { key: 'explore', label: 'Explore Mode', icon: '🗺️' },
+                      { key: 'explore', label: 'Explore Mode', icon: '🧭' },
                       { key: 'creative', label: 'Creative Mode', icon: '🎨' },
                       { key: 'analysis', label: 'Analysis Mode', icon: '📊' },
                     ].map(mode => (
@@ -14823,7 +16465,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAICuriosityQuestion('science')}
                     >
-                      <Text style={styles.logbookActionText}>🔬 Curiosity Question</Text>
+                      <Text style={styles.logbookActionText}>🤔 Curiosity Question</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Ask an interesting science question
                       </Text>
@@ -14877,7 +16519,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIAnalyzeAndSuggest('content analysis', 'improvement')}
                     >
-                      <Text style={styles.logbookActionText}>📈 Content Analysis</Text>
+                      <Text style={styles.logbookActionText}>🔍 Content Analysis</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Analyze and improve your content
                       </Text>
@@ -14886,7 +16528,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIAnalyzeAndSuggest('engagement strategies', 'engagement')}
                     >
-                      <Text style={styles.logbookActionText}>📊 Engagement Tips</Text>
+                      <Text style={styles.logbookActionText}>📈 Engagement Tips</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Get engagement improvement suggestions
                       </Text>
@@ -14920,6 +16562,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 onChatUserSelect={(targetUser) => {
                   setShowDeepSearch(false);
                   openMessageThread(targetUser.uid, targetUser.name);
+                }}
+                onAudioCallUserSelect={(targetUser) => {
+                  setShowDeepSearch(false);
+                  startDirectCall('audio', {
+                    uid: targetUser.uid,
+                    name: targetUser.name,
+                  });
+                }}
+                onVideoCallUserSelect={(targetUser) => {
+                  setShowDeepSearch(false);
+                  startDirectCall('video', {
+                    uid: targetUser.uid,
+                    name: targetUser.name,
+                  });
                 }}
               /> 
             </React.Suspense> 
@@ -15002,13 +16658,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             Platform.OS === 'ios' ? 'Courier New' : 'monospace',
                         }}
                       >
-                        ← Change Country
+                        ? Change Country
                       </Text>
                     </Pressable>
                     {selectedCountry === 'Zimbabwe' && (
                       <>
                         <Text style={styles.logbookActionText}>
-                          Zimbabwe — Sources of funds
+                          Zimbabwe ï¿½ Sources of funds
                         </Text>
                         <Text style={styles.subLabel}>NMB Bank</Text>
                         <TextInput
@@ -15036,7 +16692,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     {selectedCountry === 'Kenya' && (
                       <>
                         <Text style={styles.logbookActionText}>
-                          Kenya — Sources of funds
+                          Kenya ï¿½ Sources of funds
                         </Text>
                         <Text style={styles.subLabel}>KCB Bank</Text>
                         <TextInput
@@ -15051,10 +16707,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           keyboardType="number-pad"
                         />
                         <Text style={[styles.subLabel, { marginTop: 8 }]}>
-                          M‑Pesa
+                          M-Pesa
                         </Text>
                         <TextInput
-                          placeholder="M‑Pesa Phone (e.g., 07xx...)"
+                          placeholder="M-Pesa Phone (e.g., 07xx...)"
                           placeholderTextColor="rgba(255,255,255,0.4)"
                           style={styles.logbookInput}
                           keyboardType="phone-pad"
@@ -15145,7 +16801,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {[
                   'Algeria', 'Angola', 'Benin', 'Botswana', 'Burkina Faso', 'Burundi',
                   'Cabo Verde', 'Cameroon', 'Central African Republic', 'Chad', 'Comoros',
-                  'Congo', 'Côte d\'Ivoire', 'Djibouti', 'Egypt', 'Equatorial Guinea',
+                  'Congo', 'Cï¿½te d\'Ivoire', 'Djibouti', 'Egypt', 'Equatorial Guinea',
                   'Eritrea', 'Eswatini', 'Ethiopia', 'Gabon', 'Gambia', 'Ghana', 'Guinea',
                   'Guinea-Bissau', 'Kenya', 'Lesotho', 'Liberia', 'Libya', 'Madagascar',
                   'Malawi', 'Mali', 'Mauritania', 'Mauritius', 'Morocco', 'Mozambique',
@@ -15160,7 +16816,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     onPress={() => {
                       setSelectedGemCountry(country);
                       setShowGemDropdown(false);
-                      Alert.alert('Coming Soon!', `Gems coming soon to ${country}..`);
+                      Alert.alert('Not Available Yet', `Gems are not available in ${country} yet.`);
                     }}
                   >
                     <Text style={styles.primaryBtnText}>{country}</Text>
@@ -15207,7 +16863,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     )
                   }
                 >
-                  <Text style={styles.logbookActionText}>🪙 View Earnings</Text>
+                  <Text style={styles.logbookActionText}>💰 View Earnings</Text>
                 </Pressable>
                 <Pressable
                   style={styles.logbookAction}
@@ -15219,7 +16875,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }
                 >
                   <Text style={styles.logbookActionText}>
-                    🏧 Withdraw Funds
+                    💸 Withdraw Funds
                   </Text>
                 </Pressable>
                 <Pressable
@@ -15230,7 +16886,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }}
                 >
                   <Text style={styles.logbookActionText}>
-                    💳 Payment Settings
+                    ⚙️ Payment Settings
                   </Text>
                 </Pressable>
                 <Pressable
@@ -15264,7 +16920,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Text>
                   )}
                   <Text style={{ color: '#8A2BE2', fontWeight: '700', marginTop: 8 }}>
-                    🐙 Octopus Bonus: $0.00
+                    🐙 Octopus Bonus: .00
                   </Text>
                   <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 }}>
                     (Earn $100 per 10,000 hugs on your waves)
@@ -15618,7 +17274,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
                 
                 {/* Attachment Buttons */}
-                <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginTop: 16, gap: 8 }}>
                   <Pressable
                     onPress={async () => {
                       try {
@@ -15628,13 +17284,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           presentationStyle: 'fullScreen',
                         });
                         if (result.assets && result.assets[0]) {
-                          setMessageAttachment(result.assets[0]);
+                          setMessageAttachment(normalizeAttachment(result.assets[0]));
                         }
                       } catch (error) {
                         console.error('Gallery error:', error);
                       }
                     }}
-                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    style={[styles.logbookAction, { paddingVertical: 10, paddingHorizontal: 12, minWidth: 80, borderRadius: 12, backgroundColor: '#123A52', borderWidth: 1, borderColor: 'rgba(0, 194, 255, 0.45)' }]}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                     hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                     delayPressIn={0}
@@ -15652,13 +17308,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           presentationStyle: 'fullScreen',
                         });
                         if (result.assets && result.assets[0]) {
-                          setMessageAttachment(result.assets[0]);
+                          setMessageAttachment(normalizeAttachment(result.assets[0]));
                         }
                       } catch (error) {
                         console.error('Video gallery error:', error);
                       }
                     }}
-                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    style={[styles.logbookAction, { paddingVertical: 10, paddingHorizontal: 12, minWidth: 80, borderRadius: 12, backgroundColor: '#123A52', borderWidth: 1, borderColor: 'rgba(0, 194, 255, 0.45)' }]}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                     hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                     delayPressIn={0}
@@ -15675,14 +17331,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           selectionLimit: 1,
                           presentationStyle: 'fullScreen',
                         });
-                        if (result.assets && result.assets[0] && result.assets[0].type?.startsWith('audio/')) {
-                          setMessageAttachment(result.assets[0]);
+                        if (result.assets && result.assets[0]) {
+                          const normalized = normalizeAttachment(result.assets[0]);
+                          const inferred = String(normalized?.type || '').toLowerCase();
+                          if (
+                            inferred.startsWith('audio/') ||
+                            /\.(mp3|m4a|aac|wav|ogg|flac)$/i.test(
+                              String(normalized?.fileName || normalized?.uri || ''),
+                            )
+                          ) {
+                            setMessageAttachment(normalized);
+                          } else {
+                            Alert.alert('Audio only', 'Please choose an audio file.');
+                          }
                         }
                       } catch (error) {
                         console.error('Audio gallery error:', error);
                       }
                     }}
-                    style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                    style={[styles.logbookAction, { paddingVertical: 10, paddingHorizontal: 12, minWidth: 80, borderRadius: 12, backgroundColor: '#123A52', borderWidth: 1, borderColor: 'rgba(0, 194, 255, 0.45)' }]}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                     hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                     delayPressIn={0}
@@ -15691,12 +17358,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   >
                     <Text style={styles.logbookActionText}>🎵 Audio</Text>
                   </Pressable>
+                  <Pressable
+                    onPress={async () => {
+                      const picked = await pickAttachmentFromSDCard();
+                      if (picked) {
+                        setMessageAttachment(normalizeAttachment(picked));
+                      }
+                    }}
+                    style={[styles.logbookAction, { paddingVertical: 10, paddingHorizontal: 12, minWidth: 80, borderRadius: 12, backgroundColor: '#123A52', borderWidth: 1, borderColor: 'rgba(0, 194, 255, 0.45)' }]}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                    hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.logbookActionText}>💾 SD</Text>
+                  </Pressable>
                 </View>
-                
+
                 <Pressable
                   style={[
                     styles.primaryBtn,
-                    { marginTop: 16 },
+                    { marginTop: 16, borderRadius: 12, backgroundColor: '#00AEEF' },
                     isSending && {
                       backgroundColor: '#0066CC', // Darker blue when sending
                       opacity: 0.8
@@ -15710,7 +17393,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.primaryBtnText}>
+                  <Text style={[styles.primaryBtnText, { fontWeight: '800', letterSpacing: 0.2 }]}>
                     {isSending ? 'Sending...' : 'Send'}
                   </Text>
                 </Pressable>
@@ -15744,7 +17427,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         >
           {/* Stage: media underlay + draggable caption overlay */}
           <View
-            style={editorStyles.stage}
+            style={[
+              editorStyles.stage,
+              attachedAudio?.uri
+                ? {
+                    minHeight: SCREEN_HEIGHT * 0.34,
+                    maxHeight: SCREEN_HEIGHT * 0.46,
+                  }
+                : null,
+            ]}
             onLayout={e => {
               const { x, y, width, height } = e.nativeEvent.layout;
               stageLayoutRef.current = { x, y, w: width, h: height };
@@ -15954,57 +17645,54 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
           {/* Attached Audio Summary */}
           {attachedAudio && (
-            <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
-              <Text style={{ color: 'white' }}>
+            <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 4 }}>
+              <Text numberOfLines={1} style={{ color: 'white', fontSize: 13 }}>
                 Attached audio: {attachedAudio.name || attachedAudio.uri}
               </Text>
               <View
                 style={{
                   flexDirection: 'row',
                   gap: 16,
-                  marginTop: 8,
+                  marginTop: 4,
                   alignItems: 'center',
                 }}
               >
                 <Pressable
                   onPress={() => setAttachedAudio(null)}
-                  style={{ paddingHorizontal: 16, paddingVertical: 8 }}
+                  style={{ paddingHorizontal: 8, paddingVertical: 4 }}
                 >
                   <Text style={{ color: '#00C2FF', fontWeight: '700' }}>
                     Remove audio
                   </Text>
                 </Pressable>
-                <Text style={{ color: 'rgba(255,255,255,0.7)' }}>
-                  Plays automatically with video
-                </Text>
               </View>
             </View>
           )}
 
           {/* Caption Input */}
-          <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
+          <View style={{ paddingHorizontal: 16, paddingVertical: 8 }}>
             <TextInput
               placeholder="What's the story?"
-              placeholderTextColor="rgba(255,255,255,0.5)"
+              placeholderTextColor="#9FB3C8"
               value={waveCaption}
               onChangeText={setWaveCaption}
               style={{
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: 8,
+                backgroundColor: '#0B1220',
+                borderRadius: 10,
                 padding: 12,
-                color: 'white',
+                color: '#E6F1FF',
                 fontSize: 16,
-                minHeight: 60,
+                minHeight: 48,
                 textAlignVertical: 'top',
                 borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.2)',
+                borderColor: '#355070',
               }}
               multiline
             />
             <Pressable
               style={[
                 styles.primaryBtn,
-                { backgroundColor: '#FF6B00', marginTop: 10 },
+                { backgroundColor: '#FF6B00', marginTop: 8 },
                 isAIMediaCaptioning && { opacity: 0.7 },
               ]}
               onPress={handleAIMediaCaptionSuggest}
@@ -16023,8 +17711,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             style={[
               editorStyles.editorContainer,
               {
-                paddingBottom: Math.max(insets.bottom, 16) + 8,
-                paddingTop: 8,
+                paddingBottom: Math.max(insets.bottom, 12) + 6,
+                paddingTop: 6,
               },
             ]}
             onLayout={e => {}}
@@ -16049,74 +17737,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 </Pressable>
               ))}
             </ScrollView>
-            {capturedMedia?.uri &&
-              RNVideo &&
-              isVideoAsset(capturedMedia) && (
-                <View
-                  style={{
-                    marginTop: 10,
-                    marginHorizontal: 16,
-                    borderRadius: 10,
-                    overflow: 'hidden',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                    backgroundColor: 'rgba(0,0,0,0.35)',
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: 'rgba(255,255,255,0.88)',
-                      fontSize: 12,
-                      fontWeight: '700',
-                      paddingHorizontal: 10,
-                      paddingVertical: 6,
-                    }}
-                  >
-                    Final Preview (with sound)
-                  </Text>
-                  <RNVideo
-                    source={{ uri: String(capturedMedia.uri) }}
-                    style={{ width: '100%', height: 180, backgroundColor: 'black' }}
-                    resizeMode="contain"
-                    controls
-                    muted={false}
-                    paused={isPaused || releasing}
-                    repeat
-                    playInBackground={false}
-                    playWhenInactive={false}
-                    ignoreSilentSwitch="ignore"
-                  />
-                </View>
-              )}
             <View
               style={{
                 flexDirection: 'row',
                 gap: 12,
                 paddingHorizontal: 16,
-                paddingBottom: 8,
-                marginTop: 8,
+                paddingBottom: 4,
+                marginTop: 6,
               }}
             >
               <Pressable
-                style={[styles.closeBtn, { flex: 1, marginVertical: 0 }]}
+                style={[
+                  styles.closeBtn,
+                  {
+                    flex: 1,
+                    marginVertical: 0,
+                    backgroundColor: '#B42318',
+                    borderColor: '#B42318',
+                  },
+                ]}
                 onPress={() => {
                   setCapturedMedia(null);
                   setCapturedMediaEdits(defaultMediaEdits);
                 }}
                 disabled={releasing}
               >
-                <Text style={styles.closeText}>Cancel</Text>
+                <Text style={[styles.closeText, { color: '#FFFFFF' }]}>Cancel</Text>
               </Pressable>
               <Pressable
                 style={[
                   editorStyles.doneButton,
-                  { flex: 2, margin: 0, opacity: releasing ? 0.6 : 1 },
+                  {
+                    flex: 2,
+                    margin: 0,
+                    opacity: releasing ? 0.6 : 1,
+                    backgroundColor: '#0077C8',
+                    borderColor: '#0077C8',
+                  },
                 ]}
                 onPress={onPostWave}
                 disabled={releasing}
               >
-                <Text style={editorStyles.doneButtonText}>
-                  {releasing ? 'Releasing…' : 'Release Wave'}
+                <Text style={[editorStyles.doneButtonText, { color: '#FFFFFF' }]}>
+                  {releasing ? 'Releasingï¿½' : 'Release Wave'}
                 </Text>
               </Pressable>
             </View>
@@ -16171,7 +17834,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     },
                   ]}
                 >
-                  Attach an audio track to your wave.
+                  Attach an audio overlay to your image or video wave.
                 </Text>
                 <Pressable
                   style={styles.logbookAction}
@@ -16298,7 +17961,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       openMessageThread(targetUid, targetName);
                     }}
                   >
-                    <Text style={styles.waveOptionsItemTitle}>✉️ Echo Vibe</Text>
+                    <Text style={styles.waveOptionsItemTitle}>💬 Echo Vibe</Text>
                     <Text style={styles.waveOptionsItemDescription}>
                       Send an echo vibe to this vibe master
                     </Text>
@@ -16315,6 +17978,87 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </Pressable>
       </Modal>
                     
+      {/* DIRECT CALL OUTGOING */}
+      <Modal
+        visible={!!outgoingDirectCall && !activeDirectCall}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={endActiveDirectCall}
+      >
+        <View style={styles.callFullScreenRoot}>
+          <View style={styles.callFullScreenCenter}>
+            <Text style={styles.callFullScreenLabel}>
+              {outgoingDirectCall?.callType === 'video' ? 'Video calling' : 'Audio calling'}
+            </Text>
+            <Text style={styles.callFullScreenName}>
+              {String(outgoingDirectCall?.calleeName || 'User')}
+            </Text>
+            <Text style={styles.callFullScreenStatus}>Ringing...</Text>
+          </View>
+          <View style={styles.callFullScreenBottom}>
+            <Pressable
+              style={[styles.callInviteActionBtn, styles.callInviteDeclineBtn, { width: 170 }]}
+              onPress={endActiveDirectCall}
+            >
+              <Text style={styles.callInviteActionText}>End call</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DIRECT CALL INCOMING PROMPT */}
+      <Modal
+        visible={!!incomingDirectCall && !activeDirectCall}
+        transparent={false}
+        animationType="fade"
+        onRequestClose={declineIncomingDirectCall}
+      >
+        <View style={styles.callFullScreenRoot}>
+          <View style={styles.callFullScreenCenter}>
+            <Text style={styles.callFullScreenLabel}>Incoming call</Text>
+            <Text style={styles.callInviteCaller}>
+              {incomingDirectCall
+                ? String(incomingDirectCall.callerName || 'User')
+                : 'User'}
+            </Text>
+            <Text style={styles.callFullScreenStatus}>
+              {incomingDirectCall?.callType === 'video'
+                ? 'Video call'
+                : 'Audio call'}
+            </Text>
+          </View>
+          <View style={styles.callInviteActions}>
+              <Pressable
+                style={[styles.callInviteActionBtn, styles.callInviteDeclineBtn]}
+                onPress={declineIncomingDirectCall}
+              >
+                <Text style={styles.callInviteActionText}>Decline</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.callInviteActionBtn, styles.callInviteAcceptBtn]}
+                onPress={acceptIncomingDirectCall}
+              >
+                <Text style={styles.callInviteActionText}>Accept</Text>
+              </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <DirectCallModal
+        visible={!!activeDirectCall}
+        call={activeDirectCall}
+        role={activeDirectCallRole}
+        onEnd={endActiveDirectCall}
+        styles={{
+          closeBtn: styles.closeBtn,
+          closeText: styles.closeText,
+          primaryBtn: styles.primaryBtn,
+          primaryBtnText: styles.primaryBtnText,
+          secondaryBtn: styles.secondaryBtn,
+          secondaryBtnText: styles.secondaryBtnText,
+        }}
+      />
+
       {/* GO DRIFT (LIVE) */}
       <LiveStreamModal
         // Pass required styles down to the modal to fix scope issue
@@ -16402,7 +18146,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               fontWeight: 'bold',
               marginRight: 8 
             }}>
-              🔔
+              📫
             </Text>
             <Text style={{ 
               fontSize: 16, 
@@ -16434,6 +18178,429 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
 };
                     
+const DirectCallModal = ({
+  visible,
+  call,
+  role,
+  onEnd,
+  styles,
+}: {
+  visible: boolean;
+  call: DirectCallSession | null;
+  role: 'caller' | 'callee' | null;
+  onEnd: () => void;
+  styles: any;
+}) => {
+  const insets = useSafeAreaInsets();
+  const Agora = useMemo(() => {
+    try {
+      return require('react-native-agora');
+    } catch {
+      return null;
+    }
+  }, []);
+  const cfg = (() => {
+    try {
+      return require('./liveConfig');
+    } catch {
+      return null;
+    }
+  })();
+  const appId: string = (cfg && cfg.AGORA_APP_ID) || '';
+  const staticToken: string | null = (cfg && cfg.AGORA_STATIC_TOKEN) || null;
+  const engineRef = useRef<any>(null);
+  const [isJoined, setIsJoined] = useState(false);
+  const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const [micMuted, setMicMuted] = useState(false);
+  const [cameraMuted, setCameraMuted] = useState(false);
+  const [speakerEnabled, setSpeakerEnabled] = useState(true);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const intervalRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!visible || !call?.id || !Agora || !appId) return;
+    let disposed = false;
+    (async () => {
+      try {
+        const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
+        if (isV4) {
+          const engine = Agora.createAgoraRtcEngine();
+          engineRef.current = engine;
+          try {
+            engine.initialize?.({
+              appId,
+              channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
+            });
+          } catch {}
+          try {
+            engine.enableAudio?.();
+          } catch {}
+          if (call.callType === 'video') {
+            try {
+              engine.enableVideo?.();
+            } catch {}
+            try {
+              engine.startPreview?.();
+            } catch {}
+          } else {
+            try {
+              engine.disableVideo?.();
+            } catch {}
+          }
+          try {
+            engine.registerEventHandler?.({
+              onJoinChannelSuccess: () => {
+                setIsJoined(true);
+              },
+              onUserJoined: (_conn: any, uid: number) => {
+                setRemoteUid(Number(uid));
+              },
+              onUserOffline: (_conn: any, uid: number) => {
+                setRemoteUid(prev => (prev === Number(uid) ? null : prev));
+              },
+            });
+          } catch {}
+
+          const joinToken = call.agoraToken || staticToken || null;
+          await engine.joinChannel?.(joinToken, call.channelName, 0, {
+            clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+            publishMicrophoneTrack: true,
+            publishCameraTrack: call.callType === 'video',
+            autoSubscribeAudio: true,
+            autoSubscribeVideo: call.callType === 'video',
+          });
+        } else if (Agora?.RtcEngine && typeof Agora.RtcEngine.create === 'function') {
+          const engine = await Agora.RtcEngine.create(appId);
+          engineRef.current = engine;
+          try {
+            engine.enableAudio?.();
+          } catch {}
+          if (call.callType === 'video') {
+            try {
+              engine.enableVideo?.();
+            } catch {}
+            try {
+              engine.startPreview?.();
+            } catch {}
+          }
+          try {
+            engine.addListener?.('JoinChannelSuccess', () => {
+              setIsJoined(true);
+            });
+          } catch {}
+          try {
+            engine.addListener?.('UserJoined', (uid: number) => {
+              setRemoteUid(Number(uid));
+            });
+          } catch {}
+          try {
+            engine.addListener?.('UserOffline', (uid: number) => {
+              setRemoteUid(prev => (prev === Number(uid) ? null : prev));
+            });
+          } catch {}
+          const joinToken = call.agoraToken || staticToken || null;
+          await engine.joinChannel?.(joinToken, call.channelName, 0);
+        }
+      } catch (err) {
+        console.warn('Direct call Agora init failed', err);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      try {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+      } catch {}
+      setElapsedSec(0);
+      setIsJoined(false);
+      setRemoteUid(null);
+      if (engineRef.current) {
+        try {
+          engineRef.current.leaveChannel?.();
+        } catch {}
+        try {
+          (engineRef.current.destroy ?? engineRef.current.release)?.();
+        } catch {}
+      }
+      engineRef.current = null;
+      if (disposed) return;
+    };
+  }, [Agora, appId, call?.agoraToken, call?.callType, call?.channelName, call?.id, staticToken, visible]);
+
+  useEffect(() => {
+    if (!visible || !isJoined) return;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = setInterval(() => {
+      setElapsedSec(prev => prev + 1);
+    }, 1000);
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isJoined, visible]);
+
+  const toggleMic = () => {
+    const next = !micMuted;
+    setMicMuted(next);
+    try {
+      engineRef.current?.muteLocalAudioStream?.(next);
+    } catch {}
+    try {
+      engineRef.current?.enableLocalAudio?.(!next);
+    } catch {}
+  };
+
+  const toggleCamera = () => {
+    const next = !cameraMuted;
+    setCameraMuted(next);
+    try {
+      engineRef.current?.muteLocalVideoStream?.(next);
+    } catch {}
+    try {
+      engineRef.current?.enableLocalVideo?.(!next);
+    } catch {}
+  };
+
+  const toggleSpeaker = () => {
+    const next = !speakerEnabled;
+    setSpeakerEnabled(next);
+    try {
+      engineRef.current?.setEnableSpeakerphone?.(next);
+    } catch {}
+  };
+
+  const formatElapsed = (secs: number) => {
+    const s = Math.max(0, Math.floor(secs || 0));
+    const m = Math.floor(s / 60);
+    const ss = String(s % 60).padStart(2, '0');
+    return `${m}:${ss}`;
+  };
+
+  if (!visible || !call) return null;
+
+  if (!Agora) {
+    return (
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onEnd}>
+        <View style={styles.callInviteBackdrop}>
+          <View style={styles.callInviteCard}>
+            <Text style={styles.callInviteTitle}>Calling unavailable</Text>
+            <Text style={styles.callInviteMode}>Install react-native-agora and rebuild.</Text>
+            <Pressable
+              style={[styles.callInviteActionBtn, styles.callInviteDeclineBtn, { marginTop: 12 }]}
+              onPress={onEnd}
+            >
+              <Text style={styles.callInviteActionText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  if (!appId) {
+    return (
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onEnd}>
+        <View style={styles.callInviteBackdrop}>
+          <View style={styles.callInviteCard}>
+            <Text style={styles.callInviteTitle}>Calling unavailable</Text>
+            <Text style={styles.callInviteMode}>Missing AGORA_APP_ID in liveConfig.ts.</Text>
+            <Pressable
+              style={[styles.callInviteActionBtn, styles.callInviteDeclineBtn, { marginTop: 12 }]}
+              onPress={onEnd}
+            >
+              <Text style={styles.callInviteActionText}>Close</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  const AVView = Agora?.AgoraVideoView;
+  const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
+  const RtcTextureView = (Agora as any)?.RtcTextureView;
+  const RtcLocalView = Agora?.RtcLocalView;
+  const RtcRemoteView = Agora?.RtcRemoteView;
+  const VideoRenderMode = Agora?.VideoRenderMode;
+  const VideoSourceType = Agora?.VideoSourceType;
+  const counterpart =
+    role === 'caller'
+      ? String(call.calleeName || 'User')
+      : String(call.callerName || 'User');
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onEnd}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <View
+          style={{
+            position: 'absolute',
+            top: insets.top + 10,
+            left: 12,
+            right: 12,
+            zIndex: 10,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View>
+            <Text style={{ color: '#D8F5FF', fontSize: 12, letterSpacing: 0.7 }}>
+              {call.callType === 'video' ? 'VIDEO CALL' : 'AUDIO CALL'}
+            </Text>
+            <Text style={{ color: 'white', fontSize: 18, fontWeight: '800' }}>{counterpart}</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>
+              {isJoined
+                ? remoteUid
+                  ? `Connected ${formatElapsed(elapsedSec)}`
+                  : `Waiting for ${counterpart}... ${formatElapsed(elapsedSec)}`
+                : 'Connecting...'}
+            </Text>
+          </View>
+        </View>
+
+        {call.callType === 'video' ? (
+          <View style={{ flex: 1 }}>
+            {remoteUid ? (
+              RtcSurfaceView ? (
+                React.createElement(RtcSurfaceView, {
+                  style: StyleSheet.absoluteFill,
+                  canvas: { uid: remoteUid },
+                })
+              ) : RtcTextureView ? (
+                React.createElement(RtcTextureView, {
+                  style: StyleSheet.absoluteFill,
+                  canvas: { uid: remoteUid },
+                })
+              ) : RtcRemoteView?.SurfaceView ? (
+                React.createElement(RtcRemoteView.SurfaceView, {
+                  style: StyleSheet.absoluteFill,
+                  uid: remoteUid,
+                  channelId: call.channelName,
+                  renderMode: VideoRenderMode?.Hidden ?? 1,
+                })
+              ) : (
+                <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ color: 'white' }}>Remote video connected</Text>
+                </View>
+              )
+            ) : (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: 'white' }}>Waiting for remote video...</Text>
+              </View>
+            )}
+
+            {!cameraMuted && (
+              <View
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  bottom: Math.max(insets.bottom + 92, 112),
+                  width: 120,
+                  height: 170,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.45)',
+                  backgroundColor: '#050B15',
+                }}
+              >
+                {AVView ? (
+                  <AVView
+                    style={StyleSheet.absoluteFill}
+                    showLocalVideo={true}
+                    videoSourceType={
+                      (VideoSourceType &&
+                        (VideoSourceType.VideoSourceCameraPrimary ??
+                          VideoSourceType.VideoSourceCamera)) ||
+                      0
+                    }
+                    renderMode={(VideoRenderMode && VideoRenderMode.Hidden) || 1}
+                  />
+                ) : RtcSurfaceView ? (
+                  React.createElement(RtcSurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: { uid: 0 },
+                    zOrderMediaOverlay: true,
+                  })
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: { uid: 0 },
+                  })
+                ) : RtcLocalView?.SurfaceView ? (
+                  React.createElement(RtcLocalView.SurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    renderMode: VideoRenderMode?.Hidden ?? 1,
+                  })
+                ) : null}
+              </View>
+            )}
+          </View>
+        ) : (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 80 }}>🎧</Text>
+            <Text style={{ color: 'white', marginTop: 16, fontSize: 16 }}>
+              Audio call in progress
+            </Text>
+          </View>
+        )}
+
+        <View style={[styles.callControlDock, { bottom: Math.max(insets.bottom + 52, 88) }]}>
+          <View style={styles.callControlTopRow}>
+            <Pressable
+              style={[
+                styles.callControlBtn,
+                micMuted ? styles.callControlDanger : styles.callControlPrimary,
+              ]}
+              onPress={toggleMic}
+            >
+              <Text style={styles.callControlIcon}>{micMuted ? '🎙️' : '🎤'}</Text>
+              <Text style={styles.callControlLabel}>{micMuted ? 'Mic Off' : 'Mic On'}</Text>
+            </Pressable>
+            {call.callType === 'video' && (
+              <Pressable
+                style={[
+                  styles.callControlBtn,
+                  cameraMuted ? styles.callControlDanger : styles.callControlPrimary,
+                ]}
+                onPress={toggleCamera}
+              >
+                <Text style={styles.callControlIcon}>{cameraMuted ? '📷' : '🎥'}</Text>
+                <Text style={styles.callControlLabel}>
+                  {cameraMuted ? 'Video Off' : 'Video On'}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={[
+                styles.callControlBtn,
+                speakerEnabled ? styles.callControlPrimary : styles.callControlMuted,
+              ]}
+              onPress={toggleSpeaker}
+            >
+              <Text style={styles.callControlIcon}>{speakerEnabled ? '🔊' : '🔈'}</Text>
+              <Text style={styles.callControlLabel}>
+                {speakerEnabled ? 'Speaker On' : 'Speaker Off'}
+              </Text>
+            </Pressable>
+          </View>
+          <Pressable
+            style={[styles.callEndBtn]}
+            onPress={onEnd}
+          >
+            <Text style={styles.callEndBtnText}>End Call</Text>
+          </Pressable>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 // ======================== AGORA LIVE STREAM COMPONENT ========================
 const LiveStreamModal = ({
   visible,
@@ -17375,11 +19542,13 @@ const LiveStreamModal = ({
   const [inviteResults, setInviteResults] = useState<
     Array<{ uid: string; name?: string; email?: string; photo?: string }>
   >([]);
+  const [selectedInviteUid, setSelectedInviteUid] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
                     
   const inviteCoHost = async () => {
     setInviteQuery('');
     setInviteResults([]);
+    setSelectedInviteUid(null);
     setShowInviteModal(true);
   };
                     
@@ -17421,8 +19590,10 @@ const LiveStreamModal = ({
       });
       const results = fuse.search(q).map(r => r.item).slice(0, 10);
       setInviteResults(results);
+      setSelectedInviteUid(results[0]?.uid || null);
     } catch (e) {
       setInviteResults([]);
+      setSelectedInviteUid(null);
     } finally {
       setInviteBusy(false);
     }
@@ -17442,16 +19613,12 @@ const LiveStreamModal = ({
     return result?.data?.status === 'sent';
   };
                     
-  const sendInviteTo = async (
-    to: { uid?: string; email?: string } | string,
-  ) => {
+  const sendInviteTo = async (to: { uid?: string } | string) => {
     let toUid = '';
     if (typeof to === 'string') {
-      const v = to.trim();
-      toUid = v.replace(/^@/, '');
-    } else {
-      if (to.uid) toUid = to.uid;
-      else return;
+      toUid = to.trim().replace(/^@/, '');
+    } else if (to?.uid) {
+      toUid = to.uid;
     }
                     
     if (!toUid) {
@@ -17461,12 +19628,42 @@ const LiveStreamModal = ({
                     
     setInviteBusy(true);
     try {
-      const sent = await inviteUserToDrift(toUid);
-      if (sent) {
+      const me = auth?.()?.currentUser;
+      if (!me?.uid) {
+        throw new Error('Sign in required');
+      }
+      let inboxInviteWritten = false;
+      let callableInviteSent = false;
+      let lastErr: any = null;
+
+      try {
+        await firestore()
+          .collection(`users/${toUid}/live_invites`)
+          .add({
+            liveId: liveDocId || null,
+            liveTitle: liveTitle || 'Live Session',
+            fromUid: me.uid,
+            fromName: profileName || accountCreationHandle || me.displayName || 'Host',
+            fromPhoto: profilePhoto || me.photoURL || null,
+            status: 'pending',
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          });
+        inboxInviteWritten = true;
+      } catch (err) {
+        lastErr = err;
+      }
+
+      try {
+        callableInviteSent = await inviteUserToDrift(toUid);
+      } catch (err) {
+        lastErr = err;
+      }
+
+      if (inboxInviteWritten || callableInviteSent) {
         Alert.alert('Success', 'Invitation sent!');
         setShowInviteModal(false);
       } else {
-        Alert.alert('Error', 'Failed to send invite');
+        throw lastErr || new Error('No invite channel succeeded');
       }
     } catch (error) {
       console.warn('Invite error:', error);
@@ -17474,6 +19671,32 @@ const LiveStreamModal = ({
     } finally {
       setInviteBusy(false);
     }
+  };
+
+  const respondToLiveInvite = async (action: 'join' | 'ignore') => {
+    if (!incomingLiveInvite) return;
+    try {
+      const me = auth?.()?.currentUser;
+      if (me?.uid) {
+        await firestore()
+          .collection(`users/${me.uid}/live_invites`)
+          .doc(incomingLiveInvite.id)
+          .set(
+            {
+              status: action === 'join' ? 'accepted' : 'ignored',
+              respondedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+      }
+    } catch {}
+    if (action === 'join') {
+      requestToDriftForLiveId(
+        incomingLiveInvite.liveId,
+        incomingLiveInvite.fromName,
+      );
+    }
+    setIncomingLiveInvite(null);
   };
                     
   const showLiveAnalytics = () => {
@@ -17508,7 +19731,7 @@ const LiveStreamModal = ({
       {
         id: 'airhorn',
         label: 'Airhorn',
-        icon: '📯',
+        icon: '📣',
         file: 'sci_fi_sound_effect_designed_circuits_hum_10_200831',
       },
     ],
@@ -17616,7 +19839,7 @@ const LiveStreamModal = ({
     }
     Alert.alert(
       'Make Moderator',
-      `Make @${username} a moderator? They will be able to:\n• Mute/Unmute users\n• Remove messages\n• Timeout users`,
+      `Make @${username} a moderator? They will be able to:\nï¿½ Mute/Unmute users\nï¿½ Remove messages\nï¿½ Timeout users`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -17892,7 +20115,7 @@ const LiveStreamModal = ({
       }
       Alert.alert(
         'Co-host Invitation',
-        `Invite @${username} to co-host this live? They will be able to:\n• Control audio/video\n• Manage users\n• Share screen`,
+        `Invite @${username} to co-host this live? They will be able to:\nï¿½ Control audio/video\nï¿½ Manage users\nï¿½ Share screen`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
@@ -18045,7 +20268,7 @@ const LiveStreamModal = ({
       `Say something nice about @${username}`,
       message => {
         if (!message?.trim()) return;
-        sendSystemMessage(`🎉 Shout-out to @${username}: ${message}`);
+        sendSystemMessage(`📣 Shout-out to @${username}: ${message}`);
         if (userMgmtBase) {
           fetch(`${userMgmtBase}/give-shoutout`, {
             method: 'POST',
@@ -18065,9 +20288,9 @@ const LiveStreamModal = ({
                     
   const awardBadge = (userId: string, username: string) => {
     const badges = [
-      { name: 'Super Fan', icon: '⭐' },
-      { name: 'Top Supporter', icon: '💎' },
-      { name: 'Helpful Crew', icon: '🛟' },
+      { name: 'Super Fan', icon: '🌟' },
+      { name: 'Top Supporter', icon: '🏆' },
+      { name: 'Helpful Crew', icon: '🤝' },
       { name: 'Rising Star', icon: '🚀' },
     ];
     Alert.alert(
@@ -18097,7 +20320,7 @@ const LiveStreamModal = ({
         });
       }
       sendSystemMessage(
-        `🏆 ${username} earned the ${badge.icon} ${badge.name} badge!`,
+        `🏅 ${username} earned the ${badge.icon} ${badge.name} badge!`,
       );
     } catch {
       Alert.alert('Error', 'Failed to award badge');
@@ -18133,7 +20356,7 @@ const LiveStreamModal = ({
               });
               displaySupporterOnScreen(userId, username);
               sendSystemMessage(
-                `👑 ${username} is now featured as a Top Supporter!`,
+                `⭐ ${username} is now featured as a Top Supporter!`,
               );
             } catch {
               Alert.alert('Error', 'Failed to feature supporter');
@@ -18307,11 +20530,11 @@ const LiveStreamModal = ({
     const getUserActions = (user: any) => {
       const base = [
         { label: 'Send Message', action: 'message', icon: '💬' },
-        { label: 'Give Shout-out', action: 'shoutout', icon: '📢' },
+        { label: 'Give Shout-out', action: 'shoutout', icon: '📣' },
         { label: 'Award Badge', action: 'badge', icon: '🏅' },
       ];
       const moderation = [
-        { label: 'Make Moderator', action: 'makeModerator', icon: '👮' },
+        { label: 'Make Moderator', action: 'makeModerator', icon: '🛡️' },
         { label: 'Invite Co-host', action: 'inviteCoHost', icon: '🎤' },
         { label: 'Invite to Drift', action: 'inviteToDrift', icon: '🌊' },
         { label: 'Feature Supporter', action: 'featureSupporter', icon: '⭐' },
@@ -18322,13 +20545,13 @@ const LiveStreamModal = ({
         { label: 'Timeout', action: 'timeout', icon: '⏱️' },
       ];
       const crewActions = user.id !== myUid ? [
-        { label: 'Block', action: 'block', icon: 'dYs?' },
+        { label: 'Block', action: 'block', icon: '🚫' },
       ] : [
-        { label: 'Block', action: 'block', icon: 'dYs?' },
+        { label: 'Block', action: 'block', icon: '🚫' },
       ];
       return [
         ...base,
-        { label: 'Accept To Drift', action: 'acceptDrift', icon: 'dYZ' },
+        { label: 'Accept To Drift', action: 'acceptDrift', icon: '🤝' },
         ...moderation,
         ...restrictive,
         ...crewActions,
@@ -18415,8 +20638,8 @@ const LiveStreamModal = ({
                 <View style={userManagementStyles.userDetails}>
                   <Text style={userManagementStyles.username}>
                     {user.username}
-                    {moderators.includes(user.id) ? ' � Mod' : ''}
-                    {coHosts.includes(user.id) ? ' � Co-host' : ''}
+                    {moderators.includes(user.id) ? ' ? Mod' : ''}
+                    {coHosts.includes(user.id) ? ' ? Co-host' : ''}
                   </Text>
                   <Text style={userManagementStyles.userStatus}>
                     {(user.isSpeaking ? 'Speaking ' : '') +
@@ -18717,7 +20940,7 @@ const LiveStreamModal = ({
                 { alignItems: 'center', justifyContent: 'center' },
               ]}
             >
-              <Text style={{ color: 'white' }}>Initializing preview…</Text>
+              <Text style={{ color: 'white' }}>Initializing previewï¿½</Text>
             </View>
           ))}
         {isLiveStarted && liveComments.length > 0 && (
@@ -18739,11 +20962,11 @@ const LiveStreamModal = ({
                   onLongPress={() => {
                     Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, [
                       {
-                        text: 'Splash 💧',
+                        text: 'Splash 💦',
                         onPress: () => onSplashComment(c.id),
                       },
                       {
-                        text: 'Echo Back 📣',
+                        text: 'Echo Back 🔁',
                         onPress: () => onEchoBack(c as any),
                       },
                       { text: 'Cancel', style: 'cancel' },
@@ -18921,7 +21144,7 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={inviteCoHost}
             >
-              <Text style={editorStyles.liveRightIcon}>🧭</Text>
+              <Text style={editorStyles.liveRightIcon}>👥</Text>
               <Text style={editorStyles.liveRightLabel}>Invite</Text>
             </Pressable>
 // ...existing code...
@@ -18930,7 +21153,7 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={handleScreenShare}
             >
-              <Text style={editorStyles.liveRightIcon}>📺</Text>
+              <Text style={editorStyles.liveRightIcon}>🖥️</Text>
               <Text style={editorStyles.liveRightLabel}>
                 {isScreenSharing ? 'Stop Share' : 'Share Screen'}
               </Text>
@@ -18952,7 +21175,7 @@ const LiveStreamModal = ({
               ]}
               onPress={toggleVirtualBackground}
             >
-              <Text style={editorStyles.liveRightIcon}>🏞️</Text>
+              <Text style={editorStyles.liveRightIcon}>🖼️</Text>
               <Text style={editorStyles.liveRightLabel}>Background</Text>
             </Pressable>
                     
@@ -19010,7 +21233,7 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={inviteCoHost}
             >
-              <Text style={editorStyles.liveRightIcon}>👥</Text>
+              <Text style={editorStyles.liveRightIcon}>🎙️</Text>
               <Text style={editorStyles.liveRightLabel}>Co-host</Text>
             </Pressable>
                     
@@ -19028,7 +21251,7 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={showSoundBoard}
             >
-              <Text style={editorStyles.liveRightIcon}>🎶</Text>
+              <Text style={editorStyles.liveRightIcon}>🔊</Text>
               <Text style={editorStyles.liveRightLabel}>Sounds</Text>
             </Pressable>
                     
@@ -19043,7 +21266,7 @@ const LiveStreamModal = ({
               }}
             >
               <Text style={editorStyles.liveRightIcon}>
-                {micMuted ? '🎙️🚫' : '🎙️'}
+                {micMuted ? '🔇' : '🎤'}
               </Text>
               <Text style={editorStyles.liveRightLabel}>
                 {micMuted ? 'Unmute' : 'Mute'}
@@ -19061,7 +21284,7 @@ const LiveStreamModal = ({
                 } catch {}
               }}
             >
-              <Text style={editorStyles.liveRightIcon}>{cameraHidden ? '🎥🚫' : '🎥'}</Text>
+              <Text style={editorStyles.liveRightIcon}>{cameraHidden ? '🚫' : '📷'}</Text>
               <Text style={editorStyles.liveRightLabel}>{cameraHidden ? 'Show' : 'Hide'}</Text>
             </Pressable>
                     
@@ -19083,7 +21306,7 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={handleShareDriftLink}
             >
-              <Text style={editorStyles.liveRightIcon}>🎣</Text>
+              <Text style={editorStyles.liveRightIcon}>📤</Text>
               <Text style={editorStyles.liveRightLabel}>Casta drift</Text>
             </Pressable>
                     
@@ -19094,7 +21317,7 @@ const LiveStreamModal = ({
                 Alert.alert('Report', 'Send report to moderation collection.')
               }
             >
-              <Text style={editorStyles.liveRightIcon}>📝</Text>
+              <Text style={editorStyles.liveRightIcon}>🚩</Text>
               <Text style={editorStyles.liveRightLabel}>Report</Text>
             </Pressable>
           </ScrollView>
@@ -19156,12 +21379,12 @@ const LiveStreamModal = ({
                   </Text>
                 </Pressable>
                 <Pressable
-                  disabled={inviteBusy || inviteQuery.trim().length === 0}
+                  disabled={inviteBusy || !selectedInviteUid}
                   style={[styles.secondaryBtn, { flex: 1 }]}
-                  onPress={() => sendInviteTo(inviteQuery)}
+                  onPress={() => selectedInviteUid && sendInviteTo({ uid: selectedInviteUid })}
                 >
                   <Text style={styles.secondaryBtnText}>
-                    {inviteBusy ? '...' : 'Invite Input'}
+                    {inviteBusy ? '...' : 'Invite Selected'}
                   </Text>
                 </Pressable>
               </View>
@@ -19183,11 +21406,25 @@ const LiveStreamModal = ({
                         borderBottomColor: 'rgba(255,255,255,0.1)',
                       }}
                     >
-                      <View
+                      <Pressable
+                        onPress={() => setSelectedInviteUid(u.uid)}
                         style={{
+                          flex: 1,
                           flexDirection: 'row',
                           alignItems: 'center',
                           gap: 10,
+                          paddingVertical: 4,
+                          borderRadius: 8,
+                          borderWidth: 1,
+                          borderColor:
+                            selectedInviteUid === u.uid
+                              ? 'rgba(0,194,255,0.9)'
+                              : 'transparent',
+                          backgroundColor:
+                            selectedInviteUid === u.uid
+                              ? 'rgba(0,194,255,0.14)'
+                              : 'transparent',
+                          paddingHorizontal: 6,
                         }}
                       >
                         {u.photo ? (
@@ -19221,17 +21458,22 @@ const LiveStreamModal = ({
                             </Text>
                           )}
                         </View>
-                      </View>
+                      </Pressable>
                       <Pressable
                         disabled={inviteBusy}
                         style={[
                           styles.primaryBtn,
-                          { paddingVertical: 6, paddingHorizontal: 12 },
+                          {
+                            paddingVertical: 6,
+                            paddingHorizontal: 12,
+                            backgroundColor:
+                              selectedInviteUid === u.uid ? '#0B8D3A' : '#00C2FF',
+                          },
                         ]}
-                        onPress={() => sendInviteTo({ uid: u.uid })}
+                        onPress={() => setSelectedInviteUid(u.uid)}
                       >
                         <Text style={styles.primaryBtnText}>
-                          {inviteBusy ? '...' : 'Invite'}
+                          {selectedInviteUid === u.uid ? 'Selected' : 'Select'}
                         </Text>
                       </Pressable>
                     </View>
@@ -19343,11 +21585,11 @@ const LiveStreamModal = ({
                 <Text style={editorStyles.liveBottomLabel}>Music</Text>
               </View>
               <View style={editorStyles.liveBottomItem}>
-                <Text style={editorStyles.liveBottomIcon}>🎨</Text>
+                <Text style={editorStyles.liveBottomIcon}>🎛️</Text>
                 <Text style={editorStyles.liveBottomLabel}>Filters</Text>
               </View>
               <View style={editorStyles.liveBottomItem}>
-                <Text style={editorStyles.liveBottomIcon}>🖼️</Text>
+                <Text style={editorStyles.liveBottomIcon}>🧩</Text>
                 <Text style={editorStyles.liveBottomLabel}>Overlays</Text>
               </View>
               <View style={editorStyles.liveBottomItem}>
@@ -19378,7 +21620,7 @@ const LiveStreamModal = ({
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
-                placeholder="Say something…"
+                placeholder="Say somethingï¿½"
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 style={[styles.input, { flex: 1, margin: 0 }]}
                 autoFocus
@@ -19552,7 +21794,7 @@ const LiveStreamModal = ({
                   onPress={startLiveNow}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {isStartingLive ? 'Starting…' : 'Start Drift'}
+                    {isStartingLive ? 'Startingï¿½' : 'Start Drift'}
                   </Text>
                 </Pressable>
                 {startError ? (
@@ -19986,7 +22228,7 @@ function SignUpScreen({ navigation }: any) {
                 <Text
                   style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}
                 >
-                  ✓
+                  ?
                 </Text>
               )}
             </Pressable>
@@ -20433,7 +22675,7 @@ function PostDetailScreen({ route, navigation }: any) {
             <View style={{ flex: 1, backgroundColor: 'black' }}>
               <Image
                 source={{ uri: post.media.uri }}
-                style={{ width: '100%', height: '100%' }}
+                style={{ width: '100%', height: post.audio?.uri ? '82%' : '100%' }}
                 resizeMode="contain"
                 onLoad={(event) => {
                   // Record image reach when image loads in post detail view
@@ -20448,6 +22690,29 @@ function PostDetailScreen({ route, navigation }: any) {
                   }
                 }}
               />
+              {post.audio?.uri && RNVideo ? (
+                <View
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingBottom: 10,
+                    backgroundColor: 'rgba(0,0,0,0.55)',
+                  }}
+                >
+                  <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 12, marginBottom: 6 }}>
+                    Overlay audio
+                  </Text>
+                  <RNVideo
+                    source={{ uri: String(post.audio.uri) }}
+                    audioOnly
+                    controls
+                    paused={!isFocused}
+                    style={{ width: '100%', height: 62 }}
+                    playInBackground={false}
+                    playWhenInactive={false}
+                    ignoreSilentSwitch="ignore"
+                  />
+                </View>
+              ) : null}
             </View>
           ) : hasAudioOnly && RNVideo ? (
             <View
@@ -20456,7 +22721,7 @@ function PostDetailScreen({ route, navigation }: any) {
                 minHeight: 220,
                 justifyContent: 'center',
                 alignItems: 'center',
-                backgroundColor: '#0f1724',
+                backgroundColor: '#000',
                 paddingHorizontal: 20,
               }}
             >
@@ -20484,7 +22749,7 @@ function PostDetailScreen({ route, navigation }: any) {
                 minHeight: 220,
                 justifyContent: 'center',
                 alignItems: 'center',
-                backgroundColor: '#0f1724',
+                backgroundColor: '#000',
                 paddingHorizontal: 20,
               }}
             >
@@ -20506,9 +22771,10 @@ function PostDetailScreen({ route, navigation }: any) {
                 return null;
               })()}
               {post.captionText && (
-                <Text style={{ color: 'white', fontSize: 18, marginBottom: 10 }}>
-                  {post.captionText}
-                </Text>
+                <ClickableTextWithLinks
+                  text={post.captionText}
+                  style={{ color: 'white', fontSize: 18, marginBottom: 10, lineHeight: 26 }}
+                />
               )}
               {post.link && (
                 <Pressable
@@ -20564,7 +22830,7 @@ function PostDetailScreen({ route, navigation }: any) {
           borderRadius: 20,
         }}
       >
-        <Text style={{ color: 'white', fontSize: 18 }}>⤡</Text>
+        <Text style={{ color: 'white', fontSize: 18 }}>⤢</Text>
       </Pressable>
       
       {/* Follow Button */}
@@ -20585,7 +22851,7 @@ function PostDetailScreen({ route, navigation }: any) {
           }}
         >
           <Text style={{ color: 'white', fontSize: 16 }}>
-            {isFollowing ? '✓ Connected' : '+ Connect SplashLine'}
+            {isFollowing ? '? Connected' : '+ Connect SplashLine'}
           </Text>
         </Pressable>
       )}
@@ -20737,7 +23003,7 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
           }}
         >
           <Text style={{ color: 'red', fontSize: 20, textAlign: 'center', marginBottom: 10, fontWeight: 'bold' }}>
-            🚨 APP ERROR 🚨
+            ⚠️ APP ERROR ⚠️
           </Text>
 
           <Text style={{ color: 'white', fontSize: 16, textAlign: 'center', marginBottom: 8 }}>
@@ -20929,7 +23195,7 @@ const App: React.FC = () => {
     let unsub: any = null;
     try {
       unsub = auth().onAuthStateChanged(async (u) => {
-        console.log('🔐 Auth state changed:', u ? `User: ${u.uid}` : 'No user');
+        console.log('Auth state changed:', u ? `User: ${u.uid}` : 'No user');
         // Force sign out on first install to ensure sign-up/sign-in is required
         if (u) {
           try {
@@ -21118,7 +23384,7 @@ const App: React.FC = () => {
                           fontStyle: 'italic',
                         }}
                       >
-                        Navigating the seas…
+                        Navigating the seasï¿½
                       </Text>
                     </View>
                   ) : user ? (
@@ -21200,6 +23466,11 @@ const authStyles = StyleSheet.create({
 });
                     
                     
+
+
+
+
+
 
 
 

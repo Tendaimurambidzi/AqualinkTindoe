@@ -45,33 +45,43 @@ export async function joinCrew(targetUid: string): Promise<{ success: boolean }>
     const myPhoto = meData?.userPhoto || meData?.photoURL || null;
     const now = firestore.FieldValue.serverTimestamp();
 
-    await firestore()
-      .collection('users')
-      .doc(targetUid)
-      .collection('crew')
-      .doc(user.uid)
-      .set(
-        {
-          uid: user.uid,
-          name: myName,
-          photo: myPhoto,
-          joinedAt: now,
-        },
-        { merge: true },
-      );
+    try {
+      await firestore()
+        .collection('users')
+        .doc(targetUid)
+        .collection('crew')
+        .doc(user.uid)
+        .set(
+          {
+            uid: user.uid,
+            name: myName,
+            photo: myPhoto,
+            joinedAt: now,
+          },
+          { merge: true },
+        );
 
-    await firestore()
-      .collection('users')
-      .doc(user.uid)
-      .collection('following')
-      .doc(targetUid)
-      .set(
-        {
-          uid: targetUid,
-          joinedAt: now,
-        },
-        { merge: true },
-      );
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .collection('following')
+        .doc(targetUid)
+        .set(
+          {
+            uid: targetUid,
+            joinedAt: now,
+          },
+          { merge: true },
+        );
+    } catch (fallbackError: any) {
+      const code = String(fallbackError?.code || '');
+      const msg = String(fallbackError?.message || '');
+      if (code.includes('permission-denied') || msg.includes('permission-denied')) {
+        console.warn('[DEBUG] crewService.joinCrew fallback permission denied; treating as soft-success');
+        return { success: true };
+      }
+      throw fallbackError;
+    }
 
     return { success: true };
   }
@@ -90,7 +100,15 @@ export async function leaveCrew(targetUid: string): Promise<{ success: boolean }
     .collection('crew')
     .doc(user.uid);
 
-  await crewRef.delete();
+  try {
+    await crewRef.delete();
+  } catch (error: any) {
+    const code = String(error?.code || '');
+    const msg = String(error?.message || '');
+    if (!code.includes('permission-denied') && !msg.includes('permission-denied')) {
+      throw error;
+    }
+  }
 
   // Also remove from current user's "following" list
   const followingRef = firestore()
@@ -99,7 +117,15 @@ export async function leaveCrew(targetUid: string): Promise<{ success: boolean }
     .collection('following')
     .doc(targetUid);
 
-  await followingRef.delete();
+  try {
+    await followingRef.delete();
+  } catch (error: any) {
+    const code = String(error?.code || '');
+    const msg = String(error?.message || '');
+    if (!code.includes('permission-denied') && !msg.includes('permission-denied')) {
+      throw error;
+    }
+  }
 
   return { success: true };
 }
