@@ -469,7 +469,12 @@ type LiveInviteNotice = {
   fromName: string;
   fromPhoto?: string | null;
   liveTitle?: string | null;
+  liveChannel?: string | null;
+  expiresAtMs?: number | null;
 };
+
+const LIVE_INVITE_TTL_MS = 15000;
+const ALLOW_TOKENLESS_DRIFT = true;
                     
 const toJSDate = (ts: any) => {
   try {
@@ -479,6 +484,21 @@ const toJSDate = (ts: any) => {
     return new Date(ts);
   } catch {
     return new Date(0);
+  }
+};
+
+const toMillis = (ts: any): number => {
+  try {
+    if (!ts) return 0;
+    if (typeof ts === 'number') return ts;
+    if (typeof ts?.toMillis === 'function') return Number(ts.toMillis()) || 0;
+    if (typeof ts?.toDate === 'function')
+      return Number(ts.toDate().getTime()) || 0;
+    if (typeof ts?.seconds === 'number') return ts.seconds * 1000;
+    const parsed = new Date(ts).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
   }
 };
                     
@@ -5267,7 +5287,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [driftWatchers, setDriftWatchers] = useState<string[]>([]);
   const [vibeAlert, setVibeAlert] = useState<VibeAlert | null>(null);
   const [incomingLiveInvite, setIncomingLiveInvite] = useState<LiveInviteNotice | null>(null);
+  const [incomingLiveInviteCountdown, setIncomingLiveInviteCountdown] = useState<number>(0);
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const incomingInviteTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
   const flickerAnim = useRef(new Animated.Value(0)).current;
                     
@@ -5418,6 +5440,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const me = auth?.()?.currentUser;
     if (!me?.uid) {
       setIncomingLiveInvite(null);
+      setIncomingLiveInviteCountdown(0);
       return;
     }
     const unsub = firestore()
@@ -5427,9 +5450,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .onSnapshot(
         snap => {
           const docs = snap?.docs || [];
+          const now = Date.now();
           const doc =
             docs
               .slice()
+              .filter((d: any) => {
+                const data = d.data() || {};
+                const createdAtMs = toMillis(data.createdAt);
+                const expiresAtMs =
+                  Number(data.expiresAtMs || 0) ||
+                  (createdAtMs ? createdAtMs + LIVE_INVITE_TTL_MS : 0);
+                if (expiresAtMs && expiresAtMs <= now) {
+                  try {
+                    d.ref.set(
+                      {
+                        status: 'missed',
+                        respondedAt: firestore.FieldValue.serverTimestamp(),
+                      },
+                      { merge: true },
+                    );
+                  } catch {}
+                  return false;
+                }
+                return true;
+              })
               .sort(
                 (a: any, b: any) =>
                   toJSDate((b.data() || {}).createdAt).getTime() -
@@ -5437,13 +5481,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               )[0] || null;
           if (!doc) {
             setIncomingLiveInvite(null);
+            setIncomingLiveInviteCountdown(0);
             return;
           }
           const data = doc.data() || {};
           if (!data?.liveId || !data?.fromUid) {
             setIncomingLiveInvite(null);
+            setIncomingLiveInviteCountdown(0);
             return;
           }
+          const createdAtMs = toMillis(data.createdAt);
+          const expiresAtMs =
+            Number(data.expiresAtMs || 0) ||
+            (createdAtMs ? createdAtMs + LIVE_INVITE_TTL_MS : Date.now() + LIVE_INVITE_TTL_MS);
           setIncomingLiveInvite({
             id: doc.id,
             liveId: String(data.liveId),
@@ -5451,7 +5501,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromName: String(data.fromName || 'Host'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
+            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            expiresAtMs,
           });
+          setIncomingLiveInviteCountdown(
+            Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)),
+          );
         },
         () => {
           // keep silent if listener fails; app still works without invites stream
@@ -5463,6 +5518,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, [user?.uid]);
+
+  useEffect(() => {
+    if (incomingInviteTimerRef.current) {
+      clearInterval(incomingInviteTimerRef.current as any);
+      incomingInviteTimerRef.current = null;
+    }
+    if (!incomingLiveInvite?.expiresAtMs) {
+      setIncomingLiveInviteCountdown(0);
+      return;
+    }
+    const tick = () => {
+      const left = Math.max(
+        0,
+        Math.ceil((Number(incomingLiveInvite.expiresAtMs) - Date.now()) / 1000),
+      );
+      setIncomingLiveInviteCountdown(left);
+      if (left <= 0) {
+        respondToLiveInvite('miss');
+      }
+    };
+    tick();
+    incomingInviteTimerRef.current = setInterval(tick, 1000) as any;
+    return () => {
+      if (incomingInviteTimerRef.current) {
+        clearInterval(incomingInviteTimerRef.current as any);
+        incomingInviteTimerRef.current = null;
+      }
+    };
+  }, [incomingLiveInvite?.id, incomingLiveInvite?.expiresAtMs]);
   // Request to drift with a live host (viewer-side action)
   const requestToDriftForLiveId = useCallback(
     async (liveId: string, hostName?: string) => {
@@ -5505,6 +5589,56 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     },
     [profileName],
+  );
+
+  const respondToLiveInvite = useCallback(
+    async (action: 'join' | 'ignore' | 'miss') => {
+      if (!incomingLiveInvite) return;
+      const nextStatus =
+        action === 'join'
+          ? 'accepted'
+          : action === 'ignore'
+          ? 'ignored'
+          : 'missed';
+      try {
+        const me = auth?.()?.currentUser;
+        if (me?.uid) {
+          await firestore()
+            .collection(`users/${me.uid}/live_invites`)
+            .doc(incomingLiveInvite.id)
+            .set(
+              {
+                status: nextStatus,
+                respondedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+          if (incomingLiveInvite.liveId) {
+            await firestore()
+              .collection(`live/${incomingLiveInvite.liveId}/invite_status`)
+              .doc(me.uid)
+              .set(
+                {
+                  uid: me.uid,
+                  status: nextStatus,
+                  updatedAt: firestore.FieldValue.serverTimestamp(),
+                  respondedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+          }
+        }
+      } catch {}
+      if (action === 'join') {
+        requestToDriftForLiveId(
+          incomingLiveInvite.liveId,
+          incomingLiveInvite.fromName,
+        );
+      }
+      setIncomingLiveInvite(null);
+      setIncomingLiveInviteCountdown(0);
+    },
+    [incomingLiveInvite, requestToDriftForLiveId],
   );
                     
   const [editorPlaying, setEditorPlaying] = useState(true);
@@ -12614,6 +12748,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   {incomingLiveInvite.fromName} invited you to{' '}
                   {incomingLiveInvite.liveTitle || 'Drift Expo'}
                 </Text>
+                {incomingLiveInviteCountdown > 0 && (
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
+                    Expires in {incomingLiveInviteCountdown}s
+                  </Text>
+                )}
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
@@ -12621,13 +12760,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
                 onPress={() => respondToLiveInvite('ignore')}
               >
-                <Text style={styles.secondaryBtnText}>Ignore</Text>
+                <Text style={styles.secondaryBtnText}>Not now</Text>
               </Pressable>
               <Pressable
                 style={[styles.primaryBtn, { flex: 1 }]}
                 onPress={() => respondToLiveInvite('join')}
               >
-                <Text style={styles.primaryBtnText}>Join</Text>
+                <Text style={styles.primaryBtnText}>
+                  {incomingLiveInviteCountdown > 0
+                    ? `Join (${incomingLiveInviteCountdown}s)`
+                    : 'Join now'}
+                </Text>
               </Pressable>
             </View>
           </View>
@@ -19497,6 +19640,16 @@ const LiveStreamModal = ({
   const [topSupporters, setTopSupporters] = useState<
     Array<{ id: string; username: string }>
   >([]);
+  const [onlineUsers, setOnlineUsers] = useState<
+    Array<{ uid: string; name: string; photo: string | null; lastHeartbeat: number }>
+  >([]);
+  const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(true);
+  const [inviteStatusByUid, setInviteStatusByUid] = useState<
+    Record<
+      string,
+      { status: string; expiresAtMs?: number; updatedAtMs?: number; name?: string }
+    >
+  >({});
   useEffect(() => {
     if (!showUserPanel) setUserPanelMode('none');
   }, [showUserPanel]);
@@ -19674,8 +19827,115 @@ const LiveStreamModal = ({
           });
         }
       });
-                    
+
     return () => unsubscribe();
+  }, [isLiveStarted, liveDocId]);
+
+  useEffect(() => {
+    if (!visible || !isLiveStarted) {
+      setOnlineUsers([]);
+      return;
+    }
+    const me = auth?.()?.currentUser;
+    if (!me?.uid) {
+      setOnlineUsers([]);
+      return;
+    }
+    const presenceRef = database().ref('/presence');
+    let cancelled = false;
+    const onPresence = async (snapshot: any) => {
+      if (cancelled) return;
+      const presenceData = snapshot?.val?.() || {};
+      const now = Date.now();
+      const candidates = Object.keys(presenceData || {})
+        .filter(uid => uid !== me.uid)
+        .map(uid => {
+          const row = presenceData[uid] || {};
+          return {
+            uid,
+            online: row.online === true,
+            lastHeartbeat: Number(row.lastHeartbeat || 0),
+            lastSeen: Number(row.lastSeen || 0),
+          };
+        })
+        .filter(
+          row =>
+            row.online &&
+            (row.lastHeartbeat ? now - row.lastHeartbeat < 3 * 60 * 1000 : true),
+        )
+        .sort((a, b) => b.lastHeartbeat - a.lastHeartbeat)
+        .slice(0, 20);
+      if (candidates.length === 0) {
+        setOnlineUsers([]);
+        return;
+      }
+      const users = await Promise.all(
+        candidates.map(async row => {
+          try {
+            const snap = await firestore().collection('users').doc(row.uid).get();
+            const d = snap?.data?.() || {};
+            return {
+              uid: row.uid,
+              name: String(
+                d.displayName || d.name || d.username || d.handle || row.uid,
+              ),
+              photo: d.photoURL || d.avatar || null,
+              lastHeartbeat: row.lastHeartbeat,
+            };
+          } catch {
+            return {
+              uid: row.uid,
+              name: row.uid,
+              photo: null,
+              lastHeartbeat: row.lastHeartbeat,
+            };
+          }
+        }),
+      );
+      if (!cancelled) {
+        setOnlineUsers(users);
+      }
+    };
+    presenceRef.on('value', onPresence);
+    return () => {
+      cancelled = true;
+      try {
+        presenceRef.off('value', onPresence);
+      } catch {}
+    };
+  }, [visible, isLiveStarted]);
+
+  useEffect(() => {
+    if (!isLiveStarted || !liveDocId) {
+      setInviteStatusByUid({});
+      return;
+    }
+    const unsub = firestore()
+      .collection(`live/${liveDocId}/invite_status`)
+      .onSnapshot(
+        snap => {
+          const next: Record<
+            string,
+            { status: string; expiresAtMs?: number; updatedAtMs?: number; name?: string }
+          > = {};
+          (snap?.docs || []).forEach(doc => {
+            const data = doc.data() || {};
+            next[doc.id] = {
+              status: String(data.status || 'pending'),
+              expiresAtMs: Number(data.expiresAtMs || 0) || undefined,
+              updatedAtMs: toMillis(data.updatedAt),
+              name: data.name ? String(data.name) : undefined,
+            };
+          });
+          setInviteStatusByUid(next);
+        },
+        () => {},
+      );
+    return () => {
+      try {
+        unsub && unsub();
+      } catch {}
+    };
   }, [isLiveStarted, liveDocId]);
                     
   useEffect(() => {
@@ -19744,7 +20004,7 @@ const LiveStreamModal = ({
     };
   }, [visible, Agora, appId]);
                     
-  // Join channel when user taps Start Live and a token/channel are set
+  // Join channel when user taps Start Live (tokenless first when enabled)
   useEffect(() => {
     const engine = engineRef.current;
     if (!visible || !Agora || !engine || !isLiveStarted) return;
@@ -19760,7 +20020,9 @@ const LiveStreamModal = ({
           ? Number(liveUid as any)
           : 0;
         const uidCandidates = Array.from(new Set([uidBase, 0]));
-        const tokenCandidates: Array<string | null> = [];
+        const tokenCandidates: Array<string | null> = ALLOW_TOKENLESS_DRIFT
+          ? [null]
+          : [];
         const addToken = (value: any) => {
           const t = String(value || '').trim();
           if (!t) {
@@ -19771,28 +20033,32 @@ const LiveStreamModal = ({
         };
         addToken(liveToken);
         addToken(staticToken);
-        // Fallback: fetch token from backend if not present
-        try {
-          const cfgLocal = (() => {
-            try {
-              return require('./liveConfig');
-            } catch {
-              return null;
+        // Optional fallback: only attempt token endpoint when tokenless mode is off.
+        if (!ALLOW_TOKENLESS_DRIFT) {
+          try {
+            const cfgLocal = (() => {
+              try {
+                return require('./liveConfig');
+              } catch {
+                return null;
+              }
+            })();
+            const tokenEndpoint: string =
+              (cfgLocal && cfgLocal.AGORA_TOKEN_ENDPOINT) || '';
+            if (tokenEndpoint) {
+              const q = `?channel=${encodeURIComponent(
+                chan,
+              )}&role=publisher&uid=${encodeURIComponent(
+                String(uidBase || 0),
+              )}`;
+              const resp = await fetch(`${tokenEndpoint}${q}`);
+              if (resp.ok) {
+                const json = await resp.json();
+                addToken(json?.token);
+              }
             }
-          })();
-          const tokenEndpoint: string =
-            (cfgLocal && cfgLocal.AGORA_TOKEN_ENDPOINT) || '';
-          if (tokenEndpoint) {
-            const q = `?channel=${encodeURIComponent(
-              chan,
-            )}&role=publisher&uid=${encodeURIComponent(String(uidBase || 0))}`;
-            const resp = await fetch(`${tokenEndpoint}${q}`);
-            if (resp.ok) {
-              const json = await resp.json();
-              addToken(json?.token);
-            }
-          }
-        } catch {}
+          } catch {}
+        }
         let joined = false;
         let lastErr: any = null;
         for (const tok of tokenCandidates) {
@@ -19997,22 +20263,22 @@ const LiveStreamModal = ({
           });
           if (resp.ok) {
             const json = await resp.json();
-            if (json && json.token) {
+            if (!ALLOW_TOKENLESS_DRIFT && json && json.token) {
               setLiveToken(String(json.token));
             } else {
-              setLiveToken(initialTok || null);
+              setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
             }
             if (json && (json.liveId || json.id)) {
               setLiveDocId(String(json.liveId || json.id));
             }
           } else {
-            setLiveToken(initialTok || null);
+            setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
           }
         } else {
-          setLiveToken(initialTok || null);
+          setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
         }
       } catch {
-        setLiveToken(initialTok || null);
+        setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
       }
       setChannelInput(chan);
       setLiveChannel(chan);
@@ -20379,7 +20645,10 @@ const LiveStreamModal = ({
     return result?.data?.status === 'sent';
   };
                     
-  const sendInviteTo = async (to: { uid?: string } | string) => {
+  const sendInviteTo = async (
+    to: { uid?: string; name?: string } | string,
+    options?: { silent?: boolean },
+  ) => {
     let toUid = '';
     if (typeof to === 'string') {
       toUid = to.trim().replace(/^@/, '');
@@ -20401,19 +20670,41 @@ const LiveStreamModal = ({
       let inboxInviteWritten = false;
       let callableInviteSent = false;
       let lastErr: any = null;
+      let inviteDocId: string | null = null;
+      const computedExpiry = Date.now() + LIVE_INVITE_TTL_MS;
 
       try {
-        await firestore()
-          .collection(`users/${toUid}/live_invites`)
-          .add({
-            liveId: liveDocId || null,
-            liveTitle: liveTitle || 'Live Session',
-            fromUid: me.uid,
-            fromName: profileName || accountCreationHandle || me.displayName || 'Host',
-            fromPhoto: profilePhoto || me.photoURL || null,
-            status: 'pending',
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          });
+        const liveInvitesRef = firestore().collection(
+          `users/${toUid}/live_invites`,
+        );
+        const existingPending = liveDocId
+          ? await liveInvitesRef
+              .where('status', '==', 'pending')
+              .where('fromUid', '==', me.uid)
+              .where('liveId', '==', liveDocId)
+              .limit(1)
+              .get()
+          : null;
+        const invitePayload = {
+          liveId: liveDocId || null,
+          liveChannel: liveChannel || null,
+          liveTitle: liveTitle || 'Live Session',
+          fromUid: me.uid,
+          fromName:
+            profileName || accountCreationHandle || me.displayName || 'Host',
+          fromPhoto: profilePhoto || me.photoURL || null,
+          status: 'pending',
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          expiresAtMs: computedExpiry,
+        };
+        if (existingPending && !existingPending.empty) {
+          const ref = existingPending.docs[0].ref;
+          inviteDocId = existingPending.docs[0].id;
+          await ref.set(invitePayload, { merge: true });
+        } else {
+          const inviteRef = await liveInvitesRef.add(invitePayload);
+          inviteDocId = inviteRef.id;
+        }
         inboxInviteWritten = true;
       } catch (err) {
         lastErr = err;
@@ -20425,9 +20716,35 @@ const LiveStreamModal = ({
         lastErr = err;
       }
 
+      try {
+        if (liveDocId && inviteDocId) {
+          await firestore()
+            .collection(`live/${liveDocId}/invite_status`)
+            .doc(toUid)
+            .set(
+              {
+                uid: toUid,
+                name:
+                  typeof to === 'string'
+                    ? toUid
+                    : to?.name || toUid,
+                status: 'pending',
+                inviteId: inviteDocId,
+                fromUid: me.uid,
+                liveId: liveDocId,
+                expiresAtMs: computedExpiry,
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+        }
+      } catch {}
+
       if (inboxInviteWritten || callableInviteSent) {
-        Alert.alert('Success', 'Invitation sent!');
-        setShowInviteModal(false);
+        if (!options?.silent) {
+          Alert.alert('Success', 'Invitation sent!');
+          setShowInviteModal(false);
+        }
       } else {
         throw lastErr || new Error('No invite channel succeeded');
       }
@@ -20439,32 +20756,23 @@ const LiveStreamModal = ({
     }
   };
 
-  const respondToLiveInvite = async (action: 'join' | 'ignore') => {
-    if (!incomingLiveInvite) return;
-    try {
-      const me = auth?.()?.currentUser;
-      if (me?.uid) {
-        await firestore()
-          .collection(`users/${me.uid}/live_invites`)
-          .doc(incomingLiveInvite.id)
-          .set(
-            {
-              status: action === 'join' ? 'accepted' : 'ignored',
-              respondedAt: firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-      }
-    } catch {}
-    if (action === 'join') {
-      requestToDriftForLiveId(
-        incomingLiveInvite.liveId,
-        incomingLiveInvite.fromName,
-      );
+  const getInviteStatusLabel = (uid: string) => {
+    const status = inviteStatusByUid[uid]?.status || '';
+    if (!status) return null;
+    switch (status) {
+      case 'pending':
+        return 'Invited';
+      case 'accepted':
+        return 'Accepted';
+      case 'ignored':
+        return 'Ignored';
+      case 'missed':
+        return 'Missed';
+      default:
+        return status;
     }
-    setIncomingLiveInvite(null);
   };
-                    
+
   const showLiveAnalytics = () => {
     const analytics = {
       viewers: 150,
@@ -21194,17 +21502,25 @@ const LiveStreamModal = ({
       case 'inviteToDrift':
         (async () => {
           try {
-            const invited = await inviteUserToDrift(userId);
-            if (invited) {
-              Alert.alert(
-                'Drift Invite',
-                `${username ? `@${username}` : 'User'} has been invited to drift`,
-              );
-            } else {
+            await sendInviteTo({ uid: userId, name: username }, { silent: true });
+            Alert.alert(
+              'Drift Invite',
+              `${username ? `@${username}` : 'User'} has been invited to drift`,
+            );
+          } catch {
+            try {
+              const invited = await inviteUserToDrift(userId);
+              if (invited) {
+                Alert.alert(
+                  'Drift Invite',
+                  `${username ? `@${username}` : 'User'} has been invited to drift`,
+                );
+              } else {
+                Alert.alert('Error', 'Failed to invite to drift');
+              }
+            } catch {
               Alert.alert('Error', 'Failed to invite to drift');
             }
-          } catch {
-            Alert.alert('Error', 'Failed to invite to drift');
           }
         })();
         return;
@@ -21873,6 +22189,125 @@ const LiveStreamModal = ({
             ))}
           </View>
         )}
+        {isLiveStarted && showOnlineInvitePanel && (
+          <View
+            style={{
+              position: 'absolute',
+              top: insets.top + (pendingRequests.length > 0 ? 210 : 90),
+              left: 12,
+              width: 220,
+              backgroundColor: 'rgba(0,0,0,0.78)',
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.5)',
+              padding: 8,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 6,
+              }}
+            >
+              <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
+                Online Now ({onlineUsers.length})
+              </Text>
+              <Pressable onPress={() => setShowOnlineInvitePanel(false)}>
+                <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Hide</Text>
+              </Pressable>
+            </View>
+            {onlineUsers.length === 0 ? (
+              <Text style={{ color: 'rgba(255,255,255,0.7)' }}>
+                No online users right now
+              </Text>
+            ) : (
+              onlineUsers.slice(0, 6).map(u => {
+                const status = getInviteStatusLabel(u.uid);
+                return (
+                  <View
+                    key={u.uid}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      paddingVertical: 5,
+                      borderBottomWidth: StyleSheet.hairlineWidth,
+                      borderBottomColor: 'rgba(255,255,255,0.15)',
+                    }}
+                  >
+                    <View
+                      style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}
+                    >
+                      {u.photo ? (
+                        <Image
+                          source={{ uri: u.photo }}
+                          style={{ width: 22, height: 22, borderRadius: 11 }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: 11,
+                            backgroundColor: 'rgba(255,255,255,0.18)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 10 }}>
+                            {u.name.charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ marginLeft: 6, flex: 1 }}>
+                        <Text
+                          numberOfLines={1}
+                          style={{ color: 'white', fontWeight: '700', fontSize: 12 }}
+                        >
+                          {u.name}
+                        </Text>
+                        {status ? (
+                          <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 10 }}>
+                            {status}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                    <Pressable
+                      disabled={inviteBusy || status === 'Accepted'}
+                      style={[
+                        styles.primaryBtn,
+                        {
+                          marginTop: 0,
+                          paddingVertical: 4,
+                          paddingHorizontal: 8,
+                          backgroundColor:
+                            status === 'Invited'
+                              ? '#1E7A4A'
+                              : status === 'Accepted'
+                              ? '#6C7A89'
+                              : '#00C2FF',
+                        },
+                      ]}
+                      onPress={() =>
+                        sendInviteTo(
+                          { uid: u.uid, name: u.name },
+                          { silent: true },
+                        )
+                      }
+                    >
+                      <Text style={[styles.primaryBtnText, { fontSize: 11 }]}>
+                        {status === 'Invited' ? 'Resend' : status === 'Accepted' ? 'Done' : 'Invite'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                );
+              })
+            )}
+          </View>
+        )}
         {isLiveStarted && showUserPanel && (
           <UserManagementPanel
             viewers={viewers}
@@ -21913,7 +22348,15 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightIcon}>👥</Text>
               <Text style={editorStyles.liveRightLabel}>Invite</Text>
             </Pressable>
-// ...existing code...
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={() => setShowOnlineInvitePanel(v => !v)}
+            >
+              <Text style={editorStyles.liveRightIcon}>🟢</Text>
+              <Text style={editorStyles.liveRightLabel}>
+                {showOnlineInvitePanel ? 'Online On' : 'Online'}
+              </Text>
+            </Pressable>
             {/* Screen Share */}
             <Pressable
               style={editorStyles.liveRightButton}
