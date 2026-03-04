@@ -35,17 +35,16 @@ class MainApplication : Application(), ReactApplication {
 
   private fun createNotificationChannel() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val channelId = "aqualink_notifications"
-      val channelName = "Aqualink Notifications"
-      val channelDescription = "Notifications for Aqualink app"
-      val importance = NotificationManager.IMPORTANCE_HIGH
+      val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
-      val channel = NotificationChannel(channelId, channelName, importance).apply {
-        description = channelDescription
+      val general = NotificationChannel(
+        "aqualink_notifications",
+        "Aqualink Notifications",
+        NotificationManager.IMPORTANCE_HIGH
+      ).apply {
+        description = "General notifications for Aqualink"
         enableVibration(true)
         vibrationPattern = longArrayOf(0, 250, 250, 250)
-
-        // Set custom sound
         val soundUri = Uri.parse("android.resource://" + packageName + "/" + R.raw.notification)
         val audioAttributes = AudioAttributes.Builder()
           .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -54,8 +53,25 @@ class MainApplication : Application(), ReactApplication {
         setSound(soundUri, audioAttributes)
       }
 
-      val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      notificationManager.createNotificationChannel(channel)
+      val calls = NotificationChannel(
+        "aqualink_calls",
+        "Aqualink Calls",
+        NotificationManager.IMPORTANCE_HIGH
+      ).apply {
+        description = "Incoming call alerts"
+        lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+        enableVibration(true)
+        vibrationPattern = longArrayOf(0, 500, 300, 500, 300, 500)
+        val soundUri = Uri.parse("android.resource://" + packageName + "/" + R.raw.lg_cat_ring_freetone_org)
+        val audioAttributes = AudioAttributes.Builder()
+          .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+          .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+          .build()
+        setSound(soundUri, audioAttributes)
+      }
+
+      notificationManager.createNotificationChannel(general)
+      notificationManager.createNotificationChannel(calls)
     }
   }
 }

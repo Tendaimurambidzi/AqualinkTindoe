@@ -57,27 +57,55 @@ async function addPing(userId, data) {
     if (tokens.length === 0) return;
     
     const newBadgeCount = currentUnreadCount + 1;
-    
+    const type = String(data.type || 'ping');
+    const isCallInvite = type === 'call_invite' || type === 'incoming_call';
+    const channelId = isCallInvite ? 'aqualink_calls' : 'aqualink_notifications';
+
     const message = {
       notification: {
-        title: data.type === 'splash' ? 'New Splash! 🌊' : data.type === 'echo' ? 'New Echo 📣' : 'Notification',
+        title: isCallInvite
+          ? 'Incoming call'
+          : data.type === 'splash'
+          ? 'New Splash!'
+          : data.type === 'echo'
+          ? 'New Echo'
+          : data.type === 'hug'
+          ? 'New Hug!'
+          : 'Notification',
         body: data.text || 'You have a new notification',
       },
       data: {
-        type: data.type || 'ping',
+        type,
         waveId: data.waveId || '',
         fromUid: data.fromUid || '',
+        fromName: data.fromName || data.actorName || '',
+        actorName: data.actorName || data.fromName || '',
+        text: data.text || '',
+        route: data.route || '',
+        callId: data.callId || '',
+        callType: data.callType || '',
+        channelName: data.channelName || '',
+        fullScreenCall: isCallInvite ? '1' : '0',
       },
       android: {
+        priority: 'high',
+        ttl: isCallInvite ? 30000 : 3600000,
         notification: {
-          channel_id: 'aqualink_notifications',
-          badge: newBadgeCount,
+          channelId: channelId,
+          notificationCount: newBadgeCount,
+          sound: isCallInvite ? 'lg_cat_ring_freetone_org' : 'default',
+          defaultVibrateTimings: true,
+          defaultSound: !isCallInvite,
+          notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
+          visibility: 'PUBLIC',
+          tag: isCallInvite ? `call_${String(data.callId || '')}` : undefined,
         },
       },
       apns: {
         payload: {
           aps: {
-            badge: newBadgeCount,
+            sound: 'default',
+            contentAvailable: true,
           },
         },
       },
@@ -398,7 +426,12 @@ exports.onMentionCreate = onDocumentCreated('users/{targetUid}/mentions/{id}', a
     type: m.type || 'message',
     text: m.text || 'New message',
     actorName: m.fromName || null,
+    fromName: m.fromName || null,
     fromUid: m.fromUid || null,
+    route: m.route || null,
+    callId: m.callId || null,
+    callType: m.callType || null,
+    channelName: m.channelName || null,
   });
 });
 
@@ -486,15 +519,56 @@ async function addPingModular(userId, data) {
     
     if (tokens.length === 0) return;
     
+    const type = String(data.type || 'ping');
+    const isCallInvite = type === 'call_invite' || type === 'incoming_call';
+    const channelId = isCallInvite ? 'aqualink_calls' : 'aqualink_notifications';
+
     const message = {
       notification: {
-        title: data.type === 'splash' ? 'New Splash! 🌊' : data.type === 'echo' ? 'New Echo 📣' : data.type === 'hug' ? 'New Hug! 🫂' : 'Notification',
+        title: isCallInvite
+          ? 'Incoming call'
+          : data.type === 'splash'
+          ? 'New Splash!'
+          : data.type === 'echo'
+          ? 'New Echo'
+          : data.type === 'hug'
+          ? 'New Hug!'
+          : 'Notification',
         body: data.text || 'You have a new notification',
       },
       data: {
-        type: data.type || 'ping',
+        type,
         waveId: data.waveId || '',
         fromUid: data.fromUid || '',
+        fromName: data.fromName || data.actorName || '',
+        actorName: data.actorName || data.fromName || '',
+        text: data.text || '',
+        route: data.route || '',
+        callId: data.callId || '',
+        callType: data.callType || '',
+        channelName: data.channelName || '',
+        fullScreenCall: isCallInvite ? '1' : '0',
+      },
+      android: {
+        priority: 'high',
+        ttl: isCallInvite ? 30000 : 3600000,
+        notification: {
+          channelId: channelId,
+          sound: isCallInvite ? 'lg_cat_ring_freetone_org' : 'default',
+          defaultVibrateTimings: true,
+          defaultSound: !isCallInvite,
+          notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
+          visibility: 'PUBLIC',
+          tag: isCallInvite ? `call_${String(data.callId || '')}` : undefined,
+        },
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default',
+            contentAvailable: true,
+          },
+        },
       },
       tokens: tokens,
     };

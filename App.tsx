@@ -53,7 +53,7 @@ import ImageCropPicker from 'react-native-image-crop-picker';
 const { AudioPicker } = NativeModules;
 import BridgeDataSaverPanel from './src/dataSaver/BridgeDataSaverPanel';
 import CrabWalkBadge from './src/components/CrabWalkBadge';
-import { DataSaverProvider } from './src/dataSaver/DataSaverProvider';
+import { DataSaverProvider, useDataSaver } from './src/dataSaver/DataSaverProvider';
 import OceanAmbienceToggle from './src/components/OceanAmbienceToggle';
 import InteractiveWavePhysics from './InteractiveWavePhysics';
 import PosterActionBar from './src/components/PosterActionBar';
@@ -246,6 +246,19 @@ type DirectCallSession = {
   endedAt?: any;
   endedBy?: string | null;
   agoraToken?: string | null;
+  calleeNotifiedAt?: any;
+};
+
+type CallHistoryEntry = {
+  id: string;
+  callId: string;
+  peerUid: string;
+  peerName: string;
+  direction: 'incoming' | 'outgoing';
+  callType: DirectCallMode;
+  status: DirectCallStatus;
+  createdAt?: any;
+  updatedAt?: any;
 };
 
 type CallBottomSlot =
@@ -470,11 +483,16 @@ type LiveInviteNotice = {
   fromPhoto?: string | null;
   liveTitle?: string | null;
   liveChannel?: string | null;
+  directCallId?: string | null;
+  callType?: DirectCallMode | null;
   expiresAtMs?: number | null;
 };
 
 const LIVE_INVITE_TTL_MS = 15000;
+const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const ALLOW_TOKENLESS_DRIFT = true;
+const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
+const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
                     
 const toJSDate = (ts: any) => {
   try {
@@ -1651,6 +1669,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  callInviteActionBtnPressed: {
+    opacity: 0.72,
+    transform: [{ scale: 0.97 }],
+  },
   callInviteDeclineBtn: {
     borderColor: '#E12D39',
     backgroundColor: 'rgba(225,45,57,0.24)',
@@ -2288,11 +2310,17 @@ function AuthBackground() {
 type InnerAppProps = { allowPlayback?: boolean };
 const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const navigation = useNavigation();
+  const dataSaver = useDataSaver();
   // Get current user for ocean features
   const [user, setUser] = useState<any>(null);
   const [isCurrentUserOnline, setIsCurrentUserOnline] = useState<boolean>(false);
   const [authCompleted, setAuthCompleted] = useState<boolean>(false);
   const myUid = user?.uid || null;
+  const [hereNowFeedAlert, setHereNowFeedAlert] = useState<{
+    uid: string;
+    name: string;
+    photo: string | null;
+  } | null>(null);
   
   // Debug logging for myUid changes
   useEffect(() => {
@@ -2691,6 +2719,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setIsCurrentUserOnline(false);
           const updateLastSeen = async () => {
             try {
+              await database()
+                .ref(`/presence/${user?.uid}`)
+                .update({
+                  online: false,
+                  lastSeen: database.ServerValue.TIMESTAMP,
+                  lastActiveAt: database.ServerValue.TIMESTAMP,
+                  lastHeartbeat: database.ServerValue.TIMESTAMP,
+                });
+            } catch (error) {
+              console.warn('Failed to update RTDB presence on background:', error);
+            }
+            try {
               let firestoreMod: any = null;
               try {
                 firestoreMod = require('@react-native-firebase/firestore').default;
@@ -2715,6 +2755,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         } else if (nextAppState === 'active') {
           setIsCurrentUserOnline(true);
           const setOnline = async () => {
+            try {
+              await database()
+                .ref(`/presence/${user?.uid}`)
+                .update({
+                  online: true,
+                  lastSeen: null,
+                  lastActiveAt: database.ServerValue.TIMESTAMP,
+                  lastHeartbeat: database.ServerValue.TIMESTAMP,
+                });
+            } catch (error) {
+              console.warn('Failed to set RTDB online on active:', error);
+            }
             try {
               let firestoreMod: any = null;
               try {
@@ -2766,8 +2818,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const soundPlayerRef = useRef<any>(null);
   const callRingbackRef = useRef<Sound | null>(null);
   const callRingbackActiveRef = useRef<boolean>(false);
+  const incomingCallRingtoneRef = useRef<Sound | null>(null);
+  const incomingCallRingtoneActiveRef = useRef<boolean>(false);
   const replyInputRef = useRef<TextInput>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
+  const [forceOutgoingRingback, setForceOutgoingRingback] = useState(false);
   // Video controls and loading state
   const [videoControlsVisible, setVideoControlsVisible] = useState<{[key: string]: boolean}>({});
   const [videoLoading, setVideoLoading] = useState<{[key: string]: boolean}>({});
@@ -2818,15 +2873,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (callRingbackActiveRef.current) return;
     callRingbackActiveRef.current = true;
     if (callRingbackRef.current) return;
-    const candidates = ['downfall_3_208028', 'notification', 'falcon'];
+    const candidates: Array<string | number> = [
+      'call_progress',
+      'call_progress.mp3',
+      CALL_PROGRESS_ASSET,
+      'Call progress',
+      'Call progress.mp3',
+      'downfall_3_208028',
+      'notification',
+      'falcon',
+    ];
     const tryLoad = (idx: number) => {
       if (idx >= candidates.length) {
         callRingbackActiveRef.current = false;
         return;
       }
       let tone: Sound | null = null;
+      const candidate = candidates[idx];
       try {
-        tone = new Sound(candidates[idx], Sound.MAIN_BUNDLE, error => {
+        const onLoaded = (error: any) => {
           if (error || !tone) {
             try {
               tone?.release();
@@ -2846,7 +2911,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               stopCallRingback();
             }
           });
-        });
+        };
+        tone =
+          typeof candidate === 'number'
+            ? new Sound(candidate, onLoaded)
+            : new Sound(candidate, Sound.MAIN_BUNDLE, onLoaded);
       } catch {
         try {
           tone?.release();
@@ -2857,8 +2926,83 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     tryLoad(0);
   }, [stopCallRingback]);
 
+  const stopIncomingCallRingtone = useCallback(() => {
+    incomingCallRingtoneActiveRef.current = false;
+    const tone = incomingCallRingtoneRef.current;
+    if (!tone) return;
+    incomingCallRingtoneRef.current = null;
+    try {
+      tone.stop(() => {
+        try {
+          tone.release();
+        } catch {}
+      });
+    } catch {
+      try {
+        tone.release();
+      } catch {}
+    }
+  }, []);
+
+  const startIncomingCallRingtone = useCallback(() => {
+    if (incomingCallRingtoneActiveRef.current) return;
+    incomingCallRingtoneActiveRef.current = true;
+    if (incomingCallRingtoneRef.current) return;
+    const candidates: Array<string | number> = [
+      CALLEE_RING_ASSET,
+      'lg_cat_ring_freetone_org',
+      'lg_cat_ring_freetone_org.mp3',
+      'Lg_Cat_Ring_freetone.org',
+      'Lg_Cat_Ring_freetone.org.mp3',
+      'notification',
+      'falcon',
+    ];
+    const tryLoad = (idx: number) => {
+      if (idx >= candidates.length) {
+        incomingCallRingtoneActiveRef.current = false;
+        return;
+      }
+      let tone: Sound | null = null;
+      const candidate = candidates[idx];
+      try {
+        const onLoaded = (error: any) => {
+          if (error || !tone) {
+            try {
+              tone?.release();
+            } catch {}
+            tryLoad(idx + 1);
+            return;
+          }
+          incomingCallRingtoneRef.current = tone;
+          try {
+            tone.setNumberOfLoops(-1);
+          } catch {}
+          try {
+            tone.setVolume(1.0);
+          } catch {}
+          tone.play(success => {
+            if (!success) {
+              stopIncomingCallRingtone();
+            }
+          });
+        };
+        tone =
+          typeof candidate === 'number'
+            ? new Sound(candidate, onLoaded)
+            : new Sound(candidate, Sound.MAIN_BUNDLE, onLoaded);
+      } catch {
+        try {
+          tone?.release();
+        } catch {}
+        tryLoad(idx + 1);
+      }
+    };
+    tryLoad(0);
+  }, [stopIncomingCallRingtone]);
+
   useEffect(() => {
     const isOutgoingRinging =
+      forceOutgoingRingback ||
       !!outgoingDirectCall &&
       !activeDirectCall &&
       outgoingDirectCall.status === 'ringing';
@@ -2869,10 +3013,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [
     activeDirectCall,
+    forceOutgoingRingback,
     outgoingDirectCall,
     startCallRingback,
     stopCallRingback,
   ]);
+
+  useEffect(() => {
+    const isIncomingRinging =
+      !!incomingDirectCall &&
+      !activeDirectCall &&
+      incomingDirectCall.status === 'ringing';
+    if (isIncomingRinging) {
+      startIncomingCallRingtone();
+    } else {
+      stopIncomingCallRingtone();
+    }
+  }, [
+    activeDirectCall,
+    incomingDirectCall,
+    startIncomingCallRingtone,
+    stopIncomingCallRingtone,
+  ]);
+
+  useEffect(() => {
+    if (!incomingDirectCall) {
+      setIncomingCallAction(null);
+    }
+  }, [incomingDirectCall]);
 
   useEffect(() => {
     return () => {
@@ -3527,7 +3695,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     id: string;
     type: string;
     message: string;
-    fromUserHandle: string;
+    fromUserHandle?: string;
+    fromUid?: string;
+    fromName?: string;
+    waveId?: string;
+    callId?: string;
+    callType?: DirectCallMode;
     read: boolean;
     createdAt: any;
   }>>([]);
@@ -3561,7 +3734,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isThreadSelectionMode, setIsThreadSelectionMode] = useState(false);
   
   const [showInbox, setShowInbox] = useState(false);
-  const [inboxFilter, setInboxFilter] = useState<'all' | 'messages' | 'activity'>('all');
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'messages' | 'activity' | 'calls'>('all');
   const [inboxSearchQuery, setInboxSearchQuery] = useState('');
   const [selectedThread, setSelectedThread] = useState<{
     senderUid: string;
@@ -3578,6 +3751,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [activeDirectCallRole, setActiveDirectCallRole] = useState<
     'caller' | 'callee' | null
   >(null);
+  const [incomingCallAction, setIncomingCallAction] = useState<
+    'accept' | 'decline' | null
+  >(null);
+  const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([]);
   const callDocUnsubRef = useRef<null | (() => void)>(null);
   const callTimeoutRef = useRef<any>(null);
                     
@@ -5377,7 +5554,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
                     
   useEffect(() => {
-    if (!vibeAlert) {
+    if (!vibeAlert && !hereNowFeedAlert) {
       flickerAnim.setValue(0);
       return;
     }
@@ -5397,7 +5574,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
     anim.start();
     return () => anim.stop();
-  }, [vibeAlert, flickerAnim]);
+  }, [vibeAlert, hereNowFeedAlert, flickerAnim]);
                     
   const watchersKey = useMemo(
     () => driftWatchers.slice().sort().join(','),
@@ -5434,6 +5611,56 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
     return () => unsubscribe && unsubscribe();
   }, [watchersKey, driftWatchers, showVibeAlert]);
+
+  useEffect(() => {
+    if (!watchersKey || !myUid) {
+      setHereNowFeedAlert(null);
+      return;
+    }
+    const watchersSet = new Set(driftWatchers);
+    let timer: any = null;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const now = Date.now();
+        const snap = await firestore()
+          .collection('users')
+          .orderBy('lastActiveAt', 'desc')
+          .limit(120)
+          .get();
+        if (cancelled) return;
+        const first = (snap?.docs || [])
+          .map(doc => {
+            const d = doc.data() || {};
+            const lastSeenMs = toMillis(d.lastSeen);
+            const lastActiveMs = toMillis(d.lastActiveAt);
+            const lastMs = Math.max(lastSeenMs, lastActiveMs, 0);
+            return {
+              uid: doc.id,
+              name: String(d.displayName || d.name || d.username || doc.id),
+              photo: (d.photoURL || d.avatar || null) as string | null,
+              lastMs,
+            };
+          })
+          .filter(row => row.uid !== myUid && watchersSet.has(row.uid))
+          .filter(row => row.lastMs > 0 && now - row.lastMs <= PRESENCE_OFFLINE_GRACE_MS)
+          .sort((a, b) => b.lastMs - a.lastMs)[0];
+        setHereNowFeedAlert(
+          first
+            ? { uid: first.uid, name: first.name, photo: first.photo }
+            : null,
+        );
+      } catch {
+        if (!cancelled) setHereNowFeedAlert(null);
+      }
+    };
+    refresh();
+    timer = setInterval(refresh, 15000);
+    return () => {
+      cancelled = true;
+      if (timer) clearInterval(timer);
+    };
+  }, [watchersKey, driftWatchers, myUid]);
 
   // Direct live invites pushed to the invited user's inbox.
   useEffect(() => {
@@ -5502,6 +5729,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
             liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            directCallId: data.directCallId ? String(data.directCallId) : null,
+            callType: data.callType === 'audio' ? 'audio' : 'video',
             expiresAtMs,
           });
           setIncomingLiveInviteCountdown(
@@ -5547,6 +5776,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
   }, [incomingLiveInvite?.id, incomingLiveInvite?.expiresAtMs]);
+
+  useEffect(() => {
+    if (!incomingLiveInvite || !bridge.liveJoinPreview) return;
+    if (!incomingLiveInviteCountdown || incomingLiveInviteCountdown <= 2) return;
+    const t = setTimeout(() => {
+      respondToLiveInvite('join');
+    }, 1300);
+    return () => clearTimeout(t);
+  }, [
+    bridge.liveJoinPreview,
+    incomingLiveInvite?.id,
+    incomingLiveInviteCountdown,
+  ]);
   // Request to drift with a live host (viewer-side action)
   const requestToDriftForLiveId = useCallback(
     async (liveId: string, hostName?: string) => {
@@ -5600,6 +5842,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           : action === 'ignore'
           ? 'ignored'
           : 'missed';
+      let joinedViaLinkedCall = false;
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
@@ -5627,9 +5870,112 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 { merge: true },
               );
           }
+
+          if (action === 'join') {
+            const linkedCallId = String(
+              incomingLiveInvite.directCallId || '',
+            ).trim();
+            if (linkedCallId) {
+              try {
+                const myCallRef = firestore()
+                  .collection(`users/${me.uid}/direct_calls`)
+                  .doc(linkedCallId);
+                const callSnap = await myCallRef.get();
+                const callData = callSnap?.data?.() || {};
+                const callerUid = String(callData?.callerUid || '').trim();
+                const channelName = String(callData?.channelName || '').trim();
+                const callStatusRaw = String(
+                  callData?.status || 'ringing',
+                ).toLowerCase();
+                const callType: DirectCallMode =
+                  callData?.callType === 'audio' ? 'audio' : 'video';
+                if (callSnap?.exists && callerUid && channelName) {
+                  const tokenFromDoc = String(callData?.agoraToken || '').trim();
+                  let freshToken: string | null = tokenFromDoc || null;
+                  if (!freshToken) {
+                    try {
+                      const cfgLocal = (() => {
+                        try {
+                          return require('./liveConfig');
+                        } catch {
+                          return null;
+                        }
+                      })();
+                      const tokenEndpoint = String(
+                        cfgLocal?.AGORA_TOKEN_ENDPOINT || '',
+                      ).trim();
+                      if (tokenEndpoint) {
+                        const q = `?channel=${encodeURIComponent(
+                          channelName,
+                        )}&role=publisher&uid=0&expire=3600`;
+                        const timeout = new Promise<never>((_, reject) => {
+                          setTimeout(
+                            () => reject(new Error('token-timeout')),
+                            3500,
+                          );
+                        });
+                        const resp: any = await Promise.race([
+                          fetch(`${tokenEndpoint}${q}`),
+                          timeout,
+                        ]);
+                        if (resp?.ok) {
+                          const json = await resp.json();
+                          const token = String(json?.token || '').trim();
+                          freshToken = token || null;
+                        }
+                      }
+                    } catch {}
+                  }
+
+                  if (callStatusRaw === 'ringing') {
+                    const peerCallRef = firestore()
+                      .collection(`users/${callerUid}/direct_calls`)
+                      .doc(linkedCallId);
+                    const patch = {
+                      status: 'accepted',
+                      acceptedAt: firestore.FieldValue.serverTimestamp(),
+                      agoraToken: freshToken || null,
+                    };
+                    const acceptBatch = firestore().batch();
+                    acceptBatch.set(myCallRef, patch, { merge: true });
+                    acceptBatch.set(peerCallRef, patch, { merge: true });
+                    await acceptBatch.commit();
+                  }
+
+                  if (
+                    callStatusRaw === 'ringing' ||
+                    callStatusRaw === 'accepted'
+                  ) {
+                    const joinedCall: DirectCallSession = {
+                      id: linkedCallId,
+                      callerUid,
+                      calleeUid: String(callData?.calleeUid || me.uid),
+                      callerName: callData?.callerName || incomingLiveInvite.fromName,
+                      calleeName: callData?.calleeName || null,
+                      callerAvatar: callData?.callerAvatar || null,
+                      calleeAvatar: callData?.calleeAvatar || null,
+                      channelName,
+                      callType,
+                      status: 'accepted',
+                      createdAt: callData?.createdAt,
+                      acceptedAt: callData?.acceptedAt || null,
+                      endedAt: callData?.endedAt || null,
+                      endedBy: callData?.endedBy || null,
+                      agoraToken: freshToken || null,
+                    };
+                    setIncomingDirectCall(null);
+                    setOutgoingDirectCall(null);
+                    setActiveDirectCall(joinedCall);
+                    setActiveDirectCallRole('callee');
+                    joinedViaLinkedCall = true;
+                  }
+                }
+              } catch {}
+            }
+          }
         }
       } catch {}
-      if (action === 'join') {
+      if (action === 'join' && !joinedViaLinkedCall) {
         requestToDriftForLiveId(
           incomingLiveInvite.liveId,
           incomingLiveInvite.fromName,
@@ -6390,7 +6736,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     showTopBar();
     setShowInbox(true);
   }, [showTopBar]);
-                    
+
   const handleVibeHunt = useCallback(() => {
     showTopBar();
     setShowDeepSearch(true);
@@ -7370,6 +7716,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         firestoreMod = require('@react-native-firebase/firestore').default;
       } catch {}
       if (!messagingMod) return;
+
+      try {
+        await messagingMod().registerDeviceForRemoteMessages();
+      } catch {}
+      try {
+        await messagingMod().setAutoInitEnabled?.(true);
+      } catch {}
                     
       // Android 13+ explicit notification permission
       if (Platform.OS === 'android' && Platform.Version >= 33) {
@@ -9581,7 +9934,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setNotifications(notificationsData);
       
       // Separate system notifications from individual messages
-      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'left_crew', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE', 'call_missed', 'call_invite', 'call_declined'];
       const systemNotifications = notificationsData.filter(n => systemNotificationTypes.includes(n.type));
       const individualMessageNotifications = notificationsData.filter(n => !systemNotificationTypes.includes(n.type));
       
@@ -9611,7 +9964,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       
       // Recalculate total unread alerts
-      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'left_crew', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE', 'call_missed', 'call_invite', 'call_declined'];
       const systemNotifications = notifications.filter(n => systemNotificationTypes.includes(n.type));
       const individualMessageNotifications = notifications.filter(n => !systemNotificationTypes.includes(n.type));
       
@@ -9654,7 +10007,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       
       // Recalculate total unread alerts (only messages remain)
-      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'left_crew', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE', 'call_missed', 'call_invite', 'call_declined'];
       const individualMessageNotifications = notifications.filter(n => !systemNotificationTypes.includes(n.type));
       const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0) + 
                            individualMessageNotifications.filter(n => !n.read).length;
@@ -9723,7 +10076,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setMessageThreads(threads);
 
       // Calculate total unread alerts (messages + system notifications)
-      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'left_crew', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE', 'call_missed', 'call_invite', 'call_declined'];
       const systemNotifications = notifications.filter(n => systemNotificationTypes.includes(n.type));
       const unreadSystemNotifications = systemNotifications.filter(n => !n.read).length;
       const unreadMessages = threads.reduce((sum, thread) => sum + thread.unreadCount, 0);
@@ -9753,7 +10106,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
       
       // Recalculate total unread alerts
-      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+      const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'left_crew', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE', 'call_missed', 'call_invite', 'call_declined'];
       const remainingSystemNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && systemNotificationTypes.includes(n.type));
       const remainingIndividualMessageNotifications = notifications.filter(n => !selectedNotifications.has(n.id) && !systemNotificationTypes.includes(n.type));
       
@@ -11298,8 +11651,65 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       endedAt: data?.endedAt,
       endedBy: data?.endedBy || null,
       agoraToken: data?.agoraToken || null,
+      calleeNotifiedAt: data?.calleeNotifiedAt,
     };
   }, []);
+
+  const upsertCallHistory = useCallback(
+    async (
+      call: {
+        id: string;
+        callerUid: string;
+        calleeUid: string;
+        callerName?: string | null;
+        calleeName?: string | null;
+        callType: DirectCallMode;
+      },
+      status: DirectCallStatus,
+    ) => {
+      const callId = String(call?.id || '').trim();
+      if (!callId) return;
+      const callerUid = String(call?.callerUid || '').trim();
+      const calleeUid = String(call?.calleeUid || '').trim();
+      if (!callerUid || !calleeUid) return;
+      try {
+        const batch = firestore().batch();
+        const now = firestore.FieldValue.serverTimestamp();
+        batch.set(
+          firestore().collection(`users/${callerUid}/call_history`).doc(callId),
+          {
+            callId,
+            peerUid: calleeUid,
+            peerName: String(call?.calleeName || 'User'),
+            direction: 'outgoing',
+            callType: call.callType,
+            status,
+            createdAt: now,
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+        batch.set(
+          firestore().collection(`users/${calleeUid}/call_history`).doc(callId),
+          {
+            callId,
+            peerUid: callerUid,
+            peerName: String(call?.callerName || 'User'),
+            direction: 'incoming',
+            callType: call.callType,
+            status,
+            createdAt: now,
+            updatedAt: now,
+          },
+          { merge: true },
+        );
+        await batch.commit();
+      } catch (err) {
+        console.warn('Failed to upsert call history', err);
+      }
+    },
+    [],
+  );
 
   const watchDirectCallDoc = useCallback(
     (callId: string, role: 'caller' | 'callee') => {
@@ -11319,6 +11729,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   clearTimeout(callTimeoutRef.current);
                   callTimeoutRef.current = null;
                 }
+                setForceOutgoingRingback(false);
+                stopCallRingback();
                 setActiveDirectCall(call);
                 setActiveDirectCallRole(role);
                 setIncomingDirectCall(prev =>
@@ -11331,6 +11743,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               }
               if (call.status === 'ringing') {
                 if (role === 'caller') {
+                  setForceOutgoingRingback(false);
                   setOutgoingDirectCall(call);
                 }
                 return;
@@ -11345,6 +11758,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 clearTimeout(callTimeoutRef.current);
                 callTimeoutRef.current = null;
               }
+              setForceOutgoingRingback(false);
+              stopCallRingback();
               setIncomingDirectCall(prev =>
                 prev && prev.id === call.id ? null : prev,
               );
@@ -11371,7 +11786,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.warn('Could not subscribe to direct call', err);
       }
     },
-    [clearCallDocSubscription, mapDirectCallDoc, myUid],
+    [clearCallDocSubscription, mapDirectCallDoc, myUid, stopCallRingback],
   );
 
   const fetchDirectCallAgoraToken = useCallback(
@@ -11452,6 +11867,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         'User';
 
       try {
+        setForceOutgoingRingback(true);
+        startCallRingback();
         const callRef = firestore().collection(`users/${myUid}/direct_calls`).doc();
         const channelName = `aqua_call_${callRef.id}`.replace(/[^A-Za-z0-9_]/g, '_');
         const freshToken = await fetchDirectCallAgoraToken(channelName);
@@ -11481,10 +11898,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ...(payload as any),
           id: callRef.id,
         };
+        upsertCallHistory(newCall, 'ringing');
+        setForceOutgoingRingback(false);
         setOutgoingDirectCall(newCall);
         setActiveDirectCall(null);
         setActiveDirectCallRole(null);
         watchDirectCallDoc(callRef.id, 'caller');
+
+        try {
+          const addPingFn = functions().httpsCallable('addPing');
+          await addPingFn({
+            recipientUid: calleeUid,
+            type: 'call_invite',
+            text: `${callerName} is calling you (${mode})`,
+            fromUid: myUid,
+            fromName: callerName,
+            callId: callRef.id,
+            callType: mode,
+            route: 'Pings',
+            channelName,
+          });
+        } catch {}
 
         try {
           await firestore()
@@ -11497,6 +11931,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               route: 'Pings',
               callId: callRef.id,
               callType: mode,
+              channelName,
               createdAt: firestore.FieldValue.serverTimestamp(),
             });
           await firestore()
@@ -11533,6 +11968,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               timeoutBatch.set(callRef, patch, { merge: true });
               timeoutBatch.set(calleeCallRef, patch, { merge: true });
               await timeoutBatch.commit();
+              upsertCallHistory(
+                {
+                  id: callRef.id,
+                  callerUid: myUid,
+                  calleeUid,
+                  callerName,
+                  calleeName,
+                  callType: mode,
+                },
+                'missed',
+              );
               try {
                 await firestore()
                   .collection(`users/${calleeUid}/mentions`)
@@ -11565,6 +12011,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           } catch {}
         }, 35000);
       } catch (err: any) {
+        setForceOutgoingRingback(false);
+        stopCallRingback();
         console.warn('Failed to start direct call', err);
         Alert.alert(
           'Call failed',
@@ -11582,6 +12030,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       profileName,
       selectedThread,
       fetchDirectCallAgoraToken,
+      startCallRingback,
+      stopCallRingback,
+      upsertCallHistory,
       watchDirectCallDoc,
     ],
   );
@@ -11589,9 +12040,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const acceptIncomingDirectCall = useCallback(async () => {
     const call = incomingDirectCall;
     if (!call?.id || !myUid) return;
+    if (incomingCallAction) return;
+    setIncomingCallAction('accept');
     if (call.callType === 'video') {
       const ok = await ensureCamMicPermissionsAndroid();
-      if (!ok) return;
+      if (!ok) {
+        setIncomingCallAction(null);
+        return;
+      }
     } else if (Platform.OS === 'android') {
       try {
         const mic = await PermissionsAndroid.request(
@@ -11603,7 +12059,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             buttonNegative: 'Deny',
           },
         );
-        if (mic !== PermissionsAndroid.RESULTS.GRANTED) return;
+        if (mic !== PermissionsAndroid.RESULTS.GRANTED) {
+          setIncomingCallAction(null);
+          return;
+        }
       } catch {}
     }
     try {
@@ -11624,6 +12083,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       batch.set(myCallRef, patch, { merge: true });
       batch.set(peerCallRef, patch, { merge: true });
       await batch.commit();
+      upsertCallHistory(call, 'accepted');
       setIncomingDirectCall(null);
       setActiveDirectCall({
         ...call,
@@ -11634,13 +12094,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       watchDirectCallDoc(call.id, 'callee');
     } catch (err: any) {
       Alert.alert('Call failed', err?.message || 'Could not accept this call.');
+    } finally {
+      setIncomingCallAction(null);
     }
-  }, [fetchDirectCallAgoraToken, incomingDirectCall, myUid, watchDirectCallDoc]);
+  }, [fetchDirectCallAgoraToken, incomingCallAction, incomingDirectCall, myUid, upsertCallHistory, watchDirectCallDoc]);
 
   const declineIncomingDirectCall = useCallback(async () => {
     const call = incomingDirectCall;
+    if (incomingCallAction) return;
+    setIncomingCallAction('decline');
     if (!call?.id || !myUid) {
       setIncomingDirectCall(null);
+      setIncomingCallAction(null);
       return;
     }
     try {
@@ -11659,6 +12124,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       batch.set(myCallRef, patch, { merge: true });
       batch.set(peerCallRef, patch, { merge: true });
       await batch.commit();
+      upsertCallHistory(call, 'declined');
       try {
         await firestore()
           .collection('notifications')
@@ -11677,10 +12143,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     } catch {}
     setIncomingDirectCall(null);
-  }, [incomingDirectCall, myUid]);
+    setIncomingCallAction(null);
+  }, [incomingCallAction, incomingDirectCall, myUid, upsertCallHistory]);
 
   const endActiveDirectCall = useCallback(async () => {
     const call = activeDirectCall || outgoingDirectCall || incomingDirectCall;
+    setForceOutgoingRingback(false);
+    stopCallRingback();
     if (call?.id && myUid) {
       try {
         const myCallRef = firestore()
@@ -11704,6 +12173,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         batch.set(myCallRef, patch, { merge: true });
         batch.set(peerCallRef, patch, { merge: true });
         await batch.commit();
+        upsertCallHistory(call, nextStatus as DirectCallStatus);
         if (endedWhileRinging) {
           try {
             await firestore()
@@ -11740,6 +12210,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setOutgoingDirectCall(null);
     setActiveDirectCall(null);
     setActiveDirectCallRole(null);
+    setIncomingCallAction(null);
     clearCallDocSubscription();
   }, [
     activeDirectCall,
@@ -11747,40 +12218,119 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     incomingDirectCall,
     myUid,
     outgoingDirectCall,
+    stopCallRingback,
+    upsertCallHistory,
   ]);
 
   useEffect(() => {
     if (!myUid) return;
+    let fallbackUnsub: null | (() => void) = null;
+    const onIncomingSnapshot = (snapshot: any) => {
+      const candidates = snapshot.docs
+        .map(mapDirectCallDoc)
+        .filter(Boolean) as DirectCallSession[];
+      if (candidates.length === 0) return;
+      const latest = [...candidates]
+        .sort((a, b) => {
+          const aTs = a?.createdAt?.toDate?.()?.getTime?.() || 0;
+          const bTs = b?.createdAt?.toDate?.()?.getTime?.() || 0;
+          return bTs - aTs;
+        })
+        .find(
+          c =>
+            c.status === 'ringing' &&
+            c.calleeUid === myUid &&
+            c.callerUid !== myUid,
+        );
+      if (!latest) return;
+      if (!latest.calleeNotifiedAt) {
+        try {
+          const myCallRef = firestore()
+            .collection(`users/${myUid}/direct_calls`)
+            .doc(latest.id);
+          const peerCallRef = firestore()
+            .collection(`users/${latest.callerUid}/direct_calls`)
+            .doc(latest.id);
+          const patch = {
+            calleeNotifiedAt: firestore.FieldValue.serverTimestamp(),
+          };
+          const batch = firestore().batch();
+          batch.set(myCallRef, patch, { merge: true });
+          batch.set(peerCallRef, patch, { merge: true });
+          batch.commit().catch(() => {});
+        } catch {}
+      }
+      if (activeDirectCall?.id || outgoingDirectCall?.id) return;
+      setIncomingDirectCall(prev => {
+        if (prev?.id === latest.id) return prev;
+        return latest;
+      });
+    };
     const unsubscribe = firestore()
       .collection(`users/${myUid}/direct_calls`)
-      .limit(40)
+      .where('calleeUid', '==', myUid)
+      .where('status', '==', 'ringing')
+      .orderBy('createdAt', 'desc')
+      .limit(10)
+      .onSnapshot(
+        onIncomingSnapshot,
+        err => {
+          console.warn('Incoming calls indexed listener failed; using fallback', err);
+          if (fallbackUnsub) return;
+          fallbackUnsub = firestore()
+            .collection(`users/${myUid}/direct_calls`)
+            .limit(40)
+            .onSnapshot(
+              onIncomingSnapshot,
+              fallbackErr => {
+                console.warn('Incoming calls fallback listener failed', fallbackErr);
+              },
+            );
+        },
+      );
+    return () => {
+      try {
+        unsubscribe();
+      } catch {}
+      try {
+        fallbackUnsub && fallbackUnsub();
+      } catch {}
+    };
+  }, [activeDirectCall?.id, mapDirectCallDoc, myUid, outgoingDirectCall?.id]);
+
+  useEffect(() => {
+    if (!myUid) return;
+    const unsubscribe = firestore()
+      .collection(`users/${myUid}/call_history`)
+      .orderBy('updatedAt', 'desc')
+      .limit(100)
       .onSnapshot(
         snapshot => {
-          const candidates = snapshot.docs
-            .map(mapDirectCallDoc)
-            .filter(Boolean) as DirectCallSession[];
-          if (candidates.length === 0) return;
-          const latest = [...candidates]
-            .sort((a, b) => {
-              const aTs = a?.createdAt?.toDate?.()?.getTime?.() || 0;
-              const bTs = b?.createdAt?.toDate?.()?.getTime?.() || 0;
-              return bTs - aTs;
-            })
-            .find(
-              c =>
-                c.status === 'ringing' &&
-                c.calleeUid === myUid &&
-                c.callerUid !== myUid,
-            );
-          if (!latest) return;
-          if (activeDirectCall?.id || outgoingDirectCall?.id) return;
-          setIncomingDirectCall(prev => {
-            if (prev?.id === latest.id) return prev;
-            return latest;
+          const next: CallHistoryEntry[] = snapshot.docs.map(doc => {
+            const data = doc.data() || {};
+            return {
+              id: doc.id,
+              callId: String(data.callId || doc.id),
+              peerUid: String(data.peerUid || ''),
+              peerName: String(data.peerName || 'User'),
+              direction:
+                data.direction === 'incoming' ? 'incoming' : 'outgoing',
+              callType: data.callType === 'video' ? 'video' : 'audio',
+              status:
+                data.status === 'accepted' ||
+                data.status === 'declined' ||
+                data.status === 'ended' ||
+                data.status === 'missed'
+                  ? data.status
+                  : 'ringing',
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt,
+            };
           });
+          setCallHistory(next);
         },
         err => {
-          console.warn('Incoming calls listener failed', err);
+          console.warn('Call history listener failed', err);
         },
       );
     return () => {
@@ -11788,7 +12338,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         unsubscribe();
       } catch {}
     };
-  }, [activeDirectCall?.id, mapDirectCallDoc, myUid, outgoingDirectCall?.id]);
+  }, [myUid]);
 
   useEffect(() => {
     return () => {
@@ -11796,9 +12346,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         clearTimeout(callTimeoutRef.current);
         callTimeoutRef.current = null;
       }
+      stopCallRingback();
+      stopIncomingCallRingtone();
       clearCallDocSubscription();
     };
-  }, [clearCallDocSubscription]);
+  }, [clearCallDocSubscription, stopCallRingback, stopIncomingCallRingtone]);
                     
   // Map a user identifier to display label; show "/You" for the signed-in user
   const displayHandle = useCallback(
@@ -11887,6 +12439,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const handleNotificationNavigation = useCallback(
     (data: any) => {
+      if (data?.type === 'call_invite' && data?.callId && myUid) {
+        const callId = String(data.callId || '').trim();
+        if (callId) {
+          watchDirectCallDoc(callId, 'callee');
+          try {
+            firestore()
+              .collection(`users/${myUid}/direct_calls`)
+              .doc(callId)
+              .get()
+              .then((snap: any) => {
+                const call = mapDirectCallDoc(snap);
+                if (!call) return;
+                if (call.status === 'ringing' || call.status === 'accepted') {
+                  setIncomingDirectCall(call);
+                }
+              })
+              .catch(() => {});
+          } catch {}
+        }
+        return;
+      }
       if (data?.waveId) {
         const waveIndex = displayFeed.findIndex(w => w.id === data.waveId);
         if (waveIndex !== -1) {
@@ -11905,7 +12478,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowPings(true);
       }
     },
-    [displayFeed],
+    [displayFeed, mapDirectCallDoc, myUid, watchDirectCallDoc],
   );
                     
   const handleForegroundRemoteMessage = useCallback(
@@ -12640,6 +13213,68 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
         />
       )}
+      {hereNowFeedAlert && !vibeAlert && (
+        <Animated.View
+          pointerEvents="box-none"
+          style={[
+            styles.driftAlertContainer,
+            {
+              top: (insets.top || 0) + 18,
+              opacity: flickerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.45, 1],
+              }),
+            },
+          ]}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Pressable
+              style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
+              onPress={() =>
+                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
+              }
+            >
+              <Animated.View
+                style={[
+                  styles.driftAlertSignal,
+                  {
+                    backgroundColor: '#00D56A',
+                    opacity: flickerAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.35, 1],
+                    }),
+                  },
+                ]}
+              />
+              <View style={styles.driftAlertAvatar}>
+                {hereNowFeedAlert.photo ? (
+                  <Image
+                    source={{ uri: hereNowFeedAlert.photo }}
+                    style={styles.driftAlertAvatarImage}
+                  />
+                ) : (
+                  <Text style={styles.driftAlertInitials}>
+                    {hereNowFeedAlert.name.charAt(0).toUpperCase()}
+                  </Text>
+                )}
+              </View>
+              <Text style={styles.driftAlertText}>
+                Here Now! {hereNowFeedAlert.name}
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.driftAlertButton, { width: 86, marginLeft: 8 }]}
+              onPress={() =>
+                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
+              }
+            >
+              <Text style={[styles.driftAlertText, { fontSize: 14 }]}>
+                Reply
+              </Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
       {vibeAlert && (
         <Animated.View
           pointerEvents="box-none"
@@ -12758,9 +13393,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
               <Pressable
                 style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
+                onPress={() => saveBridge({ liveJoinPreview: !bridge.liveJoinPreview })}
+              >
+                <Text style={styles.secondaryBtnText}>
+                  {bridge.liveJoinPreview ? 'Auto-Join On' : 'Auto-Join Off'}
+                </Text>
+              </Pressable>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
+                onPress={() => respondToLiveInvite('miss')}
+              >
+                <Text style={styles.secondaryBtnText}>Miss</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
                 onPress={() => respondToLiveInvite('ignore')}
               >
-                <Text style={styles.secondaryBtnText}>Not now</Text>
+                <Text style={styles.secondaryBtnText}>Decline</Text>
               </Pressable>
               <Pressable
                 style={[styles.primaryBtn, { flex: 1 }]}
@@ -12768,8 +13419,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               >
                 <Text style={styles.primaryBtnText}>
                   {incomingLiveInviteCountdown > 0
-                    ? `Join (${incomingLiveInviteCountdown}s)`
-                    : 'Join now'}
+                    ? `Accept (${incomingLiveInviteCountdown}s)`
+                    : 'Accept'}
                 </Text>
               </Pressable>
             </View>
@@ -13713,15 +14364,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   VIBE ALERTS
                 </Text>
                 <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
-                  <Text style={{ color: '#FF4444' }}>NOTIFICATIONS</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length})</Text>
+                  <Text style={{ color: '#FF4444' }}>NOTIFICATIONS</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + callHistory.length})</Text>
                 </Text>
               </View>
 
               {!selectedThread ? (
                 // Unified notifications view
                 (() => {
+                  const getActivityCategoryLabel = (notification: any) => {
+                    const t = String(notification?.type || '').toLowerCase();
+                    if (t.startsWith('call_')) return 'Call Alert';
+                    if (
+                      t === 'follow' ||
+                      t === 'connect_vibe' ||
+                      t === 'joined_tide' ||
+                      t === 'left_crew'
+                    ) {
+                      return 'Crew Update';
+                    }
+                    if (
+                      t === 'echo' ||
+                      t === 'splash' ||
+                      t === 'octopus_hug' ||
+                      t === 'post'
+                    ) {
+                      return 'Post Activity';
+                    }
+                    return 'Activity';
+                  };
                   // Define system notification types that should show with letter avatars
-                  const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE'];
+                  const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'left_crew', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE', 'call_missed', 'call_invite', 'call_declined'];
                   
                   // Separate notifications into system notifications and individual messages
                   const systemNotifications = notifications.filter(notification => 
@@ -13780,20 +14452,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     })),
                     ...systemNotifications
                       .filter(notification => {
-                        // Filter out system notifications with unknown/placeholder usernames
-                        const senderName = notification.fromUserHandle || 'System';
-                        return senderName !== 'Unknown User' && senderName !== 'unknown' && senderName !== 'Unknown';
+                        const actorName =
+                          notification.fromName ||
+                          notification.fromUserHandle ||
+                          'Activity';
+                        const senderName = String(actorName);
+                        return senderName !== 'unknown' && senderName !== 'Unknown';
                       })
                       .map(notification => ({
                       id: `notification_${notification.id}`,
                       type: 'notification' as const,
-                      senderName: notification.fromUserHandle || 'System',
+                      senderName: getActivityCategoryLabel(notification),
                       senderAvatar: null, // Will use letter avatar
                       message: notification.message,
                       timestamp: notification.createdAt,
                       unread: !notification.read,
                       notificationData: notification,
                     })),
+                    ...callHistory.map(entry => {
+                      const callStatus =
+                        entry.status === 'missed'
+                          ? 'missed'
+                          : entry.status === 'declined'
+                          ? 'declined'
+                          : entry.status === 'accepted'
+                          ? 'accepted'
+                          : entry.status === 'ended'
+                          ? 'ended'
+                          : 'ringing';
+                      const directionLabel =
+                        entry.direction === 'incoming' ? 'Incoming' : 'Outgoing';
+                      const callTypeLabel =
+                        entry.callType === 'video' ? 'video' : 'audio';
+                      return {
+                        id: `call_${entry.id}`,
+                        type: 'call' as const,
+                        senderName: entry.peerName || 'User',
+                        senderAvatar: null,
+                        message: `${directionLabel} ${callTypeLabel} call • ${callStatus}`,
+                        timestamp: entry.updatedAt || entry.createdAt || new Date(),
+                        unread: entry.status === 'missed',
+                        callData: entry,
+                      };
+                    }),
                   ].sort((a, b) => {
                     const timeA = a.timestamp?.toDate ? a.timestamp.toDate() : new Date(a.timestamp);
                     const timeB = b.timestamp?.toDate ? b.timestamp.toDate() : new Date(b.timestamp);
@@ -13802,12 +14503,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                   const messageCount = unifiedNotifications.filter(item => item.type === 'thread').length;
                   const activityCount = unifiedNotifications.filter(item => item.type === 'notification').length;
+                  const callsCount = unifiedNotifications.filter(item => item.type === 'call').length;
                   const query = inboxSearchQuery.trim().toLowerCase();
                   const filteredNotifications = unifiedNotifications.filter(item => {
                     const matchesFilter =
                       inboxFilter === 'all' ||
                       (inboxFilter === 'messages' && item.type === 'thread') ||
-                      (inboxFilter === 'activity' && item.type === 'notification');
+                      (inboxFilter === 'activity' && item.type === 'notification') ||
+                      (inboxFilter === 'calls' && item.type === 'call');
                     if (!matchesFilter) return false;
 
                     if (!query) return true;
@@ -13832,7 +14535,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   return (
                     <>
                       <View style={{ marginBottom: 12 }}>
-                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={{ flexDirection: 'row', gap: 8, paddingRight: 8 }}
+                          style={{ marginBottom: 10 }}
+                        >
                           <Pressable
                             onPress={() => setInboxFilter('all')}
                             style={{
@@ -13872,7 +14580,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               Activity ({activityCount})
                             </Text>
                           </Pressable>
-                        </View>
+                          <Pressable
+                            onPress={() => setInboxFilter('calls')}
+                            style={{
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 14,
+                              backgroundColor: inboxFilter === 'calls' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                              Calls ({callsCount})
+                            </Text>
+                          </Pressable>
+                        </ScrollView>
                         <TextInput
                           value={inboxSearchQuery}
                           onChangeText={setInboxSearchQuery}
@@ -13985,15 +14706,137 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                     senderAvatar: item.threadData.senderAvatar,
                                     messages: item.threadData.messages,
                                   });
+                                } else if (item.type === 'call' && item.callData) {
+                                  const entry = item.callData as CallHistoryEntry;
+                                  const peerUid = String(entry.peerUid || '').trim();
+                                  if (!peerUid) return;
+                                  Alert.alert(
+                                    'Call options',
+                                    `${entry.peerName || 'User'}\n${item.message}`,
+                                    [
+                                      {
+                                        text: 'Call back (audio)',
+                                        onPress: () =>
+                                          startDirectCall('audio', {
+                                            uid: peerUid,
+                                            name: entry.peerName || 'User',
+                                          }),
+                                      },
+                                      {
+                                        text: 'Call back (video)',
+                                        onPress: () =>
+                                          startDirectCall('video', {
+                                            uid: peerUid,
+                                            name: entry.peerName || 'User',
+                                          }),
+                                      },
+                                      { text: 'Cancel', style: 'cancel' },
+                                    ],
+                                  );
                                 } else {
                                   if (!item.notificationData.read) {
                                     markNotificationAsRead(item.notificationData.id);
                                   }
-                                  Alert.alert(
-                                    'Notification',
-                                    formatNotificationMessage(item.notificationData, userData || {}),
-                                    [{ text: 'OK' }]
+                                  const notificationType = String(
+                                    item.notificationData.type || '',
+                                  ).toLowerCase();
+                                  const actorName = String(
+                                    item.notificationData.fromName ||
+                                      item.notificationData.fromUserHandle ||
+                                      'User',
                                   );
+                                  const actorUid = String(
+                                    item.notificationData.fromUid || '',
+                                  ).trim();
+                                  const waveId = String(
+                                    item.notificationData.waveId || '',
+                                  ).trim();
+                                  if (
+                                    (notificationType === 'call_missed' ||
+                                      notificationType === 'call_declined' ||
+                                      notificationType === 'call_invite') &&
+                                    actorUid
+                                  ) {
+                                    Alert.alert(
+                                      'Call Alert',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [
+                                        {
+                                          text: 'Call back (audio)',
+                                          onPress: () =>
+                                            startDirectCall('audio', {
+                                              uid: actorUid,
+                                              name: actorName,
+                                            }),
+                                        },
+                                        {
+                                          text: 'Call back (video)',
+                                          onPress: () =>
+                                            startDirectCall('video', {
+                                              uid: actorUid,
+                                              name: actorName,
+                                            }),
+                                        },
+                                        { text: 'Dismiss', style: 'cancel' },
+                                      ],
+                                    );
+                                  } else if (waveId) {
+                                    Alert.alert(
+                                      'Activity',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [
+                                        {
+                                          text: 'Open post',
+                                          onPress: () => {
+                                            setShowInbox(false);
+                                            setInboxFilter('all');
+                                            setInboxSearchQuery('');
+                                            const waveIndex = displayFeed.findIndex(
+                                              w => w.id === waveId,
+                                            );
+                                            if (waveIndex !== -1) {
+                                              setCurrentIndex(waveIndex);
+                                              setWaveKey(Date.now());
+                                            }
+                                          },
+                                        },
+                                        { text: 'Dismiss', style: 'cancel' },
+                                      ],
+                                    );
+                                  } else if (actorUid) {
+                                    Alert.alert(
+                                      'Activity',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [
+                                        {
+                                          text: 'Message user',
+                                          onPress: () => {
+                                            setShowInbox(false);
+                                            openMessageThread(actorUid, actorName);
+                                          },
+                                        },
+                                        { text: 'Dismiss', style: 'cancel' },
+                                      ],
+                                    );
+                                  } else {
+                                    Alert.alert(
+                                      'Activity',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [{ text: 'OK' }],
+                                    );
+                                  }
                                 }
                               }
                             }}
@@ -18259,6 +19102,45 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       Send an echo vibe to this vibe master
                     </Text>
                   </Pressable>
+                  <Pressable
+                    style={styles.waveOptionsItem}
+                    onPress={() => {
+                      const targetUid = waveOptionsTarget.ownerUid!;
+                      const targetName = displayHandle(
+                        targetUid,
+                        waveOptionsTarget.authorName || targetUid,
+                      );
+                      setWaveOptionsTarget(null);
+                      Alert.alert(
+                        'Call user',
+                        `Choose call type for ${targetName}.`,
+                        [
+                          {
+                            text: 'Audio',
+                            onPress: () =>
+                              startDirectCall('audio', {
+                                uid: targetUid,
+                                name: targetName,
+                              }),
+                          },
+                          {
+                            text: 'Video',
+                            onPress: () =>
+                              startDirectCall('video', {
+                                uid: targetUid,
+                                name: targetName,
+                              }),
+                          },
+                          { text: 'Cancel', style: 'cancel' },
+                        ],
+                      );
+                    }}
+                  >
+                    <Text style={styles.waveOptionsItemTitle}>📞 Call</Text>
+                    <Text style={styles.waveOptionsItemDescription}>
+                      Start an audio or video call with this user
+                    </Text>
+                  </Pressable>
                 </>
               )}
             <Pressable
@@ -18290,7 +19172,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Text style={styles.callFullScreenName}>
               {String(outgoingDirectCall?.calleeName || 'User')}
             </Text>
-            <Text style={styles.callFullScreenStatus}>Ringing...</Text>
+            <Text style={styles.callFullScreenStatus}>
+              {(outgoingDirectCall as any)?.calleeNotifiedAt
+                ? 'Ringing...'
+                : 'Calling...'}
+            </Text>
           </View>
           <View
             style={[
@@ -18299,7 +19185,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ]}
           >
             <Pressable
-              style={[styles.callInviteActionBtn, styles.callInviteDeclineBtn, { width: 170 }]}
+              style={({ pressed }) => [
+                styles.callInviteActionBtn,
+                styles.callInviteDeclineBtn,
+                { width: 170 },
+                pressed && styles.callInviteActionBtnPressed,
+              ]}
               onPress={endActiveDirectCall}
             >
               <Text style={styles.callInviteActionText}>End call</Text>
@@ -18336,16 +19227,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ]}
           >
               <Pressable
-                style={[styles.callInviteActionBtn, styles.callInviteDeclineBtn]}
+                style={({ pressed }) => [
+                  styles.callInviteActionBtn,
+                  styles.callInviteDeclineBtn,
+                  (pressed || incomingCallAction === 'decline') &&
+                    styles.callInviteActionBtnPressed,
+                ]}
                 onPress={declineIncomingDirectCall}
+                disabled={incomingCallAction !== null}
               >
-                <Text style={styles.callInviteActionText}>Decline</Text>
+                <Text style={styles.callInviteActionText}>
+                  {incomingCallAction === 'decline' ? 'Declining...' : 'Decline'}
+                </Text>
               </Pressable>
               <Pressable
-                style={[styles.callInviteActionBtn, styles.callInviteAcceptBtn]}
+                style={({ pressed }) => [
+                  styles.callInviteActionBtn,
+                  styles.callInviteAcceptBtn,
+                  (pressed || incomingCallAction === 'accept') &&
+                    styles.callInviteActionBtnPressed,
+                ]}
                 onPress={acceptIncomingDirectCall}
+                disabled={incomingCallAction !== null}
               >
-                <Text style={styles.callInviteActionText}>Accept</Text>
+                <Text style={styles.callInviteActionText}>
+                  {incomingCallAction === 'accept' ? 'Connecting...' : 'Accept'}
+                </Text>
               </Pressable>
           </View>
         </View>
@@ -18362,6 +19269,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         role={activeDirectCallRole || (outgoingDirectCall ? 'caller' : null)}
         onEnd={endActiveDirectCall}
         styles={styles}
+        bridge={bridge}
+        dataSaver={dataSaver}
+        isWifi={isWifi}
       />
 
       {/* GO DRIFT (LIVE) */}
@@ -18379,6 +19289,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         visible={showLive}
         isChartered={isCharteredDrift}
         searchOceanEntities={searchOceanEntities}
+        bridge={bridge}
+        dataSaver={dataSaver}
+        isWifi={isWifi}
         onClose={() => {
           setShowLive(false);
           setIsCharteredDrift(false);
@@ -18489,12 +19402,18 @@ const DirectCallModal = ({
   role,
   onEnd,
   styles,
+  bridge,
+  dataSaver,
+  isWifi,
 }: {
   visible: boolean;
   call: DirectCallSession | null;
   role: 'caller' | 'callee' | null;
   onEnd: () => void;
   styles: any;
+  bridge: any;
+  dataSaver: any;
+  isWifi: boolean;
 }) => {
   const insets = useSafeAreaInsets();
   const Agora = useMemo(() => {
@@ -18547,6 +19466,69 @@ const DirectCallModal = ({
     // Agora uid must be non-zero uint.
     return (hash % 2147483646) + 1;
   }, [call?.calleeUid, call?.callerUid, role]);
+
+  const applyRtcQualityProfile = useCallback(
+    (engine: any, mode: DirectCallMode) => {
+      const cellularLike =
+        !isWifi || !!dataSaver?.cellular || !!bridge?.dataSaverDefaultOnCell;
+      const cappedForCell =
+        cellularLike && (bridge?.wifiOnlyHD || dataSaver?.enabled);
+      const maxResolution = String(dataSaver?.maxResolution || 'high');
+      const highAllowed = !cappedForCell && maxResolution !== 'low';
+      const width =
+        mode !== 'video'
+          ? 320
+          : highAllowed
+          ? maxResolution === 'med'
+            ? 960
+            : 1280
+          : 640;
+      const height =
+        mode !== 'video'
+          ? 240
+          : highAllowed
+          ? maxResolution === 'med'
+            ? 540
+            : 720
+          : 360;
+      const frameRate = highAllowed ? 24 : 15;
+      const minBitrate =
+        Number(bridge?.liveCellularMaxBitrate || 0) > 0
+          ? Number(bridge?.liveCellularMaxBitrate)
+          : cappedForCell
+          ? 420_000
+          : 1_200_000;
+      const maxBitrate = cappedForCell ? Math.min(minBitrate, 800_000) : 1_700_000;
+
+      try {
+        engine.setVideoEncoderConfiguration?.({
+          dimensions: { width, height },
+          frameRate,
+          bitrate: maxBitrate,
+          minBitrate,
+          orientationMode: 1,
+          degradationPrefer: 1,
+          mirrorMode: 0,
+        });
+      } catch {}
+      try {
+        engine.enableDualStreamMode?.(true);
+      } catch {}
+      try {
+        engine.setRemoteDefaultVideoStreamType?.(cappedForCell ? 1 : 0);
+      } catch {}
+      try {
+        engine.setAudioProfile?.(
+          mode === 'audio' ? 1 : 4,
+          cappedForCell ? 1 : 0,
+        );
+      } catch {}
+      try {
+        engine.setAudioScenario?.(mode === 'audio' ? 3 : 2);
+      } catch {}
+    },
+    [bridge?.dataSaverDefaultOnCell, bridge?.liveCellularMaxBitrate, bridge?.wifiOnlyHD, dataSaver?.cellular, dataSaver?.enabled, dataSaver?.maxResolution, isWifi],
+  );
 
   useEffect(() => {
     if (!visible || !call?.id || !Agora || !appId) return;
@@ -18680,6 +19662,7 @@ const DirectCallModal = ({
           throw lastErr || new Error('joinChannel failed');
         };
         const ensurePublishedMedia = (engine: any, mode: DirectCallMode) => {
+          applyRtcQualityProfile(engine, mode);
           try {
             engine.enableAudio?.();
           } catch {}
@@ -18708,7 +19691,10 @@ const DirectCallModal = ({
             try {
               engine.updateChannelMediaOptions?.({
                 publishMicrophoneTrack: true,
-                publishCameraTrack: true,
+                publishCameraTrack: !(
+                  !isWifi &&
+                  (bridge?.audioOnlyFallback || dataSaver?.enabled)
+                ),
                 autoSubscribeAudio: true,
                 autoSubscribeVideo: true,
               });
@@ -18886,11 +19872,15 @@ const DirectCallModal = ({
     };
   }, [
     Agora,
+    applyRtcQualityProfile,
     appId,
+    bridge?.audioOnlyFallback,
     call?.agoraToken,
     call?.callType,
     call?.channelName,
     call?.id,
+    dataSaver?.enabled,
+    isWifi,
     joinAttemptNonce,
     onEnd,
     role,
@@ -19018,7 +20008,39 @@ const DirectCallModal = ({
     try {
       engineRef.current?.setEnableSpeakerphone?.(next);
     } catch {}
+    try {
+      engineRef.current?.setDefaultAudioRouteToSpeakerphone?.(next);
+    } catch {}
+    try {
+      engineRef.current?.adjustPlaybackSignalVolume?.(next ? 100 : 18);
+    } catch {}
+    try {
+      engineRef.current?.setInEarMonitoringVolume?.(next ? 100 : 18);
+    } catch {}
+    try {
+      engineRef.current?.setInEarMonitoringEnabled?.(!next);
+    } catch {}
   };
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!visible || !engine || !isJoined) return;
+    try {
+      engine.setEnableSpeakerphone?.(speakerEnabled);
+    } catch {}
+    try {
+      engine.setDefaultAudioRouteToSpeakerphone?.(speakerEnabled);
+    } catch {}
+    try {
+      engine.adjustPlaybackSignalVolume?.(speakerEnabled ? 100 : 18);
+    } catch {}
+    try {
+      engine.setInEarMonitoringEnabled?.(!speakerEnabled);
+    } catch {}
+    try {
+      engine.setInEarMonitoringVolume?.(speakerEnabled ? 100 : 18);
+    } catch {}
+  }, [isJoined, speakerEnabled, visible]);
 
   const retryVideoJoin = async () => {
     if (!call || call.callType !== 'video' || !engineRef.current) return;
@@ -19156,6 +20178,7 @@ const DirectCallModal = ({
     role === 'caller'
       ? String(call.calleeName || 'User')
       : String(call.callerName || 'User');
+  const callerRingingConfirmed = role === 'caller' && !!(call as any)?.calleeNotifiedAt;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onEnd}>
@@ -19184,10 +20207,12 @@ const DirectCallModal = ({
                 ? remoteUid
                   ? `Connected ${formatElapsed(elapsedSec)}`
                   : role === 'caller'
-                  ? `Ringing ${counterpart}... ${formatElapsed(elapsedSec)}`
+                  ? `${
+                      callerRingingConfirmed ? 'Ringing' : 'Calling'
+                    } ${counterpart}... ${formatElapsed(elapsedSec)}`
                   : `Waiting for ${counterpart}... ${formatElapsed(elapsedSec)}`
                 : role === 'caller'
-                ? `Ringing ${counterpart}...`
+                ? `${callerRingingConfirmed ? 'Ringing' : 'Calling'} ${counterpart}...`
                 : 'Connecting...'}
             </Text>
           </View>
@@ -19261,11 +20286,11 @@ const DirectCallModal = ({
                     alignItems: 'center',
                   }}
                 >
-                  <Text style={{ color: 'white' }}>
-                    {role === 'caller'
-                      ? `Ringing ${counterpart}...`
-                      : `Connecting to ${counterpart}...`}
-                  </Text>
+                    <Text style={{ color: 'white' }}>
+                      {role === 'caller'
+                        ? `${callerRingingConfirmed ? 'Ringing' : 'Calling'} ${counterpart}...`
+                        : `Connecting to ${counterpart}...`}
+                    </Text>
                 </View>
               </View>
             ) : (
@@ -19481,12 +20506,18 @@ const LiveStreamModal = ({
   styles,
   isChartered,
   searchOceanEntities,
+  bridge,
+  dataSaver,
+  isWifi,
 }: {
   visible: boolean;
   onClose: () => void;
   styles: any; // Prop to receive styles from parent
   isChartered?: boolean;
   searchOceanEntities: (term: string) => Promise<SearchResult[]>;
+  bridge: any;
+  dataSaver: any;
+  isWifi: boolean;
 }) => {
   const insets = useSafeAreaInsets();
   const Agora = useMemo(() => {
@@ -19641,8 +20672,15 @@ const LiveStreamModal = ({
     Array<{ id: string; username: string }>
   >([]);
   const [onlineUsers, setOnlineUsers] = useState<
-    Array<{ uid: string; name: string; photo: string | null; lastHeartbeat: number }>
+    Array<{
+      uid: string;
+      name: string;
+      photo: string | null;
+      lastHeartbeat: number;
+      isRecentlyActive: boolean;
+    }>
   >([]);
+  const [recentlyHereNames, setRecentlyHereNames] = useState<string[]>([]);
   const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(true);
   const [inviteStatusByUid, setInviteStatusByUid] = useState<
     Record<
@@ -19650,6 +20688,45 @@ const LiveStreamModal = ({
       { status: string; expiresAtMs?: number; updatedAtMs?: number; name?: string }
     >
   >({});
+  const [joinedParticipants, setJoinedParticipants] = useState<
+    Array<{ uid: string; name: string; photo: string | null }>
+  >([]);
+  const MAX_HERE_NOW_SCAN = 200;
+  const applyLiveQualityProfile = useCallback((engine: any) => {
+    const cellularLike = !isWifi || !!dataSaver?.cellular;
+    const saverOnCell = cellularLike && (bridge?.dataSaverDefaultOnCell || dataSaver?.enabled);
+    const maxResolution = String(dataSaver?.maxResolution || 'high');
+    const highAllowed = !saverOnCell && maxResolution !== 'low';
+    const width = highAllowed ? (maxResolution === 'med' ? 960 : 1280) : 640;
+    const height = highAllowed ? (maxResolution === 'med' ? 540 : 720) : 360;
+    const frameRate = highAllowed ? 24 : 15;
+    const maxBitrate = saverOnCell
+      ? Number(bridge?.liveCellularMaxBitrate || 520_000)
+      : 1_600_000;
+
+    try {
+      engine.enableDualStreamMode?.(true);
+    } catch {}
+    try {
+      engine.setRemoteDefaultVideoStreamType?.(saverOnCell ? 1 : 0);
+    } catch {}
+    try {
+      engine.setVideoEncoderConfiguration?.({
+        dimensions: { width, height },
+        frameRate,
+        bitrate: maxBitrate,
+        minBitrate: Math.max(180_000, Math.floor(maxBitrate * 0.55)),
+        orientationMode: 1,
+        degradationPrefer: 1,
+      });
+    } catch {}
+    try {
+      engine.setAudioProfile?.(4, saverOnCell ? 1 : 0);
+    } catch {}
+    try {
+      engine.setAudioScenario?.(2);
+    } catch {}
+  }, [bridge?.dataSaverDefaultOnCell, bridge?.liveCellularMaxBitrate, dataSaver?.cellular, dataSaver?.enabled, dataSaver?.maxResolution, isWifi]);
   useEffect(() => {
     if (!showUserPanel) setUserPanelMode('none');
   }, [showUserPanel]);
@@ -19834,80 +20911,110 @@ const LiveStreamModal = ({
   useEffect(() => {
     if (!visible || !isLiveStarted) {
       setOnlineUsers([]);
+      setRecentlyHereNames([]);
       return;
     }
     const me = auth?.()?.currentUser;
     if (!me?.uid) {
       setOnlineUsers([]);
+      setRecentlyHereNames([]);
       return;
     }
-    const presenceRef = database().ref('/presence');
     let cancelled = false;
-    const onPresence = async (snapshot: any) => {
-      if (cancelled) return;
-      const presenceData = snapshot?.val?.() || {};
-      const now = Date.now();
-      const candidates = Object.keys(presenceData || {})
-        .filter(uid => uid !== me.uid)
-        .map(uid => {
-          const row = presenceData[uid] || {};
-          return {
-            uid,
-            online: row.online === true,
-            lastHeartbeat: Number(row.lastHeartbeat || 0),
-            lastSeen: Number(row.lastSeen || 0),
-          };
-        })
-        .filter(
-          row =>
-            row.online &&
-            (row.lastHeartbeat ? now - row.lastHeartbeat < 3 * 60 * 1000 : true),
-        )
-        .sort((a, b) => b.lastHeartbeat - a.lastHeartbeat)
-        .slice(0, 20);
-      if (candidates.length === 0) {
-        setOnlineUsers([]);
-        return;
-      }
-      const users = await Promise.all(
-        candidates.map(async row => {
-          try {
-            const snap = await firestore().collection('users').doc(row.uid).get();
-            const d = snap?.data?.() || {};
+    let timer: any = null;
+    const refreshHereNow = async () => {
+      try {
+        const now = Date.now();
+        let activeSnap: any = null;
+        let seenSnap: any = null;
+        try {
+          activeSnap = await firestore()
+            .collection('users')
+            .orderBy('lastActiveAt', 'desc')
+            .limit(Math.max(50, Math.floor(MAX_HERE_NOW_SCAN / 2)))
+            .get();
+        } catch {
+          activeSnap = null;
+        }
+        try {
+          seenSnap = await firestore()
+            .collection('users')
+            .orderBy('lastSeen', 'desc')
+            .limit(Math.max(50, Math.floor(MAX_HERE_NOW_SCAN / 2)))
+            .get();
+        } catch {
+          seenSnap = null;
+        }
+        if (!activeSnap && !seenSnap) {
+          const fallbackSnap = await firestore()
+            .collection('users')
+            .limit(MAX_HERE_NOW_SCAN)
+            .get();
+          activeSnap = fallbackSnap;
+        }
+        if (cancelled) return;
+        const mergedByUid: Record<string, any> = {};
+        const mergeDocs = (docs: any[]) => {
+          (docs || []).forEach((doc: any) => {
+            const uid = String(doc?.id || '').trim();
+            if (!uid) return;
+            const data = doc?.data?.() || {};
+            mergedByUid[uid] = { uid, ...(mergedByUid[uid] || {}), ...data };
+          });
+        };
+        mergeDocs(activeSnap?.docs || []);
+        mergeDocs(seenSnap?.docs || []);
+        const rows = Object.values(mergedByUid)
+          .filter((row: any) => row.uid && row.uid !== me.uid)
+          .map((row: any) => {
+            const lastSeen = toMillis(row.lastSeen);
+            const lastActiveAt = toMillis(row.lastActiveAt);
+            const lastActivity = Math.max(lastSeen, lastActiveAt, 0);
+            const isRecentlyActive =
+              lastActivity > 0 && now - lastActivity <= PRESENCE_OFFLINE_GRACE_MS;
             return {
               uid: row.uid,
               name: String(
-                d.displayName || d.name || d.username || d.handle || row.uid,
+                row.displayName || row.name || row.username || row.handle || row.uid,
               ),
-              photo: d.photoURL || d.avatar || null,
-              lastHeartbeat: row.lastHeartbeat,
+              photo: row.photoURL || row.avatar || null,
+              lastHeartbeat: lastActivity,
+              lastActivity,
+              isRecentlyActive,
             };
-          } catch {
-            return {
-              uid: row.uid,
-              name: row.uid,
-              photo: null,
-              lastHeartbeat: row.lastHeartbeat,
-            };
-          }
-        }),
-      );
-      if (!cancelled) {
-        setOnlineUsers(users);
+          })
+          .filter((row: any) => row.isRecentlyActive)
+          .sort((a: any, b: any) => b.lastActivity - a.lastActivity)
+          .slice(0, 20);
+        if (cancelled) return;
+        setOnlineUsers(
+          rows.map((r: any) => ({
+            uid: r.uid,
+            name: r.name,
+            photo: r.photo,
+            lastHeartbeat: r.lastHeartbeat,
+            isRecentlyActive: r.isRecentlyActive,
+          })),
+        );
+        setRecentlyHereNames(rows.map((r: any) => r.name).slice(0, 6));
+      } catch {
+        if (cancelled) return;
+        setOnlineUsers([]);
+        setRecentlyHereNames([]);
       }
     };
-    presenceRef.on('value', onPresence);
+    refreshHereNow();
+    timer = setInterval(refreshHereNow, 10000);
     return () => {
       cancelled = true;
-      try {
-        presenceRef.off('value', onPresence);
-      } catch {}
+      if (timer) clearInterval(timer);
     };
   }, [visible, isLiveStarted]);
 
   useEffect(() => {
     if (!isLiveStarted || !liveDocId) {
       setInviteStatusByUid({});
+      setJoinedParticipants([]);
       return;
     }
     const unsub = firestore()
@@ -19928,6 +21035,33 @@ const LiveStreamModal = ({
             };
           });
           setInviteStatusByUid(next);
+
+          const acceptedUids = (snap?.docs || [])
+            .filter((doc: any) => String(doc?.data?.()?.status || '').toLowerCase() === 'accepted')
+            .map((doc: any) => String(doc.id || ''))
+            .filter(Boolean)
+            .slice(0, 30);
+          if (acceptedUids.length === 0) {
+            setJoinedParticipants([]);
+          } else {
+            Promise.all(
+              acceptedUids.map(async uid => {
+                try {
+                  const userSnap = await firestore().collection('users').doc(uid).get();
+                  const d = userSnap?.data?.() || {};
+                  return {
+                    uid,
+                    name: String(d.displayName || d.name || d.username || uid),
+                    photo: d.photoURL || d.avatar || null,
+                  };
+                } catch {
+                  return { uid, name: uid, photo: null };
+                }
+              }),
+            )
+              .then(rows => setJoinedParticipants(rows))
+              .catch(() => {});
+          }
         },
         () => {},
       );
@@ -19956,6 +21090,7 @@ const LiveStreamModal = ({
           try {
             engine.enableVideo?.();
           } catch {}
+          applyLiveQualityProfile(engine);
           try {
             engine.startPreview?.();
           } catch {}
@@ -19973,6 +21108,7 @@ const LiveStreamModal = ({
           try {
             engine.enableVideo();
           } catch {}
+          applyLiveQualityProfile(engine);
           try {
             engine.startPreview?.();
           } catch {}
@@ -20002,7 +21138,7 @@ const LiveStreamModal = ({
         engineRef.current = null;
       }
     };
-  }, [visible, Agora, appId]);
+  }, [visible, Agora, appId, applyLiveQualityProfile]);
                     
   // Join channel when user taps Start Live (tokenless first when enabled)
   useEffect(() => {
@@ -20064,12 +21200,16 @@ const LiveStreamModal = ({
         for (const tok of tokenCandidates) {
           for (const uidNum of uidCandidates) {
             try {
+              applyLiveQualityProfile(engine);
+              const audioOnlyMode =
+                !isWifi &&
+                (bridge?.audioOnlyFallback || dataSaver?.enabled);
               if (isV4) {
                 await engine.joinChannel(tok, chan, uidNum, {
                   publishMicrophoneTrack: true,
-                  publishCameraTrack: true,
+                  publishCameraTrack: !audioOnlyMode,
                   autoSubscribeAudio: true,
-                  autoSubscribeVideo: true,
+                  autoSubscribeVideo: !audioOnlyMode,
                 });
               } else {
                 await engine.joinChannel(tok, chan, uidNum);
@@ -20094,7 +21234,7 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [isLiveStarted, liveUid, liveToken, liveChannel]);
+  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isWifi, liveUid, liveToken, liveChannel]);
                     
   const handleEndDrift = async () => {
     try {
@@ -20667,32 +21807,141 @@ const LiveStreamModal = ({
       if (!me?.uid) {
         throw new Error('Sign in required');
       }
+      const callerName =
+        profileName || accountCreationHandle || me.displayName || 'Host';
       let inboxInviteWritten = false;
       let callableInviteSent = false;
+      let inviteStatusWritten = false;
       let lastErr: any = null;
       let inviteDocId: string | null = null;
+      let directCallId: string | null = null;
+      let directCallChannel: string | null = null;
+      const directCallType: DirectCallMode = 'video';
       const computedExpiry = Date.now() + LIVE_INVITE_TTL_MS;
 
       try {
         const liveInvitesRef = firestore().collection(
           `users/${toUid}/live_invites`,
         );
-        const existingPending = liveDocId
-          ? await liveInvitesRef
+        let existingPending: any = null;
+        if (liveDocId) {
+          try {
+            existingPending = await liveInvitesRef
               .where('status', '==', 'pending')
               .where('fromUid', '==', me.uid)
               .where('liveId', '==', liveDocId)
               .limit(1)
-              .get()
-          : null;
+              .get();
+          } catch {
+            existingPending = null;
+          }
+        }
+        const existingInviteData =
+          existingPending && !existingPending.empty
+            ? existingPending.docs[0].data() || {}
+            : null;
+
+        const mintAgoraTokenForChannel = async (
+          channelName: string,
+        ): Promise<string | null> => {
+          try {
+            const tokenEndpoint = String(cfg?.AGORA_TOKEN_ENDPOINT || '').trim();
+            if (!tokenEndpoint) return null;
+            const q = `?channel=${encodeURIComponent(
+              channelName,
+            )}&role=publisher&uid=0&expire=3600`;
+            const timeout = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('token-timeout')), 3500);
+            });
+            const resp: any = await Promise.race([
+              fetch(`${tokenEndpoint}${q}`),
+              timeout,
+            ]);
+            if (!resp?.ok) return null;
+            const json = await resp.json();
+            const token = String(json?.token || '').trim();
+            return token || null;
+          } catch {
+            return null;
+          }
+        };
+
+        try {
+          const existingCallId = String(
+            existingInviteData?.directCallId || '',
+          ).trim();
+          if (existingCallId) {
+            try {
+              const existingCallSnap = await firestore()
+                .collection(`users/${toUid}/direct_calls`)
+                .doc(existingCallId)
+                .get();
+              const existingCallData = existingCallSnap?.data?.() || {};
+              const existingStatus = String(
+                existingCallData?.status || '',
+              ).toLowerCase();
+              if (
+                existingCallSnap?.exists &&
+                (existingStatus === 'ringing' || existingStatus === 'accepted')
+              ) {
+                directCallId = existingCallId;
+                directCallChannel = String(
+                  existingCallData?.channelName || '',
+                ).trim() || null;
+              }
+            } catch {}
+          }
+
+          if (!directCallId) {
+            const callRef = firestore()
+              .collection(`users/${me.uid}/direct_calls`)
+              .doc();
+            const channelSeed = liveDocId || 'drift';
+            const channelName = `aqua_drift_${channelSeed}_${callRef.id}`.replace(
+              /[^A-Za-z0-9_]/g,
+              '_',
+            );
+            const freshToken = await mintAgoraTokenForChannel(channelName);
+            const callPayload: Omit<DirectCallSession, 'id'> & { createdAt: any } = {
+              callerUid: me.uid,
+              calleeUid: toUid,
+              callerName,
+              calleeName: typeof to === 'string' ? toUid : to?.name || 'User',
+              callerAvatar: profilePhoto || me.photoURL || null,
+              calleeAvatar: null,
+              channelName,
+              callType: directCallType,
+              status: 'ringing',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+              endedBy: null,
+              agoraToken: freshToken || null,
+            };
+            const calleeCallRef = firestore()
+              .collection(`users/${toUid}/direct_calls`)
+              .doc(callRef.id);
+            const batch = firestore().batch();
+            batch.set(callRef, callPayload as any, { merge: true });
+            batch.set(calleeCallRef, callPayload as any, { merge: true });
+            await batch.commit();
+            directCallId = callRef.id;
+            directCallChannel = channelName;
+          }
+        } catch (callSetupErr) {
+          lastErr = callSetupErr;
+          directCallId = null;
+          directCallChannel = null;
+        }
+
         const invitePayload = {
           liveId: liveDocId || null,
           liveChannel: liveChannel || null,
           liveTitle: liveTitle || 'Live Session',
           fromUid: me.uid,
-          fromName:
-            profileName || accountCreationHandle || me.displayName || 'Host',
+          fromName: callerName,
           fromPhoto: profilePhoto || me.photoURL || null,
+          directCallId: directCallId || null,
+          callType: directCallType,
+          directCallChannel: directCallChannel || null,
           status: 'pending',
           createdAt: firestore.FieldValue.serverTimestamp(),
           expiresAtMs: computedExpiry,
@@ -20732,15 +21981,19 @@ const LiveStreamModal = ({
                 inviteId: inviteDocId,
                 fromUid: me.uid,
                 liveId: liveDocId,
+                directCallId: directCallId || null,
+                callType: directCallType,
+                directCallChannel: directCallChannel || null,
                 expiresAtMs: computedExpiry,
                 updatedAt: firestore.FieldValue.serverTimestamp(),
               },
               { merge: true },
             );
+          inviteStatusWritten = true;
         }
       } catch {}
 
-      if (inboxInviteWritten || callableInviteSent) {
+      if (inboxInviteWritten || callableInviteSent || inviteStatusWritten) {
         if (!options?.silent) {
           Alert.alert('Success', 'Invitation sent!');
           setShowInviteModal(false);
@@ -22212,16 +23465,27 @@ const LiveStreamModal = ({
               }}
             >
               <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
-                Online Now ({onlineUsers.length})
+                Here now! ({onlineUsers.length})
               </Text>
               <Pressable onPress={() => setShowOnlineInvitePanel(false)}>
                 <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Hide</Text>
               </Pressable>
             </View>
             {onlineUsers.length === 0 ? (
-              <Text style={{ color: 'rgba(255,255,255,0.7)' }}>
-                No online users right now
-              </Text>
+              recentlyHereNames.length > 0 ? (
+                <View>
+                  <Text style={{ color: 'rgba(255,255,255,0.82)', fontWeight: '700' }}>
+                    Recently here:
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.74)', marginTop: 2 }}>
+                    {recentlyHereNames.join(', ')}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={{ color: 'rgba(255,255,255,0.7)' }}>
+                  No users here right now
+                </Text>
+              )
             ) : (
               onlineUsers.slice(0, 6).map(u => {
                 const status = getInviteStatusLabel(u.uid);
@@ -22308,6 +23572,67 @@ const LiveStreamModal = ({
             )}
           </View>
         )}
+        {isLiveStarted && joinedParticipants.length > 0 && (
+          <View
+            style={{
+              position: 'absolute',
+              top: insets.top + (pendingRequests.length > 0 ? 330 : 210),
+              left: 12,
+              right: 12,
+              backgroundColor: 'rgba(0,0,0,0.72)',
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.35)',
+              padding: 8,
+            }}
+          >
+            <Text style={{ color: '#9DE6FF', fontWeight: '800', marginBottom: 6 }}>
+              Joined ({joinedParticipants.length})
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {joinedParticipants.map(p => (
+                  <View
+                    key={p.uid}
+                    style={{ alignItems: 'center', marginRight: 10, width: 52 }}
+                  >
+                    {p.photo ? (
+                      <Image
+                        source={{ uri: p.photo }}
+                        style={{ width: 34, height: 34, borderRadius: 17 }}
+                      />
+                    ) : (
+                      <View
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 17,
+                          backgroundColor: 'rgba(255,255,255,0.18)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Text style={{ color: 'white', fontSize: 11 }}>
+                          {p.name.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        color: 'rgba(255,255,255,0.86)',
+                        fontSize: 10,
+                        marginTop: 3,
+                      }}
+                    >
+                      {p.name}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        )}
         {isLiveStarted && showUserPanel && (
           <UserManagementPanel
             viewers={viewers}
@@ -22354,7 +23679,7 @@ const LiveStreamModal = ({
             >
               <Text style={editorStyles.liveRightIcon}>🟢</Text>
               <Text style={editorStyles.liveRightLabel}>
-                {showOnlineInvitePanel ? 'Online On' : 'Online'}
+                {showOnlineInvitePanel ? 'Here Now! On' : 'Here Now!'}
               </Text>
             </Pressable>
             {/* Screen Share */}

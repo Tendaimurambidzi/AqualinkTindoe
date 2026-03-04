@@ -13,6 +13,7 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   getCrewCount,
   isInCrew,
@@ -49,6 +50,8 @@ const normalizeText = (value?: string | null) =>
     .replace(/^[@/]+/, '')
     .toLowerCase();
 
+const VIBE_HUNT_RECENT_KEY = 'vibe_hunt_recent_queries';
+
 const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   onProfilePhotoSelect,
   onChatUserSelect,
@@ -68,6 +71,29 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const [inCrew, setInCrew] = useState<boolean>(false);
   const [bio, setBio] = useState<string>('');
   const [crewLoading, setCrewLoading] = useState(false);
+  const [recentQueries, setRecentQueries] = useState<string[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const stored = await AsyncStorage.getItem(VIBE_HUNT_RECENT_KEY);
+        if (!mounted || !stored) return;
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setRecentQueries(
+            parsed
+              .map(item => String(item || '').trim())
+              .filter(Boolean)
+              .slice(0, 8),
+          );
+        }
+      } catch {}
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedUser || !selectedUser.uid || !modalVisible) return;
@@ -178,6 +204,15 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       setError('Default: No search yet.');
       return;
     }
+    const term = searchQuery.trim();
+    setRecentQueries(prev => {
+      const next = [
+        term,
+        ...prev.filter(item => item.toLowerCase() !== term.toLowerCase()),
+      ].slice(0, 8);
+      AsyncStorage.setItem(VIBE_HUNT_RECENT_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
     setLoading(true);
     setWebLoading(true);
     try {
@@ -368,6 +403,33 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           )}
         </Pressable>
       </View>
+
+      {recentQueries.length > 0 && (
+        <View style={styles.recentWrap}>
+          <View style={styles.recentHeaderRow}>
+            <Text style={styles.sectionTitle}>Past searches</Text>
+            <Pressable
+              onPress={() => {
+                setRecentQueries([]);
+                AsyncStorage.removeItem(VIBE_HUNT_RECENT_KEY).catch(() => {});
+              }}
+            >
+              <Text style={styles.clearRecentText}>Clear</Text>
+            </Pressable>
+          </View>
+          <View style={styles.recentChipRow}>
+            {recentQueries.map(item => (
+              <Pressable
+                key={`vh-recent-${item}`}
+                style={styles.recentChip}
+                onPress={() => setSearchQuery(item)}
+              >
+                <Text style={styles.recentChipText}>{item}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       {error === 'Failed: No results.' && (
         <Text style={{ color: '#888', textAlign: 'center', marginTop: 16 }}>
@@ -600,6 +662,44 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 15,
+  },
+  recentWrap: {
+    marginTop: 8,
+    backgroundColor: 'rgba(0, 31, 63, 0.75)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 194, 255, 0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  recentHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  clearRecentText: {
+    color: '#58C8FF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  recentChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 6,
+  },
+  recentChip: {
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(88, 200, 255, 0.55)',
+    backgroundColor: 'rgba(0, 194, 255, 0.14)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  recentChipText: {
+    color: '#D9F5FF',
+    fontSize: 12,
+    fontWeight: '600',
   },
   resultsContainer: {
     backgroundColor: 'rgba(0, 31, 63, 0.95)',
