@@ -5725,7 +5725,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             id: doc.id,
             liveId: String(data.liveId),
             fromUid: String(data.fromUid),
-            fromName: String(data.fromName || 'Host'),
+            fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
             liveChannel: data.liveChannel ? String(data.liveChannel) : null,
@@ -20628,8 +20628,22 @@ const LiveStreamModal = ({
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [liveComments, setLiveComments] = useState<
-    Array<{ id: string; text: string; from?: string; ts: number }>
+    Array<{
+      id: string;
+      text: string;
+      from?: string;
+      fromUid?: string;
+      ts?: number;
+      replyToId?: string;
+      replyToFrom?: string;
+      replyToText?: string;
+    }>
   >([]);
+  const [replyingToLiveComment, setReplyingToLiveComment] = useState<{
+    id: string;
+    from?: string;
+    text: string;
+  } | null>(null);
   const [hostName, setHostName] = useState<string>('');
   const [hostPhoto, setHostPhoto] = useState<string | null>(null);
   const [flyingComments, setFlyingComments] = useState<
@@ -20647,7 +20661,16 @@ const LiveStreamModal = ({
     Alert.alert('Splash Comment', `Splashed comment ${commentId}`);
   };
   const onEchoBack = (comment: { id: string; from?: string; text: string }) => {
-    Alert.alert('Echo Back', `Replying to ${comment.from}: "${comment.text}"`);
+    setReplyingToLiveComment({
+      id: comment.id,
+      from: comment.from,
+      text: comment.text,
+    });
+    setShowCommentInput(true);
+    if (!commentText.trim()) {
+      const mention = String(comment.from || '').trim();
+      setCommentText(mention ? `@${mention} ` : '');
+    }
   };
                     
   // --- Enhanced Live Controls state (safe stubs) ---
@@ -20692,41 +20715,9 @@ const LiveStreamModal = ({
     Array<{ uid: string; name: string; photo: string | null }>
   >([]);
   const MAX_HERE_NOW_SCAN = 200;
-  const applyLiveQualityProfile = useCallback((engine: any) => {
-    const cellularLike = !isWifi || !!dataSaver?.cellular;
-    const saverOnCell = cellularLike && (bridge?.dataSaverDefaultOnCell || dataSaver?.enabled);
-    const maxResolution = String(dataSaver?.maxResolution || 'high');
-    const highAllowed = !saverOnCell && maxResolution !== 'low';
-    const width = highAllowed ? (maxResolution === 'med' ? 960 : 1280) : 640;
-    const height = highAllowed ? (maxResolution === 'med' ? 540 : 720) : 360;
-    const frameRate = highAllowed ? 24 : 15;
-    const maxBitrate = saverOnCell
-      ? Number(bridge?.liveCellularMaxBitrate || 520_000)
-      : 1_600_000;
-
-    try {
-      engine.enableDualStreamMode?.(true);
-    } catch {}
-    try {
-      engine.setRemoteDefaultVideoStreamType?.(saverOnCell ? 1 : 0);
-    } catch {}
-    try {
-      engine.setVideoEncoderConfiguration?.({
-        dimensions: { width, height },
-        frameRate,
-        bitrate: maxBitrate,
-        minBitrate: Math.max(180_000, Math.floor(maxBitrate * 0.55)),
-        orientationMode: 1,
-        degradationPrefer: 1,
-      });
-    } catch {}
-    try {
-      engine.setAudioProfile?.(4, saverOnCell ? 1 : 0);
-    } catch {}
-    try {
-      engine.setAudioScenario?.(2);
-    } catch {}
-  }, [bridge?.dataSaverDefaultOnCell, bridge?.liveCellularMaxBitrate, dataSaver?.cellular, dataSaver?.enabled, dataSaver?.maxResolution, isWifi]);
+  const applyLiveQualityProfile = useCallback((_engine: any) => {
+    // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
+  }, []);
   useEffect(() => {
     if (!showUserPanel) setUserPanelMode('none');
   }, [showUserPanel]);
@@ -21294,7 +21285,15 @@ const LiveStreamModal = ({
           .add({
             text: txt,
             fromUid: uid,
-            from: authMod?.().currentUser?.displayName || 'Host',
+            from:
+              authMod?.().currentUser?.displayName ||
+              profileName ||
+              accountCreationHandle ||
+              hostName ||
+              'Skipper',
+            replyToId: replyingToLiveComment?.id || null,
+            replyToFrom: replyingToLiveComment?.from || null,
+            replyToText: replyingToLiveComment?.text || null,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
@@ -21303,6 +21302,7 @@ const LiveStreamModal = ({
     } catch {}
                     
     setCommentText('');
+    setReplyingToLiveComment(null);
     setShowCommentInput(false);
                     
     // Spawn a local flying comment immediately for instant feedback
@@ -21808,7 +21808,7 @@ const LiveStreamModal = ({
         throw new Error('Sign in required');
       }
       const callerName =
-        profileName || accountCreationHandle || me.displayName || 'Host';
+        profileName || accountCreationHandle || me.displayName || hostName || 'Skipper';
       let inboxInviteWritten = false;
       let callableInviteSent = false;
       let inviteStatusWritten = false;
@@ -23250,7 +23250,11 @@ const LiveStreamModal = ({
                     VideoSourceType.VideoSourceCamera)) ||
                 0
               }
-              renderMode={(VideoRenderMode && VideoRenderMode.Hidden) || 1}
+              renderMode={
+                (VideoRenderMode &&
+                  (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) ||
+                2
+              }
             />
           ) : RtcSurfaceView ? ( // v4 older
             React.createElement(RtcSurfaceView, {
@@ -23266,7 +23270,7 @@ const LiveStreamModal = ({
           ) : RtcLocalView?.SurfaceView ? ( // v3
             React.createElement(RtcLocalView.SurfaceView, {
               style: StyleSheet.absoluteFill,
-              renderMode: VideoRenderMode?.Hidden ?? 1,
+              renderMode: VideoRenderMode?.Fit ?? 2,
             })
           ) : (
             <View
@@ -23309,15 +23313,43 @@ const LiveStreamModal = ({
                   }}
                 >
                   <View style={editorStyles.liveCommentBubble}>
-                    <Text style={editorStyles.liveCommentAuthor}>
-                      {(c as any).fromUid
-                        ? displayHandle((c as any).fromUid, c.from)
-                        : c.from === 'You'
-                        ? 'You'
-                        : formatHandle(c.from)}
-                      :
-                    </Text>
-                    <Text style={editorStyles.liveCommentText}>{c.text}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={editorStyles.liveCommentAuthor}>
+                        {(c as any).fromUid
+                          ? displayHandle((c as any).fromUid, c.from)
+                          : c.from === 'You'
+                          ? 'You'
+                          : formatHandle(c.from)}
+                        :
+                      </Text>
+                      {!!(c as any).replyToFrom && (
+                        <Text
+                          style={{
+                            color: 'rgba(157,230,255,0.9)',
+                            fontSize: 11,
+                            marginBottom: 2,
+                          }}
+                          numberOfLines={1}
+                        >
+                          ↪ {(c as any).replyToFrom}: {(c as any).replyToText || ''}
+                        </Text>
+                      )}
+                      <Text style={editorStyles.liveCommentText}>{c.text}</Text>
+                    </View>
+                    <Pressable
+                      style={{ marginLeft: 8, paddingVertical: 4, paddingHorizontal: 6 }}
+                      onPress={() =>
+                        onEchoBack({
+                          id: c.id,
+                          from: String(c.from || ''),
+                          text: String(c.text || ''),
+                        })
+                      }
+                    >
+                      <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 11 }}>
+                        Reply
+                      </Text>
+                    </Pressable>
                   </View>
                 </Pressable>
               ))}
@@ -24102,11 +24134,14 @@ const LiveStreamModal = ({
                   </Text>
                 </View>
               )}
-              <Text
-                style={{ color: 'white', fontWeight: '700', marginLeft: 8 }}
-              >
-                /{hostName || 'you'}
-              </Text>
+              <View style={{ marginLeft: 8 }}>
+                <Text style={{ color: 'white', fontWeight: '700' }}>
+                  /{hostName || 'you'}
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>
+                  Stream Captain
+                </Text>
+              </View>
             </View>
             <ScrollView
               horizontal
@@ -24150,11 +24185,35 @@ const LiveStreamModal = ({
               { bottom: insets.bottom + endBarHeight + mediaBarHeight + 8 },
             ]}
           >
+            {!!replyingToLiveComment && (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 8,
+                  backgroundColor: 'rgba(0,194,255,0.16)',
+                  borderRadius: 8,
+                  paddingHorizontal: 8,
+                  paddingVertical: 6,
+                }}
+              >
+                <Text
+                  numberOfLines={1}
+                  style={{ color: '#D8F5FF', flex: 1, marginRight: 8, fontSize: 12 }}
+                >
+                  Replying to {replyingToLiveComment.from || 'user'}: {replyingToLiveComment.text}
+                </Text>
+                <Pressable onPress={() => setReplyingToLiveComment(null)}>
+                  <Text style={{ color: '#9DE6FF', fontWeight: '700' }}>Cancel</Text>
+                </Pressable>
+              </View>
+            )}
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
-                placeholder="Say something..."
+                placeholder={replyingToLiveComment ? 'Write a reply...' : 'Say something...'}
                 placeholderTextColor="rgba(255,255,255,0.6)"
                 style={[styles.input, { flex: 1, margin: 0 }]}
                 autoFocus
