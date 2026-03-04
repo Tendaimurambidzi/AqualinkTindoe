@@ -59,7 +59,7 @@ async function addPing(userId, data) {
     const newBadgeCount = currentUnreadCount + 1;
     const type = String(data.type || 'ping');
     const isCallInvite = type === 'call_invite' || type === 'incoming_call';
-    const channelId = isCallInvite ? 'aqualink_calls' : 'aqualink_notifications';
+    const channelId = isCallInvite ? 'aqualink_calls_progress' : 'aqualink_notifications';
 
     const message = {
       notification: {
@@ -93,7 +93,7 @@ async function addPing(userId, data) {
         notification: {
           channelId: channelId,
           notificationCount: newBadgeCount,
-          sound: isCallInvite ? 'lg_cat_ring_freetone_org' : 'default',
+          sound: isCallInvite ? 'call_progress' : 'default',
           defaultVibrateTimings: true,
           defaultSound: !isCallInvite,
           notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
@@ -521,7 +521,7 @@ async function addPingModular(userId, data) {
     
     const type = String(data.type || 'ping');
     const isCallInvite = type === 'call_invite' || type === 'incoming_call';
-    const channelId = isCallInvite ? 'aqualink_calls' : 'aqualink_notifications';
+    const channelId = isCallInvite ? 'aqualink_calls_progress' : 'aqualink_notifications';
 
     const message = {
       notification: {
@@ -554,7 +554,7 @@ async function addPingModular(userId, data) {
         ttl: isCallInvite ? 30000 : 3600000,
         notification: {
           channelId: channelId,
-          sound: isCallInvite ? 'lg_cat_ring_freetone_org' : 'default',
+          sound: isCallInvite ? 'call_progress' : 'default',
           defaultVibrateTimings: true,
           defaultSound: !isCallInvite,
           notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',

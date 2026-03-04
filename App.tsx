@@ -484,15 +484,24 @@ type LiveInviteNotice = {
   liveTitle?: string | null;
   liveChannel?: string | null;
   directCallId?: string | null;
+  directCallChannel?: string | null;
   callType?: DirectCallMode | null;
-  expiresAtMs?: number | null;
 };
 
-const LIVE_INVITE_TTL_MS = 15000;
+type LiveInviteJoinPreset = {
+  liveId?: string | null;
+  channel?: string | null;
+  title?: string | null;
+  fromName?: string | null;
+  nonce?: number;
+};
+
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
+const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
+const STALE_RINGING_CALL_MAX_AGE_MS = 90 * 1000;
 const ALLOW_TOKENLESS_DRIFT = true;
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
-const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
+const CALLEE_RING_ASSET = require('./assets/Call progress.mp3');
                     
 const toJSDate = (ts: any) => {
   try {
@@ -874,6 +883,61 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 12,
     maxWidth: 140,
+  },
+  inviteBadgeCard: {
+    width: Math.min(SCREEN_WIDTH - 24, 360),
+    maxHeight: SCREEN_HEIGHT * 0.25,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 212, 255, 0.5)',
+    backgroundColor: 'rgba(6, 12, 24, 0.96)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    elevation: 14,
+    shadowColor: '#00D4FF',
+    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+  },
+  inviteBadgeTitle: {
+    color: 'white',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  inviteBadgeText: {
+    color: 'rgba(255,255,255,0.9)',
+    fontSize: 12,
+    marginTop: 1,
+  },
+  inviteBadgeActions: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  inviteBadgeBtn: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inviteBadgeJoinBtn: {
+    backgroundColor: '#00C2FF',
+  },
+  inviteBadgeDismissBtn: {
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  inviteBadgeJoinText: {
+    color: '#041320',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  inviteBadgeDismissText: {
+    color: 'white',
+    fontWeight: '700',
+    fontSize: 13,
   },
   posterName: {
     color: 'white',
@@ -2950,6 +3014,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (incomingCallRingtoneRef.current) return;
     const candidates: Array<string | number> = [
       CALLEE_RING_ASSET,
+      CALL_PROGRESS_ASSET,
+      'call_progress',
+      'call_progress.mp3',
+      'Call progress',
+      'Call progress.mp3',
       'lg_cat_ring_freetone_org',
       'lg_cat_ring_freetone_org.mp3',
       'Lg_Cat_Ring_freetone.org',
@@ -5464,9 +5533,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [driftWatchers, setDriftWatchers] = useState<string[]>([]);
   const [vibeAlert, setVibeAlert] = useState<VibeAlert | null>(null);
   const [incomingLiveInvite, setIncomingLiveInvite] = useState<LiveInviteNotice | null>(null);
-  const [incomingLiveInviteCountdown, setIncomingLiveInviteCountdown] = useState<number>(0);
+  const [liveInviteJoinPreset, setLiveInviteJoinPreset] = useState<LiveInviteJoinPreset | null>(null);
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const incomingInviteTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
   const flickerAnim = useRef(new Animated.Value(0)).current;
                     
@@ -5667,7 +5735,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const me = auth?.()?.currentUser;
     if (!me?.uid) {
       setIncomingLiveInvite(null);
-      setIncomingLiveInviteCountdown(0);
       return;
     }
     const unsub = firestore()
@@ -5677,30 +5744,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .onSnapshot(
         snap => {
           const docs = snap?.docs || [];
-          const now = Date.now();
           const doc =
             docs
               .slice()
-              .filter((d: any) => {
-                const data = d.data() || {};
-                const createdAtMs = toMillis(data.createdAt);
-                const expiresAtMs =
-                  Number(data.expiresAtMs || 0) ||
-                  (createdAtMs ? createdAtMs + LIVE_INVITE_TTL_MS : 0);
-                if (expiresAtMs && expiresAtMs <= now) {
-                  try {
-                    d.ref.set(
-                      {
-                        status: 'missed',
-                        respondedAt: firestore.FieldValue.serverTimestamp(),
-                      },
-                      { merge: true },
-                    );
-                  } catch {}
-                  return false;
-                }
-                return true;
-              })
               .sort(
                 (a: any, b: any) =>
                   toJSDate((b.data() || {}).createdAt).getTime() -
@@ -5708,34 +5754,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               )[0] || null;
           if (!doc) {
             setIncomingLiveInvite(null);
-            setIncomingLiveInviteCountdown(0);
             return;
           }
           const data = doc.data() || {};
-          if (!data?.liveId || !data?.fromUid) {
+          if (!data?.fromUid) {
             setIncomingLiveInvite(null);
-            setIncomingLiveInviteCountdown(0);
             return;
           }
-          const createdAtMs = toMillis(data.createdAt);
-          const expiresAtMs =
-            Number(data.expiresAtMs || 0) ||
-            (createdAtMs ? createdAtMs + LIVE_INVITE_TTL_MS : Date.now() + LIVE_INVITE_TTL_MS);
           setIncomingLiveInvite({
             id: doc.id,
-            liveId: String(data.liveId),
+            liveId: String(data.liveId || ''),
             fromUid: String(data.fromUid),
             fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
             liveChannel: data.liveChannel ? String(data.liveChannel) : null,
             directCallId: data.directCallId ? String(data.directCallId) : null,
+            directCallChannel: data.directCallChannel
+              ? String(data.directCallChannel)
+              : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
-            expiresAtMs,
           });
-          setIncomingLiveInviteCountdown(
-            Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000)),
-          );
         },
         () => {
           // keep silent if listener fails; app still works without invites stream
@@ -5747,48 +5786,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, [user?.uid]);
-
-  useEffect(() => {
-    if (incomingInviteTimerRef.current) {
-      clearInterval(incomingInviteTimerRef.current as any);
-      incomingInviteTimerRef.current = null;
-    }
-    if (!incomingLiveInvite?.expiresAtMs) {
-      setIncomingLiveInviteCountdown(0);
-      return;
-    }
-    const tick = () => {
-      const left = Math.max(
-        0,
-        Math.ceil((Number(incomingLiveInvite.expiresAtMs) - Date.now()) / 1000),
-      );
-      setIncomingLiveInviteCountdown(left);
-      if (left <= 0) {
-        respondToLiveInvite('miss');
-      }
-    };
-    tick();
-    incomingInviteTimerRef.current = setInterval(tick, 1000) as any;
-    return () => {
-      if (incomingInviteTimerRef.current) {
-        clearInterval(incomingInviteTimerRef.current as any);
-        incomingInviteTimerRef.current = null;
-      }
-    };
-  }, [incomingLiveInvite?.id, incomingLiveInvite?.expiresAtMs]);
-
-  useEffect(() => {
-    if (!incomingLiveInvite || !bridge.liveJoinPreview) return;
-    if (!incomingLiveInviteCountdown || incomingLiveInviteCountdown <= 2) return;
-    const t = setTimeout(() => {
-      respondToLiveInvite('join');
-    }, 1300);
-    return () => clearTimeout(t);
-  }, [
-    bridge.liveJoinPreview,
-    incomingLiveInvite?.id,
-    incomingLiveInviteCountdown,
-  ]);
   // Request to drift with a live host (viewer-side action)
   const requestToDriftForLiveId = useCallback(
     async (liveId: string, hostName?: string) => {
@@ -5834,15 +5831,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
 
   const respondToLiveInvite = useCallback(
-    async (action: 'join' | 'ignore' | 'miss') => {
+    async (action: 'join' | 'dismiss') => {
       if (!incomingLiveInvite) return;
-      const nextStatus =
-        action === 'join'
-          ? 'accepted'
-          : action === 'ignore'
-          ? 'ignored'
-          : 'missed';
-      let joinedViaLinkedCall = false;
+      const nextStatus = action === 'join' ? 'accepted' : 'ignored';
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
@@ -5870,119 +5861,61 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 { merge: true },
               );
           }
-
-          if (action === 'join') {
-            const linkedCallId = String(
-              incomingLiveInvite.directCallId || '',
-            ).trim();
-            if (linkedCallId) {
-              try {
-                const myCallRef = firestore()
-                  .collection(`users/${me.uid}/direct_calls`)
+          const linkedCallId = String(incomingLiveInvite.directCallId || '').trim();
+          if (linkedCallId) {
+            try {
+              const myCallRef = firestore()
+                .collection(`users/${me.uid}/direct_calls`)
+                .doc(linkedCallId);
+              const callSnap = await myCallRef.get();
+              const callData = callSnap?.data?.() || {};
+              const callerUid = String(callData?.callerUid || '').trim();
+              if (callSnap?.exists && callerUid) {
+                const peerCallRef = firestore()
+                  .collection(`users/${callerUid}/direct_calls`)
                   .doc(linkedCallId);
-                const callSnap = await myCallRef.get();
-                const callData = callSnap?.data?.() || {};
-                const callerUid = String(callData?.callerUid || '').trim();
-                const channelName = String(callData?.channelName || '').trim();
-                const callStatusRaw = String(
-                  callData?.status || 'ringing',
-                ).toLowerCase();
-                const callType: DirectCallMode =
-                  callData?.callType === 'audio' ? 'audio' : 'video';
-                if (callSnap?.exists && callerUid && channelName) {
-                  const tokenFromDoc = String(callData?.agoraToken || '').trim();
-                  let freshToken: string | null = tokenFromDoc || null;
-                  if (!freshToken) {
-                    try {
-                      const cfgLocal = (() => {
-                        try {
-                          return require('./liveConfig');
-                        } catch {
-                          return null;
-                        }
-                      })();
-                      const tokenEndpoint = String(
-                        cfgLocal?.AGORA_TOKEN_ENDPOINT || '',
-                      ).trim();
-                      if (tokenEndpoint) {
-                        const q = `?channel=${encodeURIComponent(
-                          channelName,
-                        )}&role=publisher&uid=0&expire=3600`;
-                        const timeout = new Promise<never>((_, reject) => {
-                          setTimeout(
-                            () => reject(new Error('token-timeout')),
-                            3500,
-                          );
-                        });
-                        const resp: any = await Promise.race([
-                          fetch(`${tokenEndpoint}${q}`),
-                          timeout,
-                        ]);
-                        if (resp?.ok) {
-                          const json = await resp.json();
-                          const token = String(json?.token || '').trim();
-                          freshToken = token || null;
-                        }
+                const patch =
+                  action === 'join'
+                    ? {
+                        status: 'ended',
+                        endedBy: me.uid,
+                        endedAt: firestore.FieldValue.serverTimestamp(),
                       }
-                    } catch {}
-                  }
-
-                  if (callStatusRaw === 'ringing') {
-                    const peerCallRef = firestore()
-                      .collection(`users/${callerUid}/direct_calls`)
-                      .doc(linkedCallId);
-                    const patch = {
-                      status: 'accepted',
-                      acceptedAt: firestore.FieldValue.serverTimestamp(),
-                      agoraToken: freshToken || null,
-                    };
-                    const acceptBatch = firestore().batch();
-                    acceptBatch.set(myCallRef, patch, { merge: true });
-                    acceptBatch.set(peerCallRef, patch, { merge: true });
-                    await acceptBatch.commit();
-                  }
-
-                  if (
-                    callStatusRaw === 'ringing' ||
-                    callStatusRaw === 'accepted'
-                  ) {
-                    const joinedCall: DirectCallSession = {
-                      id: linkedCallId,
-                      callerUid,
-                      calleeUid: String(callData?.calleeUid || me.uid),
-                      callerName: callData?.callerName || incomingLiveInvite.fromName,
-                      calleeName: callData?.calleeName || null,
-                      callerAvatar: callData?.callerAvatar || null,
-                      calleeAvatar: callData?.calleeAvatar || null,
-                      channelName,
-                      callType,
-                      status: 'accepted',
-                      createdAt: callData?.createdAt,
-                      acceptedAt: callData?.acceptedAt || null,
-                      endedAt: callData?.endedAt || null,
-                      endedBy: callData?.endedBy || null,
-                      agoraToken: freshToken || null,
-                    };
-                    setIncomingDirectCall(null);
-                    setOutgoingDirectCall(null);
-                    setActiveDirectCall(joinedCall);
-                    setActiveDirectCallRole('callee');
-                    joinedViaLinkedCall = true;
-                  }
-                }
-              } catch {}
-            }
+                    : {
+                        status: 'declined',
+                        endedBy: me.uid,
+                        endedAt: firestore.FieldValue.serverTimestamp(),
+                      };
+                const batch = firestore().batch();
+                batch.set(myCallRef, patch, { merge: true });
+                batch.set(peerCallRef, patch, { merge: true });
+                await batch.commit();
+              }
+            } catch {}
           }
         }
       } catch {}
-      if (action === 'join' && !joinedViaLinkedCall) {
-        requestToDriftForLiveId(
-          incomingLiveInvite.liveId,
-          incomingLiveInvite.fromName,
-        );
+
+      if (action === 'join') {
+        if (incomingLiveInvite.liveId) {
+          requestToDriftForLiveId(
+            incomingLiveInvite.liveId,
+            incomingLiveInvite.fromName,
+          );
+        }
+        setLiveInviteJoinPreset({
+          liveId: incomingLiveInvite.liveId,
+          channel:
+            incomingLiveInvite.liveChannel ||
+            incomingLiveInvite.directCallChannel ||
+            null,
+          title: incomingLiveInvite.liveTitle || null,
+          fromName: incomingLiveInvite.fromName,
+          nonce: Date.now(),
+        });
+        setShowLive(true);
       }
       setIncomingLiveInvite(null);
-      setIncomingLiveInviteCountdown(0);
     },
     [incomingLiveInvite, requestToDriftForLiveId],
   );
@@ -12243,6 +12176,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             c.callerUid !== myUid,
         );
       if (!latest) return;
+      const createdAtMs =
+        latest?.createdAt?.toDate?.()?.getTime?.() || 0;
+      const isStale =
+        !createdAtMs ||
+        Date.now() - createdAtMs > STALE_RINGING_CALL_MAX_AGE_MS;
+      if (isStale) {
+        try {
+          const myCallRef = firestore()
+            .collection(`users/${myUid}/direct_calls`)
+            .doc(latest.id);
+          const peerCallRef = firestore()
+            .collection(`users/${latest.callerUid}/direct_calls`)
+            .doc(latest.id);
+          const stalePatch = {
+            status: 'missed',
+            endedBy: latest.callerUid || null,
+            endedAt: firestore.FieldValue.serverTimestamp(),
+          };
+          const staleBatch = firestore().batch();
+          staleBatch.set(myCallRef, stalePatch, { merge: true });
+          staleBatch.set(peerCallRef, stalePatch, { merge: true });
+          staleBatch.commit().catch(() => {});
+        } catch {}
+        return;
+      }
       if (!latest.calleeNotifiedAt) {
         try {
           const myCallRef = firestore()
@@ -12451,7 +12409,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .then((snap: any) => {
                 const call = mapDirectCallDoc(snap);
                 if (!call) return;
-                if (call.status === 'ringing' || call.status === 'accepted') {
+                const createdAtMs =
+                  call?.createdAt?.toDate?.()?.getTime?.() || 0;
+                const isFresh =
+                  createdAtMs > 0 &&
+                  Date.now() - createdAtMs <= STALE_RINGING_CALL_MAX_AGE_MS;
+                if (call.status === 'ringing' && isFresh) {
                   setIncomingDirectCall(call);
                 }
               })
@@ -12484,10 +12447,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleForegroundRemoteMessage = useCallback(
     (rm: any) => {
       try {
-        const type =
+        const rawType =
           rm?.data?.type ||
           rm?.notification?.title?.toLowerCase() ||
           'activity';
+        const type = String(rawType || '').toLowerCase();
+        const isIncomingCallNotification =
+          type === 'call_invite' || type === 'incoming_call';
         const waveId = rm?.data?.waveId || undefined;
         const actor = rm?.data?.actorName || rm?.data?.fromName || 'Viber';
         const text =
@@ -12521,8 +12487,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ];
         });
         setUnreadPingsCount(n => n + 1);
-                    
-        if (rm?.notification?.body) {
+
+        if (isIncomingCallNotification) {
+          startIncomingCallRingtone();
+          handleNotificationNavigation(rm?.data || {});
+          notifySuccess(text || 'Incoming call');
+        } else if (rm?.notification?.body) {
           notifySuccess(rm.notification.body || 'You have new activity');
           playFalconSound();
         }
@@ -12532,7 +12502,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         } catch {}
       }
     },
-    [notifySuccess, playFalconSound, setPings, setUnreadPingsCount],
+    [
+      handleNotificationNavigation,
+      notifySuccess,
+      playFalconSound,
+      setPings,
+      setUnreadPingsCount,
+      startIncomingCallRingtone,
+    ],
   );
                     
   // Cross-version Android audio permission helper (A12/A13/A14)
@@ -13358,10 +13335,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           pointerEvents="box-none"
           style={[
             styles.driftAlertContainer,
-            { top: (insets.top || 0) + 78 },
+            {
+              top: (insets.top || 0) + 76,
+              left: 12,
+              right: 12,
+              backgroundColor: 'transparent',
+              borderWidth: 0,
+              shadowOpacity: 0,
+              elevation: 0,
+              paddingHorizontal: 0,
+              paddingVertical: 0,
+            },
           ]}
         >
-          <View style={[styles.driftAlertButton, { paddingVertical: 10 }]}>
+          <View style={styles.inviteBadgeCard}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <View style={styles.driftAlertAvatar}>
                 {incomingLiveInvite.fromPhoto ? (
@@ -13376,52 +13363,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={{ color: 'white', fontWeight: '800' }}>
+                <Text style={styles.inviteBadgeTitle}>
                   Live Invite
                 </Text>
-                <Text style={{ color: 'rgba(255,255,255,0.9)' }}>
+                <Text style={styles.inviteBadgeText}>
                   {incomingLiveInvite.fromName} invited you to{' '}
                   {incomingLiveInvite.liveTitle || 'Drift Expo'}
                 </Text>
-                {incomingLiveInviteCountdown > 0 && (
-                  <Text style={{ color: 'rgba(255,255,255,0.7)', marginTop: 2 }}>
-                    Expires in {incomingLiveInviteCountdown}s
-                  </Text>
-                )}
               </View>
             </View>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+            <View style={styles.inviteBadgeActions}>
               <Pressable
-                style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
-                onPress={() => saveBridge({ liveJoinPreview: !bridge.liveJoinPreview })}
+                style={[
+                  styles.inviteBadgeBtn,
+                  styles.inviteBadgeDismissBtn,
+                ]}
+                onPress={() => respondToLiveInvite('dismiss')}
+                android_ripple={{ color: 'rgba(255,255,255,0.22)' }}
               >
-                <Text style={styles.secondaryBtnText}>
-                  {bridge.liveJoinPreview ? 'Auto-Join On' : 'Auto-Join Off'}
-                </Text>
-              </Pressable>
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-              <Pressable
-                style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
-                onPress={() => respondToLiveInvite('miss')}
-              >
-                <Text style={styles.secondaryBtnText}>Miss</Text>
+                <Text style={styles.inviteBadgeDismissText}>Dismiss</Text>
               </Pressable>
               <Pressable
-                style={[styles.secondaryBtn, { flex: 1, marginTop: 0 }]}
-                onPress={() => respondToLiveInvite('ignore')}
-              >
-                <Text style={styles.secondaryBtnText}>Decline</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.primaryBtn, { flex: 1 }]}
+                style={[
+                  styles.inviteBadgeBtn,
+                  styles.inviteBadgeJoinBtn,
+                ]}
                 onPress={() => respondToLiveInvite('join')}
+                android_ripple={{ color: 'rgba(255,255,255,0.28)' }}
               >
-                <Text style={styles.primaryBtnText}>
-                  {incomingLiveInviteCountdown > 0
-                    ? `Accept (${incomingLiveInviteCountdown}s)`
-                    : 'Accept'}
-                </Text>
+                <Text style={styles.inviteBadgeJoinText}>Join</Text>
               </Pressable>
             </View>
           </View>
@@ -19292,8 +19262,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         bridge={bridge}
         dataSaver={dataSaver}
         isWifi={isWifi}
+        inviteJoinPreset={liveInviteJoinPreset}
         onClose={() => {
           setShowLive(false);
+          setLiveInviteJoinPreset(null);
           setIsCharteredDrift(false);
         }}
       />
@@ -20224,19 +20196,25 @@ const DirectCallModal = ({
               RtcSurfaceView ? (
                 React.createElement(RtcSurfaceView, {
                   style: StyleSheet.absoluteFill,
-                  canvas: { uid: remoteUid },
+                  canvas: {
+                    uid: remoteUid,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  },
                 })
               ) : RtcTextureView ? (
                 React.createElement(RtcTextureView, {
                   style: StyleSheet.absoluteFill,
-                  canvas: { uid: remoteUid },
+                  canvas: {
+                    uid: remoteUid,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  },
                 })
               ) : RtcRemoteView?.SurfaceView ? (
                 React.createElement(RtcRemoteView.SurfaceView, {
                   style: StyleSheet.absoluteFill,
                   uid: remoteUid,
                   channelId: call.channelName,
-                  renderMode: VideoRenderMode?.Hidden ?? 1,
+                  renderMode: VideoRenderMode?.Fit ?? 2,
                 })
               ) : (
                 <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -20255,22 +20233,28 @@ const DirectCallModal = ({
                           VideoSourceType.VideoSourceCamera)) ||
                       0
                     }
-                    renderMode={(VideoRenderMode && VideoRenderMode.Hidden) || 1}
+                    renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
                   />
                 ) : RtcSurfaceView ? (
                   React.createElement(RtcSurfaceView, {
                     style: StyleSheet.absoluteFill,
-                    canvas: { uid: 0 },
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
                   })
                 ) : RtcTextureView ? (
                   React.createElement(RtcTextureView, {
                     style: StyleSheet.absoluteFill,
-                    canvas: { uid: 0 },
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
                   })
                 ) : RtcLocalView?.SurfaceView ? (
                   React.createElement(RtcLocalView.SurfaceView, {
                     style: StyleSheet.absoluteFill,
-                    renderMode: VideoRenderMode?.Hidden ?? 1,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
                   })
                 ) : (
                   <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
@@ -20324,23 +20308,29 @@ const DirectCallModal = ({
                           VideoSourceType.VideoSourceCamera)) ||
                       0
                     }
-                    renderMode={(VideoRenderMode && VideoRenderMode.Hidden) || 1}
+                    renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
                   />
                 ) : RtcSurfaceView ? (
                   React.createElement(RtcSurfaceView, {
                     style: StyleSheet.absoluteFill,
-                    canvas: { uid: 0 },
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
                     zOrderMediaOverlay: true,
                   })
                 ) : RtcTextureView ? (
                   React.createElement(RtcTextureView, {
                     style: StyleSheet.absoluteFill,
-                    canvas: { uid: 0 },
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
                   })
                 ) : RtcLocalView?.SurfaceView ? (
                   React.createElement(RtcLocalView.SurfaceView, {
                     style: StyleSheet.absoluteFill,
-                    renderMode: VideoRenderMode?.Hidden ?? 1,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
                   })
                 ) : null}
               </View>
@@ -20509,6 +20499,7 @@ const LiveStreamModal = ({
   bridge,
   dataSaver,
   isWifi,
+  inviteJoinPreset,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -20518,6 +20509,7 @@ const LiveStreamModal = ({
   bridge: any;
   dataSaver: any;
   isWifi: boolean;
+  inviteJoinPreset?: LiveInviteJoinPreset | null;
 }) => {
   const insets = useSafeAreaInsets();
   const Agora = useMemo(() => {
@@ -20729,6 +20721,39 @@ const LiveStreamModal = ({
   const promptSubmitRef = useRef<undefined | ((val: string) => void)>(
     undefined,
   );
+
+  useEffect(() => {
+    if (!visible || !inviteJoinPreset || isLiveStarted) return;
+    const suggestedChannel = String(
+      inviteJoinPreset.channel || channelInput || defaultChannel || '',
+    )
+      .trim()
+      .replace(/[^A-Za-z0-9_]/g, '_')
+      .slice(0, 64);
+    if (!suggestedChannel) return;
+    const uidSrc = String(auth?.()?.currentUser?.uid || '0');
+    let uidHash = 0;
+    for (let i = 0; i < uidSrc.length; i += 1) {
+      uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
+    }
+    const mappedUid = (uidHash % 2147483646) + 1;
+    setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
+    setLiveTitle(
+      String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+    );
+    setChannelInput(suggestedChannel);
+    setLiveChannel(suggestedChannel);
+    setLiveUid(mappedUid);
+    setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
+    setStartError(null);
+    setIsLiveStarted(true);
+  }, [
+    defaultChannel,
+    inviteJoinPreset,
+    isLiveStarted,
+    staticToken,
+    visible,
+  ]);
                     
   useEffect(() => {
     if (isChartered) {
@@ -21279,18 +21304,20 @@ const LiveStreamModal = ({
         authMod = require('@react-native-firebase/auth').default;
       } catch {}
       const uid = authMod?.().currentUser?.uid || null;
+      const currentUser = authMod?.().currentUser || null;
+      const fallbackName = String(
+        currentUser?.displayName ||
+          (currentUser?.email ? String(currentUser.email).split('@')[0] : '') ||
+          hostName ||
+          'Skipper',
+      ).trim();
       if (firestoreMod && liveDocId) {
         await firestoreMod()
           .collection(`live/${liveDocId}/comments`)
           .add({
             text: txt,
             fromUid: uid,
-            from:
-              authMod?.().currentUser?.displayName ||
-              profileName ||
-              accountCreationHandle ||
-              hostName ||
-              'Skipper',
+            from: fallbackName,
             replyToId: replyingToLiveComment?.id || null,
             replyToFrom: replyingToLiveComment?.from || null,
             replyToText: replyingToLiveComment?.text || null,
@@ -21782,13 +21809,47 @@ const LiveStreamModal = ({
       crewName: liveTitle || 'Live Session',
       message: `Join my live ${liveTitle || 'session'}`,
     });
-    return result?.data?.status === 'sent';
+    const status = String(result?.data?.status || '').trim().toLowerCase();
+    if (status !== 'sent') {
+      throw new Error(
+        `sendCrewInvitation returned status=${status || 'unknown'}`,
+      );
+    }
+    return true;
   };
                     
   const sendInviteTo = async (
     to: { uid?: string; name?: string } | string,
     options?: { silent?: boolean },
   ) => {
+    const formatInviteDebugError = (err: any): string => {
+      try {
+        const codeRaw =
+          err?.code ||
+          err?.details?.code ||
+          err?.errorInfo?.code ||
+          err?.name ||
+          '';
+        const messageRaw =
+          err?.message ||
+          err?.details?.message ||
+          err?.errorInfo?.message ||
+          '';
+        const code = String(codeRaw || '').trim();
+        const message = String(messageRaw || '').trim();
+        if (code && message) return `${code}: ${message}`;
+        if (code) return code;
+        if (message) return message;
+        try {
+          return JSON.stringify(err);
+        } catch {
+          return String(err || 'Unknown invite error');
+        }
+      } catch {
+        return 'Unknown invite error';
+      }
+    };
+
     let toUid = '';
     if (typeof to === 'string') {
       toUid = to.trim().replace(/^@/, '');
@@ -21807,17 +21868,22 @@ const LiveStreamModal = ({
       if (!me?.uid) {
         throw new Error('Sign in required');
       }
-      const callerName =
-        profileName || accountCreationHandle || me.displayName || hostName || 'Skipper';
+      const callerName = String(
+        me.displayName ||
+          (me.email ? String(me.email).split('@')[0] : '') ||
+          hostName ||
+          'Skipper',
+      ).trim();
       let inboxInviteWritten = false;
       let callableInviteSent = false;
       let inviteStatusWritten = false;
+      let fallbackMentionWritten = false;
       let lastErr: any = null;
       let inviteDocId: string | null = null;
       let directCallId: string | null = null;
       let directCallChannel: string | null = null;
       const directCallType: DirectCallMode = 'video';
-      const computedExpiry = Date.now() + LIVE_INVITE_TTL_MS;
+      const computedExpiry = Date.now() + LIVE_INVITE_EXPIRY_MS;
 
       try {
         const liveInvitesRef = firestore().collection(
@@ -21956,13 +22022,36 @@ const LiveStreamModal = ({
         }
         inboxInviteWritten = true;
       } catch (err) {
+        console.warn('[INVITE DEBUG] inbox invite write failed', err);
         lastErr = err;
       }
 
       try {
         callableInviteSent = await inviteUserToDrift(toUid);
       } catch (err) {
+        console.warn('[INVITE DEBUG] callable sendCrewInvitation failed', err);
         lastErr = err;
+      }
+
+      if (!inboxInviteWritten && !callableInviteSent) {
+        try {
+          await firestore()
+            .collection(`users/${toUid}/mentions`)
+            .add({
+              type: 'live_invite',
+              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+              fromUid: me.uid,
+              fromName: callerName,
+              route: 'Pings',
+              liveId: liveDocId || '',
+              callType: directCallType,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
+          fallbackMentionWritten = true;
+        } catch (err) {
+          console.warn('[INVITE DEBUG] mention fallback write failed', err);
+          lastErr = err;
+        }
       }
 
       try {
@@ -21993,17 +22082,43 @@ const LiveStreamModal = ({
         }
       } catch {}
 
-      if (inboxInviteWritten || callableInviteSent || inviteStatusWritten) {
+      if (
+        inboxInviteWritten ||
+        callableInviteSent ||
+        inviteStatusWritten ||
+        fallbackMentionWritten
+      ) {
         if (!options?.silent) {
           Alert.alert('Success', 'Invitation sent!');
           setShowInviteModal(false);
         }
       } else {
+        console.warn('[INVITE DEBUG] no invite channel succeeded', {
+          inboxInviteWritten,
+          callableInviteSent,
+          inviteStatusWritten,
+          fallbackMentionWritten,
+        });
         throw lastErr || new Error('No invite channel succeeded');
       }
     } catch (error) {
-      console.warn('Invite error:', error);
-      Alert.alert('Error', 'Failed to send invite');
+      const debugInfo = formatInviteDebugError(error);
+      const debugInfoUpper = debugInfo.toUpperCase();
+      const hasInternal = debugInfoUpper.includes('INTERNAL');
+      console.warn('[INVITE DEBUG] sendInviteTo failed', {
+        toUid,
+        toType: typeof to === 'string' ? 'string' : 'object',
+        liveDocId: liveDocId || null,
+        liveChannel: liveChannel || null,
+        debugInfo,
+        rawError: error,
+      });
+      Alert.alert(
+        'Invite Failed',
+        hasInternal
+          ? `INTERNAL error while sending invite.\n\nDebug: ${debugInfo}`
+          : `Failed to send invite.\n\nDebug: ${debugInfo}`,
+      );
     } finally {
       setInviteBusy(false);
     }
@@ -23259,13 +23374,19 @@ const LiveStreamModal = ({
           ) : RtcSurfaceView ? ( // v4 older
             React.createElement(RtcSurfaceView, {
               style: StyleSheet.absoluteFill,
-              canvas: { uid: 0 },
+              canvas: {
+                uid: 0,
+                renderMode: VideoRenderMode?.Fit ?? 2,
+              },
               zOrderMediaOverlay: true,
             })
           ) : RtcTextureView ? ( // v4 older
             React.createElement(RtcTextureView, {
               style: StyleSheet.absoluteFill,
-              canvas: { uid: 0 },
+              canvas: {
+                uid: 0,
+                renderMode: VideoRenderMode?.Fit ?? 2,
+              },
             })
           ) : RtcLocalView?.SurfaceView ? ( // v3
             React.createElement(RtcLocalView.SurfaceView, {

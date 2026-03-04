@@ -54,7 +54,7 @@ class MainApplication : Application(), ReactApplication {
       }
 
       val calls = NotificationChannel(
-        "aqualink_calls",
+        "aqualink_calls_progress",
         "Aqualink Calls",
         NotificationManager.IMPORTANCE_HIGH
       ).apply {
@@ -62,7 +62,7 @@ class MainApplication : Application(), ReactApplication {
         lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         enableVibration(true)
         vibrationPattern = longArrayOf(0, 500, 300, 500, 300, 500)
-        val soundUri = Uri.parse("android.resource://" + packageName + "/" + R.raw.lg_cat_ring_freetone_org)
+        val soundUri = Uri.parse("android.resource://" + packageName + "/" + R.raw.call_progress)
         val audioAttributes = AudioAttributes.Builder()
           .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
           .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
