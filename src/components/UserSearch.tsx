@@ -1,3 +1,61 @@
+// InviteBadge component for Join/Miss actions
+const InviteBadge = ({ onJoin, onMiss }) => {
+  const [visible, setVisible] = useState(true);
+  if (!visible) return null;
+  return (
+    <View style={inviteBadgeStyles.badgeContainer}>
+      <Text style={inviteBadgeStyles.badgeText}>Invite Sent</Text>
+      <Pressable
+        style={inviteBadgeStyles.badgeButton}
+        onPress={() => { setVisible(false); onJoin?.(); }}
+      >
+        <Text style={inviteBadgeStyles.badgeButtonText}>Join</Text>
+      </Pressable>
+      <Pressable
+        style={[inviteBadgeStyles.badgeButton, { backgroundColor: '#eee' }]}
+        onPress={() => { setVisible(false); onMiss?.(); }}
+      >
+        <Text style={[inviteBadgeStyles.badgeButtonText, { color: '#888' }]}>Miss</Text>
+      </Pressable>
+    </View>
+  );
+};
+
+const inviteBadgeStyles = StyleSheet.create({
+  badgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+    marginTop: 6,
+    alignSelf: 'flex-start',
+  },
+  badgeText: {
+    fontSize: 12,
+    color: '#00C2FF',
+    fontWeight: '700',
+    marginRight: 8,
+  },
+  badgeButton: {
+    backgroundColor: '#00C2FF',
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginHorizontal: 2,
+  },
+  badgeButtonText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+});
 import React, { useState } from 'react';
 import Fuse from 'fuse.js';
 import {
@@ -157,27 +215,67 @@ const UserSearch: React.FC<UserSearchProps> = ({
             </Pressable>
           )}
           {onInviteToDrift && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.userActionButton,
-                pressed && {
-                  opacity: 0.8,
-                  transform: [{ scale: 0.95 }],
-                }
-              ]}
-              onPress={event => {
-                event.stopPropagation?.();
-                onInviteToDrift(item);
-              }}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.userActionText}>Invite</Text>
-            </Pressable>
+            <InviteButton item={item} onInviteToDrift={onInviteToDrift} />
           )}
         </View>
       )}
     </Pressable>
   );
+
+  // InviteButton component to prevent double-tap
+function InviteButton({ item, onInviteToDrift }) {
+  const [inviting, setInviting] = useState(false);
+  const [showBadge, setShowBadge] = useState(false);
+  return (
+    <View>
+      <Pressable
+        style={({ pressed }) => [
+          styles.userActionButton,
+          pressed && {
+            opacity: 0.8,
+            transform: [{ scale: 0.95 }],
+          },
+          inviting && { backgroundColor: '#00C2FF', opacity: 0.6, borderColor: '#00C2FF' },
+          inviting && { shadowColor: '#00C2FF', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.5, shadowRadius: 4, elevation: 4 },
+        ]}
+        onPress={async event => {
+          event.stopPropagation?.();
+          if (inviting) return;
+          setInviting(true);
+          try {
+            await onInviteToDrift(item);
+            setShowBadge(true);
+          } finally {
+            setInviting(false);
+          }
+        }}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        disabled={inviting}
+      >
+        {inviting ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={[styles.userActionText, { color: '#fff', fontWeight: 'bold' }]}>Inviting...</Text>
+          </View>
+        ) : (
+          <Text style={styles.userActionText}>Invite</Text>
+        )}
+      </Pressable>
+      {showBadge && (
+        <InviteBadge
+          onJoin={() => {
+            setShowBadge(false);
+            // Add join logic here if needed
+          }}
+          onMiss={() => {
+            setShowBadge(false);
+            // Add miss logic here if needed
+          }}
+        />
+      )}
+    </View>
+  );
+}
 
   return (
     <View style={styles.container}>

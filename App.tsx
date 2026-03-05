@@ -477,6 +477,7 @@ type VibeAlert = {
 
 type LiveInviteNotice = {
   id: string;
+  source: 'inbox' | 'mention';
   liveId: string;
   fromUid: string;
   fromName: string;
@@ -5737,7 +5738,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setIncomingLiveInvite(null);
       return;
     }
-    const unsub = firestore()
+    let inboxInvite: LiveInviteNotice | null = null;
+    let mentionInvite: LiveInviteNotice | null = null;
+    const syncIncomingInvite = () => {
+      setIncomingLiveInvite(inboxInvite || mentionInvite || null);
+    };
+    const unsubInbox = firestore()
       .collection(`users/${me.uid}/live_invites`)
       .where('status', '==', 'pending')
       .limit(10)
@@ -5753,16 +5759,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   toJSDate((a.data() || {}).createdAt).getTime(),
               )[0] || null;
           if (!doc) {
-            setIncomingLiveInvite(null);
+            inboxInvite = null;
+            syncIncomingInvite();
             return;
           }
           const data = doc.data() || {};
           if (!data?.fromUid) {
-            setIncomingLiveInvite(null);
+            inboxInvite = null;
+            syncIncomingInvite();
             return;
           }
-          setIncomingLiveInvite({
+          inboxInvite = {
             id: doc.id,
+            source: 'inbox',
             liveId: String(data.liveId || ''),
             fromUid: String(data.fromUid),
             fromName: String(data.fromName || 'Skipper'),
@@ -5774,15 +5783,74 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? String(data.directCallChannel)
               : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
-          });
+          };
+          syncIncomingInvite();
         },
         () => {
           // keep silent if listener fails; app still works without invites stream
         },
       );
+    const unsubMentions = firestore()
+      .collection(`users/${me.uid}/mentions`)
+      .where('type', '==', 'live_invite')
+      .limit(20)
+      .onSnapshot(
+        snap => {
+          const docs = (snap?.docs || []).filter((doc: any) => {
+            const data = doc.data() || {};
+            const status = String(data.status || 'pending').toLowerCase();
+            if (status !== 'pending') return false;
+            const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
+            if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
+            const createdAtMs = toJSDate(data.createdAt).getTime();
+            if (
+              !expiresAtMs &&
+              createdAtMs > 0 &&
+              Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS
+            ) {
+              return false;
+            }
+            return !!data?.fromUid;
+          });
+          const doc =
+            docs
+              .slice()
+              .sort(
+                (a: any, b: any) =>
+                  toJSDate((b.data() || {}).createdAt).getTime() -
+                  toJSDate((a.data() || {}).createdAt).getTime(),
+              )[0] || null;
+          if (!doc) {
+            mentionInvite = null;
+            syncIncomingInvite();
+            return;
+          }
+          const data = doc.data() || {};
+          mentionInvite = {
+            id: doc.id,
+            source: 'mention',
+            liveId: String(data.liveId || ''),
+            fromUid: String(data.fromUid || ''),
+            fromName: String(data.fromName || 'Skipper'),
+            fromPhoto: data.fromPhoto || null,
+            liveTitle: data.liveTitle || null,
+            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            directCallId: data.directCallId ? String(data.directCallId) : null,
+            directCallChannel: data.directCallChannel
+              ? String(data.directCallChannel)
+              : null,
+            callType: data.callType === 'audio' ? 'audio' : 'video',
+          };
+          syncIncomingInvite();
+        },
+        () => {},
+      );
     return () => {
       try {
-        unsub && unsub();
+        unsubInbox && unsubInbox();
+      } catch {}
+      try {
+        unsubMentions && unsubMentions();
       } catch {}
     };
   }, [user?.uid]);
@@ -5831,22 +5899,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
 
   const respondToLiveInvite = useCallback(
-    async (action: 'join' | 'dismiss') => {
+    async (action: 'join' | 'miss') => {
       if (!incomingLiveInvite) return;
-      const nextStatus = action === 'join' ? 'accepted' : 'ignored';
+      const nextStatus = action === 'join' ? 'accepted' : 'missed';
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
-          await firestore()
-            .collection(`users/${me.uid}/live_invites`)
-            .doc(incomingLiveInvite.id)
-            .set(
-              {
-                status: nextStatus,
-                respondedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
+          if (incomingLiveInvite.source === 'mention') {
+            await firestore()
+              .collection(`users/${me.uid}/mentions`)
+              .doc(incomingLiveInvite.id)
+              .set(
+                {
+                  status: nextStatus,
+                  respondedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+          } else {
+            await firestore()
+              .collection(`users/${me.uid}/live_invites`)
+              .doc(incomingLiveInvite.id)
+              .set(
+                {
+                  status: nextStatus,
+                  respondedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+          }
           if (incomingLiveInvite.liveId) {
             await firestore()
               .collection(`live/${incomingLiveInvite.liveId}/invite_status`)
@@ -5897,6 +5978,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
 
       if (action === 'join') {
+        if (Platform.OS === 'android') {
+          const granted = await ensureCamMicPermissionsAndroid();
+          if (!granted) {
+            notifyError('Camera and microphone permissions are required to join.');
+            return;
+          }
+        }
         if (incomingLiveInvite.liveId) {
           requestToDriftForLiveId(
             incomingLiveInvite.liveId,
@@ -13378,10 +13466,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   styles.inviteBadgeBtn,
                   styles.inviteBadgeDismissBtn,
                 ]}
-                onPress={() => respondToLiveInvite('dismiss')}
+                onPress={() => respondToLiveInvite('miss')}
                 android_ripple={{ color: 'rgba(255,255,255,0.22)' }}
               >
-                <Text style={styles.inviteBadgeDismissText}>Dismiss</Text>
+                <Text style={styles.inviteBadgeDismissText}>Miss</Text>
               </Pressable>
               <Pressable
                 style={[
@@ -21878,6 +21966,7 @@ const LiveStreamModal = ({
       let callableInviteSent = false;
       let inviteStatusWritten = false;
       let fallbackMentionWritten = false;
+      let deliveryMode: 'none' | 'inbox' | 'fallback' = 'none';
       let lastErr: any = null;
       let inviteDocId: string | null = null;
       let directCallId: string | null = null;
@@ -22042,9 +22131,16 @@ const LiveStreamModal = ({
               text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
               fromUid: me.uid,
               fromName: callerName,
+              fromPhoto: profilePhoto || me.photoURL || null,
               route: 'Pings',
               liveId: liveDocId || '',
+              liveTitle: liveTitle || 'Drift Expo',
+              liveChannel: liveChannel || null,
+              directCallId: directCallId || null,
+              directCallChannel: directCallChannel || null,
               callType: directCallType,
+              status: 'pending',
+              expiresAtMs: computedExpiry,
               createdAt: firestore.FieldValue.serverTimestamp(),
             });
           fallbackMentionWritten = true;
@@ -22088,8 +22184,14 @@ const LiveStreamModal = ({
         inviteStatusWritten ||
         fallbackMentionWritten
       ) {
+        deliveryMode = inboxInviteWritten ? 'inbox' : 'fallback';
         if (!options?.silent) {
-          Alert.alert('Success', 'Invitation sent!');
+          Alert.alert(
+            'Invite Sent',
+            deliveryMode === 'inbox'
+              ? 'Invitation sent to feed badge.'
+              : 'Invite delivered as notification. Feed badge may not appear immediately.',
+          );
           setShowInviteModal(false);
         }
       } else {
