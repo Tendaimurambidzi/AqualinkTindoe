@@ -477,7 +477,7 @@ type VibeAlert = {
 
 type LiveInviteNotice = {
   id: string;
-  source: 'inbox' | 'mention';
+  source: 'inbox' | 'mention' | 'ping';
   liveId: string;
   fromUid: string;
   fromName: string;
@@ -514,6 +514,7 @@ const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = 90 * 1000;
 const ALLOW_TOKENLESS_DRIFT = true;
+const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Call progress.mp3');
 const APP_TONES_STORAGE_KEY = 'app_tone_settings_v1';
@@ -2591,12 +2592,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const notificationsData = snapshot.docs.map(doc => {
           const data = doc.data();
           
+          const type = String(data.type || 'notification');
+          const fromName = data.fromName || data.userName || '';
+          const rawText = String(data.text || '').trim();
+          const specificFallback = fromName
+            ? `${fromName} sent you an alert`
+            : 'You have a new alert';
           return {
             id: doc.id,
-            type: data.type || 'notification',
-            message: data.text || 'You have a new notification',
+            type,
+            message: rawText || specificFallback,
             fromUid: data.fromUid,
-            fromName: data.fromName || data.userName, // Store the stored name, but we'll compute the display name dynamically
+            fromName, // Store the stored name, but we'll compute the display name dynamically
             read: data.read || false,
             createdAt: data.createdAt,
             waveId: data.waveId,
@@ -2649,7 +2656,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
         setUnreadAlertsCount(unreadNotifications + unreadMessages);
 
-        // Detect new notifications and show popup/sound
+        // Detect new notifications and play only tone (no in-feed generic popup).
         if (unreadNotifications > previousUnreadCount && notificationsData.length > 0) {
           const newNotifications = notificationsData.filter(n => !n.read);
           if (newNotifications.length > 0) {
@@ -2660,19 +2667,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             
             const displayName = userData[latestNewNotification.fromUid]?.name || latestNewNotification.fromName || 'Someone';
             
-            let message = '';
-            switch (latestNewNotification.type) {
-              case 'splash':
-              case 'echo':
-              case 'CONNECT_VIBE':
-                message = formatNotificationMessage(latestNewNotification, userData || {});
-                break;
-              default:
-                message = `sent you a notification`;
-            }
-            
-            const avatar = userData ? getUserAvatar(latestNewNotification.fromUid, userData) : null;
-            showNotificationPopup(message, displayName, latestNewNotification.type, avatar);
+            const toneType =
+              latestNewNotification.type === 'live_invite'
+                ? 'live_invite'
+                : latestNewNotification.type === 'call_missed'
+                ? 'call_missed'
+                : 'messages';
+            showNotificationPopup(
+              formatNotificationMessage(latestNewNotification, userData || {}),
+              displayName,
+              toneType,
+              null,
+            );
           }
         }
         
@@ -3060,6 +3066,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [stopTonePreview],
   );
+
+  useEffect(() => {
+    try {
+      Sound.setCategory('Playback');
+    } catch {}
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -5739,6 +5751,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [driftWatchers, setDriftWatchers] = useState<string[]>([]);
   const [vibeAlert, setVibeAlert] = useState<VibeAlert | null>(null);
   const [incomingLiveInvite, setIncomingLiveInvite] = useState<LiveInviteNotice | null>(null);
+  const cachedIncomingInviteRef = useRef<LiveInviteNotice | null>(null);
   const [liveInviteJoinPreset, setLiveInviteJoinPreset] = useState<LiveInviteJoinPreset | null>(null);
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
@@ -5940,13 +5953,54 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   useEffect(() => {
     const me = auth?.()?.currentUser;
     if (!me?.uid) {
+      cachedIncomingInviteRef.current = null;
       setIncomingLiveInvite(null);
       return;
     }
+    const cacheKey = `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${me.uid}`;
+    let disposed = false;
     let inboxInvite: LiveInviteNotice | null = null;
     let mentionInvite: LiveInviteNotice | null = null;
+    let pingInvite: LiveInviteNotice | null = null;
+    const loadCachedInvite = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(cacheKey);
+        if (!raw || disposed) return;
+        const parsed = JSON.parse(raw || '{}') || {};
+        const cached: LiveInviteNotice = {
+          id: String(parsed.id || ''),
+          source:
+            parsed.source === 'mention'
+              ? 'mention'
+              : parsed.source === 'ping'
+              ? 'ping'
+              : 'inbox',
+          liveId: String(parsed.liveId || ''),
+          fromUid: String(parsed.fromUid || ''),
+          fromName: String(parsed.fromName || 'Skipper'),
+          fromPhoto: parsed.fromPhoto || null,
+          liveTitle: parsed.liveTitle || null,
+          liveChannel: parsed.liveChannel ? String(parsed.liveChannel) : null,
+          directCallId: parsed.directCallId ? String(parsed.directCallId) : null,
+          directCallChannel: parsed.directCallChannel
+            ? String(parsed.directCallChannel)
+            : null,
+          callType: parsed.callType === 'audio' ? 'audio' : 'video',
+        };
+        if (!cached.fromUid) return;
+        cachedIncomingInviteRef.current = cached;
+        setIncomingLiveInvite(cached);
+      } catch {}
+    };
+    loadCachedInvite();
     const syncIncomingInvite = () => {
-      setIncomingLiveInvite(inboxInvite || mentionInvite || null);
+      const next =
+        inboxInvite || mentionInvite || pingInvite || cachedIncomingInviteRef.current || null;
+      setIncomingLiveInvite(next);
+      if (next) {
+        cachedIncomingInviteRef.current = next;
+        AsyncStorage.setItem(cacheKey, JSON.stringify(next)).catch(() => {});
+      }
     };
     const unsubInbox = firestore()
       .collection(`users/${me.uid}/live_invites`)
@@ -6059,12 +6113,63 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         },
         () => {},
       );
+    const unsubPings = firestore()
+      .collection(`users/${me.uid}/pings`)
+      .where('type', '==', 'live_invite')
+      .limit(20)
+      .onSnapshot(
+        snap => {
+          const docs = (snap?.docs || []).filter((doc: any) => {
+            const data = doc.data() || {};
+            const status = String(data.status || 'pending').toLowerCase();
+            if (status !== 'pending') return false;
+            const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
+            if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
+            return !!data?.fromUid;
+          });
+          const doc =
+            docs
+              .slice()
+              .sort(
+                (a: any, b: any) =>
+                  toJSDate((b.data() || {}).createdAt).getTime() -
+                  toJSDate((a.data() || {}).createdAt).getTime(),
+              )[0] || null;
+          if (!doc) {
+            pingInvite = null;
+            syncIncomingInvite();
+            return;
+          }
+          const data = doc.data() || {};
+          pingInvite = {
+            id: doc.id,
+            source: 'ping',
+            liveId: String(data.liveId || ''),
+            fromUid: String(data.fromUid || ''),
+            fromName: String(data.fromName || 'Skipper'),
+            fromPhoto: data.fromPhoto || null,
+            liveTitle: data.liveTitle || null,
+            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            directCallId: data.directCallId ? String(data.directCallId) : null,
+            directCallChannel: data.directCallChannel
+              ? String(data.directCallChannel)
+              : null,
+            callType: data.callType === 'audio' ? 'audio' : 'video',
+          };
+          syncIncomingInvite();
+        },
+        () => {},
+      );
     return () => {
+      disposed = true;
       try {
         unsubInbox && unsubInbox();
       } catch {}
       try {
         unsubMentions && unsubMentions();
+      } catch {}
+      try {
+        unsubPings && unsubPings();
       } catch {}
     };
   }, [user?.uid]);
@@ -6126,6 +6231,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .set(
                 {
                   status: nextStatus,
+                  respondedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+          } else if (incomingLiveInvite.source === 'ping') {
+            await firestore()
+              .collection(`users/${me.uid}/pings`)
+              .doc(incomingLiveInvite.id)
+              .set(
+                {
+                  status: nextStatus,
+                  read: true,
                   respondedAt: firestore.FieldValue.serverTimestamp(),
                 },
                 { merge: true },
@@ -6217,6 +6334,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         });
         setShowLive(true);
       }
+      try {
+        const me = auth?.()?.currentUser;
+        if (me?.uid) {
+          cachedIncomingInviteRef.current = null;
+          AsyncStorage.removeItem(
+            `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${me.uid}`,
+          ).catch(() => {});
+        }
+      } catch {}
       setIncomingLiveInvite(null);
     },
     [incomingLiveInvite, requestToDriftForLiveId],
@@ -10377,8 +10503,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
-  // Show notification popup and play sound
-  const showNotificationPopup = (message: string, fromName: string, type: string, avatar: any = null) => {
+  // Play notification tone only; notifications surface in VIBE ALERTS.
+  const showNotificationPopup = (_message: string, _fromName: string, type: string, _avatar: any = null) => {
     const normalizedType = String(type || '').toLowerCase();
     const toneAction: AppToneAction =
       normalizedType === 'live_invite'
@@ -10390,20 +10516,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       volume: 0.85,
       storeAsPreview: true,
     });
-
-    // Show popup notification
-    setNotificationPopup({
-      visible: true,
-      message,
-      fromName,
-      type,
-      avatar
-    });
-
-    // Auto-hide popup after 3 seconds
-    setTimeout(() => {
-      setNotificationPopup({ visible: false, message: '', fromName: '', type: '', avatar: null });
-    }, 3000);
   };
                     
   const checkIfInCrew = async (targetUid: string) => {
@@ -19661,7 +19773,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       {/* Octopus Hug Animation Overlay removed per user request */}
       
       {/* Notification Popup Overlay */}
-      {notificationPopup.visible && (
+      {false && notificationPopup.visible && (
         <Animated.View
           style={{
             position: 'absolute',
@@ -22422,7 +22534,7 @@ const LiveStreamModal = ({
         lastErr = err;
       }
 
-      if (!inboxInviteWritten && !callableInviteSent) {
+      if (!inboxInviteWritten) {
         try {
           await firestore()
             .collection(`users/${toUid}/mentions`)
