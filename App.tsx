@@ -497,12 +497,97 @@ type LiveInviteJoinPreset = {
   nonce?: number;
 };
 
+type AppToneAction =
+  | 'incoming_call'
+  | 'messages'
+  | 'live_invite'
+  | 'call_missed'
+  | 'general';
+
+type AppToneOption = {
+  id: string;
+  label: string;
+  candidates: Array<string | number>;
+};
+
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = 90 * 1000;
 const ALLOW_TOKENLESS_DRIFT = true;
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Call progress.mp3');
+const APP_TONES_STORAGE_KEY = 'app_tone_settings_v1';
+const APP_TONE_OPTIONS: AppToneOption[] = [
+  {
+    id: 'default_notification',
+    label: 'Notification',
+    candidates: ['notification', 'notification.wav'],
+  },
+  {
+    id: 'lg_cat_ring',
+    label: 'LG Cat Ring',
+    candidates: [
+      'lg_cat_ring_freetone_org',
+      'lg_cat_ring_freetone_org.mp3',
+      'Lg_Cat_Ring_freetone.org',
+      'Lg_Cat_Ring_freetone.org.mp3',
+    ],
+  },
+  {
+    id: 'old_ring',
+    label: 'Old Ring',
+    candidates: [
+      'old_ring_freetone_at_ua_freetone_org',
+      'old_ring_freetone_at_ua_freetone_org.mp3',
+      'Old_Ring_freetone.at.ua_freetone.org',
+      'Old_Ring_freetone.at.ua_freetone.org.mp3',
+    ],
+  },
+  {
+    id: 'call_progress',
+    label: 'Call Progress',
+    candidates: [
+      CALL_PROGRESS_ASSET,
+      'call_progress',
+      'call_progress.mp3',
+      'Call progress',
+      'Call progress.mp3',
+    ],
+  },
+  {
+    id: 'falcon',
+    label: 'Falcon',
+    candidates: ['falcon', 'falcon.mp3'],
+  },
+  {
+    id: 'downfall',
+    label: 'Downfall',
+    candidates: ['downfall_3_208028', 'downfall-3-208028.mp3'],
+  },
+  {
+    id: 'underwater_explosion',
+    label: 'Underwater Explosion',
+    candidates: [
+      'large_underwater_explosion_190270',
+      'large-underwater-explosion-190270.mp3',
+    ],
+  },
+  {
+    id: 'sci_fi_hum',
+    label: 'Sci-Fi Hum',
+    candidates: [
+      'sci_fi_sound_effect_designed_circuits_hum_10_200831',
+      'sci-fi-sound-effect-designed-circuits-hum-10-200831.mp3',
+    ],
+  },
+];
+const DEFAULT_APP_TONE_SETTINGS: Record<AppToneAction, string> = {
+  incoming_call: 'lg_cat_ring',
+  messages: 'default_notification',
+  live_invite: 'falcon',
+  call_missed: 'old_ring',
+  general: 'default_notification',
+};
                     
 const toJSDate = (ts: any) => {
   try {
@@ -2662,32 +2747,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const viewTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
   
-  // Notification sound player
-  const [notificationSound, setNotificationSound] = useState<Sound | null>(null);
-  
   // Track previous unread count to detect new notifications
   const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
+  const [appSettingsExpanded, setAppSettingsExpanded] = useState<boolean>(false);
+  const [appToneSettings, setAppToneSettings] = useState<
+    Record<AppToneAction, string>
+  >(DEFAULT_APP_TONE_SETTINGS);
   
   // Track which images have been revealed in the feed
   const [revealedImages, setRevealedImages] = useState<Set<string>>(new Set());
-  
-  // Initialize notification sound
-  useEffect(() => {
-    Sound.setCategory('Playback');
-    const sound = new Sound('notification.wav', Sound.MAIN_BUNDLE, (error) => {
-      if (error) {
-        console.warn('Failed to load notification sound:', error);
-        return;
-      }
-      setNotificationSound(sound);
-    });
-    
-    return () => {
-      if (notificationSound) {
-        notificationSound.release();
-      }
-    };
-  }, []);
   
   const [treasureStats, setTreasureStats] = useState<{
     tipsTotal: number;
@@ -2881,6 +2949,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [user?.uid, isCurrentUserOnline]);
   // Sound effect player ref to handle audio playback
   const soundPlayerRef = useRef<any>(null);
+  const tonePreviewRef = useRef<Sound | null>(null);
   const callRingbackRef = useRef<Sound | null>(null);
   const callRingbackActiveRef = useRef<boolean>(false);
   const incomingCallRingtoneRef = useRef<Sound | null>(null);
@@ -2892,6 +2961,140 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [videoControlsVisible, setVideoControlsVisible] = useState<{[key: string]: boolean}>({});
   const [videoLoading, setVideoLoading] = useState<{[key: string]: boolean}>({});
   const [echoSending, setEchoSending] = useState<{[key: string]: boolean}>({});
+
+  const stopTonePreview = useCallback(() => {
+    const tone = tonePreviewRef.current;
+    if (!tone) return;
+    tonePreviewRef.current = null;
+    try {
+      tone.stop(() => {
+        try {
+          tone.release();
+        } catch {}
+      });
+    } catch {
+      try {
+        tone.release();
+      } catch {}
+    }
+  }, []);
+
+  const getToneCandidatesForAction = useCallback(
+    (action: AppToneAction): Array<string | number> => {
+      const selectedToneId =
+        appToneSettings[action] || DEFAULT_APP_TONE_SETTINGS[action];
+      const fromSelection =
+        APP_TONE_OPTIONS.find(opt => opt.id === selectedToneId)?.candidates || [];
+      const fallbackToneId = DEFAULT_APP_TONE_SETTINGS[action];
+      const fromFallback =
+        APP_TONE_OPTIONS.find(opt => opt.id === fallbackToneId)?.candidates || [];
+      const generalFallback =
+        APP_TONE_OPTIONS.find(
+          opt => opt.id === DEFAULT_APP_TONE_SETTINGS.general,
+        )?.candidates || [];
+      const merged = [...fromSelection, ...fromFallback, ...generalFallback];
+      const deduped: Array<string | number> = [];
+      merged.forEach(candidate => {
+        if (!deduped.includes(candidate)) deduped.push(candidate);
+      });
+      return deduped;
+    },
+    [appToneSettings],
+  );
+
+  const playToneCandidates = useCallback(
+    (
+      candidates: Array<string | number>,
+      opts?: { loop?: boolean; volume?: number; storeAsPreview?: boolean },
+    ) => {
+      if (!candidates.length) return;
+      const loop = !!opts?.loop;
+      const volume = typeof opts?.volume === 'number' ? opts.volume : 0.9;
+      if (opts?.storeAsPreview) {
+        stopTonePreview();
+      }
+      const tryLoad = (idx: number) => {
+        if (idx >= candidates.length) return;
+        let tone: Sound | null = null;
+        const candidate = candidates[idx];
+        try {
+          const onLoaded = (error: any) => {
+            if (error || !tone) {
+              try {
+                tone?.release();
+              } catch {}
+              tryLoad(idx + 1);
+              return;
+            }
+            if (opts?.storeAsPreview) {
+              tonePreviewRef.current = tone;
+            }
+            try {
+              if (loop) tone.setNumberOfLoops(-1);
+            } catch {}
+            try {
+              tone.setVolume(volume);
+            } catch {}
+            tone.play(success => {
+              if (loop && success) return;
+              if (opts?.storeAsPreview && tonePreviewRef.current === tone) {
+                tonePreviewRef.current = null;
+              }
+              try {
+                tone.release();
+              } catch {}
+            });
+          };
+          tone =
+            typeof candidate === 'number'
+              ? new Sound(candidate, onLoaded)
+              : new Sound(candidate, Sound.MAIN_BUNDLE, onLoaded);
+        } catch {
+          try {
+            tone?.release();
+          } catch {}
+          tryLoad(idx + 1);
+        }
+      };
+      tryLoad(0);
+    },
+    [stopTonePreview],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    const loadAppToneSettings = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(APP_TONES_STORAGE_KEY);
+        if (!raw || !mounted) return;
+        const parsed = JSON.parse(raw || '{}') || {};
+        const merged = {
+          ...DEFAULT_APP_TONE_SETTINGS,
+          ...(parsed as Partial<Record<AppToneAction, string>>),
+        };
+        setAppToneSettings(merged);
+      } catch {}
+    };
+    loadAppToneSettings();
+    return () => {
+      mounted = false;
+      stopTonePreview();
+    };
+  }, [stopTonePreview]);
+
+  const saveAppToneSetting = useCallback(
+    async (action: AppToneAction, toneId: string) => {
+      const next = {
+        ...appToneSettings,
+        [action]: toneId,
+      };
+      setAppToneSettings(next);
+      try {
+        await AsyncStorage.setItem(APP_TONES_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+    },
+    [appToneSettings],
+  );
                     
   // Play falcon sound for ping notification
   const playFalconSound = useCallback(() => {
@@ -3013,7 +3216,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (incomingCallRingtoneActiveRef.current) return;
     incomingCallRingtoneActiveRef.current = true;
     if (incomingCallRingtoneRef.current) return;
+    const selectedCandidates = getToneCandidatesForAction('incoming_call');
     const candidates: Array<string | number> = [
+      ...selectedCandidates,
       CALLEE_RING_ASSET,
       CALL_PROGRESS_ASSET,
       'call_progress',
@@ -3068,7 +3273,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
     tryLoad(0);
-  }, [stopIncomingCallRingtone]);
+  }, [getToneCandidatesForAction, stopIncomingCallRingtone]);
 
   useEffect(() => {
     const isOutgoingRinging =
@@ -5745,11 +5950,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     const unsubInbox = firestore()
       .collection(`users/${me.uid}/live_invites`)
-      .where('status', '==', 'pending')
-      .limit(10)
+      .limit(25)
       .onSnapshot(
         snap => {
-          const docs = snap?.docs || [];
+          const docs = (snap?.docs || []).filter((doc: any) => {
+            const data = doc.data() || {};
+            const status = String(data.status || 'pending').toLowerCase();
+            if (status !== 'pending') return false;
+            const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
+            if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
+            const createdAtMs = toJSDate(data.createdAt).getTime();
+            if (
+              !expiresAtMs &&
+              createdAtMs > 0 &&
+              Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS
+            ) {
+              return false;
+            }
+            return !!data?.fromUid;
+          });
           const doc =
             docs
               .slice()
@@ -5764,11 +5983,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             return;
           }
           const data = doc.data() || {};
-          if (!data?.fromUid) {
-            inboxInvite = null;
-            syncIncomingInvite();
-            return;
-          }
           inboxInvite = {
             id: doc.id,
             source: 'inbox',
@@ -10165,15 +10379,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   // Show notification popup and play sound
   const showNotificationPopup = (message: string, fromName: string, type: string, avatar: any = null) => {
-    // Play notification sound
-    if (notificationSound) {
-      notificationSound.setVolume(0.8);
-      notificationSound.play((success) => {
-        if (!success) {
-          console.warn('Notification sound playback failed');
-        }
-      });
-    }
+    const normalizedType = String(type || '').toLowerCase();
+    const toneAction: AppToneAction =
+      normalizedType === 'live_invite'
+        ? 'live_invite'
+        : normalizedType === 'call_missed'
+        ? 'call_missed'
+        : 'messages';
+    playToneCandidates(getToneCandidatesForAction(toneAction), {
+      volume: 0.85,
+      storeAsPreview: true,
+    });
 
     // Show popup notification
     setNotificationPopup({
@@ -17085,6 +17301,90 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>THE BRIDGE</Text>
               <ScrollView>
+                <View
+                  style={{
+                    paddingVertical: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <Pressable
+                    style={styles.safeHarborHeader}
+                    onPress={() => setAppSettingsExpanded(prev => !prev)}
+                  >
+                    <Text style={[styles.logbookActionText, { fontSize: 18 }]}>
+                      App Settings
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
+                      {appSettingsExpanded
+                        ? 'Hide notification tones'
+                        : 'Open notification tones'}
+                    </Text>
+                  </Pressable>
+                  {appSettingsExpanded && (
+                    <View style={{ marginTop: 6 }}>
+                      {[
+                        { action: 'incoming_call', label: 'Incoming Calls' },
+                        { action: 'messages', label: 'Messages' },
+                        { action: 'live_invite', label: 'Live Invites' },
+                        { action: 'call_missed', label: 'Missed Calls' },
+                      ].map(item => {
+                        const selectedId =
+                          appToneSettings[item.action as AppToneAction] ||
+                          DEFAULT_APP_TONE_SETTINGS[item.action as AppToneAction];
+                        const selectedLabel =
+                          APP_TONE_OPTIONS.find(opt => opt.id === selectedId)?.label ||
+                          'Notification';
+                        return (
+                          <View
+                            key={`tone-setting-${item.action}`}
+                            style={[
+                              styles.logbookAction,
+                              {
+                                flexDirection: 'row',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                              },
+                            ]}
+                          >
+                            <View style={{ flex: 1, paddingRight: 10 }}>
+                              <Text style={styles.logbookActionText}>{item.label}</Text>
+                              <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
+                                Tone: {selectedLabel}
+                              </Text>
+                            </View>
+                            <Pressable
+                              style={styles.bridgeSettingButton}
+                              onPress={() => {
+                                const buttons: any[] = APP_TONE_OPTIONS.map(opt => ({
+                                  text: opt.label,
+                                  onPress: async () => {
+                                    await saveAppToneSetting(
+                                      item.action as AppToneAction,
+                                      opt.id,
+                                    );
+                                    playToneCandidates(opt.candidates, {
+                                      volume: 0.9,
+                                      storeAsPreview: true,
+                                    });
+                                  },
+                                }));
+                                buttons.push({ text: 'Cancel', style: 'cancel' });
+                                Alert.alert(
+                                  `Select tone: ${item.label}`,
+                                  'Choose a tone and it will preview immediately.',
+                                  buttons,
+                                );
+                              }}
+                            >
+                              <Text style={styles.bridgeSettingButtonText}>Choose</Text>
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
                 {/* Safe Harbor Section */}
                 <View style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
                   <Pressable
