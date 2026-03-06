@@ -495,6 +495,7 @@ type LiveInviteJoinPreset = {
   channel?: string | null;
   title?: string | null;
   fromName?: string | null;
+  requireApproval?: boolean;
   nonce?: number;
 };
 
@@ -6338,6 +6339,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     [profileName],
   );
 
+  const openLiveRequestFlow = useCallback(
+    async (liveId: string, hostName?: string, liveTitle?: string | null) => {
+      await requestToDriftForLiveId(liveId, hostName);
+      setLiveInviteJoinPreset({
+        liveId,
+        title: liveTitle || 'Drift Expo',
+        fromName: hostName || 'Skipper',
+        requireApproval: true,
+        nonce: Date.now(),
+      });
+      setShowLive(true);
+    },
+    [requestToDriftForLiveId],
+  );
+
   const respondToLiveInvite = useCallback(
     async (action: 'join' | 'miss') => {
       const invite = incomingLiveInvite;
@@ -11146,6 +11162,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (asset?.uri) setProfilePhoto(asset.uri);
     } catch {}
   };
+  const pickProfilePhoto = pickProfileImage;
                     
   const captureProfileImage = async () => {
     try {
@@ -13849,8 +13866,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Pressable
               style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
-              onPress={() => {
-                requestToDriftForLiveId(vibeAlert.liveId, vibeAlert.hostName);
+              onPress={async () => {
+                await openLiveRequestFlow(
+                  vibeAlert.liveId,
+                  vibeAlert.hostName,
+                  'Drift Expo',
+                );
                 setVibeAlert(null);
                 lastDriftHostRef.current = null;
                 if (driftAlertTimerRef.current) {
@@ -13866,6 +13887,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 style={[
                   styles.driftAlertSignal,
                   {
+                    backgroundColor: '#00D56A',
                     opacity: flickerAnim.interpolate({
                       inputRange: [0, 1],
                       outputRange: [0.3, 1],
@@ -21615,7 +21637,21 @@ const LiveStreamModal = ({
   const [tokenInput, setTokenInput] = useState<string>('');
   const [uidInput, setUidInput] = useState<string>('0');
   const [liveUid, setLiveUid] = useState<number>(0);
+  const [remoteParticipantUids, setRemoteParticipantUids] = useState<number[]>(
+    [],
+  );
+  const [pinnedRemoteUid, setPinnedRemoteUid] = useState<number | null>(null);
+  const [awaitingCaptainApproval, setAwaitingCaptainApproval] =
+    useState<boolean>(false);
+  const [joinApprovalLabel, setJoinApprovalLabel] = useState<string>('');
   const [isStartingLive, setIsStartingLive] = useState(false);
+  useEffect(() => {
+    if (visible) return;
+    setAwaitingCaptainApproval(false);
+    setJoinApprovalLabel('');
+    setRemoteParticipantUids([]);
+    setPinnedRemoteUid(null);
+  }, [visible]);
   const [liveTitle, setLiveTitle] = useState<string>('');
   const [liveDesc, setLiveDesc] = useState<string>(
     'Say something about your live',
@@ -21801,6 +21837,18 @@ const LiveStreamModal = ({
 
   useEffect(() => {
     if (!visible || !inviteJoinPreset || isLiveStarted) return;
+    if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
+      setLiveDocId(String(inviteJoinPreset.liveId));
+      setLiveTitle(
+        String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+      );
+      setAwaitingCaptainApproval(true);
+      setJoinApprovalLabel(
+        `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
+      );
+      setStartError(null);
+      return;
+    }
     const suggestedChannel = String(
       inviteJoinPreset.channel || channelInput || defaultChannel || '',
     )
@@ -21823,11 +21871,76 @@ const LiveStreamModal = ({
     setLiveUid(mappedUid);
     setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
     setStartError(null);
+    setAwaitingCaptainApproval(false);
+    setJoinApprovalLabel('');
     setIsLiveStarted(true);
   }, [
     defaultChannel,
     inviteJoinPreset,
     isLiveStarted,
+    staticToken,
+    visible,
+  ]);
+
+  useEffect(() => {
+    if (!visible || !awaitingCaptainApproval || !liveDocId || isLiveStarted) {
+      return;
+    }
+    const me = auth?.()?.currentUser;
+    if (!me?.uid) return;
+    const unsub = firestore()
+      .collection(`live/${liveDocId}/invite_status`)
+      .doc(me.uid)
+      .onSnapshot(
+        snap => {
+          const data = snap?.data?.() || {};
+          const status = String(data.status || '').toLowerCase();
+          if (!status) return;
+          if (status === 'accepted') {
+            const suggestedChannel = String(
+              data.channel ||
+                data.liveChannel ||
+                inviteJoinPreset?.channel ||
+                channelInput ||
+                defaultChannel ||
+                '',
+            )
+              .trim()
+              .replace(/[^A-Za-z0-9_]/g, '_')
+              .slice(0, 64);
+            if (!suggestedChannel) return;
+            const uidSrc = String(auth?.()?.currentUser?.uid || '0');
+            let uidHash = 0;
+            for (let i = 0; i < uidSrc.length; i += 1) {
+              uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
+            }
+            const mappedUid = (uidHash % 2147483646) + 1;
+            setChannelInput(suggestedChannel);
+            setLiveChannel(suggestedChannel);
+            setLiveUid(mappedUid);
+            setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
+            setAwaitingCaptainApproval(false);
+            setJoinApprovalLabel('');
+            setIsLiveStarted(true);
+            setStartError(null);
+          } else if (status === 'missed' || status === 'ignored' || status === 'declined') {
+            setJoinApprovalLabel('Join request was not accepted.');
+          }
+        },
+        () => {},
+      );
+    return () => {
+      try {
+        unsub && unsub();
+      } catch {}
+    };
+  }, [
+    awaitingCaptainApproval,
+    channelInput,
+    defaultChannel,
+    inviteJoinPreset?.channel,
+    isLiveStarted,
+    liveDocId,
     staticToken,
     visible,
   ]);
@@ -22167,6 +22280,8 @@ const LiveStreamModal = ({
                     
   useEffect(() => {
     if (!visible || !Agora || !appId) return;
+    setRemoteParticipantUids([]);
+    setPinnedRemoteUid(null);
     (async () => {
       try {
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
@@ -22182,6 +22297,27 @@ const LiveStreamModal = ({
           } catch {}
           try {
             engine.enableVideo?.();
+          } catch {}
+          try {
+            engine.registerEventHandler?.({
+              onUserJoined: (_conn: any, uid: number) => {
+                const n = Number(uid);
+                if (!Number.isFinite(n) || n <= 0) return;
+                setRemoteParticipantUids(prev =>
+                  prev.includes(n) ? prev : [...prev, n],
+                );
+                setPinnedRemoteUid(prev => prev || n);
+              },
+              onUserOffline: (_conn: any, uid: number) => {
+                const n = Number(uid);
+                setRemoteParticipantUids(prev => prev.filter(x => x !== n));
+                setPinnedRemoteUid(prev => (prev === n ? null : prev));
+              },
+              onLeaveChannel: () => {
+                setRemoteParticipantUids([]);
+                setPinnedRemoteUid(null);
+              },
+            });
           } catch {}
           applyLiveQualityProfile(engine);
           try {
@@ -22200,6 +22336,23 @@ const LiveStreamModal = ({
           engineRef.current = engine;
           try {
             engine.enableVideo();
+          } catch {}
+          try {
+            engine.addListener?.('UserJoined', (uid: number) => {
+              const n = Number(uid);
+              if (!Number.isFinite(n) || n <= 0) return;
+              setRemoteParticipantUids(prev =>
+                prev.includes(n) ? prev : [...prev, n],
+              );
+              setPinnedRemoteUid(prev => prev || n);
+            });
+          } catch {}
+          try {
+            engine.addListener?.('UserOffline', (uid: number) => {
+              const n = Number(uid);
+              setRemoteParticipantUids(prev => prev.filter(x => x !== n));
+              setPinnedRemoteUid(prev => (prev === n ? null : prev));
+            });
           } catch {}
           applyLiveQualityProfile(engine);
           try {
@@ -22230,6 +22383,8 @@ const LiveStreamModal = ({
         } catch {}
         engineRef.current = null;
       }
+      setRemoteParticipantUids([]);
+      setPinnedRemoteUid(null);
     };
   }, [visible, Agora, appId, applyLiveQualityProfile]);
                     
@@ -23914,6 +24069,23 @@ const LiveStreamModal = ({
               }),
             });
             if (!resp.ok) throw new Error('accept failed');
+            try {
+              await firestore()
+                .collection(`live/${liveDocId}/invite_status`)
+                .doc(userId)
+                .set(
+                  {
+                    uid: userId,
+                    name: username || userId,
+                    status: 'accepted',
+                    liveId: liveDocId,
+                    channel: chan,
+                    liveChannel: chan,
+                    updatedAt: firestore.FieldValue.serverTimestamp(),
+                  },
+                  { merge: true },
+                );
+            } catch {}
             sendSystemMessage(`Accepted @${username} to drift`);
           } catch {
             Alert.alert('Error', 'Failed to accept requester');
@@ -24370,8 +24542,14 @@ const LiveStreamModal = ({
   const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
   const RtcTextureView = (Agora as any)?.RtcTextureView;
   const RtcLocalView = Agora?.RtcLocalView;
+  const RtcRemoteView = Agora?.RtcRemoteView;
   const VideoRenderMode = Agora?.VideoRenderMode;
   const VideoSourceType = Agora?.VideoSourceType;
+  const mainRemoteUid =
+    (pinnedRemoteUid &&
+    remoteParticipantUids.includes(pinnedRemoteUid)
+      ? pinnedRemoteUid
+      : remoteParticipantUids[0]) || null;
                     
   return (
     <Modal
@@ -24417,55 +24595,144 @@ const LiveStreamModal = ({
             {livePrivacy.toUpperCase()}
           </Text>
         )}
-        {isLiveStarted && !cameraHidden &&
-          (AVView ? ( // v4+
-            <AVView
-              style={StyleSheet.absoluteFill}
-              showLocalVideo={true}
-              videoSourceType={
-                (VideoSourceType &&
-                  (VideoSourceType.VideoSourceCameraPrimary ??
-                    VideoSourceType.VideoSourceCamera)) ||
-                0
-              }
-              renderMode={
-                (VideoRenderMode &&
-                  (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) ||
-                2
-              }
-            />
-          ) : RtcSurfaceView ? ( // v4 older
-            React.createElement(RtcSurfaceView, {
-              style: StyleSheet.absoluteFill,
-              canvas: {
-                uid: 0,
+        {isLiveStarted && !cameraHidden && (
+          <>
+            {mainRemoteUid ? (
+              RtcSurfaceView ? (
+                React.createElement(RtcSurfaceView, {
+                  style: StyleSheet.absoluteFill,
+                  canvas: {
+                    uid: mainRemoteUid,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  },
+                })
+              ) : RtcTextureView ? (
+                React.createElement(RtcTextureView, {
+                  style: StyleSheet.absoluteFill,
+                  canvas: {
+                    uid: mainRemoteUid,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  },
+                })
+              ) : RtcRemoteView?.SurfaceView ? (
+                React.createElement(RtcRemoteView.SurfaceView, {
+                  style: StyleSheet.absoluteFill,
+                  uid: mainRemoteUid,
+                  channelId: liveChannel || channelInput,
+                  renderMode: VideoRenderMode?.Fit ?? 2,
+                })
+              ) : (
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    { alignItems: 'center', justifyContent: 'center' },
+                  ]}
+                >
+                  <Text style={{ color: 'white' }}>Connecting remote video...</Text>
+                </View>
+              )
+            ) : AVView ? (
+              <AVView
+                style={StyleSheet.absoluteFill}
+                showLocalVideo={true}
+                videoSourceType={
+                  (VideoSourceType &&
+                    (VideoSourceType.VideoSourceCameraPrimary ??
+                      VideoSourceType.VideoSourceCamera)) ||
+                  0
+                }
+                renderMode={
+                  (VideoRenderMode &&
+                    (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) ||
+                  2
+                }
+              />
+            ) : RtcSurfaceView ? (
+              React.createElement(RtcSurfaceView, {
+                style: StyleSheet.absoluteFill,
+                canvas: {
+                  uid: 0,
+                  renderMode: VideoRenderMode?.Fit ?? 2,
+                },
+                zOrderMediaOverlay: true,
+              })
+            ) : RtcTextureView ? (
+              React.createElement(RtcTextureView, {
+                style: StyleSheet.absoluteFill,
+                canvas: {
+                  uid: 0,
+                  renderMode: VideoRenderMode?.Fit ?? 2,
+                },
+              })
+            ) : RtcLocalView?.SurfaceView ? (
+              React.createElement(RtcLocalView.SurfaceView, {
+                style: StyleSheet.absoluteFill,
                 renderMode: VideoRenderMode?.Fit ?? 2,
-              },
-              zOrderMediaOverlay: true,
-            })
-          ) : RtcTextureView ? ( // v4 older
-            React.createElement(RtcTextureView, {
-              style: StyleSheet.absoluteFill,
-              canvas: {
-                uid: 0,
-                renderMode: VideoRenderMode?.Fit ?? 2,
-              },
-            })
-          ) : RtcLocalView?.SurfaceView ? ( // v3
-            React.createElement(RtcLocalView.SurfaceView, {
-              style: StyleSheet.absoluteFill,
-              renderMode: VideoRenderMode?.Fit ?? 2,
-            })
-          ) : (
-            <View
-              style={[
-                StyleSheet.absoluteFill,
-                { alignItems: 'center', justifyContent: 'center' },
-              ]}
-            >
-              <Text style={{ color: 'white' }}>Initializing preview...</Text>
-            </View>
-          ))}
+              })
+            ) : (
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { alignItems: 'center', justifyContent: 'center' },
+                ]}
+              >
+                <Text style={{ color: 'white' }}>Initializing preview...</Text>
+              </View>
+            )}
+            {!!mainRemoteUid && (
+              <View
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  bottom: insets.bottom + endBarHeight + 96,
+                  width: 110,
+                  height: 156,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.45)',
+                  backgroundColor: '#050B15',
+                }}
+              >
+                {AVView ? (
+                  <AVView
+                    style={StyleSheet.absoluteFill}
+                    showLocalVideo={true}
+                    videoSourceType={
+                      (VideoSourceType &&
+                        (VideoSourceType.VideoSourceCameraPrimary ??
+                          VideoSourceType.VideoSourceCamera)) ||
+                      0
+                    }
+                    renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
+                  />
+                ) : RtcSurfaceView ? (
+                  React.createElement(RtcSurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                    zOrderMediaOverlay: true,
+                  })
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
+                ) : RtcLocalView?.SurfaceView ? (
+                  React.createElement(RtcLocalView.SurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  })
+                ) : null}
+              </View>
+            )}
+          </>
+        )}
         {isLiveStarted && liveComments.length > 0 && (
           <ScrollView
             style={[
@@ -24507,16 +24774,35 @@ const LiveStreamModal = ({
                         :
                       </Text>
                       {!!(c as any).replyToFrom && (
-                        <Text
+                        <View
                           style={{
-                            color: 'rgba(157,230,255,0.9)',
-                            fontSize: 11,
-                            marginBottom: 2,
+                            borderLeftWidth: 2,
+                            borderLeftColor: 'rgba(157,230,255,0.9)',
+                            paddingLeft: 6,
+                            marginBottom: 3,
                           }}
-                          numberOfLines={1}
                         >
-                          ↪ {(c as any).replyToFrom}: {(c as any).replyToText || ''}
-                        </Text>
+                          <Text
+                            style={{
+                              color: 'rgba(157,230,255,0.95)',
+                              fontSize: 10,
+                              marginBottom: 1,
+                            }}
+                            numberOfLines={1}
+                          >
+                            {formatHandle((c as any).from || 'User')} replied to{' '}
+                            {formatHandle((c as any).replyToFrom || 'message')}
+                          </Text>
+                          <Text
+                            style={{
+                              color: 'rgba(157,230,255,0.82)',
+                              fontSize: 11,
+                            }}
+                            numberOfLines={1}
+                          >
+                            "{(c as any).replyToText || ''}"
+                          </Text>
+                        </View>
                       )}
                       <Text style={editorStyles.liveCommentText}>{c.text}</Text>
                     </View>
@@ -24878,6 +25164,73 @@ const LiveStreamModal = ({
                 ))}
               </View>
             </ScrollView>
+          </View>
+        )}
+        {isLiveStarted && remoteParticipantUids.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{
+              position: 'absolute',
+              right: 10,
+              left: 10,
+              bottom: insets.bottom + endBarHeight + 54,
+              maxHeight: 44,
+            }}
+            contentContainerStyle={{ gap: 8, alignItems: 'center' }}
+          >
+            {remoteParticipantUids.map(uid => (
+              <Pressable
+                key={`remote-pill-${uid}`}
+                onPress={() => setPinnedRemoteUid(uid)}
+                style={{
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  borderColor:
+                    pinnedRemoteUid === uid
+                      ? 'rgba(0,194,255,0.95)'
+                      : 'rgba(255,255,255,0.35)',
+                  backgroundColor:
+                    pinnedRemoteUid === uid
+                      ? 'rgba(0,194,255,0.22)'
+                      : 'rgba(6,12,20,0.75)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                }}
+              >
+                <Text style={{ color: 'white', fontSize: 11, fontWeight: '700' }}>
+                  Guest {uid}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+        {awaitingCaptainApproval && !isLiveStarted && (
+          <View
+            style={{
+              position: 'absolute',
+              left: 14,
+              right: 14,
+              top: insets.top + 84,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: 'rgba(0,214,106,0.55)',
+              backgroundColor: 'rgba(6, 14, 24, 0.94)',
+              padding: 12,
+            }}
+          >
+            <Text style={{ color: '#9EF4CE', fontWeight: '800', marginBottom: 4 }}>
+              Join request pending
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12 }}>
+              {joinApprovalLabel || 'Waiting for captain approval...'}
+            </Text>
+            <Pressable
+              style={[styles.secondaryBtn, { marginTop: 10 }]}
+              onPress={onClose}
+            >
+              <Text style={styles.secondaryBtnText}>Close</Text>
+            </Pressable>
           </View>
         )}
         {isLiveStarted && showUserPanel && (
