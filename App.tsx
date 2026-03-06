@@ -519,6 +519,12 @@ type HarborSettingsState = {
   appLanguage: string;
 };
 
+type TonePickerState = {
+  visible: boolean;
+  action: AppToneAction | null;
+  label: string;
+};
+
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = 90 * 1000;
@@ -536,32 +542,36 @@ const APP_TONE_OPTIONS: AppToneOption[] = [
   },
   {
     id: 'default_notification',
-    label: 'Notification',
+    label: 'notification.wav',
     candidates: ['notification', 'notification.wav'],
   },
   {
     id: 'lg_cat_ring',
-    label: 'LG Cat Ring',
+    label: 'Lg_Cat_Ring_freetone.org.mp3',
     candidates: [
       'lg_cat_ring_freetone_org',
       'lg_cat_ring_freetone_org.mp3',
+      'Lg_Cat_Ring_freetone-rg',
+      'Lg_Cat_Ring_freetone-rg.mp3',
       'Lg_Cat_Ring_freetone.org',
       'Lg_Cat_Ring_freetone.org.mp3',
     ],
   },
   {
     id: 'old_ring',
-    label: 'Old Ring',
+    label: 'Old_Ring_freetone.at.ua_freetone.org.mp3',
     candidates: [
       'old_ring_freetone_at_ua_freetone_org',
       'old_ring_freetone_at_ua_freetone_org.mp3',
+      'Old-ring-freetone.at.ua_freetone.rg',
+      'Old-ring-freetone.at.ua_freetone.rg.mp3',
       'Old_Ring_freetone.at.ua_freetone.org',
       'Old_Ring_freetone.at.ua_freetone.org.mp3',
     ],
   },
   {
     id: 'call_progress',
-    label: 'Call Progress',
+    label: 'Call progress.mp3',
     candidates: [
       CALL_PROGRESS_ASSET,
       'call_progress',
@@ -572,17 +582,17 @@ const APP_TONE_OPTIONS: AppToneOption[] = [
   },
   {
     id: 'falcon',
-    label: 'Falcon',
+    label: 'falcon.mp3',
     candidates: ['falcon', 'falcon.mp3'],
   },
   {
     id: 'downfall',
-    label: 'Downfall',
+    label: 'downfall-3-208028.mp3',
     candidates: ['downfall_3_208028', 'downfall-3-208028.mp3'],
   },
   {
     id: 'underwater_explosion',
-    label: 'Underwater Explosion',
+    label: 'large-underwater-explosion-190270.mp3',
     candidates: [
       'large_underwater_explosion_190270',
       'large-underwater-explosion-190270.mp3',
@@ -590,7 +600,7 @@ const APP_TONE_OPTIONS: AppToneOption[] = [
   },
   {
     id: 'sci_fi_hum',
-    label: 'Sci-Fi Hum',
+    label: 'sci-fi-sound-effect-designed-circuits-hum-10-200831.mp3',
     candidates: [
       'sci_fi_sound_effect_designed_circuits_hum_10_200831',
       'sci-fi-sound-effect-designed-circuits-hum-10-200831.mp3',
@@ -2818,6 +2828,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       tongue_region: false,
       tide_patches: false,
     });
+  const [tonePicker, setTonePicker] = useState<TonePickerState>({
+    visible: false,
+    action: null,
+    label: '',
+  });
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const notificationListenerStartedAtRef = useRef<number>(0);
   const [appToneSettings, setAppToneSettings] = useState<
@@ -6450,15 +6465,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const inviteBadgePanResponder = useMemo(
     () =>
       PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onStartShouldSetPanResponderCapture: () => false,
         onMoveShouldSetPanResponder: (_evt, gesture) =>
           !!incomingLiveInvite &&
-          Math.abs(gesture.dx) > 8 &&
+          Math.abs(gesture.dx) > 5 &&
+          Math.abs(gesture.vx) > 0.05 &&
+          Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onMoveShouldSetPanResponderCapture: (_evt, gesture) =>
+          !!incomingLiveInvite &&
+          Math.abs(gesture.dx) > 5 &&
+          Math.abs(gesture.vx) > 0.05 &&
           Math.abs(gesture.dx) > Math.abs(gesture.dy),
         onPanResponderMove: (_evt, gesture) => {
           inviteBadgeTranslateX.setValue(gesture.dx);
         },
         onPanResponderRelease: (_evt, gesture) => {
-          if (Math.abs(gesture.dx) > 96) {
+          if (Math.abs(gesture.dx) > 64 || Math.abs(gesture.vx) > 0.65) {
             Animated.timing(inviteBadgeTranslateX, {
               toValue: gesture.dx > 0 ? SCREEN_WIDTH : -SCREEN_WIDTH,
               duration: 120,
@@ -6480,6 +6503,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             useNativeDriver: true,
           }).start();
         },
+        onPanResponderTerminationRequest: () => false,
       }),
     [incomingLiveInvite, inviteBadgeTranslateX, respondToLiveInvite],
   );
@@ -17593,9 +17617,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       App Settings
                     </Text>
                     <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
-                      {appSettingsExpanded
-                        ? 'Hide notification tones'
-                        : 'Open notification tones'}
+                      Control panels
                     </Text>
                   </Pressable>
                   {appSettingsExpanded && (
@@ -17643,6 +17665,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         },
                       ].map(section => (
                         <View key={`harbor-section-${section.id}`}>
+                          {(section.id === 'captain_identity' ||
+                            section.id === 'chat_harbor' ||
+                            section.id === 'cache_currents') && (
+                            <Text
+                              style={[
+                                styles.logbookActionText,
+                                {
+                                  fontSize: 13,
+                                  opacity: 0.72,
+                                  marginTop: section.id === 'captain_identity' ? 4 : 10,
+                                  marginBottom: 4,
+                                },
+                              ]}
+                            >
+                              {section.id === 'captain_identity'
+                                ? 'Profile & Access'
+                                : section.id === 'chat_harbor'
+                                ? 'Interaction'
+                                : 'System'}
+                            </Text>
+                          )}
                           <Pressable
                             style={[
                               styles.logbookAction,
@@ -17650,6 +17693,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 flexDirection: 'row',
                                 justifyContent: 'space-between',
                                 alignItems: 'center',
+                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                borderRadius: 10,
                               },
                             ]}
                             onPress={() =>
@@ -17795,7 +17840,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                     APP_TONE_OPTIONS.find(opt => opt.id === selectedId)?.label ||
                                     'Notification';
                                   return (
-                                    <View
+                                    <Pressable
                                       key={`tone-setting-${item.action}`}
                                       style={[
                                         styles.logbookAction,
@@ -17803,8 +17848,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                           flexDirection: 'row',
                                           justifyContent: 'space-between',
                                           alignItems: 'center',
+                                          backgroundColor: 'rgba(255,255,255,0.03)',
+                                          borderRadius: 10,
                                         },
                                       ]}
+                                      disabled={item.action === 'live_invite'}
+                                      onPress={() => {
+                                        if (item.action === 'live_invite') {
+                                          return;
+                                        }
+                                        setTonePicker({
+                                          visible: true,
+                                          action: item.action as AppToneAction,
+                                          label: item.label,
+                                        });
+                                      }}
                                     >
                                       <View style={{ flex: 1, paddingRight: 10 }}>
                                         <Text style={styles.logbookActionText}>{item.label}</Text>
@@ -17812,39 +17870,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                           Tone: {selectedLabel}
                                         </Text>
                                       </View>
-                                      <Pressable
-                                        style={styles.bridgeSettingButton}
-                                        disabled={item.action === 'live_invite'}
-                                        onPress={() => {
-                                          if (item.action === 'live_invite') {
-                                            return;
-                                          }
-                                          const buttons: any[] = APP_TONE_OPTIONS.map(opt => ({
-                                            text: opt.label,
-                                            onPress: async () => {
-                                              await saveAppToneSetting(
-                                                item.action as AppToneAction,
-                                                opt.id,
-                                              );
-                                              playToneCandidates(opt.candidates, {
-                                                volume: 0.9,
-                                                storeAsPreview: true,
-                                              });
-                                            },
-                                          }));
-                                          buttons.push({ text: 'Cancel', style: 'cancel' });
-                                          Alert.alert(
-                                            `Select tone: ${item.label}`,
-                                            'Choose a tone and it will preview immediately.',
-                                            buttons,
-                                          );
-                                        }}
+                                      <Text
+                                        style={[
+                                          styles.logbookActionText,
+                                          {
+                                            fontSize: 13,
+                                            opacity: item.action === 'live_invite' ? 0.8 : 0.65,
+                                          },
+                                        ]}
                                       >
-                                        <Text style={styles.bridgeSettingButtonText}>
-                                          {item.action === 'live_invite' ? 'Silent' : 'Choose'}
-                                        </Text>
-                                      </Pressable>
-                                    </View>
+                                        {item.action === 'live_invite' ? 'Silent' : 'Open'}
+                                      </Text>
+                                    </Pressable>
                                   );
                                 })}
                               </View>
@@ -18374,6 +18411,92 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             >
               <Text style={styles.dismissText}>Close</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={tonePicker.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          stopTonePreview();
+          setTonePicker({ visible: false, action: null, label: '' });
+        }}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 22 }]}>
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.72,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>
+                {tonePicker.label || 'Select Tone'}
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 10 }}>
+                Tap a tone to preview and apply.
+              </Text>
+              <ScrollView>
+                {APP_TONE_OPTIONS.map(opt => {
+                  const selectedId =
+                    tonePicker.action
+                      ? appToneSettings[tonePicker.action] ||
+                        DEFAULT_APP_TONE_SETTINGS[tonePicker.action]
+                      : '';
+                  const isSelected = selectedId === opt.id;
+                  return (
+                    <Pressable
+                      key={`tone-picker-${opt.id}`}
+                      style={[
+                        styles.logbookAction,
+                        {
+                          backgroundColor: isSelected
+                            ? 'rgba(0,186,255,0.16)'
+                            : 'rgba(255,255,255,0.03)',
+                          borderRadius: 10,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        },
+                      ]}
+                      onPress={async () => {
+                        if (!tonePicker.action) return;
+                        await saveAppToneSetting(tonePicker.action, opt.id);
+                        playToneCandidates(opt.candidates, {
+                          volume: 0.9,
+                          storeAsPreview: true,
+                        });
+                      }}
+                    >
+                      <Text style={styles.logbookActionText}>{opt.label}</Text>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          { fontSize: 13, opacity: isSelected ? 1 : 0.4 },
+                        ]}
+                      >
+                        {isSelected ? 'Selected' : ''}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              <Pressable
+                style={[styles.dismissBtn, { marginTop: 12, minHeight: 42, justifyContent: 'center' }]}
+                onPress={() => {
+                  stopTonePreview();
+                  setTonePicker({ visible: false, action: null, label: '' });
+                }}
+              >
+                <Text style={styles.dismissText}>Done</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
