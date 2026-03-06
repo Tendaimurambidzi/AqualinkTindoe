@@ -6230,15 +6230,45 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const respondToLiveInvite = useCallback(
     async (action: 'join' | 'miss') => {
-      if (!incomingLiveInvite) return;
+      const invite = incomingLiveInvite;
+      if (!invite) return;
+      // Clear badge immediately for responsive UX.
+      setIncomingLiveInvite(null);
+      try {
+        const me = auth?.()?.currentUser;
+        if (me?.uid) {
+          cachedIncomingInviteRef.current = null;
+          AsyncStorage.removeItem(
+            `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${me.uid}`,
+          ).catch(() => {});
+        }
+      } catch {}
+
+      if (action === 'join') {
+        setLiveInviteJoinPreset({
+          liveId: invite.liveId,
+          channel:
+            invite.liveChannel ||
+            invite.directCallChannel ||
+            null,
+          title: invite.liveTitle || null,
+          fromName: invite.fromName,
+          nonce: Date.now(),
+        });
+        setShowLive(true);
+        if (invite.liveId) {
+          requestToDriftForLiveId(invite.liveId, invite.fromName);
+        }
+      }
+
       const nextStatus = action === 'join' ? 'accepted' : 'missed';
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
-          if (incomingLiveInvite.source === 'mention') {
+          if (invite.source === 'mention') {
             await firestore()
               .collection(`users/${me.uid}/mentions`)
-              .doc(incomingLiveInvite.id)
+              .doc(invite.id)
               .set(
                 {
                   status: nextStatus,
@@ -6246,10 +6276,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 },
                 { merge: true },
               );
-          } else if (incomingLiveInvite.source === 'ping') {
+          } else if (invite.source === 'ping') {
             await firestore()
               .collection(`users/${me.uid}/pings`)
-              .doc(incomingLiveInvite.id)
+              .doc(invite.id)
               .set(
                 {
                   status: nextStatus,
@@ -6261,7 +6291,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           } else {
             await firestore()
               .collection(`users/${me.uid}/live_invites`)
-              .doc(incomingLiveInvite.id)
+              .doc(invite.id)
               .set(
                 {
                   status: nextStatus,
@@ -6270,9 +6300,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 { merge: true },
               );
           }
-          if (incomingLiveInvite.liveId) {
+          if (invite.liveId) {
             await firestore()
-              .collection(`live/${incomingLiveInvite.liveId}/invite_status`)
+              .collection(`live/${invite.liveId}/invite_status`)
               .doc(me.uid)
               .set(
                 {
@@ -6284,7 +6314,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 { merge: true },
               );
           }
-          const linkedCallId = String(incomingLiveInvite.directCallId || '').trim();
+          const linkedCallId = String(invite.directCallId || '').trim();
           if (linkedCallId) {
             try {
               const myCallRef = firestore()
@@ -6318,43 +6348,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         }
       } catch {}
-
-      if (action === 'join') {
-        if (Platform.OS === 'android') {
-          const granted = await ensureCamMicPermissionsAndroid();
-          if (!granted) {
-            notifyError('Camera and microphone permissions are required to join.');
-            return;
-          }
-        }
-        if (incomingLiveInvite.liveId) {
-          requestToDriftForLiveId(
-            incomingLiveInvite.liveId,
-            incomingLiveInvite.fromName,
-          );
-        }
-        setLiveInviteJoinPreset({
-          liveId: incomingLiveInvite.liveId,
-          channel:
-            incomingLiveInvite.liveChannel ||
-            incomingLiveInvite.directCallChannel ||
-            null,
-          title: incomingLiveInvite.liveTitle || null,
-          fromName: incomingLiveInvite.fromName,
-          nonce: Date.now(),
-        });
-        setShowLive(true);
-      }
-      try {
-        const me = auth?.()?.currentUser;
-        if (me?.uid) {
-          cachedIncomingInviteRef.current = null;
-          AsyncStorage.removeItem(
-            `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${me.uid}`,
-          ).catch(() => {});
-        }
-      } catch {}
-      setIncomingLiveInvite(null);
     },
     [incomingLiveInvite, requestToDriftForLiveId],
   );
@@ -22386,10 +22379,11 @@ const LiveStreamModal = ({
       let fallbackMentionWritten = false;
       let fallbackPingWritten = false;
       let deliveryMode: 'none' | 'inbox' | 'fallback' = 'none';
+      let inviteSentToastShown = false;
       let lastErr: any = null;
       let inviteDocId: string | null = null;
-      let directCallId: string | null = null;
-      let directCallChannel: string | null = null;
+      const directCallId: string | null = null;
+      const directCallChannel: string | null = null;
       const directCallType: DirectCallMode = 'video';
       const computedExpiry = Date.now() + LIVE_INVITE_EXPIRY_MS;
 
@@ -22410,101 +22404,7 @@ const LiveStreamModal = ({
             existingPending = null;
           }
         }
-        const existingInviteData =
-          existingPending && !existingPending.empty
-            ? existingPending.docs[0].data() || {}
-            : null;
-
-        const mintAgoraTokenForChannel = async (
-          channelName: string,
-        ): Promise<string | null> => {
-          try {
-            const tokenEndpoint = String(cfg?.AGORA_TOKEN_ENDPOINT || '').trim();
-            if (!tokenEndpoint) return null;
-            const q = `?channel=${encodeURIComponent(
-              channelName,
-            )}&role=publisher&uid=0&expire=3600`;
-            const timeout = new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error('token-timeout')), 3500);
-            });
-            const resp: any = await Promise.race([
-              fetch(`${tokenEndpoint}${q}`),
-              timeout,
-            ]);
-            if (!resp?.ok) return null;
-            const json = await resp.json();
-            const token = String(json?.token || '').trim();
-            return token || null;
-          } catch {
-            return null;
-          }
-        };
-
-        try {
-          const existingCallId = String(
-            existingInviteData?.directCallId || '',
-          ).trim();
-          if (existingCallId) {
-            try {
-              const existingCallSnap = await firestore()
-                .collection(`users/${toUid}/direct_calls`)
-                .doc(existingCallId)
-                .get();
-              const existingCallData = existingCallSnap?.data?.() || {};
-              const existingStatus = String(
-                existingCallData?.status || '',
-              ).toLowerCase();
-              if (
-                existingCallSnap?.exists &&
-                (existingStatus === 'ringing' || existingStatus === 'accepted')
-              ) {
-                directCallId = existingCallId;
-                directCallChannel = String(
-                  existingCallData?.channelName || '',
-                ).trim() || null;
-              }
-            } catch {}
-          }
-
-          if (!directCallId) {
-            const callRef = firestore()
-              .collection(`users/${me.uid}/direct_calls`)
-              .doc();
-            const channelSeed = liveDocId || 'drift';
-            const channelName = `aqua_drift_${channelSeed}_${callRef.id}`.replace(
-              /[^A-Za-z0-9_]/g,
-              '_',
-            );
-            const freshToken = await mintAgoraTokenForChannel(channelName);
-            const callPayload: Omit<DirectCallSession, 'id'> & { createdAt: any } = {
-              callerUid: me.uid,
-              calleeUid: toUid,
-              callerName,
-              calleeName: typeof to === 'string' ? toUid : to?.name || 'User',
-              callerAvatar: senderPhoto,
-              calleeAvatar: null,
-              channelName,
-              callType: directCallType,
-              status: 'ringing',
-              createdAt: firestore.FieldValue.serverTimestamp(),
-              endedBy: null,
-              agoraToken: freshToken || null,
-            };
-            const calleeCallRef = firestore()
-              .collection(`users/${toUid}/direct_calls`)
-              .doc(callRef.id);
-            const batch = firestore().batch();
-            batch.set(callRef, callPayload as any, { merge: true });
-            batch.set(calleeCallRef, callPayload as any, { merge: true });
-            await batch.commit();
-            directCallId = callRef.id;
-            directCallChannel = channelName;
-          }
-        } catch (callSetupErr) {
-          lastErr = callSetupErr;
-          directCallId = null;
-          directCallChannel = null;
-        }
+        // Invite-only flow: do not create direct call sessions here.
 
         const invitePayload = {
           liveId: liveDocId || null,
@@ -22529,17 +22429,21 @@ const LiveStreamModal = ({
           inviteDocId = inviteRef.id;
         }
         inboxInviteWritten = true;
+
+        if (!options?.silent) {
+          Alert.alert('Invite Sent', 'Invitation sent to feed badge.');
+          setShowInviteModal(false);
+          inviteSentToastShown = true;
+        }
       } catch (err) {
         console.warn('[INVITE DEBUG] inbox invite write failed', err);
         lastErr = err;
       }
 
-      try {
-        callableInviteSent = await inviteUserToDrift(toUid);
-      } catch (err) {
+      // Non-blocking: do not delay user feedback on callable side-channel.
+      inviteUserToDrift(toUid).catch(err => {
         console.warn('[INVITE DEBUG] callable sendCrewInvitation failed', err);
-        lastErr = err;
-      }
+      });
 
       if (!inboxInviteWritten) {
         try {
@@ -22594,33 +22498,34 @@ const LiveStreamModal = ({
         }
       }
 
-      try {
-        if (liveDocId && inviteDocId) {
-          await firestore()
-            .collection(`live/${liveDocId}/invite_status`)
-            .doc(toUid)
-            .set(
-              {
-                uid: toUid,
-                name:
-                  typeof to === 'string'
-                    ? toUid
-                    : to?.name || toUid,
-                status: 'pending',
-                inviteId: inviteDocId,
-                fromUid: me.uid,
-                liveId: liveDocId,
-                directCallId: directCallId || null,
-                callType: directCallType,
-                directCallChannel: directCallChannel || null,
-                expiresAtMs: computedExpiry,
-                updatedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
-          inviteStatusWritten = true;
-        }
-      } catch {}
+      if (liveDocId && inviteDocId) {
+        firestore()
+          .collection(`live/${liveDocId}/invite_status`)
+          .doc(toUid)
+          .set(
+            {
+              uid: toUid,
+              name:
+                typeof to === 'string'
+                  ? toUid
+                  : to?.name || toUid,
+              status: 'pending',
+              inviteId: inviteDocId,
+              fromUid: me.uid,
+              liveId: liveDocId,
+              directCallId: directCallId || null,
+              callType: directCallType,
+              directCallChannel: directCallChannel || null,
+              expiresAtMs: computedExpiry,
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          )
+          .then(() => {
+            inviteStatusWritten = true;
+          })
+          .catch(() => {});
+      }
 
       const requireFeedPanel = options?.requireFeedPanel !== false;
       const fallbackWorked =
@@ -22630,7 +22535,7 @@ const LiveStreamModal = ({
         fallbackPingWritten;
       if (inboxInviteWritten || (!requireFeedPanel && fallbackWorked)) {
         deliveryMode = inboxInviteWritten ? 'inbox' : 'fallback';
-        if (!options?.silent) {
+        if (!options?.silent && !inviteSentToastShown) {
           Alert.alert(
             'Invite Sent',
             deliveryMode === 'inbox'
