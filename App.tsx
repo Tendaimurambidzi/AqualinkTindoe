@@ -3175,6 +3175,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [stopTonePreview]);
 
   useEffect(() => {
+    let cancelled = false;
+    const uid = auth?.()?.currentUser?.uid;
+    if (!uid) return;
+    const loadRemoteToneSettings = async () => {
+      try {
+        const snap = await firestore().doc(`users/${uid}/settings/notifications`).get();
+        const tones = (snap?.data?.() || (snap as any)?.data?.() || {})?.tones || {};
+        if (cancelled || !tones || typeof tones !== 'object') return;
+        const merged = {
+          ...DEFAULT_APP_TONE_SETTINGS,
+          ...(tones as Partial<Record<AppToneAction, string>>),
+        };
+        setAppToneSettings(merged);
+      } catch {}
+    };
+    loadRemoteToneSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+
+  useEffect(() => {
     let mounted = true;
     const loadHarborSettings = async () => {
       try {
@@ -3219,6 +3241,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setAppToneSettings(next);
       try {
         await AsyncStorage.setItem(APP_TONES_STORAGE_KEY, JSON.stringify(next));
+      } catch {}
+      try {
+        const uid = auth?.()?.currentUser?.uid;
+        if (uid) {
+          await firestore()
+            .doc(`users/${uid}/settings/notifications`)
+            .set(
+              {
+                tones: {
+                  incoming_call:
+                    next.incoming_call || DEFAULT_APP_TONE_SETTINGS.incoming_call,
+                  messages: next.messages || DEFAULT_APP_TONE_SETTINGS.messages,
+                  live_invite:
+                    next.live_invite || DEFAULT_APP_TONE_SETTINGS.live_invite,
+                  call_missed:
+                    next.call_missed || DEFAULT_APP_TONE_SETTINGS.call_missed,
+                  general: next.general || DEFAULT_APP_TONE_SETTINGS.general,
+                },
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+        }
       } catch {}
     },
     [appToneSettings],

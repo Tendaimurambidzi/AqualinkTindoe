@@ -26,6 +26,71 @@ const db = admin.firestore();
 const DOWNLOAD_BUCKET = admin.storage().bucket();
 const LOGO_SOURCE_PATH = path.join(__dirname, 'assets', 'my_logo.jpg');
 const DOWNLOADS_PREFIX = 'downloads/waves';
+const DEFAULT_TONE_SETTINGS = {
+  incoming_call: 'call_progress',
+  messages: 'default_notification',
+  live_invite: 'none',
+  call_missed: 'old_ring',
+  general: 'default_notification',
+};
+
+function sanitizeToneId(rawTone) {
+  const tone = String(rawTone || '').trim().toLowerCase();
+  if (!tone) return null;
+  // Keep only ids used by Android channel naming.
+  const allowed = new Set([
+    'default_notification',
+    'notification',
+    'lg_cat_ring',
+    'call_progress',
+    'falcon',
+    'downfall',
+    'underwater_explosion',
+    'sci_fi_hum',
+    'old_ring',
+    'none',
+  ]);
+  return allowed.has(tone) ? tone : null;
+}
+
+async function resolveAndroidChannelId(userId, type) {
+  const normalizedType = String(type || '').trim().toLowerCase();
+  const isCallInvite =
+    normalizedType === 'call_invite' || normalizedType === 'incoming_call';
+  const isCallMissed = normalizedType === 'call_missed';
+  let selectedTone = null;
+  try {
+    const prefSnap = await db
+      .doc(`users/${String(userId)}/settings/notifications`)
+      .get();
+    const prefData = prefSnap.exists ? prefSnap.data() || {} : {};
+    const tones = prefData?.tones || {};
+    selectedTone = sanitizeToneId(
+      isCallInvite
+        ? tones?.incoming_call
+        : isCallMissed
+        ? tones?.call_missed
+        : tones?.messages,
+    );
+  } catch {
+    selectedTone = null;
+  }
+  if (!selectedTone) {
+    selectedTone = sanitizeToneId(
+      isCallInvite
+        ? DEFAULT_TONE_SETTINGS.incoming_call
+        : isCallMissed
+        ? DEFAULT_TONE_SETTINGS.call_missed
+        : DEFAULT_TONE_SETTINGS.messages,
+    );
+  }
+  if (!selectedTone) {
+    return isCallInvite ? 'aqualink_calls_progress' : 'aqualink_notifications';
+  }
+  return isCallInvite
+    ? `aqualink_calls_${selectedTone}`
+    : `aqualink_notifications_${selectedTone}`;
+}
 
 async function addPing(userId, data) {
   await db.collection('users').doc(userId).collection('pings').add({
@@ -59,7 +124,7 @@ async function addPing(userId, data) {
     const newBadgeCount = currentUnreadCount + 1;
     const type = String(data.type || 'ping');
     const isCallInvite = type === 'call_invite' || type === 'incoming_call';
-    const channelId = isCallInvite ? 'aqualink_calls_progress' : 'aqualink_notifications';
+    const channelId = await resolveAndroidChannelId(userId, type);
 
     const message = {
       notification: {
@@ -93,9 +158,8 @@ async function addPing(userId, data) {
         notification: {
           channelId: channelId,
           notificationCount: newBadgeCount,
-          sound: isCallInvite ? 'call_progress' : 'default',
           defaultVibrateTimings: true,
-          defaultSound: !isCallInvite,
+          defaultSound: false,
           notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
           visibility: 'PUBLIC',
           tag: isCallInvite ? `call_${String(data.callId || '')}` : undefined,
@@ -521,7 +585,7 @@ async function addPingModular(userId, data) {
     
     const type = String(data.type || 'ping');
     const isCallInvite = type === 'call_invite' || type === 'incoming_call';
-    const channelId = isCallInvite ? 'aqualink_calls_progress' : 'aqualink_notifications';
+    const channelId = await resolveAndroidChannelId(userId, type);
 
     const message = {
       notification: {
@@ -554,9 +618,8 @@ async function addPingModular(userId, data) {
         ttl: isCallInvite ? 30000 : 3600000,
         notification: {
           channelId: channelId,
-          sound: isCallInvite ? 'call_progress' : 'default',
           defaultVibrateTimings: true,
-          defaultSound: !isCallInvite,
+          defaultSound: false,
           notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
           visibility: 'PUBLIC',
           tag: isCallInvite ? `call_${String(data.callId || '')}` : undefined,
