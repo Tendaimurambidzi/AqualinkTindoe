@@ -178,6 +178,31 @@ service cloud.firestore {
           && (uid == resource.data.callerUid || uid == resource.data.calleeUid)
           && (request.auth.uid == resource.data.callerUid || request.auth.uid == resource.data.calleeUid);
       }
+
+      // users/{uid}/live_invites/{inviteId}
+      // Sender writes invites into recipient inbox; recipient reads/responds.
+      match /live_invites/{inviteId} {
+        // Keep invite flow robust across sender/recipient operations.
+        allow read, create, update: if isAuthed();
+        allow delete: if isAuthed() && (
+          isOwner(uid) ||
+          (
+            resource.data.fromUid is string &&
+            resource.data.fromUid == request.auth.uid
+          )
+        );
+      }
+    }
+
+    // live/{liveId}/invite_status/{uid}
+    // Host writes pending status; invitee updates accepted/missed.
+    match /live/{liveId} {
+      allow read: if isAuthed();
+
+      match /invite_status/{uid} {
+        allow read: if isAuthed();
+        allow create, update, delete: if isAuthed();
+      }
     }
   }
 }

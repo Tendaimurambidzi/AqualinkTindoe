@@ -986,6 +986,17 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowRadius: 8,
   },
+  inviteModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.84)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  inviteModalCardWrap: {
+    width: '100%',
+    alignItems: 'center',
+  },
   inviteBadgeTitle: {
     color: 'white',
     fontWeight: '800',
@@ -13747,71 +13758,65 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </Animated.View>
       )}
       {incomingLiveInvite && (
-        <View
-          pointerEvents="box-none"
-          style={[
-            styles.driftAlertContainer,
-            {
-              top: (insets.top || 0) + 76,
-              left: 12,
-              right: 12,
-              backgroundColor: 'transparent',
-              borderWidth: 0,
-              shadowOpacity: 0,
-              elevation: 0,
-              paddingHorizontal: 0,
-              paddingVertical: 0,
-            },
-          ]}
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {}}
         >
-          <View style={styles.inviteBadgeCard}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={styles.driftAlertAvatar}>
-                {incomingLiveInvite.fromPhoto ? (
-                  <Image
-                    source={{ uri: incomingLiveInvite.fromPhoto }}
-                    style={styles.driftAlertAvatarImage}
-                  />
-                ) : (
-                  <Text style={styles.driftAlertInitials}>
-                    {incomingLiveInvite.fromName.charAt(0).toUpperCase()}
-                  </Text>
-                )}
+          <View style={styles.inviteModalBackdrop}>
+            <View style={styles.inviteModalCardWrap}>
+              <View style={styles.inviteBadgeCard}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={styles.driftAlertAvatar}>
+                    {incomingLiveInvite.fromPhoto ? (
+                      <Image
+                        source={{ uri: incomingLiveInvite.fromPhoto }}
+                        style={styles.driftAlertAvatarImage}
+                      />
+                    ) : (
+                      <Text style={styles.driftAlertInitials}>
+                        {incomingLiveInvite.fromName.charAt(0).toUpperCase()}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.inviteBadgeTitle}>
+                      Drift Invite
+                    </Text>
+                    <Text style={styles.inviteBadgeText}>
+                      {incomingLiveInvite.fromName} invited you to{' '}
+                      {incomingLiveInvite.liveTitle || 'Drift Expo'}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.inviteBadgeActions}>
+                  <Pressable
+                    style={[
+                      styles.inviteBadgeBtn,
+                      styles.inviteBadgeDismissBtn,
+                    ]}
+                    onPress={() => respondToLiveInvite('miss')}
+                    android_ripple={{ color: 'rgba(255,255,255,0.22)' }}
+                  >
+                    <Text style={styles.inviteBadgeDismissText}>Miss</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.inviteBadgeBtn,
+                      styles.inviteBadgeJoinBtn,
+                    ]}
+                    onPress={() => respondToLiveInvite('join')}
+                    android_ripple={{ color: 'rgba(255,255,255,0.28)' }}
+                  >
+                    <Text style={styles.inviteBadgeJoinText}>Join</Text>
+                  </Pressable>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.inviteBadgeTitle}>
-                  Live Invite
-                </Text>
-                <Text style={styles.inviteBadgeText}>
-                  {incomingLiveInvite.fromName} invited you to{' '}
-                  {incomingLiveInvite.liveTitle || 'Drift Expo'}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.inviteBadgeActions}>
-              <Pressable
-                style={[
-                  styles.inviteBadgeBtn,
-                  styles.inviteBadgeDismissBtn,
-                ]}
-                onPress={() => respondToLiveInvite('miss')}
-                android_ripple={{ color: 'rgba(255,255,255,0.22)' }}
-              >
-                <Text style={styles.inviteBadgeDismissText}>Miss</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.inviteBadgeBtn,
-                  styles.inviteBadgeJoinBtn,
-                ]}
-                onPress={() => respondToLiveInvite('join')}
-                android_ripple={{ color: 'rgba(255,255,255,0.28)' }}
-              >
-                <Text style={styles.inviteBadgeJoinText}>Join</Text>
-              </Pressable>
             </View>
           </View>
-        </View>
+        </Modal>
       )}
       {/* Facebook-like Header */}
       <View style={{ height: 50, backgroundColor: '#4267B2', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
@@ -22320,7 +22325,7 @@ const LiveStreamModal = ({
                     
   const sendInviteTo = async (
     to: { uid?: string; name?: string } | string,
-    options?: { silent?: boolean },
+    options?: { silent?: boolean; requireFeedPanel?: boolean },
   ) => {
     const formatInviteDebugError = (err: any): string => {
       try {
@@ -22374,10 +22379,12 @@ const LiveStreamModal = ({
           hostName ||
           'Skipper',
       ).trim();
+      const senderPhoto = me.photoURL || null;
       let inboxInviteWritten = false;
       let callableInviteSent = false;
       let inviteStatusWritten = false;
       let fallbackMentionWritten = false;
+      let fallbackPingWritten = false;
       let deliveryMode: 'none' | 'inbox' | 'fallback' = 'none';
       let lastErr: any = null;
       let inviteDocId: string | null = null;
@@ -22474,7 +22481,7 @@ const LiveStreamModal = ({
               calleeUid: toUid,
               callerName,
               calleeName: typeof to === 'string' ? toUid : to?.name || 'User',
-              callerAvatar: profilePhoto || me.photoURL || null,
+              callerAvatar: senderPhoto,
               calleeAvatar: null,
               channelName,
               callType: directCallType,
@@ -22505,7 +22512,7 @@ const LiveStreamModal = ({
           liveTitle: liveTitle || 'Live Session',
           fromUid: me.uid,
           fromName: callerName,
-          fromPhoto: profilePhoto || me.photoURL || null,
+          fromPhoto: senderPhoto,
           directCallId: directCallId || null,
           callType: directCallType,
           directCallChannel: directCallChannel || null,
@@ -22543,7 +22550,7 @@ const LiveStreamModal = ({
               text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
               fromUid: me.uid,
               fromName: callerName,
-              fromPhoto: profilePhoto || me.photoURL || null,
+              fromPhoto: senderPhoto,
               route: 'Pings',
               liveId: liveDocId || '',
               liveTitle: liveTitle || 'Drift Expo',
@@ -22558,6 +22565,31 @@ const LiveStreamModal = ({
           fallbackMentionWritten = true;
         } catch (err) {
           console.warn('[INVITE DEBUG] mention fallback write failed', err);
+          lastErr = err;
+        }
+        try {
+          await firestore()
+            .collection(`users/${toUid}/pings`)
+            .add({
+              type: 'live_invite',
+              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+              fromUid: me.uid,
+              fromName: callerName,
+              fromPhoto: senderPhoto,
+              liveId: liveDocId || '',
+              liveTitle: liveTitle || 'Drift Expo',
+              liveChannel: liveChannel || null,
+              directCallId: directCallId || null,
+              directCallChannel: directCallChannel || null,
+              callType: directCallType,
+              status: 'pending',
+              read: false,
+              expiresAtMs: computedExpiry,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
+          fallbackPingWritten = true;
+        } catch (err) {
+          console.warn('[INVITE DEBUG] ping fallback write failed', err);
           lastErr = err;
         }
       }
@@ -22590,12 +22622,13 @@ const LiveStreamModal = ({
         }
       } catch {}
 
-      if (
-        inboxInviteWritten ||
+      const requireFeedPanel = options?.requireFeedPanel !== false;
+      const fallbackWorked =
         callableInviteSent ||
         inviteStatusWritten ||
-        fallbackMentionWritten
-      ) {
+        fallbackMentionWritten ||
+        fallbackPingWritten;
+      if (inboxInviteWritten || (!requireFeedPanel && fallbackWorked)) {
         deliveryMode = inboxInviteWritten ? 'inbox' : 'fallback';
         if (!options?.silent) {
           Alert.alert(
@@ -22612,8 +22645,17 @@ const LiveStreamModal = ({
           callableInviteSent,
           inviteStatusWritten,
           fallbackMentionWritten,
+          fallbackPingWritten,
+          requireFeedPanel,
         });
-        throw lastErr || new Error('No invite channel succeeded');
+        throw (
+          lastErr ||
+          new Error(
+            requireFeedPanel
+              ? 'Feed badge delivery failed (users/{uid}/live_invites write did not succeed).'
+              : 'No invite channel succeeded',
+          )
+        );
       }
     } catch (error) {
       const debugInfo = formatInviteDebugError(error);
@@ -22636,6 +22678,17 @@ const LiveStreamModal = ({
     } finally {
       setInviteBusy(false);
     }
+  };
+
+  const sendUnifiedDriftInvite = async (
+    target: { uid: string; name?: string },
+    options?: { silent?: boolean },
+  ) => {
+    if (!target?.uid) return;
+    await sendInviteTo(
+      { uid: target.uid, name: target.name || target.uid },
+      { silent: options?.silent, requireFeedPanel: false },
+    );
   };
 
   const getInviteStatusLabel = (uid: string) => {
@@ -23384,7 +23437,10 @@ const LiveStreamModal = ({
       case 'inviteToDrift':
         (async () => {
           try {
-            await sendInviteTo({ uid: userId, name: username }, { silent: true });
+            await sendUnifiedDriftInvite(
+              { uid: userId, name: username },
+              { silent: true },
+            );
             Alert.alert(
               'Drift Invite',
               `${username ? `@${username}` : 'User'} has been invited to drift`,
@@ -24207,7 +24263,7 @@ const LiveStreamModal = ({
                       </View>
                     </View>
                     <Pressable
-                      disabled={inviteBusy || status === 'Accepted'}
+                      disabled={status === 'Accepted'}
                       style={[
                         styles.primaryBtn,
                         {
@@ -24223,9 +24279,9 @@ const LiveStreamModal = ({
                         },
                       ]}
                       onPress={() =>
-                        sendInviteTo(
+                        sendUnifiedDriftInvite(
                           { uid: u.uid, name: u.name },
-                          { silent: true },
+                          { silent: false },
                         )
                       }
                     >
@@ -24582,7 +24638,16 @@ const LiveStreamModal = ({
                 <Pressable
                   disabled={inviteBusy || !selectedInviteUid}
                   style={[styles.secondaryBtn, { flex: 1 }]}
-                  onPress={() => selectedInviteUid && sendInviteTo({ uid: selectedInviteUid })}
+                  onPress={() => {
+                    if (!selectedInviteUid) return;
+                    const selected = inviteResults.find(
+                      item => item.uid === selectedInviteUid,
+                    );
+                    sendUnifiedDriftInvite(
+                      { uid: selectedInviteUid, name: selected?.name || selectedInviteUid },
+                      { silent: false },
+                    );
+                  }}
                 >
                   <Text style={styles.secondaryBtnText}>
                     {inviteBusy ? '...' : 'Invite Selected'}
