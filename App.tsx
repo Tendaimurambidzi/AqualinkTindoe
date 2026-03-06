@@ -33,6 +33,7 @@ import {
   Linking,
   Modal,
   NativeModules,
+  PanResponder,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -510,6 +511,14 @@ type AppToneOption = {
   candidates: Array<string | number>;
 };
 
+type HarborSettingsState = {
+  privateWakeMode: boolean;
+  listSortMode: 'recent' | 'alphabetical';
+  chatQuickSend: boolean;
+  smartDataSaver: boolean;
+  appLanguage: string;
+};
+
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = 90 * 1000;
@@ -518,7 +527,13 @@ const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Call progress.mp3');
 const APP_TONES_STORAGE_KEY = 'app_tone_settings_v1';
+const HARBOR_SETTINGS_STORAGE_KEY = 'harbor_settings_v1';
 const APP_TONE_OPTIONS: AppToneOption[] = [
+  {
+    id: 'none',
+    label: 'Off',
+    candidates: [],
+  },
   {
     id: 'default_notification',
     label: 'Notification',
@@ -585,9 +600,16 @@ const APP_TONE_OPTIONS: AppToneOption[] = [
 const DEFAULT_APP_TONE_SETTINGS: Record<AppToneAction, string> = {
   incoming_call: 'lg_cat_ring',
   messages: 'default_notification',
-  live_invite: 'falcon',
+  live_invite: 'none',
   call_missed: 'old_ring',
   general: 'default_notification',
+};
+const DEFAULT_HARBOR_SETTINGS: HarborSettingsState = {
+  privateWakeMode: false,
+  listSortMode: 'recent',
+  chatQuickSend: true,
+  smartDataSaver: true,
+  appLanguage: 'System Default',
 };
                     
 const toJSDate = (ts: any) => {
@@ -2590,6 +2612,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Set up notifications listener
   useEffect(() => {
     if (!user?.uid) return;
+    seenNotificationIdsRef.current = new Set();
+    notificationListenerStartedAtRef.current = Date.now();
 
     const unsubscribe = firestore()
       .collection(`users/${user.uid}/pings`)
@@ -2662,38 +2686,53 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
         setNotifications(notificationsData);
         const unreadNotifications = notificationsData.filter(n => !n.read).length;
+        const addedDocIds = new Set(
+          (snapshot.docChanges?.() || [])
+            .filter(change => change.type === 'added')
+            .map(change => change.doc.id),
+        );
+        const newRealtimeNotifications = notificationsData.filter(item => {
+          if (!item?.id || !addedDocIds.has(item.id)) return false;
+          if (seenNotificationIdsRef.current.has(item.id)) return false;
+          if (item.read) return false;
+          const createdMs = toJSDate(item.createdAt).getTime();
+          if (!createdMs) return false;
+          return createdMs >= notificationListenerStartedAtRef.current - 2000;
+        });
+        notificationsData.forEach(item => {
+          if (item?.id) seenNotificationIdsRef.current.add(item.id);
+        });
         
         // Recalculate total unread alerts including messages
         const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
         setUnreadAlertsCount(unreadNotifications + unreadMessages);
 
-        // Detect new notifications and play only tone (no in-feed generic popup).
-        if (unreadNotifications > previousUnreadCount && notificationsData.length > 0) {
-          const newNotifications = notificationsData.filter(n => !n.read);
-          if (newNotifications.length > 0) {
-            const latestNewNotification = newNotifications[0];
-            
-            // Ensure user data is available for the notification sender (async, don't wait)
-            ensureUserData(latestNewNotification.fromUid);
-            
-            const displayName = userData[latestNewNotification.fromUid]?.name || latestNewNotification.fromName || 'Someone';
-            
-            const toneType =
-              latestNewNotification.type === 'live_invite'
-                ? 'live_invite'
-                : latestNewNotification.type === 'call_missed'
-                ? 'call_missed'
-                : 'messages';
-            showNotificationPopup(
-              formatNotificationMessage(latestNewNotification, userData || {}),
-              displayName,
-              toneType,
-              null,
-            );
-          }
+        // Play tone only for newly added realtime notifications.
+        if (newRealtimeNotifications.length > 0) {
+          const latestNewNotification = newRealtimeNotifications
+            .slice()
+            .sort(
+              (a, b) =>
+                toJSDate(b.createdAt).getTime() - toJSDate(a.createdAt).getTime(),
+            )[0];
+          ensureUserData(latestNewNotification.fromUid);
+          const displayName =
+            userData[latestNewNotification.fromUid]?.name ||
+            latestNewNotification.fromName ||
+            'Someone';
+          const toneType =
+            latestNewNotification.type === 'call_missed'
+              ? 'call_missed'
+              : latestNewNotification.type === 'live_invite'
+              ? 'live_invite'
+              : 'messages';
+          showNotificationPopup(
+            formatNotificationMessage(latestNewNotification, userData || {}),
+            displayName,
+            toneType,
+            null,
+          );
         }
-        
-        setPreviousUnreadCount(unreadNotifications);
 
         // Show toast for new unread notifications
         const newUnreadNotifications = notificationsData.filter(n => !n.read);
@@ -2764,9 +2803,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const viewTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const [viewedPosts, setViewedPosts] = useState<Set<string>>(new Set());
   
-  // Track previous unread count to detect new notifications
-  const [previousUnreadCount, setPreviousUnreadCount] = useState(0);
   const [appSettingsExpanded, setAppSettingsExpanded] = useState<boolean>(false);
+  const [harborSettings, setHarborSettings] = useState<HarborSettingsState>(
+    DEFAULT_HARBOR_SETTINGS,
+  );
+  const [appSettingsSectionsExpanded, setAppSettingsSectionsExpanded] =
+    useState<Record<string, boolean>>({
+      captain_identity: false,
+      shields_boundaries: false,
+      crew_lists: false,
+      chat_harbor: false,
+      alert_bells: true,
+      cache_currents: false,
+      tongue_region: false,
+      tide_patches: false,
+    });
+  const seenNotificationIdsRef = useRef<Set<string>>(new Set());
+  const notificationListenerStartedAtRef = useRef<number>(0);
   const [appToneSettings, setAppToneSettings] = useState<
     Record<AppToneAction, string>
   >(DEFAULT_APP_TONE_SETTINGS);
@@ -3024,12 +3077,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       candidates: Array<string | number>,
       opts?: { loop?: boolean; volume?: number; storeAsPreview?: boolean },
     ) => {
-      if (!candidates.length) return;
       const loop = !!opts?.loop;
       const volume = typeof opts?.volume === 'number' ? opts.volume : 0.9;
       if (opts?.storeAsPreview) {
         stopTonePreview();
       }
+      if (!candidates.length) return;
       const tryLoad = (idx: number) => {
         if (idx >= candidates.length) return;
         let tone: Sound | null = null;
@@ -3104,6 +3157,42 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       stopTonePreview();
     };
   }, [stopTonePreview]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadHarborSettings = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(HARBOR_SETTINGS_STORAGE_KEY);
+        if (!raw || !mounted) return;
+        const parsed = JSON.parse(raw || '{}') || {};
+        setHarborSettings({
+          ...DEFAULT_HARBOR_SETTINGS,
+          ...(parsed as Partial<HarborSettingsState>),
+        });
+      } catch {}
+    };
+    loadHarborSettings();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const saveHarborSettings = useCallback(
+    async (patch: Partial<HarborSettingsState>) => {
+      const next = {
+        ...harborSettings,
+        ...patch,
+      };
+      setHarborSettings(next);
+      try {
+        await AsyncStorage.setItem(
+          HARBOR_SETTINGS_STORAGE_KEY,
+          JSON.stringify(next),
+        );
+      } catch {}
+    },
+    [harborSettings],
+  );
 
   const saveAppToneSetting = useCallback(
     async (action: AppToneAction, toneId: string) => {
@@ -3946,6 +4035,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(false);
   const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showBridge) {
+      stopTonePreview();
+    }
+  }, [showBridge, stopTonePreview]);
                     
   // Crew (follow/unfollow) state
   const [myCrewCount, setMyCrewCount] = useState<number>(0);
@@ -5852,7 +5947,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
                     
   useEffect(() => {
-    if (!vibeAlert && !hereNowFeedAlert) {
+    if (!vibeAlert && !hereNowFeedAlert && !incomingLiveInvite) {
       flickerAnim.setValue(0);
       return;
     }
@@ -5872,7 +5967,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
     anim.start();
     return () => anim.stop();
-  }, [vibeAlert, hereNowFeedAlert, flickerAnim]);
+  }, [vibeAlert, hereNowFeedAlert, incomingLiveInvite, flickerAnim]);
                     
   const watchersKey = useMemo(
     () => driftWatchers.slice().sort().join(','),
@@ -6351,6 +6446,47 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [incomingLiveInvite, requestToDriftForLiveId],
   );
+  const inviteBadgeTranslateX = useRef(new Animated.Value(0)).current;
+  const inviteBadgePanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_evt, gesture) =>
+          !!incomingLiveInvite &&
+          Math.abs(gesture.dx) > 8 &&
+          Math.abs(gesture.dx) > Math.abs(gesture.dy),
+        onPanResponderMove: (_evt, gesture) => {
+          inviteBadgeTranslateX.setValue(gesture.dx);
+        },
+        onPanResponderRelease: (_evt, gesture) => {
+          if (Math.abs(gesture.dx) > 96) {
+            Animated.timing(inviteBadgeTranslateX, {
+              toValue: gesture.dx > 0 ? SCREEN_WIDTH : -SCREEN_WIDTH,
+              duration: 120,
+              useNativeDriver: true,
+            }).start(() => {
+              inviteBadgeTranslateX.setValue(0);
+              respondToLiveInvite('miss');
+            });
+            return;
+          }
+          Animated.spring(inviteBadgeTranslateX, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(inviteBadgeTranslateX, {
+            toValue: 0,
+            useNativeDriver: true,
+          }).start();
+        },
+      }),
+    [incomingLiveInvite, inviteBadgeTranslateX, respondToLiveInvite],
+  );
+
+  useEffect(() => {
+    if (!incomingLiveInvite) inviteBadgeTranslateX.setValue(0);
+  }, [incomingLiveInvite, inviteBadgeTranslateX]);
                     
   const [editorPlaying, setEditorPlaying] = useState(true);
   const [audioUnpaused, setAudioUnpaused] = useState(true);
@@ -10510,10 +10646,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Play notification tone only; notifications surface in VIBE ALERTS.
   const showNotificationPopup = (_message: string, _fromName: string, type: string, _avatar: any = null) => {
     const normalizedType = String(type || '').toLowerCase();
+    if (normalizedType === 'live_invite') {
+      return;
+    }
     const toneAction: AppToneAction =
-      normalizedType === 'live_invite'
-        ? 'live_invite'
-        : normalizedType === 'call_missed'
+      normalizedType === 'call_missed'
         ? 'call_missed'
         : 'messages';
     playToneCandidates(getToneCandidatesForAction(toneAction), {
@@ -13760,7 +13897,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         >
           <View style={styles.inviteModalBackdrop}>
             <View style={styles.inviteModalCardWrap}>
-              <View style={styles.inviteBadgeCard}>
+              <Animated.View
+                {...inviteBadgePanResponder.panHandlers}
+                style={[
+                  styles.inviteBadgeCard,
+                  {
+                    transform: [{ translateX: inviteBadgeTranslateX }],
+                    opacity: inviteBadgeTranslateX.interpolate({
+                      inputRange: [-220, 0, 220],
+                      outputRange: [0.55, 1, 0.55],
+                    }),
+                  },
+                ]}
+              >
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <View style={styles.driftAlertAvatar}>
                     {incomingLiveInvite.fromPhoto ? (
@@ -13782,6 +13931,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       {incomingLiveInvite.fromName} invited you to{' '}
                       {incomingLiveInvite.liveTitle || 'Drift Expo'}
                     </Text>
+                    <Animated.Text
+                      style={[
+                        styles.inviteBadgeText,
+                        {
+                          marginTop: 4,
+                          fontSize: 11,
+                          opacity: flickerAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0.5, 1],
+                          }),
+                        },
+                      ]}
+                    >
+                      Swipe left or right to dismiss.
+                    </Animated.Text>
                   </View>
                 </View>
                 <View style={styles.inviteBadgeActions}>
@@ -13806,7 +13970,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Text style={styles.inviteBadgeJoinText}>Join</Text>
                   </Pressable>
                 </View>
-              </View>
+              </Animated.View>
             </View>
           </View>
         </Modal>
@@ -17390,7 +17554,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         visible={showBridge}
         transparent
         animationType="none"
-        onRequestClose={() => setShowBridge(false)}
+        onRequestClose={() => {
+          stopTonePreview();
+          setShowBridge(false);
+        }}
       >
         <View
           style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
@@ -17434,20 +17601,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   {appSettingsExpanded && (
                     <View style={{ marginTop: 6 }}>
                       {[
-                        { action: 'incoming_call', label: 'Incoming Calls' },
-                        { action: 'messages', label: 'Messages' },
-                        { action: 'live_invite', label: 'Live Invites' },
-                        { action: 'call_missed', label: 'Missed Calls' },
-                      ].map(item => {
-                        const selectedId =
-                          appToneSettings[item.action as AppToneAction] ||
-                          DEFAULT_APP_TONE_SETTINGS[item.action as AppToneAction];
-                        const selectedLabel =
-                          APP_TONE_OPTIONS.find(opt => opt.id === selectedId)?.label ||
-                          'Notification';
-                        return (
-                          <View
-                            key={`tone-setting-${item.action}`}
+                        {
+                          id: 'captain_identity',
+                          title: 'Captain Identity',
+                          subtitle: 'Account and profile controls',
+                        },
+                        {
+                          id: 'shields_boundaries',
+                          title: 'Shields & Boundaries',
+                          subtitle: 'Privacy controls for your drift',
+                        },
+                        {
+                          id: 'crew_lists',
+                          title: 'Crew Lists',
+                          subtitle: 'List ordering and visibility style',
+                        },
+                        {
+                          id: 'chat_harbor',
+                          title: 'Chat Harbor',
+                          subtitle: 'Message behavior and quick-send',
+                        },
+                        {
+                          id: 'alert_bells',
+                          title: 'Alert Bells',
+                          subtitle: 'Notification tones and badge behavior',
+                        },
+                        {
+                          id: 'cache_currents',
+                          title: 'Cache & Currents',
+                          subtitle: 'Storage and data transfer mode',
+                        },
+                        {
+                          id: 'tongue_region',
+                          title: 'Tongue & Region',
+                          subtitle: 'App language preference',
+                        },
+                        {
+                          id: 'tide_patches',
+                          title: 'Tide Patches',
+                          subtitle: 'Version and update checks',
+                        },
+                      ].map(section => (
+                        <View key={`harbor-section-${section.id}`}>
+                          <Pressable
                             style={[
                               styles.logbookAction,
                               {
@@ -17456,42 +17652,299 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 alignItems: 'center',
                               },
                             ]}
+                            onPress={() =>
+                              setAppSettingsSectionsExpanded(prev => ({
+                                ...prev,
+                                [section.id]: !prev[section.id],
+                              }))
+                            }
                           >
                             <View style={{ flex: 1, paddingRight: 10 }}>
-                              <Text style={styles.logbookActionText}>{item.label}</Text>
-                              <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
-                                Tone: {selectedLabel}
+                              <Text style={styles.logbookActionText}>
+                                {section.title}
+                              </Text>
+                              <Text
+                                style={{
+                                  color: 'rgba(255,255,255,0.55)',
+                                  fontSize: 11,
+                                }}
+                              >
+                                {section.subtitle}
                               </Text>
                             </View>
-                            <Pressable
-                              style={styles.bridgeSettingButton}
-                              onPress={() => {
-                                const buttons: any[] = APP_TONE_OPTIONS.map(opt => ({
-                                  text: opt.label,
-                                  onPress: async () => {
-                                    await saveAppToneSetting(
-                                      item.action as AppToneAction,
-                                      opt.id,
+                            <Text style={styles.logbookActionText}>
+                              {appSettingsSectionsExpanded[section.id]
+                                ? 'Hide'
+                                : 'Open'}
+                            </Text>
+                          </Pressable>
+
+                          {section.id === 'captain_identity' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={{ marginTop: 4 }}>
+                                <View style={styles.logbookAction}>
+                                  <Text style={styles.logbookActionText}>
+                                    Handle: {profileName || accountCreationHandle || '@captain'}
+                                  </Text>
+                                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
+                                    Signed in as {user?.email || 'anonymous'}
+                                  </Text>
+                                </View>
+                                <View style={styles.logbookAction}>
+                                  <Text style={styles.logbookActionText}>
+                                    Harbor Portrait
+                                  </Text>
+                                  <Pressable
+                                    style={[styles.bridgeSettingButton, { marginTop: 6 }]}
+                                    onPress={pickProfilePhoto}
+                                  >
+                                    <Text style={styles.bridgeSettingButtonText}>
+                                      Change Avatar
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                              </View>
+                            )}
+
+                          {section.id === 'shields_boundaries' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={styles.logbookAction}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                  <Text style={styles.logbookActionText}>Private Wake Mode</Text>
+                                  <Pressable
+                                    onPress={() =>
+                                      saveHarborSettings({
+                                        privateWakeMode: !harborSettings.privateWakeMode,
+                                      })
+                                    }
+                                  >
+                                    <Text style={styles.logbookActionText}>
+                                      {harborSettings.privateWakeMode ? 'ON' : 'OFF'}
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
+                                  Limit unsolicited drift requests.
+                                </Text>
+                              </View>
+                            )}
+
+                          {section.id === 'crew_lists' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={styles.logbookAction}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                  <Text style={styles.logbookActionText}>Sort Mode</Text>
+                                  <Pressable
+                                    onPress={() =>
+                                      saveHarborSettings({
+                                        listSortMode:
+                                          harborSettings.listSortMode === 'recent'
+                                            ? 'alphabetical'
+                                            : 'recent',
+                                      })
+                                    }
+                                  >
+                                    <Text style={styles.logbookActionText}>
+                                      {harborSettings.listSortMode === 'recent'
+                                        ? 'Recent'
+                                        : 'A-Z'}
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                              </View>
+                            )}
+
+                          {section.id === 'chat_harbor' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={styles.logbookAction}>
+                                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                  <Text style={styles.logbookActionText}>Quick Send</Text>
+                                  <Pressable
+                                    onPress={() =>
+                                      saveHarborSettings({
+                                        chatQuickSend: !harborSettings.chatQuickSend,
+                                      })
+                                    }
+                                  >
+                                    <Text style={styles.logbookActionText}>
+                                      {harborSettings.chatQuickSend ? 'ON' : 'OFF'}
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                                <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
+                                  Send faster from chat composer.
+                                </Text>
+                              </View>
+                            )}
+
+                          {section.id === 'alert_bells' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={{ marginTop: 4 }}>
+                                {[
+                                  { action: 'incoming_call', label: 'Incoming Calls' },
+                                  { action: 'messages', label: 'Messages' },
+                                  { action: 'live_invite', label: 'Live Invite Badge (Silent)' },
+                                  { action: 'call_missed', label: 'Missed Calls' },
+                                ].map(item => {
+                                  const selectedId =
+                                    item.action === 'live_invite'
+                                      ? 'none'
+                                      : appToneSettings[item.action as AppToneAction] ||
+                                        DEFAULT_APP_TONE_SETTINGS[item.action as AppToneAction];
+                                  const selectedLabel =
+                                    APP_TONE_OPTIONS.find(opt => opt.id === selectedId)?.label ||
+                                    'Notification';
+                                  return (
+                                    <View
+                                      key={`tone-setting-${item.action}`}
+                                      style={[
+                                        styles.logbookAction,
+                                        {
+                                          flexDirection: 'row',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                        },
+                                      ]}
+                                    >
+                                      <View style={{ flex: 1, paddingRight: 10 }}>
+                                        <Text style={styles.logbookActionText}>{item.label}</Text>
+                                        <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
+                                          Tone: {selectedLabel}
+                                        </Text>
+                                      </View>
+                                      <Pressable
+                                        style={styles.bridgeSettingButton}
+                                        disabled={item.action === 'live_invite'}
+                                        onPress={() => {
+                                          if (item.action === 'live_invite') {
+                                            return;
+                                          }
+                                          const buttons: any[] = APP_TONE_OPTIONS.map(opt => ({
+                                            text: opt.label,
+                                            onPress: async () => {
+                                              await saveAppToneSetting(
+                                                item.action as AppToneAction,
+                                                opt.id,
+                                              );
+                                              playToneCandidates(opt.candidates, {
+                                                volume: 0.9,
+                                                storeAsPreview: true,
+                                              });
+                                            },
+                                          }));
+                                          buttons.push({ text: 'Cancel', style: 'cancel' });
+                                          Alert.alert(
+                                            `Select tone: ${item.label}`,
+                                            'Choose a tone and it will preview immediately.',
+                                            buttons,
+                                          );
+                                        }}
+                                      >
+                                        <Text style={styles.bridgeSettingButtonText}>
+                                          {item.action === 'live_invite' ? 'Silent' : 'Choose'}
+                                        </Text>
+                                      </Pressable>
+                                    </View>
+                                  );
+                                })}
+                              </View>
+                            )}
+
+                          {section.id === 'cache_currents' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={{ marginTop: 4 }}>
+                                <View style={styles.logbookAction}>
+                                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                    <Text style={styles.logbookActionText}>Smart Data Saver</Text>
+                                    <Pressable
+                                      onPress={() =>
+                                        saveHarborSettings({
+                                          smartDataSaver: !harborSettings.smartDataSaver,
+                                        })
+                                      }
+                                    >
+                                      <Text style={styles.logbookActionText}>
+                                        {harborSettings.smartDataSaver ? 'ON' : 'OFF'}
+                                      </Text>
+                                    </Pressable>
+                                  </View>
+                                </View>
+                                <View style={styles.logbookAction}>
+                                  <Pressable
+                                    style={styles.bridgeSettingButton}
+                                    onPress={async () => {
+                                      stopTonePreview();
+                                      const me = auth?.()?.currentUser;
+                                      if (me?.uid) {
+                                        await AsyncStorage.removeItem(
+                                          `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${me.uid}`,
+                                        ).catch(() => {});
+                                      }
+                                      Alert.alert('Cleared', 'Local invite cache and previews cleared.');
+                                    }}
+                                  >
+                                    <Text style={styles.bridgeSettingButtonText}>Clear Local Cache</Text>
+                                  </Pressable>
+                                </View>
+                              </View>
+                            )}
+
+                          {section.id === 'tongue_region' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={styles.logbookAction}>
+                                <Text style={styles.logbookActionText}>
+                                  Language: {harborSettings.appLanguage}
+                                </Text>
+                                <Pressable
+                                  style={[styles.bridgeSettingButton, { marginTop: 6 }]}
+                                  onPress={() => {
+                                    const options = [
+                                      'System Default',
+                                      'English',
+                                      'Kiswahili',
+                                      'French',
+                                      'Portuguese',
+                                    ];
+                                    Alert.alert(
+                                      'Select language',
+                                      'Choose app language preference.',
+                                      [
+                                        ...options.map(label => ({
+                                          text: label,
+                                          onPress: () =>
+                                            saveHarborSettings({ appLanguage: label }),
+                                        })),
+                                        { text: 'Cancel', style: 'cancel' as const },
+                                      ],
                                     );
-                                    playToneCandidates(opt.candidates, {
-                                      volume: 0.9,
-                                      storeAsPreview: true,
-                                    });
-                                  },
-                                }));
-                                buttons.push({ text: 'Cancel', style: 'cancel' });
-                                Alert.alert(
-                                  `Select tone: ${item.label}`,
-                                  'Choose a tone and it will preview immediately.',
-                                  buttons,
-                                );
-                              }}
-                            >
-                              <Text style={styles.bridgeSettingButtonText}>Choose</Text>
-                            </Pressable>
-                          </View>
-                        );
-                      })}
+                                  }}
+                                >
+                                  <Text style={styles.bridgeSettingButtonText}>Choose Language</Text>
+                                </Pressable>
+                              </View>
+                            )}
+
+                          {section.id === 'tide_patches' &&
+                            appSettingsSectionsExpanded[section.id] && (
+                              <View style={styles.logbookAction}>
+                                <Text style={styles.logbookActionText}>
+                                  Installed: v{versionInfo.version} (build {versionInfo.build})
+                                </Text>
+                                <Pressable
+                                  style={[styles.bridgeSettingButton, { marginTop: 6 }]}
+                                  onPress={() =>
+                                    Alert.alert(
+                                      'App updates',
+                                      `Current version is v${versionInfo.version} build ${versionInfo.build}.`,
+                                    )
+                                  }
+                                >
+                                  <Text style={styles.bridgeSettingButtonText}>Check Now</Text>
+                                </Pressable>
+                              </View>
+                            )}
+                        </View>
+                      ))}
                     </View>
                   )}
                 </View>
@@ -17914,7 +18367,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={{ width: 12 }} />
             <Pressable
               style={[styles.dismissBtn, { flex: 1, marginTop: 0, minHeight: 42, justifyContent: 'center' }]}
-              onPress={() => setShowBridge(false)}
+              onPress={() => {
+                stopTonePreview();
+                setShowBridge(false);
+              }}
             >
               <Text style={styles.dismissText}>Close</Text>
             </Pressable>
