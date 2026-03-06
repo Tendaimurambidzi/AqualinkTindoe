@@ -22241,6 +22241,12 @@ const LiveStreamModal = ({
   >([]);
   const [selectedInviteUid, setSelectedInviteUid] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [hereNowInviteSendingByUid, setHereNowInviteSendingByUid] = useState<
+    Record<string, boolean>
+  >({});
+  const [hiddenHereNowInvitees, setHiddenHereNowInvitees] = useState<Set<string>>(
+    new Set(),
+  );
                     
   const inviteCoHost = async () => {
     setInviteQuery('');
@@ -22319,7 +22325,7 @@ const LiveStreamModal = ({
   const sendInviteTo = async (
     to: { uid?: string; name?: string } | string,
     options?: { silent?: boolean; requireFeedPanel?: boolean },
-  ) => {
+  ): Promise<boolean> => {
     const formatInviteDebugError = (err: any): string => {
       try {
         const codeRaw =
@@ -22357,7 +22363,7 @@ const LiveStreamModal = ({
                     
     if (!toUid) {
       Alert.alert('Error', 'Invalid user ID');
-      return;
+      return false;
     }
                     
     setInviteBusy(true);
@@ -22544,6 +22550,7 @@ const LiveStreamModal = ({
           );
           setShowInviteModal(false);
         }
+        return true;
       } else {
         console.warn('[INVITE DEBUG] no invite channel succeeded', {
           inboxInviteWritten,
@@ -22580,17 +22587,19 @@ const LiveStreamModal = ({
           ? `INTERNAL error while sending invite.\n\nDebug: ${debugInfo}`
           : `Failed to send invite.\n\nDebug: ${debugInfo}`,
       );
+      return false;
     } finally {
       setInviteBusy(false);
     }
+    return false;
   };
 
   const sendUnifiedDriftInvite = async (
     target: { uid: string; name?: string },
     options?: { silent?: boolean },
-  ) => {
-    if (!target?.uid) return;
-    await sendInviteTo(
+  ): Promise<boolean> => {
+    if (!target?.uid) return false;
+    return await sendInviteTo(
       { uid: target.uid, name: target.name || target.uid },
       { silent: options?.silent, requireFeedPanel: false },
     );
@@ -24093,13 +24102,13 @@ const LiveStreamModal = ({
               }}
             >
               <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
-                Here now! ({onlineUsers.length})
+                Here now! ({onlineUsers.filter(u => !hiddenHereNowInvitees.has(u.uid)).length})
               </Text>
               <Pressable onPress={() => setShowOnlineInvitePanel(false)}>
                 <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Hide</Text>
               </Pressable>
             </View>
-            {onlineUsers.length === 0 ? (
+            {onlineUsers.filter(u => !hiddenHereNowInvitees.has(u.uid)).length === 0 ? (
               recentlyHereNames.length > 0 ? (
                 <View>
                   <Text style={{ color: 'rgba(255,255,255,0.82)', fontWeight: '700' }}>
@@ -24115,8 +24124,12 @@ const LiveStreamModal = ({
                 </Text>
               )
             ) : (
-              onlineUsers.slice(0, 6).map(u => {
+              onlineUsers
+                .filter(u => !hiddenHereNowInvitees.has(u.uid))
+                .slice(0, 6)
+                .map(u => {
                 const status = getInviteStatusLabel(u.uid);
+                const sending = !!hereNowInviteSendingByUid[u.uid];
                 return (
                   <View
                     key={u.uid}
@@ -24168,7 +24181,7 @@ const LiveStreamModal = ({
                       </View>
                     </View>
                     <Pressable
-                      disabled={status === 'Accepted'}
+                      disabled={status === 'Accepted' || sending}
                       style={[
                         styles.primaryBtn,
                         {
@@ -24176,6 +24189,9 @@ const LiveStreamModal = ({
                           paddingVertical: 4,
                           paddingHorizontal: 8,
                           backgroundColor:
+                            sending
+                              ? '#2F3640'
+                              : 
                             status === 'Invited'
                               ? '#1E7A4A'
                               : status === 'Accepted'
@@ -24183,15 +24199,39 @@ const LiveStreamModal = ({
                               : '#00C2FF',
                         },
                       ]}
-                      onPress={() =>
-                        sendUnifiedDriftInvite(
-                          { uid: u.uid, name: u.name },
-                          { silent: false },
-                        )
-                      }
+                      onPress={async () => {
+                        setHereNowInviteSendingByUid(prev => ({
+                          ...prev,
+                          [u.uid]: true,
+                        }));
+                        try {
+                          const ok = await sendUnifiedDriftInvite(
+                            { uid: u.uid, name: u.name },
+                            { silent: false },
+                          );
+                          if (ok) {
+                            setHiddenHereNowInvitees(prev => {
+                              const next = new Set(prev);
+                              next.add(u.uid);
+                              return next;
+                            });
+                          }
+                        } finally {
+                          setHereNowInviteSendingByUid(prev => ({
+                            ...prev,
+                            [u.uid]: false,
+                          }));
+                        }
+                      }}
                     >
                       <Text style={[styles.primaryBtnText, { fontSize: 11 }]}>
-                        {status === 'Invited' ? 'Resend' : status === 'Accepted' ? 'Done' : 'Invite'}
+                        {sending
+                          ? '...'
+                          : status === 'Invited'
+                          ? 'Resend'
+                          : status === 'Accepted'
+                          ? 'Done'
+                          : 'Invite'}
                       </Text>
                     </Pressable>
                   </View>
