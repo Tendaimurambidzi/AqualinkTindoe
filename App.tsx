@@ -528,9 +528,9 @@ type TonePickerState = {
 
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
-const STALE_RINGING_CALL_MAX_AGE_MS = 5 * 60 * 1000;
 const RINGING_CALL_TIMEOUT_MS = 120 * 1000;
 const MAX_ACTIVE_CALL_DURATION_MS = 30 * 60 * 1000;
+const STALE_RINGING_CALL_MAX_AGE_MS = RINGING_CALL_TIMEOUT_MS;
 const ALLOW_TOKENLESS_DRIFT = true;
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
@@ -2767,7 +2767,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const createdAtMs =
                   call?.createdAt?.toDate?.()?.getTime?.() || 0;
                 const isFresh =
-                  createdAtMs <= 0 ||
+                  createdAtMs > 0 &&
                   Date.now() - createdAtMs <= STALE_RINGING_CALL_MAX_AGE_MS;
                 if (
                   call.status === 'ringing' &&
@@ -3524,6 +3524,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     tryLoad(0);
   }, [getToneCandidatesForAction, stopIncomingCallRingtone]);
 
+  const hideNativeIncomingCallNotification = useCallback(() => {
+    if (Platform.OS !== 'android') return;
+    try {
+      NativeModules?.CallNotification?.hideIncomingCallNotification?.();
+    } catch {}
+  }, []);
+
   useEffect(() => {
     const isOutgoingRinging =
       forceOutgoingRingback ||
@@ -3580,12 +3587,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   ]);
 
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
     if (!incomingDirectCall && !activeDirectCall) return;
-    try {
-      NativeModules?.CallNotification?.hideIncomingCallNotification?.();
-    } catch {}
-  }, [activeDirectCall, incomingDirectCall]);
+    hideNativeIncomingCallNotification();
+    const interval = setInterval(() => {
+      hideNativeIncomingCallNotification();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeDirectCall, hideNativeIncomingCallNotification, incomingDirectCall]);
 
   useEffect(() => {
     if (!incomingDirectCall) {
@@ -13192,6 +13200,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (data?.type === 'call_invite' && data?.callId && myUid) {
         const callId = String(data.callId || '').trim();
         if (callId) {
+          hideNativeIncomingCallNotification();
           startIncomingCallRingtone();
           watchDirectCallDoc(callId, 'callee');
           try {
@@ -13205,7 +13214,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const createdAtMs =
                   call?.createdAt?.toDate?.()?.getTime?.() || 0;
                 const isFresh =
-                  createdAtMs <= 0 ||
+                  createdAtMs > 0 &&
                   Date.now() - createdAtMs <= STALE_RINGING_CALL_MAX_AGE_MS;
                 if (call.status === 'ringing' && isFresh) {
                   setIncomingDirectCall(call);
@@ -13238,6 +13247,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       displayFeed,
       mapDirectCallDoc,
       myUid,
+      hideNativeIncomingCallNotification,
       startIncomingCallRingtone,
       watchDirectCallDoc,
     ],
@@ -13252,6 +13262,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const callId = String(data?.callId || '').trim();
         if (!callId) return;
         if (handledIncomingInviteCallIdsRef.current.has(callId)) return;
+        const createdAtMs = toJSDate(data?.createdAt).getTime();
+        if (createdAtMs <= 0) return;
+        if (
+          Date.now() - createdAtMs > STALE_RINGING_CALL_MAX_AGE_MS
+        ) {
+          return;
+        }
         const status = String(data?.status || 'pending').toLowerCase();
         if (
           status &&
@@ -13262,6 +13279,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return;
         }
         handledIncomingInviteCallIdsRef.current.add(callId);
+        hideNativeIncomingCallNotification();
         const signalCallType: DirectCallMode =
           String(data?.callType || '').toLowerCase() === 'video'
             ? 'video'
@@ -13355,7 +13373,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         unsubPings && unsubPings();
       } catch {}
     };
-  }, [handleNotificationNavigation, myUid]);
+  }, [handleNotificationNavigation, hideNativeIncomingCallNotification, myUid, profileName]);
 
   useEffect(() => {
     if (!myUid) return;
