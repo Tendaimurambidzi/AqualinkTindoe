@@ -3551,29 +3551,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   ]);
 
   useEffect(() => {
-    const isIncomingRinging =
-      !!incomingDirectCall &&
-      !activeDirectCall &&
-      incomingDirectCall.status === 'ringing';
-    if (isIncomingRinging) {
-      startIncomingCallRingtone();
-    } else {
-      stopIncomingCallRingtone();
-    }
-  }, [
-    activeDirectCall,
-    incomingDirectCall,
-    startIncomingCallRingtone,
-    stopIncomingCallRingtone,
-  ]);
-
-  useEffect(() => {
     const incomingModalVisible = !!incomingDirectCall && !activeDirectCall;
-    if (!incomingModalVisible) {
+    const shouldRingWithModal =
+      incomingModalVisible && incomingDirectCall?.status === 'ringing';
+    if (!shouldRingWithModal) {
       stopIncomingCallRingtone();
       return;
     }
-    // Tie modal visibility directly to ringtone so incoming modal never appears silently.
+    // Ring only while the incoming modal is visible and call is actively ringing.
     stopIncomingCallRingtone();
     const timer = setTimeout(() => {
       startIncomingCallRingtone();
@@ -12732,6 +12717,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!call?.id || !myUid) return;
     if (incomingCallAction) return;
     setIncomingCallAction('accept');
+    stopIncomingCallRingtone();
+    hideNativeIncomingCallNotification();
     if (call.callType === 'video') {
       const ok = await ensureCamMicPermissionsAndroid();
       if (!ok) {
@@ -12802,10 +12789,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [
     fetchDirectCallAgoraToken,
+    hideNativeIncomingCallNotification,
     incomingCallAction,
     incomingDirectCall,
     mapDirectCallDoc,
     myUid,
+    stopIncomingCallRingtone,
     upsertCallHistory,
     watchDirectCallDoc,
   ]);
@@ -12814,6 +12803,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const call = incomingDirectCall;
     if (incomingCallAction) return;
     setIncomingCallAction('decline');
+    stopIncomingCallRingtone();
+    hideNativeIncomingCallNotification();
     if (!call?.id || !myUid) {
       setIncomingDirectCall(null);
       setIncomingCallAction(null);
@@ -12855,12 +12846,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
     setIncomingDirectCall(null);
     setIncomingCallAction(null);
-  }, [incomingCallAction, incomingDirectCall, myUid, upsertCallHistory]);
+  }, [
+    hideNativeIncomingCallNotification,
+    incomingCallAction,
+    incomingDirectCall,
+    myUid,
+    stopIncomingCallRingtone,
+    upsertCallHistory,
+  ]);
 
   const endActiveDirectCall = useCallback(async () => {
     const call = activeDirectCall || outgoingDirectCall || incomingDirectCall;
     setForceOutgoingRingback(false);
     stopCallRingback();
+    stopIncomingCallRingtone();
+    hideNativeIncomingCallNotification();
     if (call?.id && myUid) {
       try {
         const myCallRef = firestore()
@@ -12926,10 +12926,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [
     activeDirectCall,
     clearCallDocSubscription,
+    hideNativeIncomingCallNotification,
     incomingDirectCall,
     myUid,
     outgoingDirectCall,
     stopCallRingback,
+    stopIncomingCallRingtone,
     upsertCallHistory,
   ]);
 
@@ -13201,7 +13203,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const callId = String(data.callId || '').trim();
         if (callId) {
           hideNativeIncomingCallNotification();
-          startIncomingCallRingtone();
           watchDirectCallDoc(callId, 'callee');
           try {
             firestore()
@@ -13248,7 +13249,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       mapDirectCallDoc,
       myUid,
       hideNativeIncomingCallNotification,
-      startIncomingCallRingtone,
       watchDirectCallDoc,
     ],
   );
@@ -13445,7 +13445,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setUnreadPingsCount(n => n + 1);
 
         if (isIncomingCallNotification) {
-          startIncomingCallRingtone();
           handleNotificationNavigation(rm?.data || {});
           notifySuccess(text || 'Incoming call');
         } else if (rm?.notification?.body) {
@@ -13464,7 +13463,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       playFalconSound,
       setPings,
       setUnreadPingsCount,
-      startIncomingCallRingtone,
     ],
   );
                     
@@ -21346,6 +21344,13 @@ const DirectCallModal = ({
       }
     };
   }, [isJoined, visible]);
+
+  useEffect(() => {
+    if (!visible || !isJoined) return;
+    if (elapsedSec < Math.floor(MAX_ACTIVE_CALL_DURATION_MS / 1000)) return;
+    Alert.alert('Call ended', 'Maximum call duration reached (30 minutes).');
+    onEnd();
+  }, [elapsedSec, isJoined, onEnd, visible]);
 
   const toggleMic = () => {
     const next = !micMuted;
