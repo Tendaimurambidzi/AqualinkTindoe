@@ -529,6 +529,8 @@ type TonePickerState = {
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = 5 * 60 * 1000;
+const RINGING_CALL_TIMEOUT_MS = 120 * 1000;
+const MAX_ACTIVE_CALL_DURATION_MS = 30 * 60 * 1000;
 const ALLOW_TOKENLESS_DRIFT = true;
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
@@ -3386,9 +3388,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     callRingbackActiveRef.current = true;
     if (callRingbackRef.current) return;
     const candidates: Array<string | number> = [
+      CALL_PROGRESS_ASSET,
       'call_progress',
       'call_progress.mp3',
-      CALL_PROGRESS_ASSET,
       'Call progress',
       'Call progress.mp3',
       'downfall_3_208028',
@@ -4312,6 +4314,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([]);
   const callDocUnsubRef = useRef<null | (() => void)>(null);
   const callTimeoutRef = useRef<any>(null);
+  const activeCallLimitTimeoutRef = useRef<any>(null);
                     
   // Update timestamps every second
   useEffect(() => {
@@ -12688,7 +12691,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               } catch {}
             }
           } catch {}
-        }, 35000);
+        }, RINGING_CALL_TIMEOUT_MS);
       } catch (err: any) {
         setForceOutgoingRingback(false);
         stopCallRingback();
@@ -12923,6 +12926,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   ]);
 
   useEffect(() => {
+    if (activeCallLimitTimeoutRef.current) {
+      clearTimeout(activeCallLimitTimeoutRef.current);
+      activeCallLimitTimeoutRef.current = null;
+    }
+    if (!activeDirectCall?.id || activeDirectCall.status !== 'accepted') return;
+    activeCallLimitTimeoutRef.current = setTimeout(() => {
+      Alert.alert('Call ended', 'Maximum call duration reached (30 minutes).');
+      endActiveDirectCall();
+    }, MAX_ACTIVE_CALL_DURATION_MS);
+    return () => {
+      if (activeCallLimitTimeoutRef.current) {
+        clearTimeout(activeCallLimitTimeoutRef.current);
+        activeCallLimitTimeoutRef.current = null;
+      }
+    };
+  }, [activeDirectCall?.id, activeDirectCall?.status, endActiveDirectCall]);
+
+  useEffect(() => {
     if (!myUid) return;
     let fallbackUnsub: null | (() => void) = null;
     const onIncomingSnapshot = (snapshot: any) => {
@@ -13070,6 +13091,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (callTimeoutRef.current) {
         clearTimeout(callTimeoutRef.current);
         callTimeoutRef.current = null;
+      }
+      if (activeCallLimitTimeoutRef.current) {
+        clearTimeout(activeCallLimitTimeoutRef.current);
+        activeCallLimitTimeoutRef.current = null;
       }
       stopCallRingback();
       stopIncomingCallRingtone();
