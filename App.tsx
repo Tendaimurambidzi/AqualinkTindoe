@@ -3113,6 +3113,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const callRingbackActiveRef = useRef<boolean>(false);
   const incomingCallRingtoneRef = useRef<Sound | null>(null);
   const incomingCallRingtoneActiveRef = useRef<boolean>(false);
+  const incomingCallRingtoneSessionRef = useRef<number>(0);
+  const appStateRef = useRef(AppState.currentState);
   const replyInputRef = useRef<TextInput>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
   const [forceOutgoingRingback, setForceOutgoingRingback] = useState(false);
@@ -3120,6 +3122,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [videoControlsVisible, setVideoControlsVisible] = useState<{[key: string]: boolean}>({});
   const [videoLoading, setVideoLoading] = useState<{[key: string]: boolean}>({});
   const [echoSending, setEchoSending] = useState<{[key: string]: boolean}>({});
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', nextState => {
+      appStateRef.current = nextState;
+    });
+    return () => {
+      try {
+        sub?.remove?.();
+      } catch {}
+    };
+  }, []);
 
   const stopTonePreview = useCallback(() => {
     const tone = tonePreviewRef.current;
@@ -3441,6 +3454,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [stopCallRingback]);
 
   const stopIncomingCallRingtone = useCallback(() => {
+    incomingCallRingtoneSessionRef.current += 1;
     incomingCallRingtoneActiveRef.current = false;
     const tone = incomingCallRingtoneRef.current;
     if (!tone) return;
@@ -3464,6 +3478,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     if (incomingCallRingtoneActiveRef.current) return;
     incomingCallRingtoneActiveRef.current = true;
+    const sessionId = incomingCallRingtoneSessionRef.current + 1;
+    incomingCallRingtoneSessionRef.current = sessionId;
     if (incomingCallRingtoneRef.current) return;
     const selectedCandidates = getToneCandidatesForAction('incoming_call');
     const candidates: Array<string | number> = [
@@ -3482,6 +3498,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       'falcon',
     ];
     const tryLoad = (idx: number) => {
+      if (
+        !incomingCallRingtoneActiveRef.current ||
+        sessionId !== incomingCallRingtoneSessionRef.current
+      ) {
+        return;
+      }
       if (idx >= candidates.length) {
         incomingCallRingtoneActiveRef.current = false;
         return;
@@ -3490,11 +3512,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const candidate = candidates[idx];
       try {
         const onLoaded = (error: any) => {
-          if (error || !tone) {
+          if (
+            error ||
+            !tone ||
+            !incomingCallRingtoneActiveRef.current ||
+            sessionId !== incomingCallRingtoneSessionRef.current
+          ) {
             try {
               tone?.release();
             } catch {}
-            tryLoad(idx + 1);
+            if (
+              !error &&
+              (!incomingCallRingtoneActiveRef.current ||
+                sessionId !== incomingCallRingtoneSessionRef.current)
+            ) {
+              return;
+            }
+            if (error) {
+              tryLoad(idx + 1);
+            }
             return;
           }
           incomingCallRingtoneRef.current = tone;
@@ -3505,6 +3541,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             tone.setVolume(1.0);
           } catch {}
           tone.play(success => {
+            if (sessionId !== incomingCallRingtoneSessionRef.current) {
+              try {
+                tone?.stop(() => {
+                  try {
+                    tone?.release();
+                  } catch {}
+                });
+              } catch {
+                try {
+                  tone?.release();
+                } catch {}
+              }
+              return;
+            }
             if (!success) {
               stopIncomingCallRingtone();
             }
@@ -3559,11 +3609,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
     // Ring only while the incoming modal is visible and call is actively ringing.
-    stopIncomingCallRingtone();
-    const timer = setTimeout(() => {
-      startIncomingCallRingtone();
-    }, 100);
-    return () => clearTimeout(timer);
+    startIncomingCallRingtone();
   }, [
     activeDirectCall,
     incomingDirectCall,
@@ -3573,8 +3619,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   useEffect(() => {
     if (!incomingDirectCall && !activeDirectCall) return;
+    if (appStateRef.current !== 'active') return;
     hideNativeIncomingCallNotification();
     const interval = setInterval(() => {
+      if (appStateRef.current !== 'active') return;
       hideNativeIncomingCallNotification();
     }, 1000);
     return () => clearInterval(interval);
@@ -13202,7 +13250,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (data?.type === 'call_invite' && data?.callId && myUid) {
         const callId = String(data.callId || '').trim();
         if (callId) {
-          hideNativeIncomingCallNotification();
+          if (appStateRef.current === 'active') {
+            hideNativeIncomingCallNotification();
+          }
           watchDirectCallDoc(callId, 'callee');
           try {
             firestore()
@@ -13279,7 +13329,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return;
         }
         handledIncomingInviteCallIdsRef.current.add(callId);
-        hideNativeIncomingCallNotification();
+        if (appStateRef.current === 'active') {
+          hideNativeIncomingCallNotification();
+        }
         const signalCallType: DirectCallMode =
           String(data?.callType || '').toLowerCase() === 'video'
             ? 'video'
@@ -22138,44 +22190,60 @@ const LiveStreamModal = ({
 
   useEffect(() => {
     if (!visible || !inviteJoinPreset || isLiveStarted) return;
-    if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
-      setLiveDocId(String(inviteJoinPreset.liveId));
+    let cancelled = false;
+    (async () => {
+      if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
+        setLiveDocId(String(inviteJoinPreset.liveId));
+        setLiveTitle(
+          String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+        );
+        setAwaitingCaptainApproval(true);
+        setJoinApprovalLabel(
+          `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
+        );
+        setStartError(null);
+        return;
+      }
+      const suggestedChannel = String(
+        inviteJoinPreset.channel || channelInput || defaultChannel || '',
+      )
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
+      if (!suggestedChannel) return;
+      if (Platform.OS === 'android') {
+        const ok = await ensureCamMicPermissionsAndroid();
+        if (cancelled) return;
+        if (!ok) {
+          setStartError('Camera/Mic permission required');
+          setJoinApprovalLabel('Enable camera and microphone to join Drift Expo.');
+          return;
+        }
+      }
+      const uidSrc = String(auth?.()?.currentUser?.uid || '0');
+      let uidHash = 0;
+      for (let i = 0; i < uidSrc.length; i += 1) {
+        uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
+      }
+      const mappedUid = (uidHash % 2147483646) + 1;
+      setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
       setLiveTitle(
         String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
       );
-      setAwaitingCaptainApproval(true);
-      setJoinApprovalLabel(
-        `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
-      );
+      setChannelInput(suggestedChannel);
+      setLiveChannel(suggestedChannel);
+      setLiveUid(mappedUid);
+      setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
       setStartError(null);
-      return;
-    }
-    const suggestedChannel = String(
-      inviteJoinPreset.channel || channelInput || defaultChannel || '',
-    )
-      .trim()
-      .replace(/[^A-Za-z0-9_]/g, '_')
-      .slice(0, 64);
-    if (!suggestedChannel) return;
-    const uidSrc = String(auth?.()?.currentUser?.uid || '0');
-    let uidHash = 0;
-    for (let i = 0; i < uidSrc.length; i += 1) {
-      uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
-    }
-    const mappedUid = (uidHash % 2147483646) + 1;
-    setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
-    setLiveTitle(
-      String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
-    );
-    setChannelInput(suggestedChannel);
-    setLiveChannel(suggestedChannel);
-    setLiveUid(mappedUid);
-    setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
-    setStartError(null);
-    setAwaitingCaptainApproval(false);
-    setJoinApprovalLabel('');
-    setIsLiveStarted(true);
+      setAwaitingCaptainApproval(false);
+      setJoinApprovalLabel('');
+      setIsLiveStarted(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [
+    channelInput,
     defaultChannel,
     inviteJoinPreset,
     isLiveStarted,
@@ -22193,7 +22261,7 @@ const LiveStreamModal = ({
       .collection(`live/${liveDocId}/invite_status`)
       .doc(me.uid)
       .onSnapshot(
-        snap => {
+        async snap => {
           const data = snap?.data?.() || {};
           const status = String(data.status || '').toLowerCase();
           if (!status) return;
@@ -22216,6 +22284,16 @@ const LiveStreamModal = ({
               uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
             }
             const mappedUid = (uidHash % 2147483646) + 1;
+            if (Platform.OS === 'android') {
+              const ok = await ensureCamMicPermissionsAndroid();
+              if (!ok) {
+                setStartError('Camera/Mic permission required');
+                setJoinApprovalLabel(
+                  'Enable camera and microphone to join Drift Expo.',
+                );
+                return;
+              }
+            }
             setChannelInput(suggestedChannel);
             setLiveChannel(suggestedChannel);
             setLiveUid(mappedUid);
@@ -22603,11 +22681,11 @@ const LiveStreamModal = ({
             engine.registerEventHandler?.({
               onUserJoined: (_conn: any, uid: number) => {
                 const n = Number(uid);
-                if (!Number.isFinite(n) || n <= 0) return;
+                if (!Number.isFinite(n) || n < 0) return;
                 setRemoteParticipantUids(prev =>
                   prev.includes(n) ? prev : [...prev, n],
                 );
-                setPinnedRemoteUid(prev => prev || n);
+                setPinnedRemoteUid(prev => (prev === null ? n : prev));
               },
               onUserOffline: (_conn: any, uid: number) => {
                 const n = Number(uid);
@@ -22641,11 +22719,11 @@ const LiveStreamModal = ({
           try {
             engine.addListener?.('UserJoined', (uid: number) => {
               const n = Number(uid);
-              if (!Number.isFinite(n) || n <= 0) return;
+              if (!Number.isFinite(n) || n < 0) return;
               setRemoteParticipantUids(prev =>
                 prev.includes(n) ? prev : [...prev, n],
               );
-              setPinnedRemoteUid(prev => prev || n);
+              setPinnedRemoteUid(prev => (prev === null ? n : prev));
             });
           } catch {}
           try {
@@ -24844,10 +24922,11 @@ const LiveStreamModal = ({
   const VideoRenderMode = Agora?.VideoRenderMode;
   const VideoSourceType = Agora?.VideoSourceType;
   const mainRemoteUid =
-    (pinnedRemoteUid &&
-    remoteParticipantUids.includes(pinnedRemoteUid)
+    pinnedRemoteUid !== null && remoteParticipantUids.includes(pinnedRemoteUid)
       ? pinnedRemoteUid
-      : remoteParticipantUids[0]) || null;
+      : remoteParticipantUids.length > 0
+      ? remoteParticipantUids[0]
+      : null;
                     
   return (
     <Modal
@@ -24893,9 +24972,9 @@ const LiveStreamModal = ({
             {livePrivacy.toUpperCase()}
           </Text>
         )}
-        {isLiveStarted && !cameraHidden && (
+        {isLiveStarted && (
           <>
-            {mainRemoteUid ? (
+            {mainRemoteUid !== null ? (
               RtcSurfaceView ? (
                 React.createElement(RtcSurfaceView, {
                   style: StyleSheet.absoluteFill,
@@ -24929,7 +25008,7 @@ const LiveStreamModal = ({
                   <Text style={{ color: 'white' }}>Connecting remote video...</Text>
                 </View>
               )
-            ) : AVView ? (
+            ) : !cameraHidden && AVView ? (
               <AVView
                 style={StyleSheet.absoluteFill}
                 showLocalVideo={true}
@@ -24945,7 +25024,7 @@ const LiveStreamModal = ({
                   2
                 }
               />
-            ) : RtcSurfaceView ? (
+            ) : !cameraHidden && RtcSurfaceView ? (
               React.createElement(RtcSurfaceView, {
                 style: StyleSheet.absoluteFill,
                 canvas: {
@@ -24954,7 +25033,7 @@ const LiveStreamModal = ({
                 },
                 zOrderMediaOverlay: true,
               })
-            ) : RtcTextureView ? (
+            ) : !cameraHidden && RtcTextureView ? (
               React.createElement(RtcTextureView, {
                 style: StyleSheet.absoluteFill,
                 canvas: {
@@ -24962,7 +25041,7 @@ const LiveStreamModal = ({
                   renderMode: VideoRenderMode?.Fit ?? 2,
                 },
               })
-            ) : RtcLocalView?.SurfaceView ? (
+            ) : !cameraHidden && RtcLocalView?.SurfaceView ? (
               React.createElement(RtcLocalView.SurfaceView, {
                 style: StyleSheet.absoluteFill,
                 renderMode: VideoRenderMode?.Fit ?? 2,
@@ -24974,10 +25053,12 @@ const LiveStreamModal = ({
                   { alignItems: 'center', justifyContent: 'center' },
                 ]}
               >
-                <Text style={{ color: 'white' }}>Initializing preview...</Text>
+                <Text style={{ color: 'white' }}>
+                  {cameraHidden ? 'Camera is off' : 'Initializing preview...'}
+                </Text>
               </View>
             )}
-            {!!mainRemoteUid && (
+            {mainRemoteUid !== null && !cameraHidden && (
               <View
                 style={{
                   position: 'absolute',

@@ -1409,6 +1409,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         </View>
 
         <View style={styles.posterActionWrap}>
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(0,0,0,0.38)', 'rgba(0,0,0,0.14)', 'transparent']}
+            start={{ x: 0.5, y: 0 }}
+            end={{ x: 0.5, y: 1 }}
+            style={styles.posterActionShade}
+          />
           <PosterActionBar
             waveId={item.id}
             currentUserId={myUid || ''}
@@ -1598,12 +1605,12 @@ const styles = StyleSheet.create({
     marginBottom: ui.spacing.md,
   },
   linkPill: {
-    backgroundColor: ui.colors.accentSoft,
+    backgroundColor: 'rgba(9, 18, 31, 0.42)',
     paddingHorizontal: ui.spacing.md,
     paddingVertical: ui.spacing.sm,
     borderRadius: ui.radius.md,
     borderWidth: 1,
-    borderColor: '#BEE3F8',
+    borderColor: 'rgba(255,255,255,0.28)',
   },
   linkText: {
     color: ui.colors.link,
@@ -1618,10 +1625,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: ui.spacing.md,
     paddingVertical: 6,
     borderRadius: ui.radius.xl,
-    backgroundColor: '#EEF4FF',
+    backgroundColor: 'rgba(8, 16, 28, 0.52)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   readMoreText: {
-    color: ui.colors.link,
+    color: '#DCEBFF',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1657,6 +1666,16 @@ const styles = StyleSheet.create({
   },
   posterActionWrap: {
     marginTop: 0,
+    position: 'relative',
+    minHeight: 56,
+  },
+  posterActionShade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    height: 64,
+    zIndex: 0,
   },
   sectionDivider: {
     height: 1,
@@ -1673,22 +1692,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginRight: ui.spacing.md,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: 'rgba(9, 18, 31, 0.42)',
     borderWidth: 1,
-    borderColor: ui.colors.border,
+    borderColor: 'rgba(255,255,255,0.24)',
     borderRadius: ui.radius.xl,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   statLabel: {
     fontSize: 13,
-    color: ui.colors.subtle,
+    color: '#DCEBFF',
     marginRight: 6,
     fontWeight: '700',
   },
   statValue: {
     fontSize: 13,
-    color: ui.colors.heading,
+    color: '#FFFFFF',
     fontWeight: '700',
   },
   presenceText: {
@@ -1715,10 +1734,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: ui.spacing.md,
     paddingVertical: 8,
     borderRadius: ui.radius.md,
-    backgroundColor: '#EEF6FF',
+    backgroundColor: 'rgba(9, 18, 31, 0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
   },
   loadMoreEchoesText: {
-    color: ui.colors.link,
+    color: '#DCEBFF',
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1728,10 +1749,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: ui.spacing.md,
     paddingVertical: 8,
     borderRadius: ui.radius.md,
-    backgroundColor: '#EEF6FF',
+    backgroundColor: 'rgba(9, 18, 31, 0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
   },
   echoToggleText: {
-    color: ui.colors.link,
+    color: '#DCEBFF',
     fontSize: 13,
     fontWeight: '700',
   },

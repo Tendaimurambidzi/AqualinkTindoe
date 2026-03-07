@@ -13,7 +13,7 @@ import androidx.core.app.NotificationCompat
 class CallNotificationService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "aqualink_calls_lg_cat_ring"
+        const val CHANNEL_ID = "aqualink_calls_lg_cat_ring_v2"
         const val NOTIFICATION_ID = 1001
         const val ACTION_ANSWER = "com.aqualink.tindo.ANSWER_CALL"
         const val ACTION_DECLINE = "com.aqualink.tindo.DECLINE_CALL"
@@ -51,8 +51,24 @@ class CallNotificationService : Service() {
         
         val notification = createCallNotification(callerName, callId, callType)
         startForeground(NOTIFICATION_ID, notification)
+        launchIncomingCallUi(callId, callType)
         
         return START_NOT_STICKY
+    }
+
+    private fun launchIncomingCallUi(callId: String, callType: String) {
+        try {
+            val uiIntent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+                putExtra("callId", callId)
+                putExtra("callType", callType)
+                putExtra("action", "incoming_call")
+            }
+            startActivity(uiIntent)
+        } catch (_: Exception) {
+        }
     }
 
     private fun createNotificationChannel() {
@@ -127,6 +143,7 @@ class CallNotificationService : Service() {
             .setContentText("$callerName is calling...")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setContentIntent(fullScreenPendingIntent)
             .setFullScreenIntent(fullScreenPendingIntent, true)
             .setOngoing(true)
             .setAutoCancel(false)

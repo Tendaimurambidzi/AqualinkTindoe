@@ -227,7 +227,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         onPress={handleHugAction}
         style={({ pressed }) => [
           styles.textButton,
-          
+          hasHugged && Math.max(0, splashesCount) > 0 && styles.textButtonActive,
           pressed && styles.pressedButton
         ]}
         accessibilityRole="button"
@@ -240,9 +240,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           <Text style={[styles.actionIcon, (hasHugged && Math.max(0, splashesCount) > 0) && styles.hugActive]}>
             {'\uD83E\uDEC2'}
           </Text>
-          <Text style={[styles.actionLabel, (hasHugged && Math.max(0, splashesCount) > 0) ? styles.blueCount : styles.whiteCount]}>
-            {(hasHugged && Math.max(0, splashesCount) > 0) ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
-          </Text>
+          <View style={styles.countPill}>
+            <Text style={styles.countPillText}>{Math.max(0, splashesCount)}</Text>
+          </View>
         </View>
       </Pressable>
 
@@ -259,9 +259,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
-          <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>{'\u21BB'}</Text>
-            <Text style={styles.actionLabel}>Retry Hug</Text>
+        <View style={styles.buttonContent}>
+          <Text style={styles.actionIconSmall}>{'\u21BB'}</Text>
+            <Text style={styles.retryLabel}>Retry</Text>
           </View>
         </Pressable>
       )}
@@ -271,6 +271,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         onPress={handleEcho}
         style={({ pressed }) => [
           styles.textButton,
+          hasEchoed && styles.textButtonActive,
           pressed && styles.pressedButton
         ]}
         accessibilityRole="button"
@@ -283,9 +284,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           <Text style={[styles.actionIcon, hasEchoed && styles.echoActive]}>
             {'\uD83D\uDCE3'}
           </Text>
-          <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
-            {hasEchoed ? 'Echoed' : 'Echo'} ({Math.max(0, echoesCount)})
-          </Text>
+          <View style={styles.countPill}>
+            <Text style={styles.countPillText}>{Math.max(0, echoesCount)}</Text>
+          </View>
         </View>
       </Pressable>
 
@@ -305,7 +306,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionIconSmall}>{'\uD83D\uDC8E'}</Text>
-            <Text style={styles.actionLabel}>Gems</Text>
           </View>
         </Pressable>
       )}
@@ -326,7 +326,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionIconSmall}>{'\u2693\uFE0F'}</Text>
-            <Text style={styles.actionLabel}>Anchor</Text>
           </View>
         </Pressable>
       )}
@@ -347,7 +346,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionIconSmall}>{'\uD83D\uDCE1'}</Text>
-            <Text style={styles.actionLabel}>Cast</Text>
           </View>
         </Pressable>
       )}
@@ -416,14 +414,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   textButtonsBar: {
-    paddingVertical: 4,
-    paddingHorizontal: 0,
-    backgroundColor: '#4b5563',
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    backgroundColor: 'transparent',
     borderRadius: 0,
     marginHorizontal: 0,
     marginBottom: 0,
-    minHeight: 32,
-    height: 38,
+    minHeight: 52,
+    height: 56,
     width: '100%',
   },
   actionButton: {
@@ -441,33 +439,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   textButton: {
-    backgroundColor: appTokens.colors.danger,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 36,
-    minHeight: 24,
+    backgroundColor: 'rgba(0,0,0,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.26)',
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 40,
+    minHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 6,
+  },
+  textButtonActive: {
+    backgroundColor: 'rgba(0,0,0,0.42)',
+    borderColor: 'rgba(255,255,255,0.38)',
   },
   pressedButton: {
-    opacity: 0.6,
-    transform: [{ scale: 0.9 }],
+    opacity: 0.85,
+    transform: [{ scale: 0.95 }],
   },
   disabledButton: {
     opacity: 0.65,
   },
   retryButton: {
-    backgroundColor: '#f59e0b',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 36,
-    minHeight: 24,
+    backgroundColor: 'rgba(245, 158, 11, 0.34)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.65)',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 40,
+    minHeight: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 6,
   },
   buttonContent: {
     flexDirection: 'row',
@@ -476,9 +482,11 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   actionIcon: {
-    fontSize: 20,
+    fontSize: 18,
     color: '#fff',
     fontWeight: 'bold',
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowRadius: 4,
   },
   activeAction: {
     color: '#00ff88', // Highlight active interactions
@@ -497,6 +505,11 @@ const styles = StyleSheet.create({
     color: appTokens.colors.surface,
     marginRight: 2,
   },
+  retryLabel: {
+    fontSize: 11,
+    color: '#fff',
+    fontWeight: '700',
+  },
   huggedLabel: {
     color: '#1e88e5',
   },
@@ -510,9 +523,28 @@ const styles = StyleSheet.create({
     color: appTokens.colors.surface,
   },
   actionIconSmall: {
-    fontSize: 16,
+    fontSize: 17,
     color: '#fff',
-    marginRight: 2,
+    marginRight: 0,
+    textShadowColor: 'rgba(0,0,0,0.7)',
+    textShadowRadius: 4,
+  },
+  countPill: {
+    marginLeft: 2,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8, 16, 28, 0.75)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.26)',
+  },
+  countPillText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '700',
   },
   actionCount: {
     fontSize: 12,
