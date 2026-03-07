@@ -532,7 +532,7 @@ const STALE_RINGING_CALL_MAX_AGE_MS = 90 * 1000;
 const ALLOW_TOKENLESS_DRIFT = true;
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
-const CALLEE_RING_ASSET = require('./assets/Call progress.mp3');
+const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
 const APP_TONES_STORAGE_KEY = 'app_tone_settings_v1';
 const HARBOR_SETTINGS_STORAGE_KEY = 'harbor_settings_v1';
 const APP_TONE_OPTIONS: AppToneOption[] = [
@@ -2625,6 +2625,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!user?.uid) return;
     seenNotificationIdsRef.current = new Set();
     notificationListenerStartedAtRef.current = Date.now();
+    handledIncomingInviteCallIdsRef.current = new Set();
 
     const unsubscribe = firestore()
       .collection(`users/${user.uid}/pings`)
@@ -2653,6 +2654,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             read: data.read || false,
             createdAt: data.createdAt,
             waveId: data.waveId,
+            callId: data.callId ? String(data.callId) : undefined,
+            callType:
+              data.callType === 'video' || data.callType === 'audio'
+                ? data.callType
+                : undefined,
+            channelName: data.channelName ? String(data.channelName) : undefined,
           };
         }) as Array<{
           id: string;
@@ -2663,6 +2670,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           read: boolean;
           createdAt: any;
           waveId?: string;
+          callId?: string;
+          callType?: DirectCallMode;
+          channelName?: string;
         }>;
 
         // Fetch user data for any notification senders we don't have data for
@@ -2717,6 +2727,63 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Recalculate total unread alerts including messages
         const unreadMessages = messageThreads.reduce((sum, thread) => sum + thread.unreadCount, 0);
         setUnreadAlertsCount(unreadNotifications + unreadMessages);
+
+        // Fallback for account-switch/same-phone testing:
+        // surface incoming call modal from unread call_invite ping.
+        const latestUnreadCallInvite = notificationsData
+          .filter(item => !item.read && item.type === 'call_invite' && !!item.callId)
+          .sort(
+            (a, b) =>
+              toJSDate(b.createdAt).getTime() - toJSDate(a.createdAt).getTime(),
+          )[0];
+        if (
+          latestUnreadCallInvite &&
+          !activeDirectCall?.id &&
+          !outgoingDirectCall?.id &&
+          !incomingDirectCall?.id
+        ) {
+          const callId = String(latestUnreadCallInvite.callId || '').trim();
+          if (
+            callId &&
+            !handledIncomingInviteCallIdsRef.current.has(callId)
+          ) {
+            handledIncomingInviteCallIdsRef.current.add(callId);
+            try {
+              watchDirectCallDoc(callId, 'callee');
+            } catch {}
+            firestore()
+              .collection(`users/${user.uid}/direct_calls`)
+              .doc(callId)
+              .get()
+              .then((snap: any) => {
+                const call = mapDirectCallDoc(snap);
+                if (!call) {
+                  handledIncomingInviteCallIdsRef.current.delete(callId);
+                  return;
+                }
+                const createdAtMs =
+                  call?.createdAt?.toDate?.()?.getTime?.() || 0;
+                const isFresh =
+                  createdAtMs <= 0 ||
+                  Date.now() - createdAtMs <= STALE_RINGING_CALL_MAX_AGE_MS;
+                if (
+                  call.status === 'ringing' &&
+                  call.calleeUid === user.uid &&
+                  call.callerUid !== user.uid &&
+                  isFresh
+                ) {
+                  setIncomingDirectCall(prev =>
+                    prev?.id === call.id ? prev : call,
+                  );
+                } else {
+                  handledIncomingInviteCallIdsRef.current.delete(callId);
+                }
+              })
+              .catch(() => {
+                handledIncomingInviteCallIdsRef.current.delete(callId);
+              });
+          }
+        }
 
         // Play tone only for newly added realtime notifications.
         if (newRealtimeNotifications.length > 0) {
@@ -2836,6 +2903,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   });
   const seenNotificationIdsRef = useRef<Set<string>>(new Set());
   const notificationListenerStartedAtRef = useRef<number>(0);
+  const handledIncomingInviteCallIdsRef = useRef<Set<string>>(new Set());
   const [appToneSettings, setAppToneSettings] = useState<
     Record<AppToneAction, string>
   >(DEFAULT_APP_TONE_SETTINGS);
@@ -3386,6 +3454,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
 
   const startIncomingCallRingtone = useCallback(() => {
+    if (incomingCallRingtoneActiveRef.current && !incomingCallRingtoneRef.current) {
+      incomingCallRingtoneActiveRef.current = false;
+    }
     if (incomingCallRingtoneActiveRef.current) return;
     incomingCallRingtoneActiveRef.current = true;
     if (incomingCallRingtoneRef.current) return;
@@ -3477,6 +3548,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } else {
       stopIncomingCallRingtone();
     }
+  }, [
+    activeDirectCall,
+    incomingDirectCall,
+    startIncomingCallRingtone,
+    stopIncomingCallRingtone,
+  ]);
+
+  useEffect(() => {
+    const incomingModalVisible = !!incomingDirectCall && !activeDirectCall;
+    if (!incomingModalVisible) {
+      stopIncomingCallRingtone();
+      return;
+    }
+    // Tie modal visibility directly to ringtone so incoming modal never appears silently.
+    stopIncomingCallRingtone();
+    const timer = setTimeout(() => {
+      startIncomingCallRingtone();
+    }, 100);
+    return () => clearTimeout(timer);
   }, [
     activeDirectCall,
     incomingDirectCall,
@@ -20583,68 +20673,9 @@ const DirectCallModal = ({
     return (hash % 2147483646) + 1;
   }, [call?.calleeUid, call?.callerUid, role]);
 
-  const applyRtcQualityProfile = useCallback(
-    (engine: any, mode: DirectCallMode) => {
-      const cellularLike =
-        !isWifi || !!dataSaver?.cellular || !!bridge?.dataSaverDefaultOnCell;
-      const cappedForCell =
-        cellularLike && (bridge?.wifiOnlyHD || dataSaver?.enabled);
-      const maxResolution = String(dataSaver?.maxResolution || 'high');
-      const highAllowed = !cappedForCell && maxResolution !== 'low';
-      const width =
-        mode !== 'video'
-          ? 320
-          : highAllowed
-          ? maxResolution === 'med'
-            ? 960
-            : 1280
-          : 640;
-      const height =
-        mode !== 'video'
-          ? 240
-          : highAllowed
-          ? maxResolution === 'med'
-            ? 540
-            : 720
-          : 360;
-      const frameRate = highAllowed ? 24 : 15;
-      const minBitrate =
-        Number(bridge?.liveCellularMaxBitrate || 0) > 0
-          ? Number(bridge?.liveCellularMaxBitrate)
-          : cappedForCell
-          ? 420_000
-          : 1_200_000;
-      const maxBitrate = cappedForCell ? Math.min(minBitrate, 800_000) : 1_700_000;
-
-      try {
-        engine.setVideoEncoderConfiguration?.({
-          dimensions: { width, height },
-          frameRate,
-          bitrate: maxBitrate,
-          minBitrate,
-          orientationMode: 1,
-          degradationPrefer: 1,
-          mirrorMode: 0,
-        });
-      } catch {}
-      try {
-        engine.enableDualStreamMode?.(true);
-      } catch {}
-      try {
-        engine.setRemoteDefaultVideoStreamType?.(cappedForCell ? 1 : 0);
-      } catch {}
-      try {
-        engine.setAudioProfile?.(
-          mode === 'audio' ? 1 : 4,
-          cappedForCell ? 1 : 0,
-        );
-      } catch {}
-      try {
-        engine.setAudioScenario?.(mode === 'audio' ? 3 : 2);
-      } catch {}
-    },
-    [bridge?.dataSaverDefaultOnCell, bridge?.liveCellularMaxBitrate, bridge?.wifiOnlyHD, dataSaver?.cellular, dataSaver?.enabled, dataSaver?.maxResolution, isWifi],
-  );
+  const applyRtcQualityProfile = useCallback((_engine: any, _mode: DirectCallMode) => {
+    // Keep direct call preview/render sizing untouched.
+  }, []);
 
   useEffect(() => {
     if (!visible || !call?.id || !Agora || !appId) return;
@@ -20807,10 +20838,7 @@ const DirectCallModal = ({
             try {
               engine.updateChannelMediaOptions?.({
                 publishMicrophoneTrack: true,
-                publishCameraTrack: !(
-                  !isWifi &&
-                  (bridge?.audioOnlyFallback || dataSaver?.enabled)
-                ),
+                publishCameraTrack: true,
                 autoSubscribeAudio: true,
                 autoSubscribeVideo: true,
               });
@@ -22494,15 +22522,12 @@ const LiveStreamModal = ({
           for (const uidNum of uidCandidates) {
             try {
               applyLiveQualityProfile(engine);
-              const audioOnlyMode =
-                !isWifi &&
-                (bridge?.audioOnlyFallback || dataSaver?.enabled);
               if (isV4) {
                 await engine.joinChannel(tok, chan, uidNum, {
                   publishMicrophoneTrack: true,
-                  publishCameraTrack: !audioOnlyMode,
+                  publishCameraTrack: true,
                   autoSubscribeAudio: true,
-                  autoSubscribeVideo: !audioOnlyMode,
+                  autoSubscribeVideo: true,
                 });
               } else {
                 await engine.joinChannel(tok, chan, uidNum);

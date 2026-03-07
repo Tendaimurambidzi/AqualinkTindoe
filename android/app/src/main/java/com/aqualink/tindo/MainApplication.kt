@@ -118,7 +118,7 @@ class MainApplication : Application(), ReactApplication {
       createNotificationToneChannel(
         "aqualink_calls_progress",
         "Aqualink Calls",
-        "call_progress",
+        "lg_cat_ring_freetone_org",
         true,
       )
 

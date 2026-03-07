@@ -27,7 +27,7 @@ const DOWNLOAD_BUCKET = admin.storage().bucket();
 const LOGO_SOURCE_PATH = path.join(__dirname, 'assets', 'my_logo.jpg');
 const DOWNLOADS_PREFIX = 'downloads/waves';
 const DEFAULT_TONE_SETTINGS = {
-  incoming_call: 'call_progress',
+  incoming_call: 'lg_cat_ring',
   messages: 'default_notification',
   live_invite: 'none',
   call_missed: 'old_ring',
@@ -85,7 +85,7 @@ async function resolveAndroidChannelId(userId, type) {
     );
   }
   if (!selectedTone) {
-    return isCallInvite ? 'aqualink_calls_progress' : 'aqualink_notifications';
+    return isCallInvite ? 'aqualink_calls_lg_cat_ring' : 'aqualink_notifications';
   }
   return isCallInvite
     ? `aqualink_calls_${selectedTone}`
