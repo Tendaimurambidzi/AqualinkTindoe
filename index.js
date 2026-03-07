@@ -9,6 +9,8 @@ import { AppRegistry } from 'react-native';
 import App from './App';
 import { name as appName } from './app.json';
 
+const PENDING_INCOMING_CALL_STORAGE_KEY = 'aqualink_pending_incoming_call_v1';
+
 // Register the app component immediately for faster startup
 AppRegistry.registerComponent(appName, () => App);
 
@@ -47,8 +49,43 @@ try {
   messaging().setBackgroundMessageHandler(async (remoteMessage) => {
     try {
       console.log('BG FCM:', remoteMessage?.data || {});
-      // Keep light: avoid heavy work. Consider writing a small flag to AsyncStorage
-      // or triggering a local notification here if needed.
+      const data = remoteMessage?.data || {};
+      const type = String(data?.type || '').toLowerCase();
+      const isIncomingCall = type === 'call_invite' || type === 'incoming_call';
+      if (!isIncomingCall) return;
+
+      const callId = String(data?.callId || '').trim();
+      if (!callId) return;
+
+      const callType =
+        String(data?.callType || '').toLowerCase() === 'video' ? 'video' : 'audio';
+      const callerName = String(
+        data?.callerName || data?.fromName || data?.actorName || 'Someone',
+      ).trim() || 'Someone';
+
+      try {
+        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+        await AsyncStorage.setItem(
+          PENDING_INCOMING_CALL_STORAGE_KEY,
+          JSON.stringify({
+            ...data,
+            type: 'call_invite',
+            callId,
+            callType,
+            callerName,
+            receivedAt: Date.now(),
+          }),
+        );
+      } catch {}
+
+      try {
+        const { NativeModules } = require('react-native');
+        NativeModules?.CallNotification?.showIncomingCallNotification?.(
+          callerName,
+          callId,
+          callType,
+        );
+      } catch {}
     } catch {}
   });
 } catch {}

@@ -528,12 +528,13 @@ type TonePickerState = {
 
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
 const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
-const STALE_RINGING_CALL_MAX_AGE_MS = 90 * 1000;
+const STALE_RINGING_CALL_MAX_AGE_MS = 5 * 60 * 1000;
 const ALLOW_TOKENLESS_DRIFT = true;
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
 const APP_TONES_STORAGE_KEY = 'app_tone_settings_v1';
+const PENDING_INCOMING_CALL_STORAGE_KEY = 'aqualink_pending_incoming_call_v1';
 const HARBOR_SETTINGS_STORAGE_KEY = 'harbor_settings_v1';
 const APP_TONE_OPTIONS: AppToneOption[] = [
   {
@@ -2799,7 +2800,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             latestNewNotification.fromName ||
             'Someone';
           const toneType =
-            latestNewNotification.type === 'call_missed'
+            latestNewNotification.type === 'call_invite'
+              ? 'incoming_call'
+              : latestNewNotification.type === 'call_missed'
               ? 'call_missed'
               : latestNewNotification.type === 'live_invite'
               ? 'live_invite'
@@ -3573,6 +3576,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     startIncomingCallRingtone,
     stopIncomingCallRingtone,
   ]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!incomingDirectCall && !activeDirectCall) return;
+    try {
+      NativeModules?.CallNotification?.hideIncomingCallNotification?.();
+    } catch {}
+  }, [activeDirectCall, incomingDirectCall]);
 
   useEffect(() => {
     if (!incomingDirectCall) {
@@ -10825,7 +10836,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
     const toneAction: AppToneAction =
-      normalizedType === 'call_missed'
+      normalizedType === 'incoming_call'
+        ? 'incoming_call'
+        : normalizedType === 'call_missed'
         ? 'call_missed'
         : 'messages';
     playToneCandidates(getToneCandidatesForAction(toneAction), {
@@ -12704,7 +12717,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
 
   const acceptIncomingDirectCall = useCallback(async () => {
-    const call = incomingDirectCall;
+    let call = incomingDirectCall;
     if (!call?.id || !myUid) return;
     if (incomingCallAction) return;
     setIncomingCallAction('accept');
@@ -12732,6 +12745,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     }
     try {
+      if (!call.channelName || !call.callerUid) {
+        try {
+          const freshSnap = await firestore()
+            .collection(`users/${myUid}/direct_calls`)
+            .doc(call.id)
+            .get();
+          const fresh = mapDirectCallDoc(freshSnap);
+          if (fresh) {
+            call = fresh;
+            setIncomingDirectCall(prev => (prev?.id === fresh.id ? fresh : prev));
+          }
+        } catch {}
+      }
       const myCallRef = firestore()
         .collection(`users/${myUid}/direct_calls`)
         .doc(call.id);
@@ -12763,7 +12789,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } finally {
       setIncomingCallAction(null);
     }
-  }, [fetchDirectCallAgoraToken, incomingCallAction, incomingDirectCall, myUid, upsertCallHistory, watchDirectCallDoc]);
+  }, [
+    fetchDirectCallAgoraToken,
+    incomingCallAction,
+    incomingDirectCall,
+    mapDirectCallDoc,
+    myUid,
+    upsertCallHistory,
+    watchDirectCallDoc,
+  ]);
 
   const declineIncomingDirectCall = useCallback(async () => {
     const call = incomingDirectCall;
@@ -12912,7 +12946,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const createdAtMs =
         latest?.createdAt?.toDate?.()?.getTime?.() || 0;
       const isStale =
-        !createdAtMs ||
+        createdAtMs > 0 &&
         Date.now() - createdAtMs > STALE_RINGING_CALL_MAX_AGE_MS;
       if (isStale) {
         try {
@@ -13133,6 +13167,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (data?.type === 'call_invite' && data?.callId && myUid) {
         const callId = String(data.callId || '').trim();
         if (callId) {
+          startIncomingCallRingtone();
           watchDirectCallDoc(callId, 'callee');
           try {
             firestore()
@@ -13145,7 +13180,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const createdAtMs =
                   call?.createdAt?.toDate?.()?.getTime?.() || 0;
                 const isFresh =
-                  createdAtMs > 0 &&
+                  createdAtMs <= 0 ||
                   Date.now() - createdAtMs <= STALE_RINGING_CALL_MAX_AGE_MS;
                 if (call.status === 'ringing' && isFresh) {
                   setIncomingDirectCall(call);
@@ -13174,8 +13209,153 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowPings(true);
       }
     },
-    [displayFeed, mapDirectCallDoc, myUid, watchDirectCallDoc],
+    [
+      displayFeed,
+      mapDirectCallDoc,
+      myUid,
+      startIncomingCallRingtone,
+      watchDirectCallDoc,
+    ],
   );
+
+  // Mirror live-invite signal style for calls: react to call_invite from mentions/pings
+  // so callee gets the in-app call panel even when pings delivery is delayed.
+  useEffect(() => {
+    if (!myUid) return;
+    const processCallInviteSignal = (data: any) => {
+      try {
+        const callId = String(data?.callId || '').trim();
+        if (!callId) return;
+        if (handledIncomingInviteCallIdsRef.current.has(callId)) return;
+        const status = String(data?.status || 'pending').toLowerCase();
+        if (
+          status &&
+          status !== 'pending' &&
+          status !== 'ringing' &&
+          status !== 'sent'
+        ) {
+          return;
+        }
+        handledIncomingInviteCallIdsRef.current.add(callId);
+        const signalCallType: DirectCallMode =
+          String(data?.callType || '').toLowerCase() === 'video'
+            ? 'video'
+            : 'audio';
+        const signalCallerUid = String(data?.fromUid || data?.callerUid || '').trim();
+        const signalCallerName = String(
+          data?.fromName || data?.callerName || 'User',
+        ).trim();
+        // Invite-badge style behavior: surface UI immediately from signal payload,
+        // then let direct-call doc watcher hydrate authoritative values.
+        setIncomingDirectCall(prev => {
+          if (prev?.id === callId) return prev;
+          return {
+            id: callId,
+            callerUid: signalCallerUid,
+            calleeUid: myUid,
+            callerName: signalCallerName || 'User',
+            calleeName: profileName || auth()?.currentUser?.displayName || 'User',
+            callerAvatar: null,
+            calleeAvatar: auth()?.currentUser?.photoURL || null,
+            channelName: String(data?.channelName || '').trim(),
+            callType: signalCallType,
+            status: 'ringing',
+            createdAt: data?.createdAt || new Date(),
+            acceptedAt: null,
+            endedAt: null,
+            endedBy: null,
+            agoraToken: null,
+            calleeNotifiedAt: null,
+          } as DirectCallSession;
+        });
+        handleNotificationNavigation({
+          type: 'call_invite',
+          callId,
+          callType: signalCallType,
+          fromUid: signalCallerUid,
+          fromName: signalCallerName,
+          callerName: signalCallerName,
+          channelName: String(data?.channelName || '').trim(),
+        });
+      } catch {}
+    };
+
+    const unsubMentions = firestore()
+      .collection(`users/${myUid}/mentions`)
+      .where('type', '==', 'call_invite')
+      .limit(20)
+      .onSnapshot(
+        snap => {
+          const docs = (snap?.docs || []).slice().sort((a: any, b: any) => {
+            return (
+              toJSDate((b.data?.() || {}).createdAt).getTime() -
+              toJSDate((a.data?.() || {}).createdAt).getTime()
+            );
+          });
+          if (docs.length === 0) return;
+          processCallInviteSignal(docs[0]?.data?.() || {});
+        },
+        () => {},
+      );
+
+    const unsubPings = firestore()
+      .collection(`users/${myUid}/pings`)
+      .where('type', '==', 'call_invite')
+      .limit(20)
+      .onSnapshot(
+        snap => {
+          const docs = (snap?.docs || []).filter((doc: any) => {
+            const data = doc?.data?.() || {};
+            return data?.read !== true;
+          });
+          const latest =
+            docs
+              .slice()
+              .sort(
+                (a: any, b: any) =>
+                  toJSDate((b.data?.() || {}).createdAt).getTime() -
+                  toJSDate((a.data?.() || {}).createdAt).getTime(),
+              )[0] || null;
+          if (!latest) return;
+          processCallInviteSignal(latest?.data?.() || {});
+        },
+        () => {},
+      );
+
+    return () => {
+      try {
+        unsubMentions && unsubMentions();
+      } catch {}
+      try {
+        unsubPings && unsubPings();
+      } catch {}
+    };
+  }, [handleNotificationNavigation, myUid]);
+
+  useEffect(() => {
+    if (!myUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PENDING_INCOMING_CALL_STORAGE_KEY);
+        if (!raw) return;
+        await AsyncStorage.removeItem(PENDING_INCOMING_CALL_STORAGE_KEY);
+        if (cancelled) return;
+        const data = JSON.parse(raw);
+        const callId = String(data?.callId || '').trim();
+        const type = String(data?.type || '').toLowerCase();
+        if (!callId || (type !== 'call_invite' && type !== 'incoming_call')) return;
+        handleNotificationNavigation({
+          ...data,
+          type: 'call_invite',
+          callId,
+        });
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [handleNotificationNavigation, myUid]);
                     
   const handleForegroundRemoteMessage = useCallback(
     (rm: any) => {

@@ -79,6 +79,30 @@
         </intent-filter>
       </service>
 
+      <!-- Call notification foreground service -->
+      <service
+          android:name=".CallNotificationService"
+          android:enabled="true"
+          android:exported="false"
+          android:foregroundServiceType="phoneCall" />
+
+      <!-- Call event headless JS service -->
+      <service
+          android:name=".CallEventService"
+          android:enabled="true"
+          android:exported="false" />
+
+      <!-- Call action broadcast receiver -->
+      <receiver
+          android:name=".CallActionReceiver"
+          android:enabled="true"
+          android:exported="false">
+        <intent-filter>
+          <action android:name="com.aqualink.tindo.ANSWER_CALL" />
+          <action android:name="com.aqualink.tindo.DECLINE_CALL" />
+        </intent-filter>
+      </receiver>
+
       <!-- Default notification channel id (override library value) -->
       <meta-data
           android:name="com.google.firebase.messaging.default_notification_channel_id"
