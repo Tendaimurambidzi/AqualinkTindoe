@@ -22111,6 +22111,7 @@ const LiveStreamModal = ({
   >([]);
   const [recentlyHereNames, setRecentlyHereNames] = useState<string[]>([]);
   const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(true);
+  const [showLiveControls, setShowLiveControls] = useState(false);
   const [inviteStatusByUid, setInviteStatusByUid] = useState<
     Record<
       string,
@@ -22127,6 +22128,10 @@ const LiveStreamModal = ({
   useEffect(() => {
     if (!showUserPanel) setUserPanelMode('none');
   }, [showUserPanel]);
+  useEffect(() => {
+    if (visible && isLiveStarted) return;
+    setShowLiveControls(false);
+  }, [isLiveStarted, visible]);
   // cross-platform text prompt
   const [promptVisible, setPromptVisible] = useState(false);
   const [promptTitle, setPromptTitle] = useState('');
@@ -25547,7 +25552,7 @@ const LiveStreamModal = ({
         )}
         {/* --- BEGIN LiveStreamModal tail replacement --- */}
         {/* Right-side action stack (host controls) */}
-        {isLiveStarted && !showCommentInput && (
+        {isLiveStarted && !showCommentInput && showLiveControls && (
           <ScrollView
             style={[
               editorStyles.liveRightControls,
@@ -26036,16 +26041,21 @@ const LiveStreamModal = ({
                 <Text style={editorStyles.liveBottomIcon}>🧩</Text>
                 <Text style={editorStyles.liveBottomLabel}>Overlays</Text>
               </View>
-              <View style={editorStyles.liveBottomItem}>
-                <Text style={editorStyles.liveBottomIcon}>✂️</Text>
-                <Text style={editorStyles.liveBottomLabel}>Trim</Text>
-              </View>
               <Pressable
                 style={editorStyles.liveBottomItem}
                 onPress={() => setShowCommentInput(p => !p)}
               >
                 <Text style={editorStyles.liveBottomIcon}>💬</Text>
                 <Text style={editorStyles.liveBottomLabel}>Comment</Text>
+              </Pressable>
+              <Pressable
+                style={editorStyles.liveBottomItem}
+                onPress={() => setShowLiveControls(v => !v)}
+              >
+                <Text style={editorStyles.liveBottomIcon}>🛠️</Text>
+                <Text style={editorStyles.liveBottomLabel}>
+                  {showLiveControls ? 'Controls On' : 'Controls'}
+                </Text>
               </Pressable>
             </ScrollView>
           </View>
