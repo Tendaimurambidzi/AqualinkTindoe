@@ -22056,6 +22056,8 @@ const LiveStreamModal = ({
     Array<{ id: string; text: string; from?: string; anim: Animated.Value }>
   >([]);
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
+  const liveCommentsPrimedRef = useRef(false);
+  const lastLiveCommentsSigRef = useRef('');
   const [splashedComment, setSplashedComment] = useState<{
     id: string;
     text: string;
@@ -22387,6 +22389,9 @@ const LiveStreamModal = ({
   useEffect(() => {
     if (!isLiveStarted || !liveDocId) {
       setLiveComments([]);
+      seenCommentIdsRef.current.clear();
+      liveCommentsPrimedRef.current = false;
+      lastLiveCommentsSigRef.current = '';
       return;
     }
                     
@@ -22402,18 +22407,31 @@ const LiveStreamModal = ({
       .limitToLast(50) // Listen to the last 50 comments
       .onSnapshot((querySnapshot: any) => {
         if (querySnapshot) {
-        const items = (querySnapshot?.docs || []).map((d: any) => ({
-          id: d.id,
-          ...d.data(),
-        }));
+          const items = (querySnapshot?.docs || []).map((d: any) => ({
+            id: d.id,
+            ...d.data(),
+          }));
+          const sig = items.map((it: any) => String(it.id || '')).join('|');
+          if (sig === lastLiveCommentsSigRef.current) return;
+          lastLiveCommentsSigRef.current = sig;
           setLiveComments(items);
-          // Trigger flying animations for newly seen comments
-          items.forEach((it: any) => {
-            if (!seenCommentIdsRef.current.has(it.id)) {
-              seenCommentIdsRef.current.add(it.id);
-              spawnFlyingComment({ id: it.id, text: it.text, from: it.from });
-            }
-          });
+          if (!liveCommentsPrimedRef.current) {
+            items.forEach((it: any) => {
+              if (it?.id) seenCommentIdsRef.current.add(String(it.id));
+            });
+            liveCommentsPrimedRef.current = true;
+            return;
+          }
+          // Trigger a small capped number of animations to avoid UI thread stalls.
+          let spawned = 0;
+          for (const it of items) {
+            const id = String(it?.id || '').trim();
+            if (!id || seenCommentIdsRef.current.has(id)) continue;
+            seenCommentIdsRef.current.add(id);
+            spawnFlyingComment({ id, text: String(it?.text || ''), from: it?.from });
+            spawned += 1;
+            if (spawned >= 3) break;
+          }
         }
       });
 
