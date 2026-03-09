@@ -10,6 +10,8 @@ import com.facebook.react.modules.core.DeviceEventManagerModule
 class CallActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val callId = intent.getStringExtra("callId") ?: return
+        val callerName = intent.getStringExtra("callerName") ?: "Unknown"
+        val callType = intent.getStringExtra("callType") ?: "audio"
         
         when (intent.action) {
             CallNotificationService.ACTION_ANSWER -> {
@@ -22,6 +24,8 @@ class CallActionReceiver : BroadcastReceiver() {
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     putExtra("callId", callId)
                     putExtra("action", "answer_call")
+                    putExtra("callerName", callerName)
+                    putExtra("callType", callType)
                 }
                 context.startActivity(launchIntent)
             }

@@ -13,7 +13,7 @@ import androidx.core.app.NotificationCompat
 class CallNotificationService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "aqualink_calls_lg_cat_ring"
+        const val CHANNEL_ID = "aqualink_calls_lg_cat_ring_v2"
         const val NOTIFICATION_ID = 1001
         const val ACTION_ANSWER = "com.aqualink.tindo.ANSWER_CALL"
         const val ACTION_DECLINE = "com.aqualink.tindo.DECLINE_CALL"
@@ -77,6 +77,10 @@ class CallNotificationService : Service() {
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 1000, 500, 1000)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setShowBadge(false)
+                try {
+                    setBypassDnd(true)
+                } catch (_: Exception) {}
             }
             
             val notificationManager = getSystemService(NotificationManager::class.java)
@@ -89,18 +93,23 @@ class CallNotificationService : Service() {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("callId", callId)
             putExtra("action", "incoming_call")
+            putExtra("callerName", callerName)
+            putExtra("callType", callType)
         }
+        val reqCode = callId.hashCode()
         val fullScreenPendingIntent = PendingIntent.getActivity(
-            this, 0, fullScreenIntent,
+            this, reqCode, fullScreenIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         val answerIntent = Intent(this, CallActionReceiver::class.java).apply {
             action = ACTION_ANSWER
             putExtra("callId", callId)
+            putExtra("callerName", callerName)
+            putExtra("callType", callType)
         }
         val answerPendingIntent = PendingIntent.getBroadcast(
-            this, 1, answerIntent,
+            this, reqCode + 1, answerIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -109,7 +118,7 @@ class CallNotificationService : Service() {
             putExtra("callId", callId)
         }
         val declinePendingIntent = PendingIntent.getBroadcast(
-            this, 2, declineIntent,
+            this, reqCode + 2, declineIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -127,7 +136,9 @@ class CallNotificationService : Service() {
             .setContentText("$callerName is calling...")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setContentIntent(fullScreenPendingIntent)
             .setOngoing(true)
             .setAutoCancel(false)
             .setSound(soundUri)

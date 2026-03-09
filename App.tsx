@@ -20991,7 +20991,9 @@ const DirectCallModal = ({
         pushToken(null);
         pushToken(staticToken);
 
-        const uidCandidates = Array.from(new Set([Number(rtcUid) || 0, 0]));
+        const primaryUid = Number(rtcUid) > 0 ? Number(rtcUid) : 1;
+        const fallbackUid = primaryUid === 1 ? 2 : primaryUid - 1;
+        const uidCandidates = Array.from(new Set([primaryUid, fallbackUid]));
 
         const joinWithFallback = async (
           engine: any,
@@ -21447,7 +21449,7 @@ const DirectCallModal = ({
         await engine.leaveChannel?.();
       } catch {}
       if (engineIsV4Ref.current) {
-        await engine.joinChannel?.(joinToken, call.channelName, 0, {
+        await engine.joinChannel?.(joinToken, call.channelName, Number(rtcUid) || 1, {
           clientRoleType: Agora?.ClientRoleType?.ClientRoleBroadcaster ?? 1,
           publishMicrophoneTrack: true,
           publishCameraTrack: true,
@@ -21455,7 +21457,7 @@ const DirectCallModal = ({
           autoSubscribeVideo: true,
         });
       } else {
-        await engine.joinChannel?.(joinToken, call.channelName, 0);
+        await engine.joinChannel?.(joinToken, call.channelName, Number(rtcUid) || 1);
       }
     } catch (err) {
       console.warn('Retry video join failed', err);
@@ -22134,6 +22136,16 @@ const LiveStreamModal = ({
     if (visible && isLiveStarted) return;
     setShowLiveControls(false);
   }, [isLiveStarted, visible]);
+  useEffect(() => {
+    if (visible) return;
+    setIsLiveStarted(false);
+    setAwaitingCaptainApproval(false);
+    setJoinApprovalLabel('');
+    setLiveDocId(null);
+    setPendingRequests([]);
+    setInviteStatusByUid({});
+    setJoinedParticipants([]);
+  }, [visible]);
   // cross-platform text prompt
   const [promptVisible, setPromptVisible] = useState(false);
   const [promptTitle, setPromptTitle] = useState('');
@@ -23296,12 +23308,10 @@ const LiveStreamModal = ({
   >([]);
   const [selectedInviteUid, setSelectedInviteUid] = useState<string | null>(null);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const inviteInFlightRef = useRef<Set<string>>(new Set());
   const [hereNowInviteSendingByUid, setHereNowInviteSendingByUid] = useState<
     Record<string, boolean>
   >({});
-  const [hiddenHereNowInvitees, setHiddenHereNowInvitees] = useState<Set<string>>(
-    new Set(),
-  );
                     
   const inviteCoHost = async () => {
     setInviteQuery('');
@@ -23420,6 +23430,11 @@ const LiveStreamModal = ({
       Alert.alert('Error', 'Invalid user ID');
       return false;
     }
+    const inviteGuardKey = `${String(liveDocId || 'no_live')}::${toUid}`;
+    if (inviteInFlightRef.current.has(inviteGuardKey)) {
+      return false;
+    }
+    inviteInFlightRef.current.add(inviteGuardKey);
                     
     setInviteBusy(true);
     try {
@@ -23501,10 +23516,7 @@ const LiveStreamModal = ({
         lastErr = err;
       }
 
-      // Non-blocking: do not delay user feedback on callable side-channel.
-      inviteUserToDrift(toUid).catch(err => {
-        console.warn('[INVITE DEBUG] callable sendCrewInvitation failed', err);
-      });
+      // Single invite channel to prevent duplicate invite cards/badges.
 
       if (!inboxInviteWritten) {
         try {
@@ -23645,6 +23657,7 @@ const LiveStreamModal = ({
       return false;
     } finally {
       setInviteBusy(false);
+      inviteInFlightRef.current.delete(inviteGuardKey);
     }
     return false;
   };
@@ -25288,13 +25301,13 @@ const LiveStreamModal = ({
               }}
             >
               <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
-                Here now! ({onlineUsers.filter(u => !hiddenHereNowInvitees.has(u.uid)).length})
+                Here now! ({onlineUsers.length})
               </Text>
               <Pressable onPress={() => setShowOnlineInvitePanel(false)}>
                 <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Hide</Text>
               </Pressable>
             </View>
-            {onlineUsers.filter(u => !hiddenHereNowInvitees.has(u.uid)).length === 0 ? (
+            {onlineUsers.length === 0 ? (
               recentlyHereNames.length > 0 ? (
                 <View>
                   <Text style={{ color: 'rgba(255,255,255,0.82)', fontWeight: '700' }}>
@@ -25311,7 +25324,6 @@ const LiveStreamModal = ({
               )
             ) : (
               onlineUsers
-                .filter(u => !hiddenHereNowInvitees.has(u.uid))
                 .slice(0, 6)
                 .map(u => {
                 const status = getInviteStatusLabel(u.uid);
@@ -25367,7 +25379,7 @@ const LiveStreamModal = ({
                       </View>
                     </View>
                     <Pressable
-                      disabled={status === 'Accepted' || sending}
+                      disabled={sending}
                       style={[
                         styles.primaryBtn,
                         {
@@ -25395,13 +25407,7 @@ const LiveStreamModal = ({
                             { uid: u.uid, name: u.name },
                             { silent: false },
                           );
-                          if (ok) {
-                            setHiddenHereNowInvitees(prev => {
-                              const next = new Set(prev);
-                              next.add(u.uid);
-                              return next;
-                            });
-                          }
+                          if (!ok) return;
                         } finally {
                           setHereNowInviteSendingByUid(prev => ({
                             ...prev,
@@ -25416,7 +25422,7 @@ const LiveStreamModal = ({
                           : status === 'Invited'
                           ? 'Resend'
                           : status === 'Accepted'
-                          ? 'Done'
+                          ? 'Invite'
                           : 'Invite'}
                       </Text>
                     </Pressable>
