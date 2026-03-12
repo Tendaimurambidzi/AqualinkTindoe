@@ -94,6 +94,7 @@ import MediaEditor, {
   defaultMediaEdits,
   MediaEdits,
 } from './src/components/MediaEditor';
+import FileSharePanel from './src/components/meeting/FileSharePanel';
                     
 
 // Navigation stack shared across auth/app flows
@@ -22061,6 +22062,7 @@ const LiveStreamModal = ({
     'public',
   );
   const [liveDocId, setLiveDocId] = useState<string | null>(null);
+  const [liveHostUid, setLiveHostUid] = useState<string>('');
   const [liveToken, setLiveToken] = useState<string | null>(null);
   const [liveChannel, setLiveChannel] = useState<string>(defaultChannel);
   const [livePoll, setLivePoll] = useState<LivePoll | null>(null);
@@ -22072,6 +22074,7 @@ const LiveStreamModal = ({
     if (!liveDocId) {
       setLivePoll(null);
       setLiveGoal(null);
+      setLiveHostUid('');
       return;
     }
     let unsub: (() => void) | null = null;
@@ -22084,6 +22087,7 @@ const LiveStreamModal = ({
       const ref = firestoreMod().collection('live').doc(liveDocId);
       unsub = ref.onSnapshot((snap: any) => {
         const data = snap?.data?.() || snap?.data || {};
+        setLiveHostUid(String(data?.hostUid || ''));
         const pollData = data?.poll || null;
         if (pollData && pollData.question && Array.isArray(pollData.options)) {
           const options = pollData.options
@@ -22184,6 +22188,7 @@ const LiveStreamModal = ({
   // --- Enhanced Live Controls state (safe stubs) ---
   const [isRecording, setIsRecording] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [showFileSharePanel, setShowFileSharePanel] = useState(false);
   const [virtualBackground, setVirtualBackground] = useState<string | null>(
     null,
   );
@@ -22223,6 +22228,23 @@ const LiveStreamModal = ({
   const [joinedParticipants, setJoinedParticipants] = useState<
     Array<{ uid: string; name: string; photo: string | null }>
   >([]);
+  const currentLiveUid = String(auth?.()?.currentUser?.uid || '');
+  const currentLiveName = String(
+    auth?.()?.currentUser?.displayName || hostName || 'Host',
+  );
+  const coHostIds = useMemo(
+    () =>
+      coHosts
+        .map((entry: any) => String(entry?.id || entry?.uid || entry || ''))
+        .filter(Boolean),
+    [coHosts],
+  );
+  const isLiveHost =
+    !!currentLiveUid &&
+    (currentLiveUid === String(liveHostUid || '') ||
+      (!liveHostUid && isLiveStarted));
+  const isLiveCoHost =
+    !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
   const MAX_HERE_NOW_SCAN = 200;
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
@@ -22247,6 +22269,7 @@ const LiveStreamModal = ({
     setPendingRequests([]);
     setInviteStatusByUid({});
     setJoinedParticipants([]);
+    setShowFileSharePanel(false);
   }, [visible]);
   // cross-platform text prompt
   const [promptVisible, setPromptVisible] = useState(false);
@@ -25753,6 +25776,13 @@ const LiveStreamModal = ({
                 {isScreenSharing ? 'Stop Share' : 'Share Screen'}
               </Text>
             </Pressable>
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={() => setShowFileSharePanel(true)}
+            >
+              <Text style={editorStyles.liveRightIcon}>📁</Text>
+              <Text style={editorStyles.liveRightLabel}>Files</Text>
+            </Pressable>
                     
             {/* Virtual Background */}
             <Pressable
@@ -25917,6 +25947,15 @@ const LiveStreamModal = ({
             </Pressable>
           </ScrollView>
         )}
+        <FileSharePanel
+          visible={showFileSharePanel}
+          onClose={() => setShowFileSharePanel(false)}
+          liveId={liveDocId}
+          currentUid={currentLiveUid}
+          currentName={currentLiveName}
+          isHost={isLiveHost}
+          isCoHost={isLiveCoHost}
+        />
                     
         {/* Invite Modal */}
         <Modal
