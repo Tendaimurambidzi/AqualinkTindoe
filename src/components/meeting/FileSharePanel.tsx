@@ -62,26 +62,27 @@ export default function FileSharePanel({
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const canManage = isHost || isCoHost;
+  const effectiveLiveId = String(liveId || '').trim();
 
   const load = useCallback(async () => {
-    if (!liveId) return;
+    if (!effectiveLiveId) return;
     setLoading(true);
     try {
-      const items = await listMeetingFiles(liveId);
+      const items = await listMeetingFiles(effectiveLiveId);
       setFiles(items);
     } catch (err: any) {
       Alert.alert('Files', err?.message || 'Failed to load shared files.');
     } finally {
       setLoading(false);
     }
-  }, [liveId]);
+  }, [effectiveLiveId]);
 
   useEffect(() => {
-    if (!visible || !liveId) return;
+    if (!visible || !effectiveLiveId) return;
     let active = true;
     const run = async () => {
       try {
-        const items = await listMeetingFiles(liveId);
+        const items = await listMeetingFiles(effectiveLiveId);
         if (active) setFiles(items);
       } catch {}
     };
@@ -91,16 +92,19 @@ export default function FileSharePanel({
       active = false;
       clearInterval(interval);
     };
-  }, [liveId, visible]);
+  }, [effectiveLiveId, visible]);
 
   const onShare = useCallback(async () => {
-    if (!liveId) return;
+    if (!effectiveLiveId) {
+      Alert.alert('Share file', 'Start or join a live session first.');
+      return;
+    }
     setBusy(true);
     try {
       const picked = await pickMeetingFileForUpload();
       if (!picked) return;
       await uploadMeetingFile({
-        liveId,
+        liveId: effectiveLiveId,
         file: picked,
         uploaderUid: currentUid,
         uploaderName: currentName,
@@ -111,7 +115,7 @@ export default function FileSharePanel({
     } finally {
       setBusy(false);
     }
-  }, [currentName, currentUid, liveId, load]);
+  }, [currentName, currentUid, effectiveLiveId, load]);
 
   const pinned = useMemo(
     () => files.find((item) => item.pinned),
@@ -138,7 +142,7 @@ export default function FileSharePanel({
             try {
               setBusy(true);
               await deleteMeetingFile({
-                liveId: String(liveId || ''),
+                liveId: effectiveLiveId,
                 fileId: file.id,
                 requesterUid: currentUid,
                 isHost,
@@ -154,7 +158,7 @@ export default function FileSharePanel({
         },
       ]);
     },
-    [currentUid, isCoHost, isHost, liveId, load],
+    [currentUid, effectiveLiveId, isCoHost, isHost, load],
   );
 
   const onPin = useCallback(
@@ -162,7 +166,7 @@ export default function FileSharePanel({
       try {
         setBusy(true);
         await pinMeetingFile({
-          liveId: String(liveId || ''),
+          liveId: effectiveLiveId,
           fileId: file.id,
           requesterUid: currentUid,
           isHost,
@@ -175,7 +179,7 @@ export default function FileSharePanel({
         setBusy(false);
       }
     },
-    [currentUid, isCoHost, isHost, liveId, load],
+    [currentUid, effectiveLiveId, isCoHost, isHost, load],
   );
 
   return (
@@ -209,7 +213,7 @@ export default function FileSharePanel({
           <View style={styles.actionRow}>
             <Pressable
               onPress={onShare}
-              disabled={busy || !liveId}
+              disabled={busy}
               style={[styles.primaryBtn, busy ? styles.disabledBtn : null]}
             >
               <Text style={styles.primaryBtnText}>

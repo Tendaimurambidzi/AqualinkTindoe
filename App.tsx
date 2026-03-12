@@ -25950,7 +25950,7 @@ const LiveStreamModal = ({
         <FileSharePanel
           visible={showFileSharePanel}
           onClose={() => setShowFileSharePanel(false)}
-          liveId={liveDocId}
+          liveId={liveDocId || liveChannel || null}
           currentUid={currentLiveUid}
           currentName={currentLiveName}
           isHost={isLiveHost}
