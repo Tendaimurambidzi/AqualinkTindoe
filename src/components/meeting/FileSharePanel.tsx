@@ -16,10 +16,10 @@ import {
   deleteMeetingFile,
   listMeetingFiles,
   MeetingSharedFile,
+  presentMeetingFileLive,
   pickMeetingFileForUpload,
   pinMeetingFile,
   subscribeMeetingFiles,
-  uploadMeetingFile,
 } from '../../services/meetingFileService';
 
 type Props = {
@@ -129,7 +129,7 @@ export default function FileSharePanel({
         }
         return;
       }
-      const uploaded = await uploadMeetingFile({
+      const uploaded = await presentMeetingFileLive({
         liveId: effectiveLiveId,
         file: picked,
         uploaderUid: currentUid,
@@ -141,12 +141,15 @@ export default function FileSharePanel({
         const next = prev.filter(item => item.id !== uploaded.id);
         return [uploaded, ...next];
       });
-      if (uploaded.downloadUrl) {
+      if (picked?.uri) {
         try {
-          await Linking.openURL(uploaded.downloadUrl);
+          await Linking.openURL(String(picked.uri));
         } catch {}
       }
-      Alert.alert('Shared', `"${uploaded.name}" shared to this meeting.`);
+      Alert.alert(
+        'Live shared',
+        `"${uploaded.name}" is now being presented live in this meeting.`,
+      );
     } catch (err: any) {
       Alert.alert(
         'Share file',
@@ -238,7 +241,7 @@ export default function FileSharePanel({
             </Pressable>
           </View>
           <Text style={styles.subtitle}>
-            Upload media/docs for everyone in this live session.
+            Pick a file and present it live for everyone in this session.
           </Text>
 
           {pinned ? (
@@ -308,6 +311,8 @@ export default function FileSharePanel({
                           ? 'Uploading...'
                           : item.status === 'selecting'
                           ? 'Selecting file...'
+                          : item.status === 'presenting'
+                          ? 'Presenting live (watch on stream)'
                           : item.status === 'failed'
                           ? `Failed: ${String(item.error || 'upload error')}`
                           : 'Ready'}

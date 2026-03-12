@@ -4,7 +4,12 @@ import firestore from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import { Asset, launchImageLibrary } from 'react-native-image-picker';
 
-export type MeetingSharedFileStatus = 'selecting' | 'uploading' | 'ready' | 'failed';
+export type MeetingSharedFileStatus =
+  | 'selecting'
+  | 'uploading'
+  | 'presenting'
+  | 'ready'
+  | 'failed';
 
 export type MeetingSharedFile = {
   id: string;
@@ -338,6 +343,72 @@ export async function cancelMeetingFileSelection(params: {
   if (String(data.uploadedBy || '') !== uploaderUid) return;
   if (String(data.status || '').toLowerCase() !== 'selecting') return;
   await ref.delete();
+}
+
+export async function presentMeetingFileLive({
+  liveId,
+  file,
+  uploaderUid,
+  uploaderName,
+  selectionId,
+}: MeetingUploadInput): Promise<MeetingSharedFile> {
+  const trimmedLiveId = String(liveId || '').trim();
+  const authUid = String(auth().currentUser?.uid || '').trim();
+  const trimmedUid = String(uploaderUid || authUid).trim();
+  const fileUri = String(file?.uri || '').trim();
+  if (!trimmedLiveId) throw new Error('Missing liveId');
+  if (!trimmedUid) throw new Error('Please sign in before sharing files.');
+  if (authUid && trimmedUid !== authUid) {
+    throw new Error('Session mismatch. Please re-open live and try again.');
+  }
+  if (!fileUri) throw new Error('Missing file uri');
+
+  const rawName = String(file.fileName || 'shared_file');
+  const mimeType = String(file.type || 'application/octet-stream');
+  const createdAtMs = Date.now();
+  const trimmedSelectionId = String(selectionId || '').trim();
+  const docRef = trimmedSelectionId
+    ? liveFilesCollection().doc(trimmedSelectionId)
+    : liveFilesCollection().doc();
+
+  // Live-present mode: no cloud upload/download step; presenter opens locally while others watch the live feed.
+  await docRef.set(
+    {
+      id: docRef.id,
+      liveId: trimmedLiveId,
+      name: rawName,
+      size: Number(file.fileSize || 0),
+      mimeType,
+      storagePath: '',
+      downloadUrl: '',
+      uploadedBy: trimmedUid,
+      uploadedByName: String(uploaderName || 'Host'),
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAtMs,
+      pinned: false,
+      pinnedAt: 0,
+      status: 'presenting',
+      error: null,
+    },
+    { merge: true },
+  );
+
+  return {
+    id: docRef.id,
+    liveId: trimmedLiveId,
+    name: rawName,
+    size: Number(file.fileSize || 0),
+    mimeType,
+    storagePath: '',
+    downloadUrl: '',
+    uploadedBy: trimmedUid,
+    uploadedByName: String(uploaderName || 'Host'),
+    createdAt: createdAtMs,
+    pinned: false,
+    pinnedAt: 0,
+    status: 'presenting',
+    error: null,
+  };
 }
 
 export async function deleteMeetingFile(params: {

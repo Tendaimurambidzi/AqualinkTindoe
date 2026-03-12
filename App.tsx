@@ -22254,7 +22254,10 @@ const LiveStreamModal = ({
   const activeSharedFile = useMemo(() => {
     if (!liveSharedFiles.length) return null;
     const inProgress = liveSharedFiles.find(
-      item => item.status === 'selecting' || item.status === 'uploading',
+      item =>
+        item.status === 'selecting' ||
+        item.status === 'uploading' ||
+        item.status === 'presenting',
     );
     if (inProgress) return inProgress;
     return (
@@ -23653,6 +23656,12 @@ const LiveStreamModal = ({
           'Skipper',
       ).trim();
       const senderPhoto = me.photoURL || null;
+      const effectiveInviteChannel = String(
+        liveChannel || channelInput || defaultChannel || '',
+      )
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
       let inboxInviteWritten = false;
       let callableInviteSent = false;
       let inviteStatusWritten = false;
@@ -23685,7 +23694,7 @@ const LiveStreamModal = ({
 
         const invitePayload = {
           liveId: liveDocId || null,
-          liveChannel: liveChannel || null,
+          liveChannel: effectiveInviteChannel || null,
           liveTitle: liveTitle || 'Live Session',
           fromUid: me.uid,
           fromName: callerName,
@@ -23730,7 +23739,8 @@ const LiveStreamModal = ({
               route: 'Pings',
               liveId: liveDocId || '',
               liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: liveChannel || null,
+              liveChannel: effectiveInviteChannel || null,
+              channel: effectiveInviteChannel || null,
               directCallId: directCallId || null,
               directCallChannel: directCallChannel || null,
               callType: directCallType,
@@ -23754,7 +23764,8 @@ const LiveStreamModal = ({
               fromPhoto: senderPhoto,
               liveId: liveDocId || '',
               liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: liveChannel || null,
+              liveChannel: effectiveInviteChannel || null,
+              channel: effectiveInviteChannel || null,
               directCallId: directCallId || null,
               directCallChannel: directCallChannel || null,
               callType: directCallType,
@@ -23786,6 +23797,8 @@ const LiveStreamModal = ({
               inviteId: inviteDocId,
               fromUid: me.uid,
               liveId: liveDocId,
+              channel: effectiveInviteChannel || null,
+              liveChannel: effectiveInviteChannel || null,
               directCallId: directCallId || null,
               callType: directCallType,
               directCallChannel: directCallChannel || null,
@@ -25159,6 +25172,8 @@ const LiveStreamModal = ({
                 ? `${activeSharedFile.uploadedByName || 'Someone'} is selecting a file...`
                 : activeSharedFile.status === 'uploading'
                 ? `${activeSharedFile.uploadedByName || 'Someone'} is uploading "${activeSharedFile.name}"`
+                : activeSharedFile.status === 'presenting'
+                ? `${activeSharedFile.uploadedByName || 'Someone'} is presenting "${activeSharedFile.name}" live`
                 : `Shared file: ${activeSharedFile.name}`}
             </Text>
             <View style={{ flexDirection: 'row', marginTop: 6, gap: 8 }}>
