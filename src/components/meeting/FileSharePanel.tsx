@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,11 +11,14 @@ import {
   View,
 } from 'react-native';
 import {
+  announceMeetingFileSelectionStart,
+  cancelMeetingFileSelection,
   deleteMeetingFile,
   listMeetingFiles,
   MeetingSharedFile,
   pickMeetingFileForUpload,
   pinMeetingFile,
+  subscribeMeetingFiles,
   uploadMeetingFile,
 } from '../../services/meetingFileService';
 
@@ -63,6 +66,7 @@ export default function FileSharePanel({
   const [busy, setBusy] = useState(false);
   const canManage = isHost || isCoHost;
   const effectiveLiveId = String(liveId || '').trim();
+  const lastSubErrorRef = useRef<string>('');
 
   const load = useCallback(async () => {
     if (!effectiveLiveId) return;
@@ -79,18 +83,26 @@ export default function FileSharePanel({
 
   useEffect(() => {
     if (!visible || !effectiveLiveId) return;
-    let active = true;
-    const run = async () => {
-      try {
-        const items = await listMeetingFiles(effectiveLiveId);
-        if (active) setFiles(items);
-      } catch {}
-    };
-    run();
-    const interval = setInterval(run, 7000);
+    setLoading(true);
+    const unsub = subscribeMeetingFiles(
+      effectiveLiveId,
+      items => {
+        setFiles(items);
+        setLoading(false);
+      },
+      err => {
+        setLoading(false);
+        const msg = String(err?.message || err?.code || 'Realtime file sync failed.');
+        if (lastSubErrorRef.current !== msg) {
+          lastSubErrorRef.current = msg;
+          Alert.alert('Files sync', msg);
+        }
+      },
+    );
     return () => {
-      active = false;
-      clearInterval(interval);
+      try {
+        unsub && unsub();
+      } catch {}
     };
   }, [effectiveLiveId, visible]);
 
@@ -100,22 +112,50 @@ export default function FileSharePanel({
       return;
     }
     setBusy(true);
+    let selectionId: string | null = null;
     try {
+      selectionId = await announceMeetingFileSelectionStart({
+        liveId: effectiveLiveId,
+        uploaderUid: currentUid,
+        uploaderName: currentName,
+      });
       const picked = await pickMeetingFileForUpload();
-      if (!picked) return;
-      await uploadMeetingFile({
+      if (!picked) {
+        if (selectionId) {
+          await cancelMeetingFileSelection({
+            fileId: selectionId,
+            uploaderUid: currentUid,
+          });
+        }
+        return;
+      }
+      const uploaded = await uploadMeetingFile({
         liveId: effectiveLiveId,
         file: picked,
         uploaderUid: currentUid,
         uploaderName: currentName,
+        selectionId,
       });
-      await load();
+      // Keep local UX responsive even when realtime listeners are delayed/failing.
+      setFiles(prev => {
+        const next = prev.filter(item => item.id !== uploaded.id);
+        return [uploaded, ...next];
+      });
+      if (uploaded.downloadUrl) {
+        try {
+          await Linking.openURL(uploaded.downloadUrl);
+        } catch {}
+      }
+      Alert.alert('Shared', `"${uploaded.name}" shared to this meeting.`);
     } catch (err: any) {
-      Alert.alert('Share file', err?.message || 'Upload failed.');
+      Alert.alert(
+        'Share file',
+        String(err?.message || err?.code || 'Upload failed. Check network/rules and try again.'),
+      );
     } finally {
       setBusy(false);
     }
-  }, [currentName, currentUid, effectiveLiveId, load]);
+  }, [currentName, currentUid, effectiveLiveId]);
 
   const pinned = useMemo(
     () => files.find((item) => item.pinned),
@@ -241,14 +281,36 @@ export default function FileSharePanel({
                 const canDelete = canManage || item.uploadedBy === currentUid;
                 return (
                   <View key={item.id} style={styles.fileRow}>
-                    <Pressable onPress={() => onOpen(item.downloadUrl)} style={styles.fileInfo}>
+                    <Pressable
+                      onPress={() => onOpen(item.downloadUrl)}
+                      disabled={
+                        !item.downloadUrl ||
+                        item.status === 'selecting' ||
+                        item.status === 'uploading'
+                      }
+                      style={styles.fileInfo}
+                    >
                       <Text numberOfLines={1} style={styles.fileName}>
-                        {item.pinned ? '📌 ' : ''}
+                        {item.pinned ? '[Pinned] ' : ''}
                         {item.name}
                       </Text>
                       <Text style={styles.fileMeta}>
-                        {formatFileSize(item.size)} • {item.uploadedByName || 'Someone'} •{' '}
+                        {formatFileSize(item.size)} - {item.uploadedByName || 'Someone'} -{' '}
                         {formatWhen(item.createdAt)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.fileStatus,
+                          item.status === 'failed' ? styles.fileStatusError : null,
+                        ]}
+                      >
+                        {item.status === 'uploading'
+                          ? 'Uploading...'
+                          : item.status === 'selecting'
+                          ? 'Selecting file...'
+                          : item.status === 'failed'
+                          ? `Failed: ${String(item.error || 'upload error')}`
+                          : 'Ready'}
                       </Text>
                     </Pressable>
                     <View style={styles.rowActions}>
@@ -360,6 +422,8 @@ const styles = StyleSheet.create({
   fileInfo: { flex: 1 },
   fileName: { color: 'white', fontWeight: '700' },
   fileMeta: { color: 'rgba(255,255,255,0.66)', marginTop: 4, fontSize: 12 },
+  fileStatus: { color: 'rgba(155,223,255,0.95)', marginTop: 4, fontSize: 11, fontWeight: '700' },
+  fileStatusError: { color: '#FFB3B3' },
   rowActions: { flexDirection: 'row', gap: 6 },
   miniBtn: {
     borderRadius: 8,

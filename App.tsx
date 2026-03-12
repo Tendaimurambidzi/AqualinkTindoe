@@ -95,6 +95,10 @@ import MediaEditor, {
   MediaEdits,
 } from './src/components/MediaEditor';
 import FileSharePanel from './src/components/meeting/FileSharePanel';
+import {
+  MeetingSharedFile,
+  subscribeMeetingFiles,
+} from './src/services/meetingFileService';
                     
 
 // Navigation stack shared across auth/app flows
@@ -22189,6 +22193,7 @@ const LiveStreamModal = ({
   const [isRecording, setIsRecording] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showFileSharePanel, setShowFileSharePanel] = useState(false);
+  const [liveSharedFiles, setLiveSharedFiles] = useState<MeetingSharedFile[]>([]);
   const [virtualBackground, setVirtualBackground] = useState<string | null>(
     null,
   );
@@ -22245,6 +22250,19 @@ const LiveStreamModal = ({
       (!liveHostUid && isLiveStarted));
   const isLiveCoHost =
     !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
+  const liveShareScope = String(liveDocId || liveChannel || '').trim();
+  const activeSharedFile = useMemo(() => {
+    if (!liveSharedFiles.length) return null;
+    const inProgress = liveSharedFiles.find(
+      item => item.status === 'selecting' || item.status === 'uploading',
+    );
+    if (inProgress) return inProgress;
+    return (
+      liveSharedFiles.find(
+        item => item.status === 'ready' && !!String(item.downloadUrl || '').trim(),
+      ) || liveSharedFiles[0]
+    );
+  }, [liveSharedFiles]);
   const MAX_HERE_NOW_SCAN = 200;
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
@@ -22270,7 +22288,25 @@ const LiveStreamModal = ({
     setInviteStatusByUid({});
     setJoinedParticipants([]);
     setShowFileSharePanel(false);
+    setLiveSharedFiles([]);
   }, [visible]);
+
+  useEffect(() => {
+    if (!visible || !isLiveStarted || !liveShareScope) {
+      setLiveSharedFiles([]);
+      return;
+    }
+    const unsub = subscribeMeetingFiles(
+      liveShareScope,
+      items => setLiveSharedFiles(items),
+      () => {},
+    );
+    return () => {
+      try {
+        unsub && unsub();
+      } catch {}
+    };
+  }, [isLiveStarted, liveShareScope, visible]);
   // cross-platform text prompt
   const [promptVisible, setPromptVisible] = useState(false);
   const [promptTitle, setPromptTitle] = useState('');
@@ -23587,6 +23623,17 @@ const LiveStreamModal = ({
       Alert.alert('Error', 'Invalid user ID');
       return false;
     }
+    const existingStatus = String(inviteStatusByUid[toUid]?.status || '').toLowerCase();
+    const existingExpiry = Number(inviteStatusByUid[toUid]?.expiresAtMs || 0);
+    if (
+      existingStatus === 'pending' &&
+      (!existingExpiry || existingExpiry > Date.now())
+    ) {
+      if (!options?.silent) {
+        Alert.alert('Invite already pending', 'This user already has your invite badge.');
+      }
+      return true;
+    }
     const inviteGuardKey = `${String(liveDocId || 'no_live')}::${toUid}`;
     if (inviteInFlightRef.current.has(inviteGuardKey)) {
       return false;
@@ -23619,24 +23666,21 @@ const LiveStreamModal = ({
       const directCallChannel: string | null = null;
       const directCallType: DirectCallMode = 'video';
       const computedExpiry = Date.now() + LIVE_INVITE_EXPIRY_MS;
+      const optimisticNow = Date.now();
+      setInviteStatusByUid(prev => ({
+        ...prev,
+        [toUid]: {
+          status: 'pending',
+          expiresAtMs: computedExpiry,
+          updatedAtMs: optimisticNow,
+          name: typeof to === 'string' ? toUid : to?.name || toUid,
+        },
+      }));
 
       try {
         const liveInvitesRef = firestore().collection(
           `users/${toUid}/live_invites`,
         );
-        let existingPending: any = null;
-        if (liveDocId) {
-          try {
-            existingPending = await liveInvitesRef
-              .where('status', '==', 'pending')
-              .where('fromUid', '==', me.uid)
-              .where('liveId', '==', liveDocId)
-              .limit(1)
-              .get();
-          } catch {
-            existingPending = null;
-          }
-        }
         // Invite-only flow: do not create direct call sessions here.
 
         const invitePayload = {
@@ -23653,14 +23697,12 @@ const LiveStreamModal = ({
           createdAt: firestore.FieldValue.serverTimestamp(),
           expiresAtMs: computedExpiry,
         };
-        if (existingPending && !existingPending.empty) {
-          const ref = existingPending.docs[0].ref;
-          inviteDocId = existingPending.docs[0].id;
-          await ref.set(invitePayload, { merge: true });
-        } else {
-          const inviteRef = await liveInvitesRef.add(invitePayload);
-          inviteDocId = inviteRef.id;
-        }
+        const inviteKeyBase = `${String(liveDocId || 'direct').trim()}_${me.uid}`;
+        const inviteDocKey = inviteKeyBase.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120);
+        inviteDocId = inviteDocKey || null;
+        await liveInvitesRef.doc(inviteDocKey).set(invitePayload, {
+          merge: true,
+        });
         inboxInviteWritten = true;
 
         if (!options?.silent) {
@@ -23729,7 +23771,8 @@ const LiveStreamModal = ({
       }
 
       if (liveDocId && inviteDocId) {
-        firestore()
+        try {
+          await firestore()
           .collection(`live/${liveDocId}/invite_status`)
           .doc(toUid)
           .set(
@@ -23750,11 +23793,11 @@ const LiveStreamModal = ({
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
-          )
-          .then(() => {
-            inviteStatusWritten = true;
-          })
-          .catch(() => {});
+          );
+          inviteStatusWritten = true;
+        } catch (err) {
+          lastErr = err;
+        }
       }
 
       const requireFeedPanel = options?.requireFeedPanel !== false;
@@ -23831,7 +23874,12 @@ const LiveStreamModal = ({
   };
 
   const getInviteStatusLabel = (uid: string) => {
-    const status = inviteStatusByUid[uid]?.status || '';
+    const row = inviteStatusByUid[uid];
+    const status = row?.status || '';
+    const expiresAtMs = Number(row?.expiresAtMs || 0);
+    if (status === 'pending' && expiresAtMs > 0 && Date.now() > expiresAtMs) {
+      return null;
+    }
     if (!status) return null;
     switch (status) {
       case 'pending':
@@ -25041,6 +25089,7 @@ const LiveStreamModal = ({
     remoteParticipantUids.includes(pinnedRemoteUid)
       ? pinnedRemoteUid
       : remoteParticipantUids[0]) || null;
+  const useJoinCallLayout = !!inviteJoinPreset && !isLiveHost;
                     
   return (
     <Modal
@@ -25086,6 +25135,63 @@ const LiveStreamModal = ({
             {livePrivacy.toUpperCase()}
           </Text>
         )}
+        {isLiveStarted && activeSharedFile && (
+          <View
+            style={{
+              position: 'absolute',
+              top: insets.top + 44,
+              left: 12,
+              right: 12,
+              zIndex: 11,
+              backgroundColor: 'rgba(0,0,0,0.72)',
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.45)',
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+            }}
+          >
+            <Text
+              numberOfLines={1}
+              style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 12 }}
+            >
+              {activeSharedFile.status === 'selecting'
+                ? `${activeSharedFile.uploadedByName || 'Someone'} is selecting a file...`
+                : activeSharedFile.status === 'uploading'
+                ? `${activeSharedFile.uploadedByName || 'Someone'} is uploading "${activeSharedFile.name}"`
+                : `Shared file: ${activeSharedFile.name}`}
+            </Text>
+            <View style={{ flexDirection: 'row', marginTop: 6, gap: 8 }}>
+              <Pressable
+                style={[
+                  styles.secondaryBtn,
+                  { flex: 1, minHeight: 34, alignItems: 'center', justifyContent: 'center' },
+                ]}
+                onPress={() => setShowFileSharePanel(true)}
+              >
+                <Text style={styles.secondaryBtnText}>Open Files Panel</Text>
+              </Pressable>
+              {activeSharedFile.status === 'ready' &&
+              String(activeSharedFile.downloadUrl || '').trim() ? (
+                <Pressable
+                  style={[
+                    styles.primaryBtn,
+                    { flex: 1, minHeight: 34, alignItems: 'center', justifyContent: 'center' },
+                  ]}
+                  onPress={async () => {
+                    try {
+                      await Linking.openURL(String(activeSharedFile.downloadUrl));
+                    } catch {
+                      Alert.alert('File', 'Could not open this shared file.');
+                    }
+                  }}
+                >
+                  <Text style={styles.primaryBtnText}>Open Shared File</Text>
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        )}
         {isLiveStarted && !cameraHidden && (
           <>
             {mainRemoteUid ? (
@@ -25122,6 +25228,15 @@ const LiveStreamModal = ({
                   <Text style={{ color: 'white' }}>Connecting remote video...</Text>
                 </View>
               )
+            ) : useJoinCallLayout ? (
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  { alignItems: 'center', justifyContent: 'center' },
+                ]}
+              >
+                <Text style={{ color: 'white' }}>Waiting for other participant video...</Text>
+              </View>
             ) : AVView ? (
               <AVView
                 style={StyleSheet.absoluteFill}
@@ -25170,7 +25285,7 @@ const LiveStreamModal = ({
                 <Text style={{ color: 'white' }}>Initializing preview...</Text>
               </View>
             )}
-            {!!mainRemoteUid && (
+            {(!!mainRemoteUid || useJoinCallLayout) && (
               <View
                 style={{
                   position: 'absolute',
@@ -25485,6 +25600,7 @@ const LiveStreamModal = ({
                 .map(u => {
                 const status = getInviteStatusLabel(u.uid);
                 const sending = !!hereNowInviteSendingByUid[u.uid];
+                const inviteLocked = status === 'Invited';
                 return (
                   <View
                     key={u.uid}
@@ -25536,7 +25652,7 @@ const LiveStreamModal = ({
                       </View>
                     </View>
                     <Pressable
-                      disabled={sending}
+                      disabled={sending || inviteLocked}
                       style={[
                         styles.primaryBtn,
                         {
@@ -25546,8 +25662,7 @@ const LiveStreamModal = ({
                           backgroundColor:
                             sending
                               ? '#2F3640'
-                              : 
-                            status === 'Invited'
+                              : inviteLocked
                               ? '#1E7A4A'
                               : status === 'Accepted'
                               ? '#6C7A89'
@@ -25576,8 +25691,8 @@ const LiveStreamModal = ({
                       <Text style={[styles.primaryBtnText, { fontSize: 11 }]}>
                         {sending
                           ? '...'
-                          : status === 'Invited'
-                          ? 'Resend'
+                          : inviteLocked
+                          ? 'Invited'
                           : status === 'Accepted'
                           ? 'Invite'
                           : 'Invite'}

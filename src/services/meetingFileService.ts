@@ -1,7 +1,10 @@
 import { NativeModules, Platform } from 'react-native';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
 import { Asset, launchImageLibrary } from 'react-native-image-picker';
-import { BACKEND_BASE_URL } from '../../liveConfig';
+
+export type MeetingSharedFileStatus = 'selecting' | 'uploading' | 'ready' | 'failed';
 
 export type MeetingSharedFile = {
   id: string;
@@ -16,6 +19,8 @@ export type MeetingSharedFile = {
   createdAt: number;
   pinned?: boolean;
   pinnedAt?: number;
+  status?: MeetingSharedFileStatus;
+  error?: string | null;
 };
 
 export type MeetingUploadInput = {
@@ -23,6 +28,7 @@ export type MeetingUploadInput = {
   file: Asset;
   uploaderUid: string;
   uploaderName?: string | null;
+  selectionId?: string | null;
 };
 
 let RNFS: typeof import('react-native-fs') | null = null;
@@ -56,7 +62,10 @@ const inferExtFromType = (type: string) => {
   return 'bin';
 };
 
-const toLocalFilePath = async (uri: string, ext: string): Promise<{ path: string; tempPath?: string }> => {
+const toLocalFilePath = async (
+  uri: string,
+  ext: string,
+): Promise<{ path: string; tempPath?: string }> => {
   let raw = String(uri || '');
   try {
     raw = decodeURI(raw);
@@ -78,22 +87,42 @@ const toLocalFilePath = async (uri: string, ext: string): Promise<{ path: string
   return { path: raw };
 };
 
+const mapMeetingFileDoc = (doc: any): MeetingSharedFile => {
+  const data = doc?.data?.() || {};
+  return {
+    id: String(doc?.id || data?.id || ''),
+    liveId: String(data?.liveId || ''),
+    name: String(data?.name || 'Shared file'),
+    size: Number(data?.size || 0),
+    mimeType: String(data?.mimeType || 'application/octet-stream'),
+    storagePath: String(data?.storagePath || ''),
+    downloadUrl: String(data?.downloadUrl || ''),
+    uploadedBy: String(data?.uploadedBy || ''),
+    uploadedByName: String(data?.uploadedByName || 'Someone'),
+    createdAt: Number(data?.createdAtMs || 0),
+    pinned: !!data?.pinned,
+    pinnedAt: Number(data?.pinnedAt || 0),
+    status: (String(data?.status || 'ready') as MeetingSharedFileStatus) || 'ready',
+    error: data?.error ? String(data.error) : null,
+  };
+};
+
+const liveFilesCollection = () => firestore().collection('live_files');
+
 export async function pickMeetingFileForUpload(): Promise<Asset | null> {
   const nativePicker = (NativeModules as any)?.AudioPicker;
   if (nativePicker?.pickAudio) {
     try {
       const result = await nativePicker.pickAudio();
       if (!result?.uri) return null;
-      const picked: Asset = {
+      return {
         uri: String(result.uri),
         fileName: result.name ? String(result.name) : undefined,
         type: result.type ? String(result.type) : undefined,
         fileSize: Number(result.size || 0) || undefined,
       };
-      return picked;
     } catch (err: any) {
       if (String(err?.code || '').toUpperCase() === 'CANCELLED') return null;
-      // Fall back to gallery picker if native document picker fails unexpectedly.
       console.warn('AudioPicker failed, falling back to image library:', err?.message || err);
     }
   }
@@ -114,14 +143,37 @@ export async function pickMeetingFileForUpload(): Promise<Asset | null> {
 }
 
 export async function listMeetingFiles(liveId: string): Promise<MeetingSharedFile[]> {
-  const response = await fetch(
-    `${BACKEND_BASE_URL}/meeting/files?liveId=${encodeURIComponent(String(liveId || '').trim())}`,
-  );
-  const data = await response.json();
-  if (!response.ok || !data?.ok) {
-    throw new Error(data?.error || 'Failed to load shared files');
-  }
-  return Array.isArray(data.items) ? data.items : [];
+  const trimmedLiveId = String(liveId || '').trim();
+  if (!trimmedLiveId) return [];
+  const snap = await liveFilesCollection().where('liveId', '==', trimmedLiveId).get();
+  const items = snap.docs.map(mapMeetingFileDoc);
+  return items.sort((a, b) => {
+    if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
+    return Number(b.createdAt || 0) - Number(a.createdAt || 0);
+  });
+}
+
+export function subscribeMeetingFiles(
+  liveId: string,
+  onItems: (items: MeetingSharedFile[]) => void,
+  onError?: (error: any) => void,
+): () => void {
+  const trimmedLiveId = String(liveId || '').trim();
+  if (!trimmedLiveId) return () => {};
+  return liveFilesCollection()
+    .where('liveId', '==', trimmedLiveId)
+    .onSnapshot(
+      snap => {
+        const items = snap.docs.map(mapMeetingFileDoc).sort((a, b) => {
+          if (!!b.pinned !== !!a.pinned) return b.pinned ? 1 : -1;
+          return Number(b.createdAt || 0) - Number(a.createdAt || 0);
+        });
+        onItems(items);
+      },
+      err => {
+        if (onError) onError(err);
+      },
+    );
 }
 
 export async function uploadMeetingFile({
@@ -129,49 +181,88 @@ export async function uploadMeetingFile({
   file,
   uploaderUid,
   uploaderName,
+  selectionId,
 }: MeetingUploadInput): Promise<MeetingSharedFile> {
   const trimmedLiveId = String(liveId || '').trim();
-  const trimmedUid = String(uploaderUid || '').trim();
+  const authUid = String(auth().currentUser?.uid || '').trim();
+  const trimmedUid = String(uploaderUid || authUid).trim();
   const fileUri = String(file?.uri || '').trim();
   if (!trimmedLiveId) throw new Error('Missing liveId');
-  if (!trimmedUid) throw new Error('Missing uploader');
+  if (!trimmedUid) throw new Error('Please sign in before sharing files.');
+  if (authUid && trimmedUid !== authUid) {
+    throw new Error('Session mismatch. Please re-open live and try again.');
+  }
   if (!fileUri) throw new Error('Missing file uri');
 
   const rawName = String(file.fileName || 'shared_file');
   const mimeType = String(file.type || 'application/octet-stream');
   const safeName = sanitizeBaseName(rawName);
-  const ext =
-    safeName.includes('.')
-      ? safeName.substring(safeName.lastIndexOf('.') + 1)
-      : inferExtFromType(mimeType);
+  const ext = safeName.includes('.')
+    ? safeName.substring(safeName.lastIndexOf('.') + 1)
+    : inferExtFromType(mimeType);
   const baseNoExt = safeName.includes('.')
     ? safeName.substring(0, safeName.lastIndexOf('.'))
     : safeName;
-  // Storage rules currently allow writes under posts/** for authenticated users.
-  // Keep meeting files inside posts/{uid}/... to stay authorized without rule changes.
-  const storagePath = `posts/${trimmedUid}/meetings/${trimmedLiveId}/files/${Date.now()}_${baseNoExt}.${ext}`;
+
+  const createdAtMs = Date.now();
+  const trimmedSelectionId = String(selectionId || '').trim();
+  const docRef = trimmedSelectionId
+    ? liveFilesCollection().doc(trimmedSelectionId)
+    : liveFilesCollection().doc();
+
+  // Convert selecting placeholder (or create one) to uploading with real file metadata.
+  await docRef.set(
+    {
+      id: docRef.id,
+      liveId: trimmedLiveId,
+      name: rawName,
+      size: Number(file.fileSize || 0),
+      mimeType,
+      storagePath: '',
+      downloadUrl: '',
+      uploadedBy: trimmedUid,
+      uploadedByName: String(uploaderName || 'Host'),
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      createdAtMs,
+      pinned: false,
+      pinnedAt: 0,
+      status: 'uploading',
+      error: null,
+    },
+    { merge: true },
+  );
 
   let tempPathToDelete: string | undefined;
-  const resolved = await toLocalFilePath(fileUri, ext);
-  tempPathToDelete = resolved.tempPath;
-  await storage().ref(storagePath).putFile(resolved.path, {
-    contentType: mimeType || 'application/octet-stream',
-  });
-  const downloadUrl = await storage().ref(storagePath).getDownloadURL();
+  try {
+    const storagePath = `posts/${trimmedUid}/meetings/${trimmedLiveId}/files/${Date.now()}_${baseNoExt}.${ext}`;
+    const resolved = await toLocalFilePath(fileUri, ext);
+    tempPathToDelete = resolved.tempPath;
+    await storage().ref(storagePath).putFile(resolved.path, {
+      contentType: mimeType || 'application/octet-stream',
+    });
+    const downloadUrl = await storage().ref(storagePath).getDownloadURL();
 
-  if (tempPathToDelete) {
-    try {
-      const rnfs = resolveRNFS();
-      if (rnfs?.exists && (await rnfs.exists(tempPathToDelete))) {
-        await rnfs.unlink(tempPathToDelete);
-      }
-    } catch {}
-  }
+    await docRef.set(
+      {
+        storagePath,
+        downloadUrl,
+        status: 'ready',
+        error: null,
+      },
+      { merge: true },
+    );
 
-  const response = await fetch(`${BACKEND_BASE_URL}/meeting/files/create`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+    if (tempPathToDelete) {
+      try {
+        const rnfs = resolveRNFS();
+        if (rnfs?.exists && (await rnfs.exists(tempPathToDelete))) {
+          await rnfs.unlink(tempPathToDelete);
+        }
+      } catch {}
+    }
+
+    return {
+      id: docRef.id,
       liveId: trimmedLiveId,
       name: rawName,
       size: Number(file.fileSize || 0),
@@ -180,13 +271,73 @@ export async function uploadMeetingFile({
       downloadUrl,
       uploadedBy: trimmedUid,
       uploadedByName: String(uploaderName || 'Host'),
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok || !data?.ok) {
-    throw new Error(data?.error || 'Failed to share file');
+      createdAt: createdAtMs,
+      pinned: false,
+      pinnedAt: 0,
+      status: 'ready',
+      error: null,
+    };
+  } catch (error: any) {
+    await docRef.set(
+      {
+        status: 'failed',
+        error: String(error?.message || error || 'Upload failed'),
+      },
+      { merge: true },
+    );
+    throw error;
   }
-  return data.item as MeetingSharedFile;
+}
+
+export async function announceMeetingFileSelectionStart(params: {
+  liveId: string;
+  uploaderUid: string;
+  uploaderName?: string | null;
+}): Promise<string> {
+  const trimmedLiveId = String(params.liveId || '').trim();
+  const authUid = String(auth().currentUser?.uid || '').trim();
+  const trimmedUid = String(params.uploaderUid || authUid).trim();
+  if (!trimmedLiveId) throw new Error('Missing liveId');
+  if (!trimmedUid) throw new Error('Please sign in before sharing files.');
+  if (authUid && trimmedUid !== authUid) {
+    throw new Error('Session mismatch. Please re-open live and try again.');
+  }
+  const ref = liveFilesCollection().doc();
+  const createdAtMs = Date.now();
+  await ref.set({
+    id: ref.id,
+    liveId: trimmedLiveId,
+    name: 'Selecting file...',
+    size: 0,
+    mimeType: 'application/octet-stream',
+    storagePath: '',
+    downloadUrl: '',
+    uploadedBy: trimmedUid,
+    uploadedByName: String(params.uploaderName || 'Host'),
+    createdAt: firestore.FieldValue.serverTimestamp(),
+    createdAtMs,
+    pinned: false,
+    pinnedAt: 0,
+    status: 'selecting',
+    error: null,
+  });
+  return ref.id;
+}
+
+export async function cancelMeetingFileSelection(params: {
+  fileId: string;
+  uploaderUid: string;
+}) {
+  const fileId = String(params.fileId || '').trim();
+  const uploaderUid = String(params.uploaderUid || '').trim();
+  if (!fileId || !uploaderUid) return;
+  const ref = liveFilesCollection().doc(fileId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const data = snap.data() || {};
+  if (String(data.uploadedBy || '') !== uploaderUid) return;
+  if (String(data.status || '').toLowerCase() !== 'selecting') return;
+  await ref.delete();
 }
 
 export async function deleteMeetingFile(params: {
@@ -196,21 +347,16 @@ export async function deleteMeetingFile(params: {
   isHost?: boolean;
   isCoHost?: boolean;
 }) {
-  const response = await fetch(`${BACKEND_BASE_URL}/meeting/files/delete`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      liveId: params.liveId,
-      fileId: params.fileId,
-      requesterUid: params.requesterUid,
-      isHost: !!params.isHost,
-      isCoHost: !!params.isCoHost,
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok || !data?.ok) {
-    throw new Error(data?.error || 'Failed to delete file');
+  const docRef = liveFilesCollection().doc(String(params.fileId || '').trim());
+  const snap = await docRef.get();
+  if (!snap.exists) return;
+  const data = snap.data() || {};
+  const ownerUid = String(data.uploadedBy || '');
+  const canDelete = !!params.isHost || !!params.isCoHost || ownerUid === String(params.requesterUid || '');
+  if (!canDelete) {
+    throw new Error('Not allowed to delete this file.');
   }
+  await docRef.delete();
 }
 
 export async function pinMeetingFile(params: {
@@ -220,19 +366,27 @@ export async function pinMeetingFile(params: {
   isHost?: boolean;
   isCoHost?: boolean;
 }) {
-  const response = await fetch(`${BACKEND_BASE_URL}/meeting/files/pin`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      liveId: params.liveId,
-      fileId: params.fileId,
-      requesterUid: params.requesterUid,
-      isHost: !!params.isHost,
-      isCoHost: !!params.isCoHost,
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok || !data?.ok) {
-    throw new Error(data?.error || 'Failed to pin file');
+  if (!params.isHost && !params.isCoHost) {
+    throw new Error('Only host/co-host can pin files.');
   }
+  const trimmedLiveId = String(params.liveId || '').trim();
+  const fileId = String(params.fileId || '').trim();
+  if (!trimmedLiveId || !fileId) {
+    throw new Error('Missing liveId or fileId.');
+  }
+  const snap = await liveFilesCollection().where('liveId', '==', trimmedLiveId).get();
+  const batch = firestore().batch();
+  const now = Date.now();
+  snap.docs.forEach(doc => {
+    const pin = doc.id === fileId;
+    batch.set(
+      doc.ref,
+      {
+        pinned: pin,
+        pinnedAt: pin ? now : 0,
+      },
+      { merge: true },
+    );
+  });
+  await batch.commit();
 }

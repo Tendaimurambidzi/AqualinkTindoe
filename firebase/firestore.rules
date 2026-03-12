@@ -164,6 +164,21 @@ service cloud.firestore {
                     && request.auth.uid == userId;
       allow read: if false; // viewers list stays private
     }
+
+    // Live meeting files: realtime shared files for ongoing meetings/live sessions.
+    // Clients write an "uploading" placeholder immediately, then patch to "ready/failed".
+    match /live_files/{fileId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+                    && request.resource.data.liveId is string
+                    && request.resource.data.uploadedBy == request.auth.uid;
+      allow update, delete: if isAuthed();
+    }
+
+    // Live invite status used by host viewer badges and join acceptance flow.
+    match /live/{liveId}/invite_status/{uid} {
+      allow read, create, update, delete: if isAuthed();
+    }
   }
 }
 
