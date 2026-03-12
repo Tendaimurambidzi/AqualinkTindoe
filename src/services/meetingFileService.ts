@@ -147,7 +147,9 @@ export async function uploadMeetingFile({
   const baseNoExt = safeName.includes('.')
     ? safeName.substring(0, safeName.lastIndexOf('.'))
     : safeName;
-  const storagePath = `live/${trimmedLiveId}/files/${Date.now()}_${baseNoExt}.${ext}`;
+  // Storage rules currently allow writes under posts/** for authenticated users.
+  // Keep meeting files inside posts/{uid}/... to stay authorized without rule changes.
+  const storagePath = `posts/${trimmedUid}/meetings/${trimmedLiveId}/files/${Date.now()}_${baseNoExt}.${ext}`;
 
   let tempPathToDelete: string | undefined;
   const resolved = await toLocalFilePath(fileUri, ext);
