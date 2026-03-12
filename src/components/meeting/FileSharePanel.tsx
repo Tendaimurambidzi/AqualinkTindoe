@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Asset } from 'react-native-image-picker';
 import {
   ActivityIndicator,
   Alert,
@@ -30,6 +31,7 @@ type Props = {
   isHost: boolean;
   isCoHost: boolean;
   onClose: () => void;
+  onPresented?: (file: MeetingSharedFile, picked: Asset) => Promise<void> | void;
 };
 
 const formatFileSize = (bytes: number) => {
@@ -60,6 +62,7 @@ export default function FileSharePanel({
   isHost,
   isCoHost,
   onClose,
+  onPresented,
 }: Props) {
   const [files, setFiles] = useState<MeetingSharedFile[]>([]);
   const [loading, setLoading] = useState(false);
@@ -141,7 +144,9 @@ export default function FileSharePanel({
         const next = prev.filter(item => item.id !== uploaded.id);
         return [uploaded, ...next];
       });
-      if (picked?.uri) {
+      if (onPresented) {
+        await onPresented(uploaded, picked);
+      } else if (picked?.uri) {
         try {
           await Linking.openURL(String(picked.uri));
         } catch {}
@@ -158,7 +163,7 @@ export default function FileSharePanel({
     } finally {
       setBusy(false);
     }
-  }, [currentName, currentUid, effectiveLiveId]);
+  }, [currentName, currentUid, effectiveLiveId, onPresented]);
 
   const pinned = useMemo(
     () => files.find((item) => item.pinned),

@@ -97,6 +97,8 @@ import MediaEditor, {
 import FileSharePanel from './src/components/meeting/FileSharePanel';
 import {
   MeetingSharedFile,
+  setMeetingPresentationPage,
+  stopMeetingPresentation,
   subscribeMeetingFiles,
 } from './src/services/meetingFileService';
                     
@@ -22310,6 +22312,23 @@ const LiveStreamModal = ({
       ) || liveSharedFiles[0]
     );
   }, [liveSharedFiles]);
+  const isFilePresentationActive =
+    !!activeSharedFile && activeSharedFile.status === 'presenting';
+  const activePresenterUid = String(
+    activeSharedFile?.presenterUid || activeSharedFile?.uploadedBy || '',
+  ).trim();
+  const isCurrentPresenter =
+    !!currentLiveUid &&
+    !!activePresenterUid &&
+    activePresenterUid === String(currentLiveUid);
+  const currentPresentationPage = Math.max(
+    1,
+    Number(activeSharedFile?.currentPage || 1) || 1,
+  );
+  const latestVisibleComment = useMemo(() => {
+    if (!liveComments.length) return null;
+    return liveComments[liveComments.length - 1];
+  }, [liveComments]);
   const MAX_HERE_NOW_SCAN = 200;
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
@@ -23314,6 +23333,81 @@ const LiveStreamModal = ({
     } catch (e) {
       console.warn('Screen share failed:', e);
     }
+  };
+
+  const ensureScreenShareStarted = async () => {
+    if (!isLiveStarted) return;
+    if (isScreenSharing) return;
+    try {
+      engineRef.current?.startScreenCapture?.({
+        dimensions: { width: 1280, height: 720 },
+        frameRate: 15,
+        bitrate: 1000,
+      });
+      setIsScreenSharing(true);
+    } catch {
+      Alert.alert(
+        'Screen Share',
+        'Could not start screen sharing on this build/device.',
+      );
+    }
+  };
+
+  const onPresentedFromPanel = useCallback(
+    async (file: MeetingSharedFile, picked: Asset) => {
+      if (!file || !picked?.uri) return;
+      // Replace presenter camera while file presentation is active.
+      setCameraHidden(true);
+      try {
+        engineRef.current?.muteLocalVideoStream?.(true);
+      } catch {}
+      await ensureScreenShareStarted();
+      try {
+        await Linking.openURL(String(picked.uri));
+      } catch {
+        Alert.alert('Presentation', 'Could not open selected file on this device.');
+      }
+    },
+    [isLiveStarted, isScreenSharing],
+  );
+
+  const goToPresentationPage = async (nextPage: number) => {
+    if (!activeSharedFile?.id || !currentLiveUid) return;
+    try {
+      await setMeetingPresentationPage({
+        fileId: activeSharedFile.id,
+        requesterUid: currentLiveUid,
+        page: Math.max(1, nextPage),
+      });
+    } catch (err: any) {
+      Alert.alert(
+        'Presentation',
+        String(err?.message || 'Could not change presentation page.'),
+      );
+    }
+  };
+
+  const stopPresentationNow = async () => {
+    if (!activeSharedFile?.id || !currentLiveUid) return;
+    try {
+      await stopMeetingPresentation({
+        fileId: activeSharedFile.id,
+        requesterUid: currentLiveUid,
+      });
+    } catch (err: any) {
+      Alert.alert(
+        'Presentation',
+        String(err?.message || 'Could not stop presentation.'),
+      );
+    }
+    try {
+      engineRef.current?.stopScreenCapture?.();
+    } catch {}
+    setIsScreenSharing(false);
+    setCameraHidden(false);
+    try {
+      engineRef.current?.muteLocalVideoStream?.(false);
+    } catch {}
   };
                     
   const toggleVirtualBackground = () => {
@@ -25219,7 +25313,7 @@ const LiveStreamModal = ({
                 : activeSharedFile.status === 'uploading'
                 ? `${activeSharedFile.uploadedByName || 'Someone'} is uploading "${activeSharedFile.name}"`
                 : activeSharedFile.status === 'presenting'
-                ? `${activeSharedFile.uploadedByName || 'Someone'} is presenting "${activeSharedFile.name}" live`
+                ? `${activeSharedFile.uploadedByName || 'Someone'} is presenting "${activeSharedFile.name}" live - Page ${currentPresentationPage}`
                 : `Shared file: ${activeSharedFile.name}`}
             </Text>
             <View style={{ flexDirection: 'row', marginTop: 6, gap: 8 }}>
@@ -25232,8 +25326,71 @@ const LiveStreamModal = ({
               >
                 <Text style={styles.secondaryBtnText}>Open Files Panel</Text>
               </Pressable>
-              {activeSharedFile.status === 'ready' &&
-              String(activeSharedFile.downloadUrl || '').trim() ? (
+              {isFilePresentationActive ? (
+                <>
+                  {isCurrentPresenter ? (
+                    <>
+                      <Pressable
+                        style={[
+                          styles.secondaryBtn,
+                          {
+                            minHeight: 34,
+                            minWidth: 42,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingHorizontal: 10,
+                          },
+                        ]}
+                        onPress={() => goToPresentationPage(currentPresentationPage - 1)}
+                      >
+                        <Text style={styles.secondaryBtnText}>Prev</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.secondaryBtn,
+                          {
+                            minHeight: 34,
+                            minWidth: 42,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingHorizontal: 10,
+                          },
+                        ]}
+                        onPress={() => goToPresentationPage(currentPresentationPage + 1)}
+                      >
+                        <Text style={styles.secondaryBtnText}>Next</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.primaryBtn,
+                          { minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+                        ]}
+                        onPress={stopPresentationNow}
+                      >
+                        <Text style={styles.primaryBtnText}>Stop Share</Text>
+                      </Pressable>
+                    </>
+                  ) : (
+                    <View
+                      style={[
+                        styles.secondaryBtn,
+                        {
+                          flex: 1,
+                          minHeight: 34,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          paddingHorizontal: 10,
+                        },
+                      ]}
+                    >
+                      <Text style={styles.secondaryBtnText}>
+                        Watching {activeSharedFile.uploadedByName || 'Presenter'} - Page {currentPresentationPage}
+                      </Text>
+                    </View>
+                  )}
+                </>
+              ) : activeSharedFile.status === 'ready' &&
+                String(activeSharedFile.downloadUrl || '').trim() ? (
                 <Pressable
                   style={[
                     styles.primaryBtn,
@@ -25253,9 +25410,61 @@ const LiveStreamModal = ({
             </View>
           </View>
         )}
-        {isLiveStarted && !cameraHidden && (
+        {isLiveStarted && (!cameraHidden || (isFilePresentationActive && isCurrentPresenter)) && (
           <>
-            {mainRemoteUid ? (
+            {isFilePresentationActive && isCurrentPresenter ? (
+              <View
+                style={[
+                  StyleSheet.absoluteFill,
+                  {
+                    backgroundColor: '#050B15',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: 20,
+                  },
+                ]}
+              >
+                <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 12 }}>
+                  PRESENTING DOCUMENT
+                </Text>
+                <Text
+                  style={{
+                    color: 'white',
+                    fontWeight: '700',
+                    fontSize: 18,
+                    marginTop: 10,
+                    textAlign: 'center',
+                  }}
+                >
+                  {activeSharedFile?.name || 'Shared file'}
+                </Text>
+                <View
+                  style={{
+                    marginTop: 18,
+                    borderRadius: 14,
+                    borderWidth: 1,
+                    borderColor: 'rgba(157,230,255,0.5)',
+                    paddingHorizontal: 24,
+                    paddingVertical: 16,
+                    backgroundColor: 'rgba(0,194,255,0.12)',
+                  }}
+                >
+                  <Text style={{ color: 'white', fontWeight: '800', fontSize: 22 }}>
+                    Page {currentPresentationPage}
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.75)',
+                    marginTop: 16,
+                    fontSize: 12,
+                    textAlign: 'center',
+                  }}
+                >
+                  Camera is replaced while presentation is active.
+                </Text>
+              </View>
+            ) : mainRemoteUid ? (
               RtcSurfaceView ? (
                 React.createElement(RtcSurfaceView, {
                   style: StyleSheet.absoluteFill,
@@ -25492,6 +25701,33 @@ const LiveStreamModal = ({
               ))}
             </View>
           </ScrollView>
+        )}
+        {isLiveStarted && latestVisibleComment && (
+          <View
+            style={{
+              position: 'absolute',
+              left: 12,
+              right: 12,
+              bottom: insets.bottom + endBarHeight + mediaBarHeight + 12,
+              zIndex: 12,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(157,230,255,0.4)',
+              backgroundColor: 'rgba(0,0,0,0.58)',
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+            }}
+          >
+            <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 11 }}>
+              LIVE MESSAGE
+            </Text>
+            <Text
+              numberOfLines={2}
+              style={{ color: 'white', fontSize: 12, marginTop: 2 }}
+            >
+              {formatHandle((latestVisibleComment as any)?.from || 'User')}: {String((latestVisibleComment as any)?.text || '')}
+            </Text>
+          </View>
         )}
         {isLiveStarted && flyingComments.length > 0 && (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -26131,6 +26367,7 @@ const LiveStreamModal = ({
           currentName={currentLiveName}
           isHost={isLiveHost}
           isCoHost={isLiveCoHost}
+          onPresented={onPresentedFromPanel}
         />
                     
         {/* Invite Modal */}

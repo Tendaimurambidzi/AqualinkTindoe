@@ -24,6 +24,8 @@ export type MeetingSharedFile = {
   createdAt: number;
   pinned?: boolean;
   pinnedAt?: number;
+  presenterUid?: string | null;
+  currentPage?: number;
   status?: MeetingSharedFileStatus;
   error?: string | null;
 };
@@ -107,6 +109,8 @@ const mapMeetingFileDoc = (doc: any): MeetingSharedFile => {
     createdAt: Number(data?.createdAtMs || 0),
     pinned: !!data?.pinned,
     pinnedAt: Number(data?.pinnedAt || 0),
+    presenterUid: data?.presenterUid ? String(data.presenterUid) : null,
+    currentPage: Number(data?.currentPage || 1) || 1,
     status: (String(data?.status || 'ready') as MeetingSharedFileStatus) || 'ready',
     error: data?.error ? String(data.error) : null,
   };
@@ -387,6 +391,8 @@ export async function presentMeetingFileLive({
       createdAtMs,
       pinned: false,
       pinnedAt: 0,
+      presenterUid: trimmedUid,
+      currentPage: 1,
       status: 'presenting',
       error: null,
     },
@@ -406,9 +412,62 @@ export async function presentMeetingFileLive({
     createdAt: createdAtMs,
     pinned: false,
     pinnedAt: 0,
+    presenterUid: trimmedUid,
+    currentPage: 1,
     status: 'presenting',
     error: null,
   };
+}
+
+export async function setMeetingPresentationPage(params: {
+  fileId: string;
+  requesterUid: string;
+  page: number;
+}) {
+  const fileId = String(params.fileId || '').trim();
+  const requesterUid = String(params.requesterUid || '').trim();
+  const page = Math.max(1, Number(params.page || 1) || 1);
+  if (!fileId || !requesterUid) return;
+  const ref = liveFilesCollection().doc(fileId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const data = snap.data() || {};
+  const presenterUid = String(data.presenterUid || data.uploadedBy || '').trim();
+  if (presenterUid !== requesterUid) {
+    throw new Error('Only presenter can change pages.');
+  }
+  await ref.set(
+    {
+      currentPage: page,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
+}
+
+export async function stopMeetingPresentation(params: {
+  fileId: string;
+  requesterUid: string;
+}) {
+  const fileId = String(params.fileId || '').trim();
+  const requesterUid = String(params.requesterUid || '').trim();
+  if (!fileId || !requesterUid) return;
+  const ref = liveFilesCollection().doc(fileId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const data = snap.data() || {};
+  const presenterUid = String(data.presenterUid || data.uploadedBy || '').trim();
+  if (presenterUid !== requesterUid) {
+    throw new Error('Only presenter can stop presenting.');
+  }
+  await ref.set(
+    {
+      status: 'ready',
+      presenterUid: null,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
 }
 
 export async function deleteMeetingFile(params: {
