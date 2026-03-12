@@ -3,15 +3,21 @@ package com.aqualink.tindo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.facebook.react.HeadlessJsTaskService
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
 
 class CallActionReceiver : BroadcastReceiver() {
+    companion object {
+        private const val TAG = "CallActionReceiver"
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
         val callId = intent.getStringExtra("callId") ?: return
         val callerName = intent.getStringExtra("callerName") ?: "Unknown"
         val callType = intent.getStringExtra("callType") ?: "audio"
+        Log.i(TAG, "onReceive action=${intent.action} callId=$callId")
         
         when (intent.action) {
             CallNotificationService.ACTION_ANSWER -> {
@@ -27,6 +33,7 @@ class CallActionReceiver : BroadcastReceiver() {
                     putExtra("callerName", callerName)
                     putExtra("callType", callType)
                 }
+                CallIntentStore.cacheFromIntent(context, launchIntent)
                 context.startActivity(launchIntent)
             }
             CallNotificationService.ACTION_DECLINE -> {

@@ -4,38 +4,81 @@ import functions from '@react-native-firebase/functions';
 import auth from '@react-native-firebase/auth';
 import { XAI_API_KEY, XAI_MODEL } from '../../liveConfig';
 
+const XAI_CHAT_ENDPOINT = 'https://api.x.ai/v1/chat/completions';
+
+const normalizeXaiContent = (content: any): string => {
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    const joined = content
+      .map(part => {
+        if (!part) return '';
+        if (typeof part === 'string') return part;
+        if (typeof part?.text === 'string') return part.text;
+        return '';
+      })
+      .join(' ')
+      .trim();
+    return joined;
+  }
+  if (typeof content?.text === 'string') return content.text.trim();
+  return '';
+};
+
 async function generateTextViaXAI(prompt: string): Promise<string> {
-  const response = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${XAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: XAI_MODEL || 'grok-2-latest',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a concise assistant for a social app. Keep responses useful and safe.',
-        },
-        { role: 'user', content: prompt },
-      ],
-      temperature: 0.7,
-    }),
-  });
+  if (!XAI_API_KEY) throw new Error('xAI key is missing');
+  const candidateModels = Array.from(
+    new Set([XAI_MODEL, 'grok-3-mini', 'grok-2-latest'].filter(Boolean)),
+  );
+  let lastError: any = null;
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    throw new Error(`xAI request failed (${response.status}): ${text}`);
+  for (const model of candidateModels) {
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('xai-timeout')), 15000);
+      });
+      const response: any = await Promise.race([
+        fetch(XAI_CHAT_ENDPOINT, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${XAI_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You are a concise assistant for a social app. Keep responses useful and safe.',
+              },
+              { role: 'user', content: prompt },
+            ],
+            temperature: 0.7,
+          }),
+        }),
+        timeout,
+      ]);
+
+      if (!response?.ok) {
+        const text = await response?.text?.().catch(() => '');
+        const err = new Error(`xAI request failed (${response?.status || 'n/a'}): ${text}`);
+        (err as any).status = response?.status;
+        throw err;
+      }
+
+      const payload: any = await response.json();
+      const content = normalizeXaiContent(payload?.choices?.[0]?.message?.content);
+      if (!content) throw new Error('xAI returned an empty response');
+      return content;
+    } catch (error: any) {
+      lastError = error;
+      const status = Number(error?.status || 0);
+      // Authorization errors should fail fast instead of retrying model names.
+      if (status === 401 || status === 403) break;
+    }
   }
 
-  const payload: any = await response.json();
-  const content = payload?.choices?.[0]?.message?.content;
-  if (!content || typeof content !== 'string') {
-    throw new Error('xAI returned an empty response');
-  }
-  return content.trim();
+  throw lastError || new Error('xAI request failed');
 }
 
 export async function generateText(prompt: string): Promise<string> {

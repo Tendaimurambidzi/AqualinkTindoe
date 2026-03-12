@@ -44,7 +44,12 @@ try {
 } catch {}
 
 // xAI key for in-app AI responses.
-export const XAI_API_KEY = String(localSecrets?.XAI_API_KEY || '');
+export const XAI_API_KEY = String(
+  localSecrets?.XAI_API_KEY ||
+    localSecrets?.xaiApiKey ||
+    localSecrets?.GROK_API_KEY ||
+    '',
+);
 export const XAI_MODEL = 'grok-3-mini';
 
 // Internet search key for VIBE HUNT web results (Brave Search API).

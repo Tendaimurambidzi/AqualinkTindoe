@@ -127,18 +127,6 @@ async function addPing(userId, data) {
     const channelId = await resolveAndroidChannelId(userId, type);
 
     const message = {
-      notification: {
-        title: isCallInvite
-          ? 'Incoming call'
-          : data.type === 'splash'
-          ? 'New Splash!'
-          : data.type === 'echo'
-          ? 'New Echo'
-          : data.type === 'hug'
-          ? 'New Hug!'
-          : 'Notification',
-        body: data.text || 'You have a new notification',
-      },
       data: {
         type,
         waveId: data.waveId || '',
@@ -155,15 +143,6 @@ async function addPing(userId, data) {
       android: {
         priority: 'high',
         ttl: isCallInvite ? 30000 : 3600000,
-        notification: {
-          channelId: channelId,
-          notificationCount: newBadgeCount,
-          defaultVibrateTimings: true,
-          defaultSound: false,
-          notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
-          visibility: 'PUBLIC',
-          tag: isCallInvite ? `call_${String(data.callId || '')}` : undefined,
-        },
       },
       apns: {
         payload: {
@@ -175,6 +154,30 @@ async function addPing(userId, data) {
       },
       tokens: tokens,
     };
+    if (isCallInvite) {
+      // Data-only call invite so client can raise native full-screen incoming call UI.
+      message.android.notification = undefined;
+    } else {
+      message.notification = {
+        title:
+          data.type === 'splash'
+            ? 'New Splash!'
+            : data.type === 'echo'
+            ? 'New Echo'
+            : data.type === 'hug'
+            ? 'New Hug!'
+            : 'Notification',
+        body: data.text || 'You have a new notification',
+      };
+      message.android.notification = {
+        channelId: channelId,
+        notificationCount: newBadgeCount,
+        defaultVibrateTimings: true,
+        defaultSound: false,
+        notificationPriority: 'PRIORITY_HIGH',
+        visibility: 'PUBLIC',
+      };
+    }
     
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`Sent ${response.successCount} notifications to user ${userId} with badge count ${newBadgeCount}`);
@@ -588,18 +591,6 @@ async function addPingModular(userId, data) {
     const channelId = await resolveAndroidChannelId(userId, type);
 
     const message = {
-      notification: {
-        title: isCallInvite
-          ? 'Incoming call'
-          : data.type === 'splash'
-          ? 'New Splash!'
-          : data.type === 'echo'
-          ? 'New Echo'
-          : data.type === 'hug'
-          ? 'New Hug!'
-          : 'Notification',
-        body: data.text || 'You have a new notification',
-      },
       data: {
         type,
         waveId: data.waveId || '',
@@ -616,14 +607,6 @@ async function addPingModular(userId, data) {
       android: {
         priority: 'high',
         ttl: isCallInvite ? 30000 : 3600000,
-        notification: {
-          channelId: channelId,
-          defaultVibrateTimings: true,
-          defaultSound: false,
-          notificationPriority: isCallInvite ? 'PRIORITY_MAX' : 'PRIORITY_HIGH',
-          visibility: 'PUBLIC',
-          tag: isCallInvite ? `call_${String(data.callId || '')}` : undefined,
-        },
       },
       apns: {
         payload: {
@@ -635,6 +618,29 @@ async function addPingModular(userId, data) {
       },
       tokens: tokens,
     };
+    if (isCallInvite) {
+      // Data-only call invite so client can raise native full-screen incoming call UI.
+      message.android.notification = undefined;
+    } else {
+      message.notification = {
+        title:
+          data.type === 'splash'
+            ? 'New Splash!'
+            : data.type === 'echo'
+            ? 'New Echo'
+            : data.type === 'hug'
+            ? 'New Hug!'
+            : 'Notification',
+        body: data.text || 'You have a new notification',
+      };
+      message.android.notification = {
+        channelId: channelId,
+        defaultVibrateTimings: true,
+        defaultSound: false,
+        notificationPriority: 'PRIORITY_HIGH',
+        visibility: 'PUBLIC',
+      };
+    }
     
     const response = await admin.messaging().sendEachForMulticast(message);
     console.log(`Sent ${response.successCount} notifications to user ${userId}`);

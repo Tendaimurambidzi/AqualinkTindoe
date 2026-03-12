@@ -108,10 +108,18 @@ const VideoWithTapControls: React.FC<Props> = ({
   const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
   const [resolvedUri, setResolvedUri] = useState<string | null>(null);
   const wasActiveRef = useRef<boolean>(false);
+  const remoteUriRef = useRef<string | null>(null);
+  const cachedUriRef = useRef<string | null>(null);
   const forceMuted = muted === true;
 
   useEffect(() => {
     setIsLoading(true);
+    setVideoCompleted(false);
+    setSuppressAutoPlayUntilInactive(false);
+    hasCalledOnPlay.current = false;
+    if (isActive && !paused) {
+      setInternalPaused(false);
+    }
   }, [resolvedUri]);
 
   // Keep mute state controlled by props when provided (e.g. overlay audio mode),
@@ -317,11 +325,15 @@ const VideoWithTapControls: React.FC<Props> = ({
 
     if (!sourceUri) {
       setResolvedUri(null);
+      remoteUriRef.current = null;
+      cachedUriRef.current = null;
       return () => {
         cancelled = true;
       };
     }
 
+    remoteUriRef.current = sourceUri;
+    cachedUriRef.current = null;
     setResolvedUri(sourceUri);
 
     const isRemote = /^https?:\/\//i.test(sourceUri);
@@ -339,7 +351,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             Platform.OS === 'android' && !cachedPath.startsWith('file://')
               ? `file://${cachedPath}`
               : cachedPath;
-          setResolvedUri(localUri);
+          cachedUriRef.current = localUri;
         } else if ((isActive || shouldPreload) && !cachedPath) {
           cacheVideo(sourceUri)
             .then(path => {
@@ -348,7 +360,7 @@ const VideoWithTapControls: React.FC<Props> = ({
                 Platform.OS === 'android' && !path.startsWith('file://')
                   ? `file://${path}`
                   : path;
-              setResolvedUri(localUri);
+              cachedUriRef.current = localUri;
             })
             .catch(error => {
               console.warn('Background video cache failed:', error);
@@ -443,6 +455,16 @@ const VideoWithTapControls: React.FC<Props> = ({
         onBuffer={handleBuffer}
         onError={(err: any) => {
           setIsLoading(false);
+          const remoteUri = remoteUriRef.current;
+          const cachedUri = cachedUriRef.current;
+          const currentUri = resolvedUri || null;
+          if (remoteUri && cachedUri && currentUri === remoteUri) {
+            // Network source failed, retry once from cache.
+            setResolvedUri(cachedUri);
+          } else if (remoteUri && cachedUri && currentUri === cachedUri) {
+            // Cached source failed, retry once from network.
+            setResolvedUri(remoteUri);
+          }
           onError?.(err);
         }}
         onEnd={handleEnd}

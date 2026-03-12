@@ -65,10 +65,11 @@ export const formatAwaySince = (timestamp) => {
   if (isNaN(date.getTime())) return '';
 
   const now = new Date();
-  const isToday = date.toDateString() === now.toDateString();
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  const isYesterday = date.toDateString() === yesterday.toDateString();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const awayDayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.floor(
+    (todayStart.getTime() - awayDayStart.getTime()) / (24 * 60 * 60 * 1000),
+  );
 
   const timeStr = date.toLocaleTimeString('en-US', {
     hour: '2-digit',
@@ -76,17 +77,16 @@ export const formatAwaySince = (timestamp) => {
     hour12: false,
   });
 
-  if (isToday) {
-    return `today at ${timeStr}`;
-  } else if (isYesterday) {
-    return `yesterday at ${timeStr}`;
-  } else {
-    // WhatsApp: show date as "dd/mm/yyyy at HH:MM"
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = date.getFullYear();
-    return `${day}/${month}/${year} at ${timeStr}`;
-  }
+  if (dayDiff <= 0) return timeStr; // same-day: time only
+  if (dayDiff === 1) return 'yesterday';
+  if (dayDiff < 7) return `${dayDiff} days ago`;
+  if (dayDiff < 14) return '1 week ago';
+  if (dayDiff < 21) return '2 weeks ago';
+  if (dayDiff < 28) return '3 weeks ago';
+  if (dayDiff < 60) return '1 month ago';
+  if (dayDiff < 365) return `${Math.floor(dayDiff / 30)} months ago`;
+  const years = Math.floor(dayDiff / 365);
+  return years <= 1 ? '1 year ago' : `${years} years ago`;
 };
 
 export const formatPresenceLastSeenExact = (timestamp) => {

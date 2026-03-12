@@ -6,8 +6,13 @@ import 'react-native-gesture-handler';
 // This fixes "[runtime not ready]" errors from worklets-driven libraries.
 import 'react-native-reanimated';
 import { AppRegistry } from 'react-native';
-import App from './App';
 import { name as appName } from './app.json';
+
+// Temporary noise reduction while namespaced RNFirebase APIs are migrated to modular v22+.
+// Must be set before importing App (which imports Firebase modules).
+globalThis.RNFB_SILENCE_MODULAR_DEPRECATION_WARNINGS = true;
+
+const App = require('./App').default;
 
 const PENDING_INCOMING_CALL_STORAGE_KEY = 'aqualink_pending_incoming_call_v1';
 

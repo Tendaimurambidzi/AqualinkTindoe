@@ -10,7 +10,7 @@ import OnlineUsersList from '../components/OnlineUsersList';
 import ProfilePreviewModal from '../components/ProfilePreviewModal';
 import database from '@react-native-firebase/database';
 import firestore from '@react-native-firebase/firestore';
-import { formatPresenceLastSeenExact } from '../services/timeUtils';
+import { formatAwaySince } from '../services/timeUtils';
 import { Asset } from 'react-native-image-picker';
 import { appTokens } from '../theme/tokens';
 
@@ -232,10 +232,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [audioControlsVisible, setAudioControlsVisible] = useState(false);
   const [overlayAudioLoaded, setOverlayAudioLoaded] = useState(false);
   const [overlayAudioStarted, setOverlayAudioStarted] = useState(false);
+  const [overlayAudioFailed, setOverlayAudioFailed] = useState(false);
+  const [overlayAudioSyncBypassed, setOverlayAudioSyncBypassed] = useState(false);
   const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
   const [preferFallbackVideoSource, setPreferFallbackVideoSource] = useState(false);
   const audioControlsTimerRef = useRef<any>(null);
+  const overlayAudioWatchdogRef = useRef<any>(null);
 
   useEffect(() => {
     setPreferFallbackVideoSource(false);
@@ -244,7 +247,27 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   useEffect(() => {
     setOverlayAudioLoaded(false);
     setOverlayAudioStarted(false);
+    setOverlayAudioFailed(false);
+    setOverlayAudioSyncBypassed(false);
   }, [item.id, item.audio?.uri]);
+
+  useEffect(() => {
+    if (overlayAudioWatchdogRef.current) {
+      clearTimeout(overlayAudioWatchdogRef.current);
+      overlayAudioWatchdogRef.current = null;
+    }
+    if (!overlayAudioLoaded || overlayAudioStarted || overlayAudioFailed) return;
+    overlayAudioWatchdogRef.current = setTimeout(() => {
+      setOverlayAudioSyncBypassed(true);
+      overlayAudioWatchdogRef.current = null;
+    }, 2200);
+    return () => {
+      if (overlayAudioWatchdogRef.current) {
+        clearTimeout(overlayAudioWatchdogRef.current);
+        overlayAudioWatchdogRef.current = null;
+      }
+    };
+  }, [overlayAudioFailed, overlayAudioLoaded, overlayAudioStarted]);
 
   const revealAudioControlsTemporarily = useCallback(() => {
     setAudioControlsVisible(true);
@@ -278,7 +301,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
 
     const ONLINE_GRACE_MS = 60 * 1000;
-    const postFallbackTs = (item as any)?.createdAt || (item as any)?.timestamp || new Date();
 
     const toMillis = (input: any): number => {
       if (!input) return 0;
@@ -305,11 +327,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
     if (!ownerUid) {
       setIsHereNow(false);
-      setStatus('Away Since: ...');
+      setStatus('Away since ...');
       return;
     }
 
-    const fallbackLastSeen = userData[ownerUid]?.lastSeen || postFallbackTs;
+    const fallbackLastSeen = userData[ownerUid]?.lastSeen || null;
     let firestoreOnline = userData[ownerUid]?.online === true;
     let rtdbOnline = false;
     let firestoreLastSeen: any = fallbackLastSeen;
@@ -335,12 +357,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         setStatus('Here Now!');
         return;
       }
-      const resolvedLastSeen = mostRecentLastSeen || mostRecentActive || null;
+      const resolvedLastSeen = mostRecentLastSeen || null;
       const exact =
-        formatPresenceLastSeenExact(resolvedLastSeen) ||
-        formatPresenceLastSeenExact(userData[ownerUid]?.lastSeen || null);
+        formatAwaySince(resolvedLastSeen) ||
+        formatAwaySince(userData[ownerUid]?.lastSeen || null);
       setIsHereNow(false);
-      setStatus(exact ? `Away Since: ${exact}` : 'Away Since: ...');
+      setStatus(exact ? `Away since ${exact}` : 'Away since ...');
     };
 
     refreshStatus();
@@ -349,7 +371,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     const unsubscribeFs = firestore().doc(`users/${ownerUid}`).onSnapshot((doc) => {
       const data = doc?.data() || {};
       firestoreOnline = data?.online === true;
-      firestoreLastSeen = data?.lastSeen || fallbackLastSeen;
+      firestoreLastSeen = data?.lastSeen || null;
       firestoreLastActiveAt = data?.lastActiveAt || data?.lastHeartbeat || null;
       refreshStatus();
     });
@@ -420,11 +442,20 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   // Always honor overlay audio on visual posts so image/video + audio plays as intended.
   const hasOverlayAudio = !!item.audio?.uri && !audioOnlyPost && (hasVideoMedia || hasImageMedia);
   const overlayReady = !hasOverlayAudio || overlayAudioLoaded;
-  const audioPlaySynced = shouldPlay && item.id === activeVideoId && overlayReady;
+  const audioPlaySynced =
+    shouldPlay &&
+    item.id === activeVideoId &&
+    overlayReady &&
+    !overlayAudioFailed &&
+    !overlayAudioSyncBypassed;
   const videoPlaySynced =
     shouldPlay &&
     item.id === activeVideoId &&
-    (!hasOverlayAudio || !hasVideoMedia || overlayAudioStarted);
+    (!hasOverlayAudio ||
+      !hasVideoMedia ||
+      overlayAudioStarted ||
+      overlayAudioFailed ||
+      overlayAudioSyncBypassed);
   const shouldPreload = preloadedVideoIds.has(item.id);
   const near = Math.abs(index - currentIndex) <= 1;
   const hasUnknownMediaFile =
@@ -433,8 +464,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
   const mediaEdits = item.mediaEdits || null;
   const fallbackAwayText = (() => {
-    const exact = formatPresenceLastSeenExact(userData[item.ownerUid || '']?.lastSeen || null);
-    return exact ? `Away Since: ${exact}` : 'Away Since: ...';
+    const exact = formatAwaySince(userData[item.ownerUid || '']?.lastSeen || null);
+    return exact ? `Away since ${exact}` : 'Away since ...';
   })();
   const storyTheme = useMemo(() => {
     const seed = String(item.id || '')
@@ -1205,7 +1236,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       playWhenInactive={false}
                       ignoreSilentSwitch="ignore"
                       onLoad={() => setOverlayAudioLoaded(true)}
-                      onError={() => setOverlayAudioLoaded(true)}
+                      onError={() => {
+                        setOverlayAudioLoaded(true);
+                        setOverlayAudioFailed(true);
+                        setOverlayAudioSyncBypassed(true);
+                      }}
                       onProgress={(e: any) => {
                         if (!overlayAudioStarted && Number(e?.currentTime || 0) > 0) {
                           setOverlayAudioStarted(true);
@@ -1339,7 +1374,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       playWhenInactive={false}
                       ignoreSilentSwitch="ignore"
                       onLoad={() => setOverlayAudioLoaded(true)}
-                      onError={() => setOverlayAudioLoaded(true)}
+                      onError={() => {
+                        setOverlayAudioLoaded(true);
+                        setOverlayAudioFailed(true);
+                        setOverlayAudioSyncBypassed(true);
+                      }}
                       onProgress={(e: any) => {
                         if (!overlayAudioStarted && Number(e?.currentTime || 0) > 0) {
                           setOverlayAudioStarted(true);

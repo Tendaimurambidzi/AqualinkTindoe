@@ -2517,6 +2517,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     uid: string;
     name: string;
     photo: string | null;
+    liveId?: string | null;
+    liveTitle?: string | null;
   } | null>(null);
   
   // Debug logging for myUid changes
@@ -3551,9 +3553,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   useEffect(() => {
     const incomingModalVisible = !!incomingDirectCall && !activeDirectCall;
+    const ringSuppressedForCall =
+      !!incomingDirectCall?.id &&
+      !!ringSuppressedCallId &&
+      incomingDirectCall.id === ringSuppressedCallId;
     const shouldRingWithModal =
       incomingModalVisible &&
       incomingCallAction === null &&
+      !ringSuppressedForCall &&
       incomingDirectCall?.status === 'ringing';
     if (!shouldRingWithModal) {
       stopIncomingCallRingtone();
@@ -3569,6 +3576,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     activeDirectCall,
     incomingCallAction,
     incomingDirectCall,
+    ringSuppressedCallId,
     startIncomingCallRingtone,
     stopIncomingCallRingtone,
   ]);
@@ -3585,8 +3593,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   useEffect(() => {
     if (!incomingDirectCall) {
       setIncomingCallAction(null);
+      setRingSuppressedCallId(null);
+      return;
     }
-  }, [incomingDirectCall]);
+    if (
+      ringSuppressedCallId &&
+      incomingDirectCall.id &&
+      incomingDirectCall.id !== ringSuppressedCallId
+    ) {
+      setRingSuppressedCallId(null);
+    }
+  }, [incomingDirectCall, ringSuppressedCallId]);
 
   useEffect(() => {
     return () => {
@@ -4306,6 +4323,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [incomingCallAction, setIncomingCallAction] = useState<
     'accept' | 'decline' | null
   >(null);
+  const [ringSuppressedCallId, setRingSuppressedCallId] = useState<string | null>(
+    null,
+  );
   const [pendingNativeAutoAnswerCallId, setPendingNativeAutoAnswerCallId] =
     useState<string | null>(null);
   const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([]);
@@ -6178,12 +6198,39 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const refresh = async () => {
       try {
         const now = Date.now();
-        const snap = await firestore()
-          .collection('users')
-          .orderBy('lastActiveAt', 'desc')
-          .limit(120)
-          .get();
+        const [snap, liveSnap] = await Promise.all([
+          firestore()
+            .collection('users')
+            .orderBy('lastActiveAt', 'desc')
+            .limit(120)
+            .get(),
+          firestore()
+            .collection('live')
+            .where('status', '==', 'live')
+            .limit(80)
+            .get(),
+        ]);
         if (cancelled) return;
+        const liveMatch = (liveSnap?.docs || [])
+          .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+          .find(
+            row =>
+              String(row.hostUid || '') &&
+              String(row.hostUid || '') !== myUid &&
+              watchersSet.has(String(row.hostUid || '')),
+          );
+        if (liveMatch) {
+          setHereNowFeedAlert({
+            uid: String(liveMatch.hostUid),
+            name: String(
+              liveMatch.hostName || liveMatch.displayName || liveMatch.hostUid || 'Viber',
+            ),
+            photo: (liveMatch.hostPhoto || null) as string | null,
+            liveId: String(liveMatch.id),
+            liveTitle: String(liveMatch.title || liveMatch.liveTitle || 'Drift Expo'),
+          });
+          return;
+        }
         const first = (snap?.docs || [])
           .map(doc => {
             const d = doc.data() || {};
@@ -6202,7 +6249,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .sort((a, b) => b.lastMs - a.lastMs)[0];
         setHereNowFeedAlert(
           first
-            ? { uid: first.uid, name: first.name, photo: first.photo }
+            ? {
+                uid: first.uid,
+                name: first.name,
+                photo: first.photo,
+                liveId: null,
+                liveTitle: null,
+              }
             : null,
         );
       } catch {
@@ -6547,6 +6600,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowLive(true);
         if (invite.liveId && needsApproval) {
           requestToDriftForLiveId(invite.liveId, invite.fromName);
+        }
+        if (invite.liveId && normalizedChannel) {
+          try {
+            const me = auth?.()?.currentUser;
+            if (me?.uid) {
+              await firestore()
+                .collection(`live/${invite.liveId}/invite_status`)
+                .doc(me.uid)
+                .set(
+                  {
+                    uid: me.uid,
+                    status: 'accepted',
+                    channel: normalizedChannel,
+                    liveChannel: normalizedChannel,
+                    updatedAt: firestore.FieldValue.serverTimestamp(),
+                    respondedAt: firestore.FieldValue.serverTimestamp(),
+                  },
+                  { merge: true },
+                );
+            }
+          } catch {}
         }
       }
 
@@ -9153,6 +9227,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // Shared helper to update counts with update() then merge fallback
   // Note: counts for splashes/echoes are updated server-side via Cloud Functions triggers
+  const applyLocalHugDelta = useCallback((waveId: string, delta: number) => {
+    if (!waveId || !delta) return;
+    const applyToList = (list: Vibe[]) =>
+      list.map(item =>
+        item.id === waveId
+          ? {
+              ...item,
+              counts: {
+                ...item.counts,
+                hugs: Math.max(0, Number(item.counts?.hugs || 0) + delta),
+              },
+            }
+          : item,
+      );
+    setWaveStats(prev => ({
+      ...prev,
+      [waveId]: {
+        ...(prev[waveId] || {}),
+        hugs: Math.max(0, Number(prev[waveId]?.hugs || 0) + delta),
+      },
+    }));
+    setWaves(prev => applyToList(prev));
+    setVibesFeed(prev => applyToList(prev));
+    setPublicFeed(prev => applyToList(prev));
+    setPostFeed(prev => applyToList(prev));
+  }, []);
                     
   const onSplash = async (splashType?: 'regular' | 'octopus_hug') => {
     if (splashBusy || !currentWave) return;
@@ -9166,6 +9266,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           {
             text: 'Regular Splash',
             onPress: () => onSplash('regular'),
+          },
+          {
+            text: 'Octopus Hug',
+            onPress: () => onSplash('octopus_hug'),
           },
           { text: 'Cancel', style: 'cancel' },
         ]
@@ -9245,6 +9349,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               persistLocalHuggedWaves(next);
               return next;
             });
+            applyLocalHugDelta(waveId, -1);
           }
         } catch (err) {
           console.error('Error removing splash:', err);
@@ -9301,6 +9406,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               persistLocalHuggedWaves(next);
               return next;
             });
+            applyLocalHugDelta(waveId, 1);
           }
           // Send ping notification to wave owner
           if (currentWave.ownerUid && currentWave.ownerUid !== user.uid) {
@@ -9921,165 +10027,82 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Post interaction handlers for feed
   const handlePostHug = async (wave: Vibe) => {
     try {
-      const user = auth().currentUser;
-      if (!user) {
+      const currentUser = auth().currentUser;
+      if (!currentUser) {
         Alert.alert('Sign in required', 'Please sign in to hug.');
         return;
       }
-      if (localHuggedWaves.has(wave.id)) {
-        notifySuccess('you already hugged this vibe');
-        return;
+      const alreadyHugged = localHuggedWaves.has(wave.id);
+      const delta = alreadyHugged ? -1 : 1;
+      applyLocalHugDelta(wave.id, delta);
+      setLocalHuggedWaves(prev => {
+        const next = new Set(prev);
+        if (alreadyHugged) next.delete(wave.id);
+        else next.add(wave.id);
+        persistLocalHuggedWaves(next);
+        return next;
+      });
+      setUserStats(prev => {
+        const nextValue = Math.max(0, Number(prev.hugsMade || 0) + delta);
+        const next = { ...prev, hugsMade: nextValue };
+        persistLocalHugsMade(nextValue);
+        return next;
+      });
+      if (alreadyHugged) {
+        await firestore()
+          .collection('waves')
+          .doc(wave.id)
+          .collection('splashes')
+          .doc(currentUser.uid)
+          .delete();
+      } else {
+        await firestore()
+          .collection('waves')
+          .doc(wave.id)
+          .collection('splashes')
+          .doc(currentUser.uid)
+          .set(
+            {
+              userUid: currentUser.uid,
+              waveId: wave.id,
+              userName: currentUser.displayName || 'Anonymous',
+              userPhoto: currentUser.photoURL || null,
+              splashType: 'octopus_hug',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
       }
-                    
-      const splashType = 'octopus_hug';
-                    
-      // Update local waveStats immediately
-      const currentCount = waveStats[wave.id]?.hugs || 0;
-      const newCount = currentCount + 1;
-                    
-      // Update local waveStats
-      setWaveStats(prev => ({
-        ...prev,
-        [wave.id]: {
-          ...prev[wave.id],
-          hugs: newCount,
-        },
-      }));
-                    
-      // Update feed arrays for immediate UI feedback
-      console.log('Updating hug count for wave:', wave.id, 'new count:', (wave.counts?.hugs || 0) + 1);
-      setVibesFeed(prev => prev.map(vibe =>
-        vibe.id === wave.id
-          ? { ...vibe, counts: {
-              splashes: vibe.counts?.splashes || 0,
-              echoes: vibe.counts?.echoes || 0,
-              hugs: (vibe.counts?.hugs || 0) + 1
-            }}
-          : vibe
-      ));
-      setPublicFeed(prev => prev.map(vibe =>
-        vibe.id === wave.id
-          ? { ...vibe, counts: {
-              splashes: vibe.counts?.splashes || 0,
-              echoes: vibe.counts?.echoes || 0,
-              hugs: (vibe.counts?.hugs || 0) + 1
-            }}
-          : vibe
-      ));
-      setPostFeed(prev => prev.map(vibe =>
-        vibe.id === wave.id
-          ? { ...vibe, counts: {
-              splashes: vibe.counts?.splashes || 0,
-              echoes: vibe.counts?.echoes || 0,
-              hugs: (vibe.counts?.hugs || 0) + 1
-            }}
-          : vibe
-      ));
-                    
-      // Update waves state for the main feed
-      setWaves(prev => prev.map(w => w.id === wave.id ? { ...w, counts: { ...w.counts, hugs: (w.counts?.hugs || 0) + 1 } } : w));
-                    
-      // Check if user has already hugged this wave
-      // const splashDoc = await firestore()
-      //   .collection('waves')
-      //   .doc(wave.id)
-      //   .collection('splashes')
-      //   .doc(user.uid)
-      //   .get();
-                    
-      // const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug' && (wave.counts?.hugs || 0) > 0;
-                    
-      // if (hasHugged) {
-      //   // User has already hugged, show a friendly message
-      //   setTimeout(() => {
-      //     notifySuccess('You already hugged this vibe with 8 arms!');
-      //   }, 0);
-      //   return;
-      // }
-                    
-      // Add the hug
-      await firestore()
-        .collection('waves')
-        .doc(wave.id)
-        .collection('splashes')
-        .doc(user.uid)
-        .set({
-          userUid: user.uid,
-          waveId: wave.id,
-          userName: user.displayName || 'Anonymous',
-          userPhoto: user.photoURL || null,
-          splashType: splashType,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-                    
-      // Update user stats
       await firestore()
         .collection('users')
-        .doc(user.uid)
-        .set({
-          stats: {
-            hugsMade: firestore.FieldValue.increment(1),
+        .doc(currentUser.uid)
+        .set(
+          {
+            stats: {
+              hugsMade: firestore.FieldValue.increment(delta),
+            },
           },
-        }, { merge: true });
-                    
-      // Update local vibe counts immediately for real-time display
-      setVibesFeed(prev => prev.map(vibe => 
-        vibe.id === wave.id 
-          ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
-          : vibe
-      ));
-      setPublicFeed(prev => prev.map(vibe => 
-        vibe.id === wave.id 
-          ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
-          : vibe
-      ));
-                    
-      // Send notification to wave owner (only for new hugs, not unhugs)
-      // if (wave.ownerUid && wave.ownerUid !== user.uid) {
-      //   await firestore()
-      //     .collection('users')
-      //     .doc(wave.ownerUid)
-      //     .collection('pings')
-      //     .add({
-      //       type: 'splash',
-      //       message: `${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
-      //       fromUid: user.uid,
-      //       fromName: user.displayName || 'Someone',
-      //       waveId: wave.id,
-      //       splashType: splashType,
-      //       read: false,
-      //       createdAt: firestore.FieldValue.serverTimestamp(),
-      //     });
-      // }
-                    
-      // Show success message immediately without any sound
-      setLocalHuggedWaves(prev => {
-        const next = new Set(prev);
-        next.add(wave.id);
-        persistLocalHuggedWaves(next);
-        return next;
-      });
-      setUserStats(prev => {
-        const next = { ...prev, hugsMade: (prev.hugsMade || 0) + 1 };
-        persistLocalHugsMade(next.hugsMade);
-        return next;
-      });
-      notifySuccess('you have hugged this vibe');
+          { merge: true },
+        );
+      notifySuccess(alreadyHugged ? 'hug removed' : 'you have hugged this vibe');
     } catch (error) {
       console.error('Hug error:', error);
+      const rollbackDelta = localHuggedWaves.has(wave.id) ? 1 : -1;
+      applyLocalHugDelta(wave.id, rollbackDelta);
       setLocalHuggedWaves(prev => {
-        if (prev.has(wave.id)) return prev;
         const next = new Set(prev);
-        next.add(wave.id);
+        if (rollbackDelta > 0) next.add(wave.id);
+        else next.delete(wave.id);
         persistLocalHuggedWaves(next);
         return next;
       });
       setUserStats(prev => {
-        const next = { ...prev, hugsMade: (prev.hugsMade || 0) + 1 };
-        persistLocalHugsMade(next.hugsMade);
+        const nextValue = Math.max(0, Number(prev.hugsMade || 0) + rollbackDelta);
+        const next = { ...prev, hugsMade: nextValue };
+        persistLocalHugsMade(nextValue);
         return next;
       });
-      notifySuccess('you have hugged this vibe');
+      notifyError('Could not update hug right now.');
     }
   };
                     
@@ -12229,6 +12252,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setShowSendMessage(false);
     setShowInbox(true);
   };
+
+  const handleHereNowReadyReply = useCallback(async () => {
+    const alert = hereNowFeedAlert;
+    if (!alert) return;
+    let liveId = String(alert.liveId || '').trim();
+    let liveTitle = alert.liveTitle || 'Drift Expo';
+    if (!liveId) {
+      try {
+        const liveSnap = await firestore()
+          .collection('live')
+          .where('status', '==', 'live')
+          .limit(80)
+          .get();
+        const liveMatch = (liveSnap?.docs || [])
+          .map(doc => ({ id: doc.id, ...(doc.data() as any) }))
+          .find(row => String(row.hostUid || '') === alert.uid);
+        if (liveMatch?.id) {
+          liveId = String(liveMatch.id);
+          liveTitle = String(liveMatch.title || liveMatch.liveTitle || 'Drift Expo');
+        }
+      } catch {}
+    }
+    if (liveId) {
+      await openLiveRequestFlow(liveId, alert.name, liveTitle);
+      return;
+    }
+    openMessageThread(alert.uid, alert.name);
+  }, [hereNowFeedAlert, openLiveRequestFlow]);
   
   const closeUnifiedPostModal = () => {
     setShowUnifiedPostModal(false);
@@ -12431,7 +12482,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 }
                 setForceOutgoingRingback(false);
                 stopCallRingback();
-                setActiveDirectCall(call);
+                setActiveDirectCall({
+                  ...call,
+                  channelName: call.channelName || `aqua_call_${call.id}`,
+                });
                 setActiveDirectCallRole(role);
                 setIncomingDirectCall(prev =>
                   prev && prev.id === call.id ? null : prev,
@@ -12742,7 +12796,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!call?.id || !myUid) return;
     if (incomingCallAction) return;
     setIncomingCallAction('accept');
+    setRingSuppressedCallId(call.id);
     stopIncomingCallRingtone();
+    stopCallRingback();
+    setForceOutgoingRingback(false);
     hideNativeIncomingCallNotification();
     if (call.callType === 'video') {
       const ok = await ensureCamMicPermissionsAndroid();
@@ -12770,6 +12827,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     // Promote to active immediately so ringtone stops and call connection starts without waiting for Firestore round-trip.
     const optimisticAcceptedCall: DirectCallSession = {
       ...call,
+      channelName: call.channelName || `aqua_call_${call.id}`,
       status: 'accepted',
       acceptedAt: call.acceptedAt || new Date(),
       agoraToken: call.agoraToken || null,
@@ -12801,18 +12859,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             .collection(`users/${callerUid}/direct_calls`)
             .doc(call.id)
         : null;
-      const freshToken = call.agoraToken || (await fetchDirectCallAgoraToken(call.channelName));
       const batch = firestore().batch();
-      const patch = {
+      const acceptedPatch = {
         status: 'accepted',
         acceptedAt: firestore.FieldValue.serverTimestamp(),
-        agoraToken: freshToken || null,
       };
-      batch.set(myCallRef, patch, { merge: true });
+      batch.set(myCallRef, acceptedPatch, { merge: true });
       if (peerCallRef) {
-        batch.set(peerCallRef, patch, { merge: true });
+        batch.set(peerCallRef, acceptedPatch, { merge: true });
       }
       await batch.commit();
+      const freshToken = call.agoraToken || (await fetchDirectCallAgoraToken(call.channelName));
+      if (freshToken) {
+        const tokenBatch = firestore().batch();
+        tokenBatch.set(myCallRef, { agoraToken: freshToken }, { merge: true });
+        if (peerCallRef) {
+          tokenBatch.set(peerCallRef, { agoraToken: freshToken }, { merge: true });
+        }
+        await tokenBatch.commit();
+      }
       upsertCallHistory(call, 'accepted');
       setActiveDirectCall(prev => {
         if (!prev || prev.id !== call.id) return prev;
@@ -12829,6 +12894,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [
     fetchDirectCallAgoraToken,
+    stopCallRingback,
+    setForceOutgoingRingback,
     hideNativeIncomingCallNotification,
     incomingCallAction,
     incomingDirectCall,
@@ -12843,6 +12910,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const call = incomingDirectCall;
     if (incomingCallAction) return;
     setIncomingCallAction('decline');
+    setRingSuppressedCallId(call?.id || null);
     stopIncomingCallRingtone();
     hideNativeIncomingCallNotification();
     if (!call?.id || !myUid) {
@@ -13253,7 +13321,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const signalCallerName = String(
             data?.fromName || data?.callerName || 'User',
           ).trim();
-          const signalChannel = String(data?.channelName || '').trim();
+          const signalChannel = String(
+            data?.channelName || `aqua_call_${callId}`,
+          ).trim();
           // Surface call modal immediately, then hydrate with authoritative doc data.
           setIncomingDirectCall(prev => {
             if (prev?.id === callId) return prev;
@@ -13387,6 +13457,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const signalCallerName = String(
           data?.fromName || data?.callerName || 'User',
         ).trim();
+        const signalChannel = String(
+          data?.channelName || `aqua_call_${callId}`,
+        ).trim();
         // Invite-badge style behavior: surface UI immediately from signal payload,
         // then let direct-call doc watcher hydrate authoritative values.
         setIncomingDirectCall(prev => {
@@ -13399,7 +13472,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             calleeName: profileName || auth()?.currentUser?.displayName || 'User',
             callerAvatar: null,
             calleeAvatar: auth()?.currentUser?.photoURL || null,
-            channelName: String(data?.channelName || '').trim(),
+            channelName: signalChannel,
             callType: signalCallType,
             status: 'ringing',
             createdAt: data?.createdAt || new Date(),
@@ -13417,7 +13490,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromUid: signalCallerUid,
           fromName: signalCallerName,
           callerName: signalCallerName,
-          channelName: String(data?.channelName || '').trim(),
+          channelName: signalChannel,
         });
       } catch {}
     };
@@ -14328,9 +14401,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Pressable
               style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
-              onPress={() =>
-                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
-              }
+              onPress={handleHereNowReadyReply}
             >
               <Animated.View
                 style={[
@@ -14362,12 +14433,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             </Pressable>
             <Pressable
               style={[styles.driftAlertButton, { width: 86, marginLeft: 8 }]}
-              onPress={() =>
-                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
-              }
+              onPress={handleHereNowReadyReply}
             >
               <Text style={[styles.driftAlertText, { fontSize: 14 }]}>
-                Reply
+                Ready Reply
               </Text>
             </Pressable>
           </View>
@@ -21707,69 +21776,13 @@ const DirectCallModal = ({
                   <Text style={{ color: 'white' }}>Remote video connected</Text>
                 </View>
               )
-            ) : !cameraMuted ? (
-              <View style={{ flex: 1 }}>
-                {AVView ? (
-                  <AVView
-                    style={StyleSheet.absoluteFill}
-                    showLocalVideo={true}
-                    videoSourceType={
-                      (VideoSourceType &&
-                        (VideoSourceType.VideoSourceCameraPrimary ??
-                          VideoSourceType.VideoSourceCamera)) ||
-                      0
-                    }
-                    renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
-                  />
-                ) : RtcSurfaceView ? (
-                  React.createElement(RtcSurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: 0,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcTextureView ? (
-                  React.createElement(RtcTextureView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: 0,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcLocalView?.SurfaceView ? (
-                  React.createElement(RtcLocalView.SurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    renderMode: VideoRenderMode?.Fit ?? 2,
-                  })
-                ) : (
-                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ color: 'white' }}>Starting camera preview...</Text>
-                  </View>
-                )}
-                <View
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    bottom: callBottomSpacing(insets.bottom, 'callerPreviewLabel'),
-                    alignItems: 'center',
-                  }}
-                >
-                    <Text style={{ color: 'white' }}>
-                      {role === 'caller'
-                        ? `${callerRingingConfirmed ? 'Ringing' : 'Calling'} ${counterpart}...`
-                        : `Connecting to ${counterpart}...`}
-                    </Text>
-                </View>
-              </View>
             ) : (
               <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: 'white' }}>Waiting for remote video...</Text>
               </View>
             )}
 
-            {!cameraMuted && !!remoteUid && (
+            {!cameraMuted && (
               <View
                 style={{
                   position: 'absolute',
@@ -22832,7 +22845,12 @@ const LiveStreamModal = ({
         const uidBase = Number.isFinite(liveUid as any)
           ? Number(liveUid as any)
           : 0;
-        const uidCandidates = Array.from(new Set([uidBase, 0]));
+        const primaryUid =
+          Number.isFinite(uidBase) && uidBase > 0
+            ? uidBase
+            : (Date.now() % 2147483646) + 1;
+        const fallbackUid = ((primaryUid + 7919) % 2147483646) + 1;
+        const uidCandidates = Array.from(new Set([primaryUid, fallbackUid]));
         const tokenCandidates: Array<string | null> = ALLOW_TOKENLESS_DRIFT
           ? [null]
           : [];
