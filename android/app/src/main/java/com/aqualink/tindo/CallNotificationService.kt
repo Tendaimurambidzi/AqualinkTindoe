@@ -8,17 +8,20 @@ import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
 
 class CallNotificationService : Service() {
-
     companion object {
+        private const val TAG = "CallNotificationSvc"
         const val CHANNEL_ID = "aqualink_calls_lg_cat_ring_v2"
         const val NOTIFICATION_ID = 1001
         const val ACTION_ANSWER = "com.aqualink.tindo.ANSWER_CALL"
         const val ACTION_DECLINE = "com.aqualink.tindo.DECLINE_CALL"
-        
+
         fun startService(context: Context, callerName: String, callId: String, callType: String) {
+            Log.i(TAG, "startService callId=$callId caller=$callerName type=$callType")
             val intent = Intent(context, CallNotificationService::class.java).apply {
                 putExtra("callerName", callerName)
                 putExtra("callId", callId)
@@ -32,6 +35,10 @@ class CallNotificationService : Service() {
         }
         
         fun stopService(context: Context) {
+            try {
+                val nm = context.getSystemService(NotificationManager::class.java)
+                nm?.cancel(NOTIFICATION_ID)
+            } catch (_: Exception) {}
             val intent = Intent(context, CallNotificationService::class.java)
             context.stopService(intent)
         }
@@ -48,9 +55,20 @@ class CallNotificationService : Service() {
         val callerName = intent?.getStringExtra("callerName") ?: "Unknown"
         val callId = intent?.getStringExtra("callId") ?: ""
         val callType = intent?.getStringExtra("callType") ?: "audio"
+        Log.i(TAG, "onStartCommand callId=$callId caller=$callerName type=$callType")
+        try {
+            val seedIntent = Intent().apply {
+                putExtra("action", "incoming_call")
+                putExtra("callId", callId)
+                putExtra("callerName", callerName)
+                putExtra("callType", callType)
+            }
+            CallIntentStore.cacheFromIntent(this, seedIntent)
+        } catch (_: Exception) {}
         
         val notification = createCallNotification(callerName, callId, callType)
         startForeground(NOTIFICATION_ID, notification)
+        launchIncomingCallActivity(callerName, callId, callType)
         
         return START_NOT_STICKY
     }
@@ -77,7 +95,7 @@ class CallNotificationService : Service() {
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 1000, 500, 1000)
                 lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                setShowBadge(false)
+                setShowBadge(true)
                 try {
                     setBypassDnd(true)
                 } catch (_: Exception) {}
@@ -129,8 +147,7 @@ class CallNotificationService : Service() {
         }
         
         val callTypeText = if (callType == "video") "Video Call" else "Audio Call"
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentTitle("Incoming $callTypeText")
             .setContentText("$callerName is calling...")
@@ -145,11 +162,51 @@ class CallNotificationService : Service() {
             .setVibrate(longArrayOf(0, 1000, 500, 1000))
             .addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent)
-            .build()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val person = Person.Builder()
+                .setName(callerName)
+                .build()
+            builder.setStyle(
+                NotificationCompat.CallStyle.forIncomingCall(
+                    person,
+                    declinePendingIntent,
+                    answerPendingIntent,
+                ),
+            )
+            builder.setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        }
+
+        return builder.build()
+    }
+
+    private fun launchIncomingCallActivity(callerName: String, callId: String, callType: String) {
+        if (callId.isBlank()) return
+        try {
+            Log.i(TAG, "launchIncomingCallActivity callId=$callId")
+            val launchIntent = Intent(this, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_NO_USER_ACTION
+                putExtra("callId", callId)
+                putExtra("action", "incoming_call")
+                putExtra("callerName", callerName)
+                putExtra("callType", callType)
+            }
+            CallIntentStore.cacheFromIntent(this, launchIntent)
+            startActivity(launchIntent)
+        } catch (e: Exception) {
+            Log.e(TAG, "launchIncomingCallActivity failed", e)
+        }
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm?.cancel(NOTIFICATION_ID)
+        } catch (_: Exception) {}
         stopForeground(true)
     }
 }

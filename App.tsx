@@ -1,5 +1,4 @@
-﻿
-import React, {
+﻿import React, {
   useEffect,
   useMemo,
   useState,
@@ -3553,7 +3552,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   useEffect(() => {
     const incomingModalVisible = !!incomingDirectCall && !activeDirectCall;
     const shouldRingWithModal =
-      incomingModalVisible && incomingDirectCall?.status === 'ringing';
+      incomingModalVisible &&
+      incomingCallAction === null &&
+      incomingDirectCall?.status === 'ringing';
     if (!shouldRingWithModal) {
       stopIncomingCallRingtone();
       return;
@@ -3566,6 +3567,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => clearTimeout(timer);
   }, [
     activeDirectCall,
+    incomingCallAction,
     incomingDirectCall,
     startIncomingCallRingtone,
     stopIncomingCallRingtone,
@@ -4304,6 +4306,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [incomingCallAction, setIncomingCallAction] = useState<
     'accept' | 'decline' | null
   >(null);
+  const [pendingNativeAutoAnswerCallId, setPendingNativeAutoAnswerCallId] =
+    useState<string | null>(null);
   const [callHistory, setCallHistory] = useState<CallHistoryEntry[]>([]);
   const callDocUnsubRef = useRef<null | (() => void)>(null);
   const callTimeoutRef = useRef<any>(null);
@@ -4375,9 +4379,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const msg =
         kind === 'positive'
           ? rawMsg
-          : rawMsg.endsWith('⚠️')
+          : rawMsg.endsWith('.')
           ? rawMsg
-          : `${rawMsg} ⚠️`;
+          : `${rawMsg}.`;
       if (toastTimerRef.current) {
         clearTimeout(toastTimerRef.current as any);
         toastTimerRef.current = null;
@@ -6513,18 +6517,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
 
       if (action === 'join') {
+        let resolvedChannel = String(
+          invite.liveChannel || invite.directCallChannel || '',
+        ).trim();
+        if (!resolvedChannel && invite.liveId) {
+          try {
+            const liveSnap = await firestore().doc(`live/${invite.liveId}`).get();
+            const liveData = liveSnap?.data?.() || {};
+            resolvedChannel = String(
+              liveData.liveChannel ||
+                liveData.channel ||
+                liveData.agoraChannel ||
+                '',
+            ).trim();
+          } catch {}
+        }
+        const normalizedChannel = resolvedChannel
+          ? resolvedChannel.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64)
+          : null;
+        const needsApproval = !normalizedChannel && !!invite.liveId;
         setLiveInviteJoinPreset({
           liveId: invite.liveId,
-          channel:
-            invite.liveChannel ||
-            invite.directCallChannel ||
-            null,
+          channel: normalizedChannel,
           title: invite.liveTitle || null,
           fromName: invite.fromName,
+          requireApproval: needsApproval,
           nonce: Date.now(),
         });
         setShowLive(true);
-        if (invite.liveId) {
+        if (invite.liveId && needsApproval) {
           requestToDriftForLiveId(invite.liveId, invite.fromName);
         }
       }
@@ -8771,10 +8792,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (text) return text;
     if (message?.attachmentUrl || message?.attachmentName) {
       const at = String(message?.attachmentType || '').toLowerCase();
-      if (at.startsWith('image/')) return '🖼️ Image attachment';
-      if (at.startsWith('video/')) return '🎥 Video attachment';
-      if (at.startsWith('audio/')) return '🎵 Audio attachment';
-      return '📎 Attachment';
+      if (at.startsWith('image/')) return 'Image attachment';
+      if (at.startsWith('video/')) return 'Video attachment';
+      if (at.startsWith('audio/')) return 'Audio attachment';
+      return 'Attachment';
     }
     return '';
   };
@@ -9143,7 +9164,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         'How would you like to show appreciation?',
         [
           {
-            text: '💦 Regular Splash',
+            text: 'Regular Splash',
             onPress: () => onSplash('regular'),
           },
           { text: 'Cancel', style: 'cancel' },
@@ -9284,7 +9305,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           // Send ping notification to wave owner
           if (currentWave.ownerUid && currentWave.ownerUid !== user.uid) {
             const userName = profileName || user.displayName || 'Someone';
-            const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💦';
+            const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💧';
             const splashText = splashType === 'octopus_hug' ? 'sent an octopus hug' : 'glowed';
             // Always use the poster's name from the feed for notifications
             let posterName = '';
@@ -9971,7 +9992,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // if (hasHugged) {
       //   // User has already hugged, show a friendly message
       //   setTimeout(() => {
-      //     notifySuccess('You already hugged this vibe with 8 arms! 🐙');
+      //     notifySuccess('You already hugged this vibe with 8 arms!');
       //   }, 0);
       //   return;
       // }
@@ -10021,7 +10042,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       //     .collection('pings')
       //     .add({
       //       type: 'splash',
-      //       message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
+      //       message: `${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
       //       fromUid: user.uid,
       //       fromName: user.displayName || 'Someone',
       //       waveId: wave.id,
@@ -10186,25 +10207,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
                     
   const getPaymentOptions = (country: string): string[] => {
-    const countryCode = country.split(' ')[0];
-    switch (countryCode) {
-      case '🇰🇪': // Kenya
-        return ['M-Pesa', 'Airtel Money', 'Equity Bank', 'KCB Bank', 'Co-operative Bank'];
-      case '🇺🇬': // Uganda
-        return ['MTN Mobile Money', 'Airtel Money', 'Centenary Bank', 'Stanbic Bank', 'DFCU Bank'];
-      case '🇹🇿': // Tanzania
-        return ['M-Pesa', 'Tigo Pesa', 'Airtel Money', 'NMB Bank', 'CRDB Bank'];
-      case '🇷🇼': // Rwanda
-        return ['MTN Mobile Money', 'Airtel Money', 'BK Bank', 'Equity Bank Rwanda'];
-      case '🇬🇭': // Ghana
-        return ['MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money', 'GCB Bank', 'Zenith Bank'];
-      case '🇳🇬': // Nigeria
-        return ['MTN Mobile Money', 'Airtel Money', '9Mobile', 'First Bank', 'GTBank', 'Zenith Bank'];
-      case '🇿🇦': // South Africa (if needed)
-        return ['MTN Mobile Money', 'Vodacom Money', 'FNB Bank', 'Absa Bank', 'Standard Bank'];
-      default:
-        return ['Mobile Money', 'Bank Transfer'];
+    const normalized = String(country || '').toLowerCase();
+    if (normalized.includes('kenya')) {
+      return ['M-Pesa', 'Airtel Money', 'Equity Bank', 'KCB Bank', 'Co-operative Bank'];
     }
+    if (normalized.includes('uganda')) {
+      return ['MTN Mobile Money', 'Airtel Money', 'Centenary Bank', 'Stanbic Bank', 'DFCU Bank'];
+    }
+    if (normalized.includes('tanzania')) {
+      return ['M-Pesa', 'Tigo Pesa', 'Airtel Money', 'NMB Bank', 'CRDB Bank'];
+    }
+    if (normalized.includes('rwanda')) {
+      return ['MTN Mobile Money', 'Airtel Money', 'BK Bank', 'Equity Bank Rwanda'];
+    }
+    if (normalized.includes('ghana')) {
+      return ['MTN Mobile Money', 'Vodafone Cash', 'AirtelTigo Money', 'GCB Bank', 'Zenith Bank'];
+    }
+    if (normalized.includes('nigeria')) {
+      return ['MTN Mobile Money', 'Airtel Money', '9Mobile', 'First Bank', 'GTBank', 'Zenith Bank'];
+    }
+    if (normalized.includes('south africa')) {
+      return ['MTN Mobile Money', 'Vodacom Money', 'FNB Bank', 'Absa Bank', 'Standard Bank'];
+    }
+    return ['Mobile Money', 'Bank Transfer'];
   };
                     
   // Crew (Follow/Unfollow) handlers
@@ -12742,6 +12767,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     }
+    // Promote to active immediately so ringtone stops and call connection starts without waiting for Firestore round-trip.
+    const optimisticAcceptedCall: DirectCallSession = {
+      ...call,
+      status: 'accepted',
+      acceptedAt: call.acceptedAt || new Date(),
+      agoraToken: call.agoraToken || null,
+    };
+    setIncomingDirectCall(null);
+    setActiveDirectCall(optimisticAcceptedCall);
+    setActiveDirectCallRole('callee');
+    watchDirectCallDoc(call.id, 'callee');
     try {
       if (!call.channelName || !call.callerUid) {
         try {
@@ -12752,18 +12788,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const fresh = mapDirectCallDoc(freshSnap);
           if (fresh) {
             call = fresh;
-            setIncomingDirectCall(prev => (prev?.id === fresh.id ? fresh : prev));
+            setActiveDirectCall(prev => (prev?.id === fresh.id ? { ...fresh, status: 'accepted' } : prev));
           }
         } catch {}
       }
       const myCallRef = firestore()
         .collection(`users/${myUid}/direct_calls`)
         .doc(call.id);
-      const peerCallRef = firestore()
-        .collection(`users/${call.callerUid}/direct_calls`)
-        .doc(call.id);
-      const freshToken =
-        call.agoraToken || (await fetchDirectCallAgoraToken(call.channelName));
+      const callerUid = String(call.callerUid || '').trim();
+      const peerCallRef = callerUid
+        ? firestore()
+            .collection(`users/${callerUid}/direct_calls`)
+            .doc(call.id)
+        : null;
+      const freshToken = call.agoraToken || (await fetchDirectCallAgoraToken(call.channelName));
       const batch = firestore().batch();
       const patch = {
         status: 'accepted',
@@ -12771,19 +12809,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         agoraToken: freshToken || null,
       };
       batch.set(myCallRef, patch, { merge: true });
-      batch.set(peerCallRef, patch, { merge: true });
+      if (peerCallRef) {
+        batch.set(peerCallRef, patch, { merge: true });
+      }
       await batch.commit();
       upsertCallHistory(call, 'accepted');
-      setIncomingDirectCall(null);
-      setActiveDirectCall({
-        ...call,
-        status: 'accepted',
-        agoraToken: freshToken || call.agoraToken || null,
+      setActiveDirectCall(prev => {
+        if (!prev || prev.id !== call.id) return prev;
+        return {
+          ...prev,
+          status: 'accepted',
+          agoraToken: freshToken || prev.agoraToken || null,
+        };
       });
-      setActiveDirectCallRole('callee');
-      watchDirectCallDoc(call.id, 'callee');
     } catch (err: any) {
-      Alert.alert('Call failed', err?.message || 'Could not accept this call.');
+      console.warn('Accept call sync failed, continuing with local active call', err);
     } finally {
       setIncomingCallAction(null);
     }
@@ -13202,6 +13242,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (data?.type === 'call_invite' && data?.callId && myUid) {
         const callId = String(data.callId || '').trim();
         if (callId) {
+          const signalAction = String(data?.action || '')
+            .trim()
+            .toLowerCase();
+          const signalCallType: DirectCallMode =
+            String(data?.callType || '').toLowerCase() === 'video'
+              ? 'video'
+              : 'audio';
+          const signalCallerUid = String(data?.fromUid || data?.callerUid || '').trim();
+          const signalCallerName = String(
+            data?.fromName || data?.callerName || 'User',
+          ).trim();
+          const signalChannel = String(data?.channelName || '').trim();
+          // Surface call modal immediately, then hydrate with authoritative doc data.
+          setIncomingDirectCall(prev => {
+            if (prev?.id === callId) return prev;
+            return {
+              id: callId,
+              callerUid: signalCallerUid,
+              calleeUid: myUid,
+              callerName: signalCallerName || 'User',
+              calleeName: profileName || auth()?.currentUser?.displayName || 'User',
+              callerAvatar: null,
+              calleeAvatar: auth()?.currentUser?.photoURL || null,
+              channelName: signalChannel,
+              callType: signalCallType,
+              status: 'ringing',
+              createdAt: data?.createdAt || new Date(),
+              acceptedAt: null,
+              endedAt: null,
+              endedBy: null,
+              agoraToken: null,
+              calleeNotifiedAt: null,
+            } as DirectCallSession;
+          });
+          if (signalAction === 'answer_call') {
+            setPendingNativeAutoAnswerCallId(callId);
+          }
           hideNativeIncomingCallNotification();
           watchDirectCallDoc(callId, 'callee');
           try {
@@ -13248,10 +13325,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       displayFeed,
       mapDirectCallDoc,
       myUid,
+      profileName,
       hideNativeIncomingCallNotification,
       watchDirectCallDoc,
     ],
   );
+
+  useEffect(() => {
+    if (!pendingNativeAutoAnswerCallId) return;
+    if (incomingCallAction) return;
+    if (activeDirectCall?.id === pendingNativeAutoAnswerCallId) {
+      setPendingNativeAutoAnswerCallId(null);
+      return;
+    }
+    if (incomingDirectCall?.id !== pendingNativeAutoAnswerCallId) return;
+    acceptIncomingDirectCall()
+      .catch(() => {})
+      .finally(() => {
+        setPendingNativeAutoAnswerCallId(null);
+      });
+  }, [
+    acceptIncomingDirectCall,
+    activeDirectCall?.id,
+    incomingCallAction,
+    incomingDirectCall?.id,
+    pendingNativeAutoAnswerCallId,
+  ]);
 
   // Mirror live-invite signal style for calls: react to call_invite from mentions/pings
   // so callee gets the in-app call panel even when pings delivery is delayed.
@@ -13380,6 +13479,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let cancelled = false;
     (async () => {
       try {
+        const callNotificationModule = (NativeModules as any)?.CallNotification;
+        if (callNotificationModule?.getInitialCallData) {
+          const nativeData = await callNotificationModule.getInitialCallData();
+          const nativeCallId = String(nativeData?.callId || '').trim();
+          const nativeType = String(nativeData?.type || 'call_invite').toLowerCase();
+          if (
+            !cancelled &&
+            nativeCallId &&
+            (nativeType === 'call_invite' || nativeType === 'incoming_call')
+          ) {
+            handleNotificationNavigation({
+              ...nativeData,
+              type: 'call_invite',
+              callId: nativeCallId,
+            });
+            try {
+              await callNotificationModule?.clearInitialCallData?.();
+            } catch {}
+            return;
+          }
+        }
+      } catch {}
+      try {
         const raw = await AsyncStorage.getItem(PENDING_INCOMING_CALL_STORAGE_KEY);
         if (!raw) return;
         await AsyncStorage.removeItem(PENDING_INCOMING_CALL_STORAGE_KEY);
@@ -13397,6 +13519,51 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     })();
     return () => {
       cancelled = true;
+    };
+  }, [handleNotificationNavigation, myUid]);
+
+  // When app is already mounted and receives a new launch intent while backgrounded,
+  // re-consume native call extras on resume so incoming call panel is not missed.
+  useEffect(() => {
+    if (!myUid) return;
+    const callNotificationModule = (NativeModules as any)?.CallNotification;
+    if (!callNotificationModule?.getInitialCallData) return;
+
+    let disposed = false;
+    const consumeNativeCallIntent = async () => {
+      try {
+        const nativeData = await callNotificationModule.getInitialCallData();
+        const callId = String(nativeData?.callId || '').trim();
+        const type = String(nativeData?.type || 'call_invite').toLowerCase();
+        if (
+          disposed ||
+          !callId ||
+          (type !== 'call_invite' && type !== 'incoming_call')
+        ) {
+          return;
+        }
+        handleNotificationNavigation({
+          ...nativeData,
+          type: 'call_invite',
+          callId,
+        });
+        try {
+          await callNotificationModule?.clearInitialCallData?.();
+        } catch {}
+      } catch {}
+    };
+
+    consumeNativeCallIntent();
+    const sub = AppState.addEventListener('change', next => {
+      if (next === 'active') {
+        consumeNativeCallIntent();
+      }
+    });
+    return () => {
+      disposed = true;
+      try {
+        sub.remove();
+      } catch {}
     };
   }, [handleNotificationNavigation, myUid]);
                     
@@ -14382,7 +14549,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         <Text style={{ color: 'white', fontSize: 20, fontWeight: 'bold' }}>facebook</Text>
         <View style={{ flex: 1 }} />
         <TouchableOpacity style={{ marginLeft: 10 }}>
-          <Text style={{ color: 'white', fontSize: 18 }}>🔍</Text>
+          <Text style={{ color: 'white', fontSize: 18 }}>🔔</Text>
         </TouchableOpacity>
         <TouchableOpacity style={{ marginLeft: 10 }}>
           <Text style={{ color: 'white', fontSize: 18 }}>💬</Text>
@@ -14562,7 +14729,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             {/* End of feed message */}
             {!isLoadingMore && !hasMoreItems && displayFeed.length > 0 && (
               <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f0f2f5' }}>
-                <Text style={{ color: '#666', fontSize: 14, fontStyle: 'italic' }}>You've reached the end of the ocean 🌊</Text>
+                <Text style={{ color: '#666', fontSize: 14, fontStyle: 'italic' }}>You've reached the end of the ocean.</Text>
               </View>
             )}
             </>
@@ -14600,8 +14767,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.dolphinIcon}>✨</Text>
-                  <Text style={styles.topLabel}>DROP A WAVE</Text>
+                  <Text style={styles.dolphinIcon}>🌊</Text>
+                  <Text style={styles.topLabel}>DROP A VIBE</Text>
                 </Pressable>
                 {/* VIBE ALERTS - Placeholder */}
                 <Pressable
@@ -14614,7 +14781,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <View style={{ position: 'relative' }}>
-                    <Text style={styles.pingsIcon}>📫</Text>
+                    <Text style={styles.pingsIcon}>🔔</Text>
                     {unreadAlertsCount > 0 && (
                       <View style={styles.notificationBadge}>
                         <Text style={styles.notificationBadgeText}>
@@ -14635,7 +14802,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.dolphinIcon}>🔎</Text>
+                  <Text style={styles.dolphinIcon}>🧭</Text>
                   <Text style={styles.topLabel}>VIBE HUNT</Text>
                 </Pressable>
                     
@@ -14649,60 +14816,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.umbrellaIcon}>⛱️</Text>
+                  <Text style={styles.umbrellaIcon}>🪬</Text>
                   <Text style={styles.topLabel}>MY AURA</Text>
-                </Pressable>
-                {/* SET SAIL */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeOut}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open adventure space"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.boatIcon}>⛵</Text>
-                  <Text style={styles.topLabel}>ADVENTURE SPACE</Text>
-                </Pressable>
-                {/* SCHOOL MODE */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeMode}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open study hub"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.schoolIcon}>🏫</Text>
-                  <Text style={styles.topLabel}>STUDY HUB</Text>
-                </Pressable>
-                {/* AI ASSISTANT */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleAiAssistant}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open AI assistant"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.aiIcon}>🤖</Text>
-                  <Text style={styles.topLabel}>AI ASSISTANT</Text>
-                </Pressable>
-                {/* NOTICE BOARD */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeBoard}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open bulletin board"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.noticeIcon}>📋</Text>
-                  <Text style={styles.topLabel}>BULLETIN BOARD</Text>
                 </Pressable>
                 {/* THE BRIDGE */}
                 <Pressable
@@ -14719,22 +14834,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 >
                   <Text style={styles.gearIcon}>⚙️</Text>
                   <Text style={styles.topLabel}>COMMAND CENTRE</Text>
-                </Pressable>
-                {/* PLACE HOLDER */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    Alert.alert('Tools', 'Additional tools will appear here.');
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open tools"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.placeholderIcon}>🔮</Text>
-                  <Text style={styles.topLabel}>TOOLS</Text>
                 </Pressable>
               </ScrollView>
             )}
@@ -15865,7 +15964,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 marginRight: 12,
                               }}>
                                 {selectedNotifications.has(item.id) && (
-                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>✓</Text>
+                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>?</Text>
                                 )}
                               </View>
                             )}
@@ -16138,7 +16237,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           marginTop: 2,
                         }}>
                           {selectedThreadMessages.has(message.id || `msg_${index}`) && (
-                            <Text style={{ color: 'black', fontSize: 14, fontWeight: 'bold' }}>✓</Text>
+                            <Text style={{ color: 'black', fontSize: 14, fontWeight: 'bold' }}>?</Text>
                           )}
                         </View>
                       )}
@@ -16221,7 +16320,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               }}
                             >
                               <Text style={styles.messageAttachmentActionText}>
-                                📎 Open attachment
+                                Open attachment
                               </Text>
                             </Pressable>
                             {(() => {
@@ -16245,8 +16344,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 >
                                   <Text style={styles.messageAttachmentDownloadText}>
                                     {isDownloading
-                                      ? `⬇ Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
-                                      : '⬇ Download'}
+                                      ? `? Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
+                                      : '? Download'}
                                   </Text>
                                 </Pressable>
                               );
@@ -16540,7 +16639,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     {threadMessageAttachment ? (
                       <View style={{ marginTop: 10, padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}>
                         <Text style={{ color: 'white', fontSize: 12 }}>
-                          📎 {threadMessageAttachment.fileName || threadMessageAttachment.uri}
+                          Attachment: {threadMessageAttachment.fileName || threadMessageAttachment.uri}
                         </Text>
                         <Pressable onPress={() => setThreadMessageAttachment(null)} style={{ marginTop: 6 }}>
                           <Text style={{ color: '#9ED8FF', fontSize: 12, fontWeight: '700' }}>Remove attachment</Text>
@@ -16634,7 +16733,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             style={[styles.dismissBtn, { position: 'absolute', top: 50, right: 20 }]}
             onPress={() => setZoomedProfilePic(null)}
           >
-            <Text style={styles.dismissText}>✕</Text>
+            <Text style={styles.dismissText}>?</Text>
           </Pressable>
         </View>
       </Modal>
@@ -16804,21 +16903,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               Share
                             </Text>
                           </Pressable>
-                          <Pressable
-                            onPress={() => anchorWave(w)}
-                            style={[
-                              styles.closeBtn,
-                              {
-                                paddingVertical: 4,
-                                paddingHorizontal: 8,
-                                marginTop: 4,
-                              },
-                            ]}
-                          >
-                            <Text style={[styles.closeText, { fontSize: 12 }]}>
-                              Anchor
-                            </Text>
-                          </Pressable>
                         </View>
                       </View>
                     </View>
@@ -16983,7 +17067,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       justifyContent: 'center',
                       alignItems: 'center'
                     }}>
-                      <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎥 Video</Text>
+                      <Text style={{ color: '#00C2FF', fontSize: 16 }}>Video</Text>
                       <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
                         {unifiedPostMedia.fileName || 'Selected Video'}
                       </Text>
@@ -18375,7 +18459,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       }
                     }}
                   >
-                    <Text style={[styles.logbookActionText, { fontSize: 18 }]}>🛟 Safe Harbor</Text>
+                    <Text style={[styles.logbookActionText, { fontSize: 18 }]}>Safe Harbor</Text>
                     <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
                       {safeHarborExpanded ? 'Hide guardian controls' : 'Reveal guardian controls'}
                     </Text>
@@ -18385,7 +18469,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🧒 Shallow Waters Mode</Text>
+                          <Text style={styles.logbookActionText}>Shallow Waters Mode</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Age-appropriate content for users under 13</Text>
                         </View>
                         <Pressable
@@ -18406,7 +18490,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🚨 Lifeguard Alerts</Text>
+                          <Text style={styles.logbookActionText}>Lifeguard Alerts</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>AI monitors content for safety</Text>
                         </View>
                         <Pressable
@@ -18427,7 +18511,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🤝 Buddy System</Text>
+                          <Text style={styles.logbookActionText}>Buddy System</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Parent/guardian can monitor activity</Text>
                         </View>
                         <Pressable
@@ -18448,7 +18532,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🚫 No Current Zone</Text>
+                          <Text style={styles.logbookActionText}>No Current Zone</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Disable all direct messages</Text>
                         </View>
                         <Pressable
@@ -18469,7 +18553,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
                       >
                         <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🙈 Hide Restricted Content</Text>
+                          <Text style={styles.logbookActionText}>Hide Restricted Content</Text>
                           <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Filter mature or sensitive content</Text>
                         </View>
                         <Pressable
@@ -18981,7 +19065,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAISchoolFeedback('general content', 'general')}
                     >
-                      <Text style={styles.logbookActionText}>📝 Get Feedback</Text>
+                      <Text style={styles.logbookActionText}>Get Feedback</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Get AI feedback on your content
                       </Text>
@@ -18990,7 +19074,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIStudyTip()}
                     >
-                      <Text style={styles.logbookActionText}>📚 Study Tips</Text>
+                      <Text style={styles.logbookActionText}>Study Tips</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Get personalized study advice
                       </Text>
@@ -18999,7 +19083,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIQuizQuestion('general knowledge')}
                     >
-                      <Text style={styles.logbookActionText}>❓ Quiz Question</Text>
+                      <Text style={styles.logbookActionText}>Quiz Question</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Generate a quiz question
                       </Text>
@@ -19017,7 +19101,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIExploreContent('ocean', 'story')}
                     >
-                      <Text style={styles.logbookActionText}>🌊 Ocean Story</Text>
+                      <Text style={styles.logbookActionText}>Ocean Story</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Generate an ocean-themed story
                       </Text>
@@ -19026,7 +19110,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAICuriosityQuestion('science')}
                     >
-                      <Text style={styles.logbookActionText}>🤔 Curiosity Question</Text>
+                      <Text style={styles.logbookActionText}>Curiosity Question</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Ask an interesting science question
                       </Text>
@@ -19035,7 +19119,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIExplorationPath('ocean exploration')}
                     >
-                      <Text style={styles.logbookActionText}>🗺️ Exploration Path</Text>
+                      <Text style={styles.logbookActionText}>Exploration Path</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Plan an exploration journey
                       </Text>
@@ -19053,7 +19137,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAICreativePrompt('writing')}
                     >
-                      <Text style={styles.logbookActionText}>✍️ Writing Prompt</Text>
+                      <Text style={styles.logbookActionText}>Writing Prompt</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Get creative writing inspiration
                       </Text>
@@ -19062,7 +19146,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIPersonalizedAdvice('creative projects', 'brainstorming')}
                     >
-                      <Text style={styles.logbookActionText}>💡 Creative Advice</Text>
+                      <Text style={styles.logbookActionText}>Creative Advice</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Get personalized creative guidance
                       </Text>
@@ -19080,7 +19164,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIAnalyzeAndSuggest('content analysis', 'improvement')}
                     >
-                      <Text style={styles.logbookActionText}>🔍 Content Analysis</Text>
+                      <Text style={styles.logbookActionText}>Content Analysis</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Analyze and improve your content
                       </Text>
@@ -19089,7 +19173,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       style={styles.logbookAction}
                       onPress={() => handleAIAnalyzeAndSuggest('engagement strategies', 'engagement')}
                     >
-                      <Text style={styles.logbookActionText}>📈 Engagement Tips</Text>
+                      <Text style={styles.logbookActionText}>Engagement Tips</Text>
                       <Text style={[styles.hint, { fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace', marginTop: 4 }]}>
                         Get engagement improvement suggestions
                       </Text>
@@ -19219,7 +19303,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             Platform.OS === 'ios' ? 'Courier New' : 'monospace',
                         }}
                       >
-                        🌍 Change Country
+                        Change Country
                       </Text>
                     </Pressable>
                     {selectedCountry === 'Zimbabwe' && (
@@ -19424,7 +19508,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     )
                   }
                 >
-                  <Text style={styles.logbookActionText}>💰 View Earnings</Text>
+                  <Text style={styles.logbookActionText}>View Earnings</Text>
                 </Pressable>
                 <Pressable
                   style={styles.logbookAction}
@@ -19436,7 +19520,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }
                 >
                   <Text style={styles.logbookActionText}>
-                    💸 Withdraw Funds
+                    Withdraw Funds
                   </Text>
                 </Pressable>
                 <Pressable
@@ -19447,19 +19531,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }}
                 >
                   <Text style={styles.logbookActionText}>
-                    ⚙️ Payment Settings
+                    Payment Settings
                   </Text>
                 </Pressable>
                 <Pressable
                   style={styles.logbookAction}
                   onPress={() =>
                     Alert.alert(
-                      '🐙 Octopus Bonus',
+                      'Octopus Bonus',
                       'When your waves reach 10,000 octopus hugs, you earn $100!',
                     )
                   }
                 >
-                  <Text style={styles.logbookActionText}>🐙 Octopus Bonus</Text>
+                  <Text style={styles.logbookActionText}>Octopus Bonus</Text>
                 </Pressable>
                 <View style={{ marginTop: 24 }}>
                   <Text style={{ color: 'white', fontWeight: '700' }}>
@@ -19481,7 +19565,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Text>
                   )}
                   <Text style={{ color: '#8A2BE2', fontWeight: '700', marginTop: 8 }}>
-                    🐙 Octopus Bonus: .00
+                    Octopus Bonus: .00
                   </Text>
                   <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 }}>
                     (Earn $100 per 10,000 hugs on your waves)
@@ -19798,7 +19882,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         justifyContent: 'center',
                         alignItems: 'center'
                       }}>
-                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎥 Video</Text>
+                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>Video</Text>
                         <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
                           {messageAttachment.fileName || 'Selected Video'}
                         </Text>
@@ -19812,7 +19896,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         justifyContent: 'center',
                         alignItems: 'center'
                       }}>
-                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎵 Audio</Text>
+                        <Text style={{ color: '#00C2FF', fontSize: 16 }}>Audio</Text>
                         <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
                           {messageAttachment.fileName || 'Selected Audio'}
                         </Text>
@@ -19858,7 +19942,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     delayPressOut={0}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.logbookActionText}>🖼️ Photo</Text>
+                    <Text style={styles.logbookActionText}>Photo</Text>
                   </Pressable>
                   <Pressable
                     onPress={async () => {
@@ -19882,7 +19966,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     delayPressOut={0}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.logbookActionText}>🎥 Video</Text>
+                    <Text style={styles.logbookActionText}>Video</Text>
                   </Pressable>
                   <Pressable
                     onPress={async () => {
@@ -19917,7 +20001,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     delayPressOut={0}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.logbookActionText}>🎵 Audio</Text>
+                    <Text style={styles.logbookActionText}>Audio</Text>
                   </Pressable>
                   <Pressable
                     onPress={async () => {
@@ -19933,7 +20017,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     delayPressOut={0}
                     activeOpacity={0.7}
                   >
-                    <Text style={styles.logbookActionText}>💾 SD</Text>
+                    <Text style={styles.logbookActionText}>SD</Text>
                   </Pressable>
                 </View>
 
@@ -20505,7 +20589,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       );
                     }}
                   >
-                    <Text style={styles.waveOptionsItemTitle}>🚫 Block User</Text>
+                    <Text style={styles.waveOptionsItemTitle}>Block User</Text>
                     <Text style={styles.waveOptionsItemDescription}>
                       Prevent this user from seeing your waves
                     </Text>
@@ -20522,7 +20606,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       openMessageThread(targetUid, targetName);
                     }}
                   >
-                    <Text style={styles.waveOptionsItemTitle}>💬 Echo Vibe</Text>
+                    <Text style={styles.waveOptionsItemTitle}>Echo Vibe</Text>
                     <Text style={styles.waveOptionsItemDescription}>
                       Send an echo vibe to this vibe master
                     </Text>
@@ -20561,7 +20645,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       );
                     }}
                   >
-                    <Text style={styles.waveOptionsItemTitle}>📞 Call</Text>
+                    <Text style={styles.waveOptionsItemTitle}>Call</Text>
                     <Text style={styles.waveOptionsItemDescription}>
                       Start an audio or video call with this user
                     </Text>
@@ -20791,7 +20875,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               fontWeight: 'bold',
               marginRight: 8 
             }}>
-              📫
+              🔔
             </Text>
             <Text style={{ 
               fontSize: 16, 
@@ -21789,7 +21873,7 @@ const DirectCallModal = ({
           </View>
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 80 }}>🎧</Text>
+            <Text style={{ fontSize: 80 }}>👤</Text>
             <Text style={{ color: 'white', marginTop: 16, fontSize: 16 }}>
               Audio call in progress
             </Text>
@@ -21849,7 +21933,7 @@ const DirectCallModal = ({
               ]}
               onPress={toggleMic}
             >
-              <Text style={styles.callControlIcon}>{micMuted ? '🎙️' : '🎤'}</Text>
+              <Text style={styles.callControlIcon}>{micMuted ? '🔇' : '🎤'}</Text>
               <Text style={styles.callControlLabel}>{micMuted ? 'Mic Off' : 'Mic On'}</Text>
             </Pressable>
             {call.callType === 'video' && (
@@ -21860,7 +21944,7 @@ const DirectCallModal = ({
                 ]}
                 onPress={toggleCamera}
               >
-                <Text style={styles.callControlIcon}>{cameraMuted ? '📷' : '🎥'}</Text>
+                <Text style={styles.callControlIcon}>{cameraMuted ? '🚫📷' : '🎥'}</Text>
                 <Text style={styles.callControlLabel}>
                   {cameraMuted ? 'Video Off' : 'Video On'}
                 </Text>
@@ -21935,6 +22019,7 @@ const LiveStreamModal = ({
   const [micMuted, setMicMuted] = useState(false);
   const [cameraHidden, setCameraHidden] = useState(false);
   const [isLiveStarted, setIsLiveStarted] = useState(false);
+  const [isLiveEngineReady, setIsLiveEngineReady] = useState(false);
   // Simple inputs for clean setup
   const [channelInput, setChannelInput] = useState<string>(defaultChannel);
   const [tokenInput, setTokenInput] = useState<string>('');
@@ -22139,6 +22224,10 @@ const LiveStreamModal = ({
   useEffect(() => {
     if (visible) return;
     setIsLiveStarted(false);
+    setMicMuted(false);
+    setCameraHidden(false);
+    setShowCommentInput(false);
+    setReplyingToLiveComment(null);
     setAwaitingCaptainApproval(false);
     setJoinApprovalLabel('');
     setLiveDocId(null);
@@ -22616,6 +22705,7 @@ const LiveStreamModal = ({
                     
   useEffect(() => {
     if (!visible || !Agora || !appId) return;
+    setIsLiveEngineReady(false);
     setRemoteParticipantUids([]);
     setPinnedRemoteUid(null);
     (async () => {
@@ -22664,6 +22754,7 @@ const LiveStreamModal = ({
               clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
             });
           } catch {}
+          setIsLiveEngineReady(true)
         } else if (
           Agora?.RtcEngine &&
           typeof Agora.RtcEngine.create === 'function'
@@ -22704,6 +22795,7 @@ const LiveStreamModal = ({
               Agora.ClientRole?.Broadcaster ?? Agora.ClientRole,
             );
           } catch {}
+          setIsLiveEngineReady(true)
         }
       } catch (e) {
         console.warn('Agora init error', e);
@@ -22719,6 +22811,7 @@ const LiveStreamModal = ({
         } catch {}
         engineRef.current = null;
       }
+      setIsLiveEngineReady(false);
       setRemoteParticipantUids([]);
       setPinnedRemoteUid(null);
     };
@@ -22727,7 +22820,7 @@ const LiveStreamModal = ({
   // Join channel when user taps Start Live (tokenless first when enabled)
   useEffect(() => {
     const engine = engineRef.current;
-    if (!visible || !Agora || !engine || !isLiveStarted) return;
+    if (!visible || !Agora || !engine || !isLiveStarted || !isLiveEngineReady) return;
     (async () => {
       try {
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
@@ -22785,6 +22878,27 @@ const LiveStreamModal = ({
           for (const uidNum of uidCandidates) {
             try {
               applyLiveQualityProfile(engine);
+              try {
+                engine.enableAudio?.();
+              } catch {}
+              try {
+                engine.enableLocalAudio?.(true);
+              } catch {}
+              try {
+                engine.muteLocalAudioStream?.(false);
+              } catch {}
+              try {
+                engine.setEnableSpeakerphone?.(true);
+              } catch {}
+              try {
+                engine.enableVideo?.();
+              } catch {}
+              try {
+                engine.enableLocalVideo?.(true);
+              } catch {}
+              try {
+                engine.muteLocalVideoStream?.(false);
+              } catch {}
               if (isV4) {
                 await engine.joinChannel(tok, chan, uidNum, {
                   publishMicrophoneTrack: true,
@@ -22796,6 +22910,8 @@ const LiveStreamModal = ({
                 await engine.joinChannel(tok, chan, uidNum);
               }
               joined = true;
+              setMicMuted(false);
+              setCameraHidden(false);
               setStartError(null);
               break;
             } catch (err) {
@@ -22815,7 +22931,7 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isWifi, liveUid, liveToken, liveChannel]);
+  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, liveChannel]);
                     
   const handleEndDrift = async () => {
     try {
@@ -23722,7 +23838,7 @@ const LiveStreamModal = ({
       {
         id: 'airhorn',
         label: 'Airhorn',
-        icon: '📣',
+        icon: '📯',
         file: 'sci_fi_sound_effect_designed_circuits_hum_10_200831',
       },
     ],
@@ -24259,7 +24375,7 @@ const LiveStreamModal = ({
       `Say something nice about @${username}`,
       message => {
         if (!message?.trim()) return;
-        sendSystemMessage(`📣 Shout-out to @${username}: ${message}`);
+        sendSystemMessage(`Shout-out to @${username}: ${message}`);
         if (userMgmtBase) {
           fetch(`${userMgmtBase}/give-shoutout`, {
             method: 'POST',
@@ -24279,7 +24395,7 @@ const LiveStreamModal = ({
                     
   const awardBadge = (userId: string, username: string) => {
     const badges = [
-      { name: 'Super Fan', icon: '🌟' },
+      { name: 'Super Fan', icon: '⭐' },
       { name: 'Top Supporter', icon: '🏆' },
       { name: 'Helpful Crew', icon: '🤝' },
       { name: 'Rising Star', icon: '🚀' },
@@ -24311,7 +24427,7 @@ const LiveStreamModal = ({
         });
       }
       sendSystemMessage(
-        `🏅 ${username} earned the ${badge.icon} ${badge.name} badge!`,
+        `${username} earned the ${badge.icon} ${badge.name} badge!`,
       );
     } catch {
       Alert.alert('Error', 'Failed to award badge');
@@ -24347,7 +24463,7 @@ const LiveStreamModal = ({
               });
               displaySupporterOnScreen(userId, username);
               sendSystemMessage(
-                `⭐ ${username} is now featured as a Top Supporter!`,
+                `? ${username} is now featured as a Top Supporter!`,
               );
             } catch {
               Alert.alert('Error', 'Failed to feature supporter');
@@ -24554,9 +24670,9 @@ const LiveStreamModal = ({
       ];
       const moderation = [
         { label: 'Make Moderator', action: 'makeModerator', icon: '🛡️' },
-        { label: 'Invite Co-host', action: 'inviteCoHost', icon: '🎤' },
+        { label: 'Invite Co-host', action: 'inviteCoHost', icon: '🤝' },
         { label: 'Invite to Drift', action: 'inviteToDrift', icon: '🌊' },
-        { label: 'Feature Supporter', action: 'featureSupporter', icon: '⭐' },
+        { label: 'Feature Supporter', action: 'featureSupporter', icon: '?' },
       ];
       const restrictive = [
         { label: 'Mute Audio', action: 'mute', icon: '🔇' },
@@ -24564,13 +24680,13 @@ const LiveStreamModal = ({
         { label: 'Timeout', action: 'timeout', icon: '⏱️' },
       ];
       const crewActions = user.id !== myUid ? [
-        { label: 'Block', action: 'block', icon: '🚫' },
+        { label: 'Block', action: 'block', icon: '⛔' },
       ] : [
-        { label: 'Block', action: 'block', icon: '🚫' },
+        { label: 'Block', action: 'block', icon: '⛔' },
       ];
       return [
         ...base,
-        { label: 'Accept To Drift', action: 'acceptDrift', icon: '🤝' },
+        { label: 'Accept To Drift', action: 'acceptDrift', icon: '✅' },
         ...moderation,
         ...restrictive,
         ...crewActions,
@@ -24657,8 +24773,8 @@ const LiveStreamModal = ({
                 <View style={userManagementStyles.userDetails}>
                   <Text style={userManagementStyles.username}>
                     {user.username}
-                    {moderators.includes(user.id) ? ' 🛡️ Mod' : ''}
-                    {coHosts.includes(user.id) ? ' 🎤 Co-host' : ''}
+                    {moderators.includes(user.id) ? ' Mod' : ''}
+                    {coHosts.includes(user.id) ? ' Co-host' : ''}
                   </Text>
                   <Text style={userManagementStyles.userStatus}>
                     {(user.isSpeaking ? 'Speaking ' : '') +
@@ -25086,11 +25202,11 @@ const LiveStreamModal = ({
                   onLongPress={() => {
                     Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, [
                       {
-                        text: 'Splash 💦',
+                        text: 'Splash',
                         onPress: () => onSplashComment(c.id),
                       },
                       {
-                        text: 'Echo Back 🔁',
+                        text: 'Echo Back',
                         onPress: () => onEchoBack(c as any),
                       },
                       { text: 'Cancel', style: 'cancel' },
@@ -25597,14 +25713,14 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={inviteCoHost}
             >
-              <Text style={editorStyles.liveRightIcon}>👥</Text>
+              <Text style={editorStyles.liveRightIcon}>📨</Text>
               <Text style={editorStyles.liveRightLabel}>Invite</Text>
             </Pressable>
             <Pressable
               style={editorStyles.liveRightButton}
               onPress={() => setShowOnlineInvitePanel(v => !v)}
             >
-              <Text style={editorStyles.liveRightIcon}>🟢</Text>
+              <Text style={editorStyles.liveRightIcon}>👥</Text>
               <Text style={editorStyles.liveRightLabel}>
                 {showOnlineInvitePanel ? 'Here Now! On' : 'Here Now!'}
               </Text>
@@ -25636,7 +25752,7 @@ const LiveStreamModal = ({
               ]}
               onPress={toggleVirtualBackground}
             >
-              <Text style={editorStyles.liveRightIcon}>🖼️</Text>
+              <Text style={editorStyles.liveRightIcon}>🧩</Text>
               <Text style={editorStyles.liveRightLabel}>Background</Text>
             </Pressable>
                     
@@ -25694,7 +25810,7 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={inviteCoHost}
             >
-              <Text style={editorStyles.liveRightIcon}>🎙️</Text>
+              <Text style={editorStyles.liveRightIcon}>🤝</Text>
               <Text style={editorStyles.liveRightLabel}>Co-host</Text>
             </Pressable>
                     
@@ -25745,7 +25861,7 @@ const LiveStreamModal = ({
                 } catch {}
               }}
             >
-              <Text style={editorStyles.liveRightIcon}>{cameraHidden ? '🚫' : '📷'}</Text>
+              <Text style={editorStyles.liveRightIcon}>{cameraHidden ? '📷' : '🎥'}</Text>
               <Text style={editorStyles.liveRightLabel}>{cameraHidden ? 'Show' : 'Hide'}</Text>
             </Pressable>
                     
@@ -25767,7 +25883,7 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={handleShareDriftLink}
             >
-              <Text style={editorStyles.liveRightIcon}>📤</Text>
+              <Text style={editorStyles.liveRightIcon}>📡</Text>
               <Text style={editorStyles.liveRightLabel}>Casta drift</Text>
             </Pressable>
                     
@@ -26062,7 +26178,7 @@ const LiveStreamModal = ({
                 <Text style={editorStyles.liveBottomLabel}>Filters</Text>
               </View>
               <View style={editorStyles.liveBottomItem}>
-                <Text style={editorStyles.liveBottomIcon}>🧩</Text>
+                <Text style={editorStyles.liveBottomIcon}>🧱</Text>
                 <Text style={editorStyles.liveBottomLabel}>Overlays</Text>
               </View>
               <Pressable
@@ -26076,7 +26192,7 @@ const LiveStreamModal = ({
                 style={editorStyles.liveBottomItem}
                 onPress={() => setShowLiveControls(v => !v)}
               >
-                <Text style={editorStyles.liveBottomIcon}>🛠️</Text>
+                <Text style={editorStyles.liveBottomIcon}>🕹️</Text>
                 <Text style={editorStyles.liveBottomLabel}>
                   {showLiveControls ? 'Controls On' : 'Controls'}
                 </Text>
@@ -27255,7 +27371,7 @@ function PostDetailScreen({ route, navigation }: any) {
                 paddingHorizontal: 20,
               }}
             >
-              <Text style={{ fontSize: 42, marginBottom: 10 }}>📄</Text>
+              <Text style={{ fontSize: 42, marginBottom: 10 }}>🎵</Text>
               <Text style={{ color: '#cfe9ff' }}>Document attachment</Text>
             </View>
           ) : null}
@@ -27332,7 +27448,7 @@ function PostDetailScreen({ route, navigation }: any) {
           borderRadius: 20,
         }}
       >
-        <Text style={{ color: 'white', fontSize: 18 }}>⤢</Text>
+        <Text style={{ color: 'white', fontSize: 18 }}>?</Text>
       </Pressable>
       
       {/* Follow Button */}
@@ -27353,7 +27469,7 @@ function PostDetailScreen({ route, navigation }: any) {
           }}
         >
           <Text style={{ color: 'white', fontSize: 16 }}>
-            {isFollowing ? '✓ Connected' : '+ Connect SplashLine'}
+            {isFollowing ? '? Connected' : '+ Connect SplashLine'}
           </Text>
         </Pressable>
       )}
@@ -27505,7 +27621,7 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
           }}
         >
           <Text style={{ color: 'red', fontSize: 20, textAlign: 'center', marginBottom: 10, fontWeight: 'bold' }}>
-            ⚠️ APP ERROR ⚠️
+            APP ERROR
           </Text>
 
           <Text style={{ color: 'white', fontSize: 16, textAlign: 'center', marginBottom: 8 }}>
@@ -27968,6 +28084,10 @@ const authStyles = StyleSheet.create({
 });
                     
                     
+
+
+
+
 
 
 
