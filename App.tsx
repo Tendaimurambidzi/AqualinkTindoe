@@ -536,6 +536,7 @@ const RINGING_CALL_TIMEOUT_MS = 120 * 1000;
 const MAX_ACTIVE_CALL_DURATION_MS = 30 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = RINGING_CALL_TIMEOUT_MS;
 const ALLOW_TOKENLESS_DRIFT = true;
+const DRIFT_EXPO_FIXED_CHANNEL = 'Tindoe';
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
@@ -6306,7 +6307,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromName: String(parsed.fromName || 'Skipper'),
           fromPhoto: parsed.fromPhoto || null,
           liveTitle: parsed.liveTitle || null,
-          liveChannel: parsed.liveChannel ? String(parsed.liveChannel) : null,
+          liveChannel: parsed.liveChannel
+            ? String(parsed.liveChannel)
+            : parsed.channel
+            ? String(parsed.channel)
+            : null,
           directCallId: parsed.directCallId ? String(parsed.directCallId) : null,
           directCallChannel: parsed.directCallChannel
             ? String(parsed.directCallChannel)
@@ -6371,7 +6376,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            liveChannel: data.liveChannel
+              ? String(data.liveChannel)
+              : data.channel
+              ? String(data.channel)
+              : null,
             directCallId: data.directCallId ? String(data.directCallId) : null,
             directCallChannel: data.directCallChannel
               ? String(data.directCallChannel)
@@ -6428,7 +6437,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            liveChannel: data.liveChannel
+              ? String(data.liveChannel)
+              : data.channel
+              ? String(data.channel)
+              : null,
             directCallId: data.directCallId ? String(data.directCallId) : null,
             directCallChannel: data.directCallChannel
               ? String(data.directCallChannel)
@@ -6475,7 +6488,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            liveChannel: data.liveChannel
+              ? String(data.liveChannel)
+              : data.channel
+              ? String(data.channel)
+              : null,
             directCallId: data.directCallId ? String(data.directCallId) : null,
             directCallChannel: data.directCallChannel
               ? String(data.directCallChannel)
@@ -6575,10 +6592,42 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
 
       if (action === 'join') {
+        const me = auth?.()?.currentUser;
+        const myUid = String(me?.uid || '').trim();
         let resolvedChannel = String(
-          invite.liveChannel || invite.directCallChannel || '',
+          invite.liveChannel ||
+            (invite as any)?.channel ||
+            invite.directCallChannel ||
+            DRIFT_EXPO_FIXED_CHANNEL,
         ).trim();
-        if (!resolvedChannel && invite.liveId) {
+        if (!resolvedChannel && invite.liveId && myUid) {
+          try {
+            const [statusSnap, inboxSnap, liveSnap] = await Promise.all([
+              firestore()
+                .collection(`live/${invite.liveId}/invite_status`)
+                .doc(myUid)
+                .get(),
+              firestore()
+                .collection(`users/${myUid}/live_invites`)
+                .doc(invite.id)
+                .get(),
+              firestore().doc(`live/${invite.liveId}`).get(),
+            ]);
+            const statusData = statusSnap?.data?.() || {};
+            const inboxData = inboxSnap?.data?.() || {};
+            const liveData = liveSnap?.data?.() || {};
+            resolvedChannel = String(
+              statusData.channel ||
+                statusData.liveChannel ||
+                inboxData.channel ||
+                inboxData.liveChannel ||
+                liveData.liveChannel ||
+                liveData.channel ||
+                liveData.agoraChannel ||
+                DRIFT_EXPO_FIXED_CHANNEL,
+            ).trim();
+          } catch {}
+        } else if (!resolvedChannel && invite.liveId) {
           try {
             const liveSnap = await firestore().doc(`live/${invite.liveId}`).get();
             const liveData = liveSnap?.data?.() || {};
@@ -6586,29 +6635,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               liveData.liveChannel ||
                 liveData.channel ||
                 liveData.agoraChannel ||
-                '',
+                DRIFT_EXPO_FIXED_CHANNEL,
             ).trim();
           } catch {}
         }
         const normalizedChannel = resolvedChannel
           ? resolvedChannel.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64)
-          : null;
-        const needsApproval = !normalizedChannel && !!invite.liveId;
+          : DRIFT_EXPO_FIXED_CHANNEL;
         setLiveInviteJoinPreset({
           liveId: invite.liveId,
           channel: normalizedChannel,
           title: invite.liveTitle || null,
           fromName: invite.fromName,
-          requireApproval: needsApproval,
+          requireApproval: false,
           nonce: Date.now(),
         });
         setShowLive(true);
-        if (invite.liveId && needsApproval) {
-          requestToDriftForLiveId(invite.liveId, invite.fromName);
-        }
         if (invite.liveId && normalizedChannel) {
           try {
-            const me = auth?.()?.currentUser;
             if (me?.uid) {
               await firestore()
                 .collection(`live/${invite.liveId}/invite_status`)
@@ -6717,7 +6761,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     },
-    [incomingLiveInvite, requestToDriftForLiveId],
+    [incomingLiveInvite],
   );
   const inviteBadgeTranslateX = useRef(new Animated.Value(0)).current;
   const inviteBadgePanResponder = useMemo(
@@ -22032,7 +22076,7 @@ const LiveStreamModal = ({
   })();
   const appId: string = (cfg && cfg.AGORA_APP_ID) || '';
   const staticToken: string | null = (cfg && cfg.AGORA_STATIC_TOKEN) || null;
-  const defaultChannel: string = (cfg && cfg.AGORA_CHANNEL_NAME) || '';
+  const defaultChannel: string = DRIFT_EXPO_FIXED_CHANNEL;
   const engineRef = React.useRef<any>(null);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraHidden, setCameraHidden] = useState(false);
@@ -22334,7 +22378,10 @@ const LiveStreamModal = ({
       return;
     }
     const suggestedChannel = String(
-      inviteJoinPreset.channel || channelInput || defaultChannel || '',
+      inviteJoinPreset.channel ||
+        channelInput ||
+        defaultChannel ||
+        DRIFT_EXPO_FIXED_CHANNEL,
     )
       .trim()
       .replace(/[^A-Za-z0-9_]/g, '_')
@@ -22387,7 +22434,7 @@ const LiveStreamModal = ({
                 inviteJoinPreset?.channel ||
                 channelInput ||
                 defaultChannel ||
-                '',
+                DRIFT_EXPO_FIXED_CHANNEL,
             )
               .trim()
               .replace(/[^A-Za-z0-9_]/g, '_')
@@ -23150,12 +23197,8 @@ const LiveStreamModal = ({
           return;
         }
       }
-      // Use user-provided values (fallback to config)
-      const enteredChan = String(channelInput || '').trim();
-      const baseChan =
-        enteredChan ||
-        String(defaultChannel || '').trim() ||
-        `drift_${currentUserUid.slice(0, 8)}_${Date.now()}`;
+      // Temporary forced channel for Drift Expo invite/join consistency.
+      const baseChan = DRIFT_EXPO_FIXED_CHANNEL;
       const chan = baseChan.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
       const initialTok = (tokenInput || '').trim() || staticToken || null;
       let uidNum = parseInt(uidInput || '0', 10);
@@ -23657,7 +23700,10 @@ const LiveStreamModal = ({
       ).trim();
       const senderPhoto = me.photoURL || null;
       const effectiveInviteChannel = String(
-        liveChannel || channelInput || defaultChannel || '',
+        liveChannel ||
+          channelInput ||
+          defaultChannel ||
+          DRIFT_EXPO_FIXED_CHANNEL,
       )
         .trim()
         .replace(/[^A-Za-z0-9_]/g, '_')
