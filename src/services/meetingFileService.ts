@@ -132,6 +132,11 @@ export async function pickMeetingFileForUpload(): Promise<Asset | null> {
       };
     } catch (err: any) {
       if (String(err?.code || '').toUpperCase() === 'CANCELLED') return null;
+      if (Platform.OS === 'android') {
+        throw new Error(
+          String(err?.message || 'Could not open Android Files picker.'),
+        );
+      }
       console.warn('AudioPicker failed, falling back to image library:', err?.message || err);
     }
   }
@@ -417,6 +422,32 @@ export async function presentMeetingFileLive({
     status: 'presenting',
     error: null,
   };
+}
+
+export async function startMeetingPresentation(params: {
+  fileId: string;
+  requesterUid: string;
+}) {
+  const fileId = String(params.fileId || '').trim();
+  const requesterUid = String(params.requesterUid || '').trim();
+  if (!fileId || !requesterUid) return;
+  const ref = liveFilesCollection().doc(fileId);
+  const snap = await ref.get();
+  if (!snap.exists) return;
+  const data = snap.data() || {};
+  const ownerUid = String(data.uploadedBy || '').trim();
+  if (ownerUid !== requesterUid) {
+    throw new Error('Only uploader can present this file.');
+  }
+  await ref.set(
+    {
+      status: 'presenting',
+      presenterUid: requesterUid,
+      currentPage: 1,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true },
+  );
 }
 
 export async function setMeetingPresentationPage(params: {

@@ -203,6 +203,18 @@ service cloud.firestore {
         allow read: if isAuthed();
         allow create, update, delete: if isAuthed();
       }
+
+      // Live comments for Drift Expo chat.
+      match /comments/{commentId} {
+        allow read: if isAuthed();
+        allow create: if isAuthed()
+                      && request.resource.data.text is string
+                      && request.resource.data.text.size() > 0
+                      && request.resource.data.text.size() <= 1000
+                      && request.resource.data.fromUid == request.auth.uid;
+        allow update, delete: if isAuthed()
+                              && resource.data.fromUid == request.auth.uid;
+      }
     }
   }
 }

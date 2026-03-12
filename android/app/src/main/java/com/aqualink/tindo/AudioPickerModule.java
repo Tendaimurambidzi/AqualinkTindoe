@@ -6,7 +6,6 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
-import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -48,10 +47,42 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI);
-        }
         activity.startActivityForResult(intent, AUDIO_PICKER_REQUEST);
+    }
+
+    @ReactMethod
+    public void openDocument(String uriString, String mimeType, Promise promise) {
+        Activity activity = getCurrentActivity();
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No activity found");
+            return;
+        }
+        if (uriString == null || uriString.isEmpty()) {
+            promise.reject("NO_URI", "Missing document uri");
+            return;
+        }
+        try {
+            Uri uri = Uri.parse(uriString);
+            String type = (mimeType != null && !mimeType.isEmpty()) ? mimeType : "*/*";
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, type);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity.startActivity(Intent.createChooser(intent, "Open file"));
+            promise.resolve(true);
+        } catch (Exception firstErr) {
+            try {
+                Uri uri = Uri.parse(uriString);
+                Intent fallback = new Intent(Intent.ACTION_VIEW);
+                fallback.setDataAndType(uri, "*/*");
+                fallback.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                fallback.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                activity.startActivity(Intent.createChooser(fallback, "Open file"));
+                promise.resolve(true);
+            } catch (Exception secondErr) {
+                promise.reject("OPEN_FAILED", secondErr);
+            }
+        }
     }
 
     @Override

@@ -113,6 +113,13 @@ try {
 } catch (err) {
   console.warn('react-native-video not available, video playback disabled:', err?.message || err);
 }
+
+let RNWebView: any = null;
+try {
+  RNWebView = require('react-native-webview').WebView;
+} catch (err) {
+  console.warn('react-native-webview not available, document preview disabled:', err?.message || err);
+}
                     
 // Paper texture is optional; keep null-safe to avoid crashes if the asset is missing
 const paperTexture = null;
@@ -159,6 +166,76 @@ const isImageAsset = (asset: Asset | null | undefined): boolean => {
   const uri = String(asset.uri || '').toLowerCase();
   return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
 };
+
+const isImageFileType = (mimeType?: string | null, name?: string | null): boolean => {
+  const t = String(mimeType || '').toLowerCase();
+  const n = String(name || '').toLowerCase();
+  return (
+    t.startsWith('image/') ||
+    /(\.(jpg|jpeg|png|gif|webp|heic|bmp))($|\?)/i.test(n)
+  );
+};
+
+const isVideoFileType = (mimeType?: string | null, name?: string | null): boolean => {
+  const t = String(mimeType || '').toLowerCase();
+  const n = String(name || '').toLowerCase();
+  return (
+    t.startsWith('video/') ||
+    /(\.(mp4|mov|m4v|webm|3gp|3gpp|mkv|avi))($|\?)/i.test(n)
+  );
+};
+
+const isAudioFileType = (mimeType?: string | null, name?: string | null): boolean => {
+  const t = String(mimeType || '').toLowerCase();
+  const n = String(name || '').toLowerCase();
+  return (
+    t.startsWith('audio/') ||
+    /(\.(mp3|m4a|aac|wav|ogg|flac))($|\?)/i.test(n)
+  );
+};
+
+const isPdfFileType = (mimeType?: string | null, name?: string | null): boolean => {
+  const t = String(mimeType || '').toLowerCase();
+  const n = String(name || '').toLowerCase();
+  return t.includes('pdf') || /(\.pdf)($|\?)/i.test(n);
+};
+
+const isOfficeFileType = (mimeType?: string | null, name?: string | null): boolean => {
+  const t = String(mimeType || '').toLowerCase();
+  const n = String(name || '').toLowerCase();
+  if (
+    t.includes('officedocument') ||
+    t.includes('msword') ||
+    t.includes('ms-powerpoint') ||
+    t.includes('ms-excel') ||
+    t.includes('presentation') ||
+    t.includes('spreadsheet')
+  ) {
+    return true;
+  }
+  return /(\.(doc|docx|ppt|pptx|xls|xlsx|odt|odp|ods))($|\?)/i.test(n);
+};
+
+const buildInAppDocViewerUrl = (
+  rawUrl: string,
+  mimeType?: string | null,
+  name?: string | null,
+): string => {
+  const base = String(rawUrl || '').trim();
+  if (!/^https?:\/\//i.test(base)) return '';
+  const encoded = encodeURIComponent(base);
+  if (isOfficeFileType(mimeType, name)) {
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encoded}`;
+  }
+  // Default all non-media docs to Google viewer so unknown doc mime types still render.
+  return `https://docs.google.com/gview?embedded=1&url=${encoded}`;
+};
+
+const normalizeLiveScope = (raw: any): string =>
+  String(raw || '')
+    .trim()
+    .replace(/[^A-Za-z0-9_]/g, '_')
+    .toLowerCase();
 
 const inferMediaSceneHints = (
   rawInputs: Array<string | null | undefined>,
@@ -2309,7 +2386,7 @@ const editorStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginBottom: 8,
-    maxWidth: '95%', // Prevent very long comments from taking the full width
+    maxWidth: '86%', // Leave room for controls and avoid blocking the right action rail
   },
   liveCommentInputBar: {
     position: 'absolute',
@@ -22187,6 +22264,7 @@ const LiveStreamModal = ({
   const [endBarHeight, setEndBarHeight] = useState<number>(44);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [commentNowMs, setCommentNowMs] = useState(Date.now());
   const [liveComments, setLiveComments] = useState<
     Array<{
       id: string;
@@ -22212,6 +22290,7 @@ const LiveStreamModal = ({
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
   const liveCommentsPrimedRef = useRef(false);
   const lastLiveCommentsSigRef = useRef('');
+  const lastLiveCommentErrRef = useRef('');
   const [splashedComment, setSplashedComment] = useState<{
     id: string;
     text: string;
@@ -22240,6 +22319,12 @@ const LiveStreamModal = ({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showFileSharePanel, setShowFileSharePanel] = useState(false);
   const [liveSharedFiles, setLiveSharedFiles] = useState<MeetingSharedFile[]>([]);
+  const [localPresentedAsset, setLocalPresentedAsset] = useState<{
+    fileId: string;
+    uri: string;
+    mimeType: string;
+    name: string;
+  } | null>(null);
   const [virtualBackground, setVirtualBackground] = useState<string | null>(
     null,
   );
@@ -22296,20 +22381,18 @@ const LiveStreamModal = ({
       (!liveHostUid && isLiveStarted));
   const isLiveCoHost =
     !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
-  const liveShareScope = String(liveDocId || liveChannel || '').trim();
+  // Use one normalized, channel-first scope so all participants share the same docs/comments path.
+  const liveShareScope = normalizeLiveScope(liveChannel || channelInput || liveDocId || '');
+  const liveCommentScope = normalizeLiveScope(liveChannel || channelInput || liveDocId || '');
   const activeSharedFile = useMemo(() => {
     if (!liveSharedFiles.length) return null;
-    const inProgress = liveSharedFiles.find(
-      item =>
-        item.status === 'selecting' ||
-        item.status === 'uploading' ||
-        item.status === 'presenting',
-    );
-    if (inProgress) return inProgress;
     return (
       liveSharedFiles.find(
-        item => item.status === 'ready' && !!String(item.downloadUrl || '').trim(),
-      ) || liveSharedFiles[0]
+        item =>
+          item.status === 'selecting' ||
+          item.status === 'uploading' ||
+          item.status === 'presenting',
+      ) || null
     );
   }, [liveSharedFiles]);
   const isFilePresentationActive =
@@ -22325,10 +22408,79 @@ const LiveStreamModal = ({
     1,
     Number(activeSharedFile?.currentPage || 1) || 1,
   );
-  const latestVisibleComment = useMemo(() => {
-    if (!liveComments.length) return null;
-    return liveComments[liveComments.length - 1];
-  }, [liveComments]);
+  const presentationMimeType = String(
+    activeSharedFile?.mimeType ||
+      (isCurrentPresenter ? localPresentedAsset?.mimeType || '' : ''),
+  ).trim();
+  const presentationName = String(
+    activeSharedFile?.name || localPresentedAsset?.name || 'Shared file',
+  ).trim();
+  const presentationUri = useMemo(() => {
+    if (!isFilePresentationActive) return '';
+    const sharedUrl = String(activeSharedFile?.downloadUrl || '').trim();
+    if (sharedUrl) return sharedUrl;
+    if (isCurrentPresenter && localPresentedAsset?.uri) {
+      return String(localPresentedAsset.uri);
+    }
+    return '';
+  }, [activeSharedFile?.downloadUrl, isCurrentPresenter, isFilePresentationActive, localPresentedAsset?.uri]);
+  const embeddedDocViewerUrl = useMemo(
+    () => buildInAppDocViewerUrl(presentationUri, presentationMimeType, presentationName),
+    [presentationMimeType, presentationName, presentationUri],
+  );
+  const isPresentationMedia =
+    isImageFileType(presentationMimeType, presentationName) ||
+    isVideoFileType(presentationMimeType, presentationName) ||
+    isAudioFileType(presentationMimeType, presentationName);
+  const shouldUseDocWebView =
+    !!embeddedDocViewerUrl &&
+    !!RNWebView &&
+    !isPresentationMedia;
+  const hasOpenedPresentation =
+    isFilePresentationActive &&
+    (!!presentationUri || (isCurrentPresenter && !!localPresentedAsset?.uri));
+  const canRenderPresentationInApp =
+    isFilePresentationActive &&
+    (isCurrentPresenter
+      ? !!(localPresentedAsset?.uri || presentationUri)
+      : !!presentationUri);
+  const safeCommentHandle = (value: any) => {
+    const raw = String(value || '').trim();
+    if (!raw) return 'User';
+    if (raw.toLowerCase() === 'you') return 'You';
+    return raw.replace(/^[@/]+/, '');
+  };
+  const COMMENT_TTL_MS = 20000;
+  const MAX_VISIBLE_COMMENTS = 4;
+  const displayedLiveComments = useMemo(() => {
+    const getCreatedAtMs = (item: any): number => {
+      const direct = Number(item?.createdAtMs || item?.ts || 0);
+      if (direct > 0) return direct;
+      const ts: any = item?.createdAt;
+      if (ts?.toMillis) {
+        try {
+          return Number(ts.toMillis()) || 0;
+        } catch {}
+      }
+      if (ts?.toDate) {
+        try {
+          return Number(ts.toDate()?.getTime?.()) || 0;
+        } catch {}
+      }
+      return 0;
+    };
+    const now = Number(commentNowMs || Date.now());
+    const fresh = (liveComments || []).filter((item: any) => {
+      const at = getCreatedAtMs(item);
+      if (at <= 0) return true;
+      return now - at <= COMMENT_TTL_MS;
+    });
+    return fresh.slice(-MAX_VISIBLE_COMMENTS);
+  }, [commentNowMs, liveComments]);
+  const latestDisplayedComment = useMemo(() => {
+    if (!displayedLiveComments.length) return null;
+    return displayedLiveComments[displayedLiveComments.length - 1];
+  }, [displayedLiveComments]);
   const MAX_HERE_NOW_SCAN = 200;
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
@@ -22355,6 +22507,7 @@ const LiveStreamModal = ({
     setJoinedParticipants([]);
     setShowFileSharePanel(false);
     setLiveSharedFiles([]);
+    setLocalPresentedAsset(null);
   }, [visible]);
 
   useEffect(() => {
@@ -22373,6 +22526,17 @@ const LiveStreamModal = ({
       } catch {}
     };
   }, [isLiveStarted, liveShareScope, visible]);
+
+  useEffect(() => {
+    if (!isFilePresentationActive) {
+      setLocalPresentedAsset(null);
+      return;
+    }
+    if (!activeSharedFile?.id) return;
+    if (localPresentedAsset?.fileId && localPresentedAsset.fileId !== activeSharedFile.id) {
+      setLocalPresentedAsset(null);
+    }
+  }, [activeSharedFile?.id, isFilePresentationActive, localPresentedAsset?.fileId]);
   // cross-platform text prompt
   const [promptVisible, setPromptVisible] = useState(false);
   const [promptTitle, setPromptTitle] = useState('');
@@ -22626,14 +22790,23 @@ const LiveStreamModal = ({
       } catch {}
     };
   }, [visible, onClose]);
+
+  useEffect(() => {
+    if (!isLiveStarted) return;
+    const t = setInterval(() => {
+      setCommentNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(t);
+  }, [isLiveStarted]);
                     
   // Real-time comments listener
   useEffect(() => {
-    if (!isLiveStarted || !liveDocId) {
+    if (!isLiveStarted || !liveCommentScope) {
       setLiveComments([]);
       seenCommentIdsRef.current.clear();
       liveCommentsPrimedRef.current = false;
       lastLiveCommentsSigRef.current = '';
+      lastLiveCommentErrRef.current = '';
       return;
     }
                     
@@ -22644,41 +22817,49 @@ const LiveStreamModal = ({
     if (!firestoreMod) return;
                     
     const unsubscribe = firestoreMod()
-      .collection(`live/${liveDocId}/comments`)
-      .orderBy('createdAt', 'asc')
-      .limitToLast(50) // Listen to the last 50 comments
-      .onSnapshot((querySnapshot: any) => {
-        if (querySnapshot) {
-          const items = (querySnapshot?.docs || []).map((d: any) => ({
-            id: d.id,
-            ...d.data(),
-          }));
-          const sig = items.map((it: any) => String(it.id || '')).join('|');
-          if (sig === lastLiveCommentsSigRef.current) return;
-          lastLiveCommentsSigRef.current = sig;
-          setLiveComments(items);
-          if (!liveCommentsPrimedRef.current) {
-            items.forEach((it: any) => {
-              if (it?.id) seenCommentIdsRef.current.add(String(it.id));
-            });
-            liveCommentsPrimedRef.current = true;
-            return;
+      .collection(`live/${liveCommentScope}/comments`)
+      .orderBy('createdAtMs', 'asc')
+      .limitToLast(80) // Listen to recent comments in deterministic order.
+      .onSnapshot(
+        (querySnapshot: any) => {
+          if (querySnapshot) {
+            const items = (querySnapshot?.docs || []).map((d: any) => ({
+              id: d.id,
+              ...d.data(),
+            }));
+            const sig = items.map((it: any) => String(it.id || '')).join('|');
+            if (sig === lastLiveCommentsSigRef.current) return;
+            lastLiveCommentsSigRef.current = sig;
+            setLiveComments(items);
+            if (!liveCommentsPrimedRef.current) {
+              items.forEach((it: any) => {
+                if (it?.id) seenCommentIdsRef.current.add(String(it.id));
+              });
+              liveCommentsPrimedRef.current = true;
+              return;
+            }
+            // Trigger a small capped number of animations to avoid UI thread stalls.
+            let spawned = 0;
+            for (const it of items) {
+              const id = String(it?.id || '').trim();
+              if (!id || seenCommentIdsRef.current.has(id)) continue;
+              seenCommentIdsRef.current.add(id);
+              spawnFlyingComment({ id, text: String(it?.text || ''), from: it?.from });
+              spawned += 1;
+              if (spawned >= 3) break;
+            }
           }
-          // Trigger a small capped number of animations to avoid UI thread stalls.
-          let spawned = 0;
-          for (const it of items) {
-            const id = String(it?.id || '').trim();
-            if (!id || seenCommentIdsRef.current.has(id)) continue;
-            seenCommentIdsRef.current.add(id);
-            spawnFlyingComment({ id, text: String(it?.text || ''), from: it?.from });
-            spawned += 1;
-            if (spawned >= 3) break;
-          }
-        }
-      });
+        },
+        (err: any) => {
+          const msg = String(err?.message || err?.code || 'Live comments sync failed.');
+          if (lastLiveCommentErrRef.current === msg) return;
+          lastLiveCommentErrRef.current = msg;
+          Alert.alert('Live comments', msg);
+        },
+      );
 
     return () => unsubscribe();
-  }, [isLiveStarted, liveDocId]);
+  }, [isLiveStarted, liveCommentScope]);
 
   useEffect(() => {
     if (!visible || !isLiveStarted) {
@@ -23121,6 +23302,7 @@ const LiveStreamModal = ({
     // Close input after sending; user can reopen when needed
     setShowCommentInput(false);
                     
+    let sent = false;
     try {
       let firestoreMod: any = null;
       let authMod: any = null;
@@ -23138,9 +23320,10 @@ const LiveStreamModal = ({
           hostName ||
           'Skipper',
       ).trim();
-      if (firestoreMod && liveDocId) {
+      if (firestoreMod && liveCommentScope) {
+        const createdAtMs = Date.now();
         await firestoreMod()
-          .collection(`live/${liveDocId}/comments`)
+          .collection(`live/${liveCommentScope}/comments`)
           .add({
             text: txt,
             fromUid: uid,
@@ -23148,19 +23331,31 @@ const LiveStreamModal = ({
             replyToId: replyingToLiveComment?.id || null,
             replyToFrom: replyingToLiveComment?.from || null,
             replyToText: replyingToLiveComment?.text || null,
+            liveScope: liveCommentScope,
+            createdAtMs,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
           });
+        sent = true;
+      } else {
+        throw new Error('Live comments channel is not ready yet.');
       }
-    } catch {}
+    } catch (err: any) {
+      Alert.alert(
+        'Send comment',
+        String(err?.message || err?.code || 'Failed to send comment.'),
+      );
+    }
                     
     setCommentText('');
     setReplyingToLiveComment(null);
     setShowCommentInput(false);
                     
-    // Spawn a local flying comment immediately for instant feedback
-    spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
+    // Spawn local feedback only if write succeeded.
+    if (sent) {
+      spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
+    }
   };
                     
   const spawnFlyingComment = (c: {
@@ -23356,17 +23551,17 @@ const LiveStreamModal = ({
   const onPresentedFromPanel = useCallback(
     async (file: MeetingSharedFile, picked: Asset) => {
       if (!file || !picked?.uri) return;
-      // Replace presenter camera while file presentation is active.
       setCameraHidden(true);
       try {
         engineRef.current?.muteLocalVideoStream?.(true);
       } catch {}
       await ensureScreenShareStarted();
-      try {
-        await Linking.openURL(String(picked.uri));
-      } catch {
-        Alert.alert('Presentation', 'Could not open selected file on this device.');
-      }
+      setLocalPresentedAsset({
+        fileId: String(file.id || ''),
+        uri: String(picked.uri || ''),
+        mimeType: String((picked as any)?.type || file.mimeType || ''),
+        name: String(picked.fileName || file.name || 'Shared file'),
+      });
     },
     [isLiveStarted, isScreenSharing],
   );
@@ -23405,6 +23600,7 @@ const LiveStreamModal = ({
     } catch {}
     setIsScreenSharing(false);
     setCameraHidden(false);
+    setLocalPresentedAsset(null);
     try {
       engineRef.current?.muteLocalVideoStream?.(false);
     } catch {}
@@ -25252,81 +25448,40 @@ const LiveStreamModal = ({
       onRequestClose={onClose}
     >
       <View style={editorStyles.editorRoot}>
-        {isLiveStarted && (
-          <Text
-            style={{
-              color: 'white',
-              position: 'absolute',
-              top: insets.top + 10,
-              left: 16,
-              zIndex: 10,
-              backgroundColor: 'navy',
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              borderRadius: 4,
-              fontWeight: 'bold',
-            }}
-          >
-            DRIFTING
-          </Text>
-        )}
-        {isLiveStarted && (
-          <Text
-            style={{
-              color: 'white',
-              position: 'absolute',
-              top: insets.top + 10,
-              right: 16,
-              zIndex: 10,
-              backgroundColor: 'rgba(0,0,0,0.5)',
-              paddingHorizontal: 8,
-              paddingVertical: 4,
-              borderRadius: 4,
-              fontWeight: 'bold',
-            }}
-          >
-            {livePrivacy.toUpperCase()}
-          </Text>
-        )}
-        {isLiveStarted && activeSharedFile && (
+        
+        {isLiveStarted && hasOpenedPresentation && activeSharedFile && (
           <View
             style={{
               position: 'absolute',
-              top: insets.top + 44,
-              left: 12,
-              right: 12,
-              zIndex: 11,
-              backgroundColor: 'rgba(0,0,0,0.72)',
-              borderRadius: 10,
+              top: insets.top + 2,
+              left: 8,
+              right: 8,
+              zIndex: 15,
+              backgroundColor: 'rgba(0,0,0,0.82)',
+              borderRadius: 12,
               borderWidth: 1,
-              borderColor: 'rgba(0,194,255,0.45)',
+              borderColor: 'rgba(255,255,255,0.18)',
               paddingHorizontal: 10,
-              paddingVertical: 8,
+              paddingVertical: 6,
             }}
           >
             <Text
               numberOfLines={1}
-              style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 12 }}
+              style={{ color: '#DCEFFF', fontWeight: '800', fontSize: 12 }}
             >
-              {activeSharedFile.status === 'selecting'
-                ? `${activeSharedFile.uploadedByName || 'Someone'} is selecting a file...`
-                : activeSharedFile.status === 'uploading'
-                ? `${activeSharedFile.uploadedByName || 'Someone'} is uploading "${activeSharedFile.name}"`
-                : activeSharedFile.status === 'presenting'
-                ? `${activeSharedFile.uploadedByName || 'Someone'} is presenting "${activeSharedFile.name}" live - Page ${currentPresentationPage}`
-                : `Shared file: ${activeSharedFile.name}`}
+              {`${activeSharedFile.uploadedByName || 'Someone'} is presenting "${activeSharedFile.name}"`}
             </Text>
             <View style={{ flexDirection: 'row', marginTop: 6, gap: 8 }}>
               <Pressable
                 style={[
                   styles.secondaryBtn,
-                  { flex: 1, minHeight: 34, alignItems: 'center', justifyContent: 'center' },
+                  { minHeight: 34, minWidth: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
                 ]}
                 onPress={() => setShowFileSharePanel(true)}
               >
-                <Text style={styles.secondaryBtnText}>Open Files Panel</Text>
+                <Text style={styles.secondaryBtnText}>▣</Text>
               </Pressable>
-              {isFilePresentationActive ? (
+              {hasOpenedPresentation ? (
                 <>
                   {isCurrentPresenter ? (
                     <>
@@ -25343,7 +25498,7 @@ const LiveStreamModal = ({
                         ]}
                         onPress={() => goToPresentationPage(currentPresentationPage - 1)}
                       >
-                        <Text style={styles.secondaryBtnText}>Prev</Text>
+                        <Text style={styles.secondaryBtnText}>◀</Text>
                       </Pressable>
                       <Pressable
                         style={[
@@ -25358,7 +25513,7 @@ const LiveStreamModal = ({
                         ]}
                         onPress={() => goToPresentationPage(currentPresentationPage + 1)}
                       >
-                        <Text style={styles.secondaryBtnText}>Next</Text>
+                        <Text style={styles.secondaryBtnText}>▶</Text>
                       </Pressable>
                       <Pressable
                         style={[
@@ -25367,7 +25522,7 @@ const LiveStreamModal = ({
                         ]}
                         onPress={stopPresentationNow}
                       >
-                        <Text style={styles.primaryBtnText}>Stop Share</Text>
+                      <Text style={styles.primaryBtnText}>Stop Share</Text>
                       </Pressable>
                     </>
                   ) : (
@@ -25382,86 +25537,154 @@ const LiveStreamModal = ({
                           paddingHorizontal: 10,
                         },
                       ]}
-                    >
-                      <Text style={styles.secondaryBtnText}>
-                        Watching {activeSharedFile.uploadedByName || 'Presenter'} - Page {currentPresentationPage}
-                      </Text>
-                    </View>
+                      >
+                        <Text style={styles.secondaryBtnText}>
+                        👁 {activeSharedFile.uploadedByName || 'Presenter'}
+                        </Text>
+                      </View>
                   )}
                 </>
-              ) : activeSharedFile.status === 'ready' &&
-                String(activeSharedFile.downloadUrl || '').trim() ? (
-                <Pressable
-                  style={[
-                    styles.primaryBtn,
-                    { flex: 1, minHeight: 34, alignItems: 'center', justifyContent: 'center' },
-                  ]}
-                  onPress={async () => {
-                    try {
-                      await Linking.openURL(String(activeSharedFile.downloadUrl));
-                    } catch {
-                      Alert.alert('File', 'Could not open this shared file.');
-                    }
-                  }}
-                >
-                  <Text style={styles.primaryBtnText}>Open Shared File</Text>
-                </Pressable>
               ) : null}
             </View>
           </View>
         )}
-        {isLiveStarted && (!cameraHidden || (isFilePresentationActive && isCurrentPresenter)) && (
+        {isLiveStarted && (
           <>
-            {isFilePresentationActive && isCurrentPresenter ? (
+            {isFilePresentationActive && canRenderPresentationInApp ? (
               <View
                 style={[
                   StyleSheet.absoluteFill,
                   {
-                    backgroundColor: '#050B15',
+                    backgroundColor: 'transparent',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    paddingHorizontal: 20,
+                    justifyContent: 'flex-start',
+                    paddingTop: insets.top + 92,
+                    paddingBottom: insets.bottom + endBarHeight + 110,
+                    paddingHorizontal: 14,
                   },
                 ]}
               >
-                <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 12 }}>
-                  PRESENTING DOCUMENT
-                </Text>
-                <Text
-                  style={{
-                    color: 'white',
-                    fontWeight: '700',
-                    fontSize: 18,
-                    marginTop: 10,
-                    textAlign: 'center',
-                  }}
-                >
-                  {activeSharedFile?.name || 'Shared file'}
-                </Text>
                 <View
                   style={{
-                    marginTop: 18,
+                    width: '100%',
+                    maxWidth: Math.min(920, SCREEN_WIDTH - 28),
+                    height: Math.max(200, Math.min(SCREEN_HEIGHT * 0.46, 500)),
                     borderRadius: 14,
                     borderWidth: 1,
-                    borderColor: 'rgba(157,230,255,0.5)',
-                    paddingHorizontal: 24,
-                    paddingVertical: 16,
-                    backgroundColor: 'rgba(0,194,255,0.12)',
+                    borderColor: 'rgba(157,230,255,0.35)',
+                    overflow: 'hidden',
+                    backgroundColor: 'rgba(11,20,38,0.94)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ color: 'white', fontWeight: '800', fontSize: 22 }}>
-                    Page {currentPresentationPage}
-                  </Text>
+                  {presentationUri && isImageFileType(presentationMimeType, presentationName) ? (
+                    <Image
+                      source={{ uri: presentationUri }}
+                      resizeMode="contain"
+                      style={{ width: '100%', height: '100%' }}
+                    />
+                  ) : presentationUri && isVideoFileType(presentationMimeType, presentationName) && RNVideo ? (
+                    <RNVideo
+                      source={{ uri: presentationUri }}
+                      controls
+                      paused={false}
+                      resizeMode="contain"
+                      style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
+                    />
+                  ) : presentationUri && isAudioFileType(presentationMimeType, presentationName) && RNVideo ? (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 }}>
+                      <Text style={{ color: '#DCEFFF', fontWeight: '800', fontSize: 13 }}>
+                        AUDIO PRESENTATION
+                      </Text>
+                      <Text
+                        numberOfLines={2}
+                        style={{ color: 'white', marginTop: 8, textAlign: 'center', fontWeight: '700' }}
+                      >
+                        {presentationName || 'Audio file'}
+                      </Text>
+                      <RNVideo
+                        source={{ uri: presentationUri }}
+                        controls
+                        paused={false}
+                        style={{ width: 320, height: 60, marginTop: 10 }}
+                      />
+                    </View>
+                  ) : shouldUseDocWebView ? (
+                    React.createElement(RNWebView, {
+                      source: { uri: embeddedDocViewerUrl },
+                      style: { width: '100%', height: '100%', backgroundColor: '#0B1426' },
+                      originWhitelist: ['*'],
+                      javaScriptEnabled: true,
+                      domStorageEnabled: true,
+                      allowsInlineMediaPlayback: true,
+                      startInLoadingState: true,
+                      renderLoading: () =>
+                        React.createElement(
+                          View,
+                          {
+                            style: {
+                              flex: 1,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#0B1426',
+                            },
+                          },
+                          React.createElement(ActivityIndicator, {
+                            size: 'small',
+                            color: '#9DE6FF',
+                          }),
+                        ),
+                    })
+                  ) : (
+                    <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
+                      <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 12 }}>
+                        LIVE PRESENTATION
+                      </Text>
+                      <Text
+                        numberOfLines={2}
+                        style={{
+                          color: 'white',
+                          fontWeight: '800',
+                          fontSize: 17,
+                          marginTop: 10,
+                          textAlign: 'center',
+                        }}
+                      >
+                        {presentationName || 'Shared file'}
+                      </Text>
+                      <Text
+                        style={{
+                          color: 'rgba(220,239,255,0.82)',
+                          fontSize: 12,
+                          marginTop: 8,
+                          textAlign: 'center',
+                          lineHeight: 18,
+                        }}
+                      >
+                        This file format is being presented in-session. Keep controls visible and use ◀ ▶ to coordinate pages.
+                      </Text>
+                      {!presentationUri ? (
+                        <View style={{ marginTop: 12, alignItems: 'center' }}>
+                          <ActivityIndicator size="small" color="#9DE6FF" />
+                          <Text style={{ color: 'rgba(220,239,255,0.82)', marginTop: 8, fontSize: 12 }}>
+                            Preparing shared file...
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
                 </View>
                 <Text
                   style={{
-                    color: 'rgba(255,255,255,0.75)',
-                    marginTop: 16,
+                    color: 'rgba(220,239,255,0.85)',
                     fontSize: 12,
+                    marginTop: 10,
                     textAlign: 'center',
+                    paddingHorizontal: 10,
                   }}
                 >
-                  Camera is replaced while presentation is active.
+                  {presentationName || 'Shared file'}
                 </Text>
               </View>
             ) : mainRemoteUid ? (
@@ -25555,7 +25778,7 @@ const LiveStreamModal = ({
                 <Text style={{ color: 'white' }}>Initializing preview...</Text>
               </View>
             )}
-            {(!!mainRemoteUid || useJoinCallLayout) && (
+            {!isFilePresentationActive && !cameraHidden && (
               <View
                 style={{
                   position: 'absolute',
@@ -25609,20 +25832,28 @@ const LiveStreamModal = ({
             )}
           </>
         )}
-        {isLiveStarted && liveComments.length > 0 && (
+        {isLiveStarted && displayedLiveComments.length > 0 && (
           <ScrollView
             style={[
               editorStyles.liveCommentsOverlay,
               {
-                bottom: insets.bottom + endBarHeight + mediaBarHeight + 16,
-                top: '25%',
+                left: 10,
+                right: showLiveControls ? 108 : 10,
+                bottom:
+                  insets.bottom +
+                  endBarHeight +
+                  mediaBarHeight +
+                  (showCommentInput ? 132 : 64),
+                top: insets.top + 110,
+                maxHeight: 220,
               },
             ]}
+            pointerEvents="box-none"
             contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
           >
             <View>
-              {liveComments.map(c => (
+              {displayedLiveComments.map(c => (
                 <Pressable
                   key={c.id}
                   onLongPress={() => {
@@ -25642,11 +25873,16 @@ const LiveStreamModal = ({
                   <View style={editorStyles.liveCommentBubble}>
                     <View style={{ flex: 1 }}>
                       <Text style={editorStyles.liveCommentAuthor}>
-                        {(c as any).fromUid
-                          ? displayHandle((c as any).fromUid, c.from)
-                          : c.from === 'You'
-                          ? 'You'
-                          : formatHandle(c.from)}
+                        {(() => {
+                          try {
+                            const author = String((c as any)?.from || '').trim();
+                            if (!author) return 'User';
+                            if (author.toLowerCase() === 'you') return 'You';
+                            return safeCommentHandle(author);
+                          } catch {
+                            return 'User';
+                          }
+                        })()}
                         :
                       </Text>
                       {!!(c as any).replyToFrom && (
@@ -25666,8 +25902,8 @@ const LiveStreamModal = ({
                             }}
                             numberOfLines={1}
                           >
-                            {formatHandle((c as any).from || 'User')} replied to{' '}
-                            {formatHandle((c as any).replyToFrom || 'message')}
+                            {safeCommentHandle((c as any).from || 'User')} replied to{' '}
+                            {safeCommentHandle((c as any).replyToFrom || 'message')}
                           </Text>
                           <Text
                             style={{
@@ -25702,12 +25938,12 @@ const LiveStreamModal = ({
             </View>
           </ScrollView>
         )}
-        {isLiveStarted && latestVisibleComment && (
+        {isLiveStarted && latestDisplayedComment && (
           <View
             style={{
               position: 'absolute',
               left: 12,
-              right: 12,
+              right: showLiveControls ? 108 : 12,
               bottom: insets.bottom + endBarHeight + mediaBarHeight + 12,
               zIndex: 12,
               borderRadius: 10,
@@ -25725,7 +25961,7 @@ const LiveStreamModal = ({
               numberOfLines={2}
               style={{ color: 'white', fontSize: 12, marginTop: 2 }}
             >
-              {formatHandle((latestVisibleComment as any)?.from || 'User')}: {String((latestVisibleComment as any)?.text || '')}
+              {safeCommentHandle((latestDisplayedComment as any)?.from || 'User')}: {String((latestDisplayedComment as any)?.text || '')}
             </Text>
           </View>
         )}
@@ -25762,7 +25998,7 @@ const LiveStreamModal = ({
                 >
                   <View style={editorStyles.liveCommentBubble}>
                     <Text style={editorStyles.liveCommentAuthor}>
-                      {fc.from === 'You' ? 'You' : formatHandle(fc.from)}:
+                      {safeCommentHandle(fc.from)}:
                     </Text>
                     <Text style={editorStyles.liveCommentText}>{fc.text}</Text>
                   </View>
@@ -26194,6 +26430,13 @@ const LiveStreamModal = ({
             >
               <Text style={editorStyles.liveRightIcon}>📁</Text>
               <Text style={editorStyles.liveRightLabel}>Files</Text>
+            </Pressable>
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={() => setShowCommentInput(true)}
+            >
+              <Text style={editorStyles.liveRightIcon}>💬</Text>
+              <Text style={editorStyles.liveRightLabel}>Comment</Text>
             </Pressable>
                     
             {/* Virtual Background */}
@@ -26813,6 +27056,7 @@ const LiveStreamModal = ({
                 flexDirection: 'row',
                 justifyContent: 'center',
                 alignItems: 'center',
+                gap: 10,
               }}
             >
               <Pressable
@@ -26828,6 +27072,20 @@ const LiveStreamModal = ({
               >
                 <Text style={styles.closeText}>End Vibe</Text>
               </Pressable>
+              <View
+                style={{
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.24)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 8,
+                  backgroundColor: 'rgba(0,0,0,0.35)',
+                }}
+              >
+                <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>
+                  {livePrivacy.toUpperCase()}
+                </Text>
+              </View>
             </View>
           ) : null}
         </View>

@@ -54,6 +54,12 @@ const formatWhen = (timestamp: number) => {
   return `${days}d ago`;
 };
 
+const filterActiveFiles = (items: MeetingSharedFile[]): MeetingSharedFile[] =>
+  (items || []).filter(item => {
+    const status = String(item?.status || '').toLowerCase();
+    return status === 'selecting' || status === 'uploading' || status === 'presenting';
+  });
+
 export default function FileSharePanel({
   visible,
   liveId,
@@ -76,7 +82,7 @@ export default function FileSharePanel({
     setLoading(true);
     try {
       const items = await listMeetingFiles(effectiveLiveId);
-      setFiles(items);
+      setFiles(filterActiveFiles(items));
     } catch (err: any) {
       Alert.alert('Files', err?.message || 'Failed to load shared files.');
     } finally {
@@ -86,11 +92,12 @@ export default function FileSharePanel({
 
   useEffect(() => {
     if (!visible || !effectiveLiveId) return;
+    setFiles([]);
     setLoading(true);
     const unsub = subscribeMeetingFiles(
       effectiveLiveId,
       items => {
-        setFiles(items);
+        setFiles(filterActiveFiles(items));
         setLoading(false);
       },
       err => {
@@ -132,7 +139,7 @@ export default function FileSharePanel({
         }
         return;
       }
-      const uploaded = await presentMeetingFileLive({
+      const presented = await presentMeetingFileLive({
         liveId: effectiveLiveId,
         file: picked,
         uploaderUid: currentUid,
@@ -141,11 +148,11 @@ export default function FileSharePanel({
       });
       // Keep local UX responsive even when realtime listeners are delayed/failing.
       setFiles(prev => {
-        const next = prev.filter(item => item.id !== uploaded.id);
-        return [uploaded, ...next];
+        const next = prev.filter(item => item.id !== presented.id);
+        return [presented, ...next];
       });
       if (onPresented) {
-        await onPresented(uploaded, picked);
+        await onPresented(presented, picked);
       } else if (picked?.uri) {
         try {
           await Linking.openURL(String(picked.uri));
@@ -153,7 +160,7 @@ export default function FileSharePanel({
       }
       Alert.alert(
         'Live shared',
-        `"${uploaded.name}" is now being presented live in this meeting.`,
+        `"${presented.name}" is now being presented live in this meeting.`,
       );
     } catch (err: any) {
       Alert.alert(
@@ -165,10 +172,7 @@ export default function FileSharePanel({
     }
   }, [currentName, currentUid, effectiveLiveId, onPresented]);
 
-  const pinned = useMemo(
-    () => files.find((item) => item.pinned),
-    [files],
-  );
+  const pinned = useMemo(() => files.find(item => item.pinned), [files]);
 
   const onOpen = useCallback(async (url: string) => {
     if (!url) return;
