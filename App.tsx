@@ -551,8 +551,8 @@ const formatNotificationMessage = (notification: {
     case 'follow':
     case 'CONNECT_VIBE':
     case 'joined_tide':
-      // Ensure username has only one leading slash
-      const cleanUsername = username.startsWith('/') ? username : `/${username}`;
+      // Ensure username has only one leading @
+      const cleanUsername = username.startsWith('@') ? username : `@${String(username || '').replace(/^[@/]+/, '')}`;
       return `${cleanUsername} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
@@ -591,6 +591,32 @@ type LiveInviteJoinPreset = {
   requireApproval?: boolean;
   nonce?: number;
 };
+
+const LIVE_SOUND_EFFECTS: Array<{
+  id: string;
+  label: string;
+  icon: string;
+  file: string;
+}> = [
+  {
+    id: 'drumroll',
+    label: 'Drumroll',
+    icon: '🥁',
+    file: 'large_underwater_explosion_190270',
+  },
+  {
+    id: 'applause',
+    label: 'Applause',
+    icon: '👏',
+    file: 'downfall_3_208028',
+  },
+  {
+    id: 'airhorn',
+    label: 'Airhorn',
+    icon: '📯',
+    file: 'sci_fi_sound_effect_designed_circuits_hum_10_200831',
+  },
+];
 
 type LiveExperienceMode = 'drift' | 'conference';
 
@@ -23388,6 +23414,45 @@ const LiveStreamModal = ({
               const id = String(it?.id || '').trim();
               if (!id || seenCommentIdsRef.current.has(id)) continue;
               seenCommentIdsRef.current.add(id);
+              const systemType = String((it as any)?.systemType || '').trim().toLowerCase();
+              if (systemType === 'sound_effect') {
+                const fromUid = String((it as any)?.fromUid || '').trim();
+                if (!fromUid || fromUid !== String(currentLiveUid || '').trim()) {
+                  const soundId = String((it as any)?.soundId || '').trim().toLowerCase();
+                  const soundLabel = String((it as any)?.soundLabel || '').trim().toLowerCase();
+                  const soundDef =
+                    LIVE_SOUND_EFFECTS.find(
+                      s =>
+                        String(s.id || '').toLowerCase() === soundId ||
+                        String(s.label || '').toLowerCase() === soundLabel,
+                    ) || null;
+                  if (soundDef?.file && Sound) {
+                    try {
+                      let remoteSound: any = null;
+                      remoteSound = new Sound(
+                        soundDef.file,
+                        Sound.MAIN_BUNDLE,
+                        (error: any) => {
+                          if (error) {
+                            try {
+                              remoteSound.release();
+                            } catch {}
+                            return;
+                          }
+                          try {
+                            remoteSound.setVolume(1.0);
+                          } catch {}
+                          remoteSound.play(() => {
+                            try {
+                              remoteSound.release();
+                            } catch {}
+                          });
+                        },
+                      );
+                    } catch {}
+                  }
+                }
+              }
               spawnFlyingComment({ id, text: String(it?.text || ''), from: it?.from });
               spawned += 1;
               if (spawned >= 3) break;
@@ -23403,7 +23468,7 @@ const LiveStreamModal = ({
       );
 
     return () => unsubscribe();
-  }, [isLiveStarted, liveCommentScope]);
+  }, [currentLiveUid, isLiveStarted, liveCommentScope]);
 
   useEffect(() => {
     if (!visible || !isLiveStarted) {
@@ -25059,42 +25124,25 @@ const LiveStreamModal = ({
     );
   };
                     
-  const soundEffects = useMemo(
-    () => [
-      {
-        id: 'drumroll',
-        label: 'Drumroll',
-        icon: '🥁',
-        file: 'large_underwater_explosion_190270',
-      },
-      {
-        id: 'applause',
-        label: 'Applause',
-        icon: '👏',
-        file: 'downfall_3_208028',
-      },
-      {
-        id: 'airhorn',
-        label: 'Airhorn',
-        icon: '📯',
-        file: 'sci_fi_sound_effect_designed_circuits_hum_10_200831',
-      },
-    ],
-    [],
-  );
+  const soundEffects = useMemo(() => LIVE_SOUND_EFFECTS, []);
                     
-  const playSoundEffect = (sound: { file: string; label: string }) => {
+  const playSoundEffect = (
+    sound: { id?: string; file: string; label: string },
+    options?: { publishToAudience?: boolean; broadcast?: boolean },
+  ) => {
     if (!Sound) {
       Alert.alert('Sound Not Available', 'Sound library not loaded');
       return;
     }
+    const publishToAudience = options?.publishToAudience === true;
+    const broadcast = options?.broadcast !== false;
                     
     try {
       console.log('Attempting to play sound:', sound.label, sound.file);
       // Try to publish effect to remote audience through Agora first.
       let publishedToAudience = false;
       try {
-        if (engineRef.current?.startAudioMixing) {
+        if (publishToAudience && engineRef.current?.startAudioMixing) {
           engineRef.current.startAudioMixing(sound.file, false, false, 1);
           engineRef.current?.adjustAudioMixingPublishVolume?.(100);
           engineRef.current?.adjustAudioMixingPlayoutVolume?.(100);
@@ -25119,8 +25167,15 @@ const LiveStreamModal = ({
         soundPlayer.play((success: boolean) => {
           if (success) {
             console.log('Sound played successfully:', sound.label);
-            if (publishedToAudience) {
-              sendSystemMessage(`🔊 ${currentLiveName || 'Host'} played ${sound.label}`);
+            if (publishedToAudience && broadcast) {
+              sendSystemMessage(
+                `🔊 ${currentLiveName || 'Host'} played ${sound.label}`,
+                {
+                  systemType: 'sound_effect',
+                  soundId: String(sound.id || '').trim() || undefined,
+                  soundLabel: String(sound.label || '').trim() || undefined,
+                },
+              );
             }
           } else {
             console.log('Sound playback failed for:', sound.label);
@@ -25157,18 +25212,26 @@ const LiveStreamModal = ({
         cfg.USER_MANAGEMENT_BASE_URL)) ||
     '';
                     
-  const sendSystemMessage = async (message: string) => {
+  const sendSystemMessage = async (
+    message: string,
+    extra?: Record<string, any> | null,
+  ) => {
     try {
       let firestoreMod: any = null;
       try {
         firestoreMod = require('@react-native-firebase/firestore').default;
       } catch {}
       if (firestoreMod && liveDocId) {
+        const payload = {
+          ...(extra && typeof extra === 'object' ? extra : {}),
+        };
         await firestoreMod()
           .collection(`live/${liveDocId}/comments`)
           .add({
             text: message,
             from: 'System',
+            fromUid: String(currentLiveUid || '').trim() || null,
+            ...payload,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
@@ -28425,7 +28488,7 @@ const LiveStreamModal = ({
               )}
               <View style={{ marginLeft: 8 }}>
                 <Text style={{ color: 'white', fontWeight: '700' }}>
-                  /{hostName || 'you'}
+                  @{String(hostName || 'you').replace(/^[@/]+/, '')}
                 </Text>
                 <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>
                   {isLiveHost
