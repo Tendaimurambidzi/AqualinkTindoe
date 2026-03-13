@@ -22860,6 +22860,13 @@ const LiveStreamModal = ({
     isImageFileType(presentationMimeType, presentationName) ||
     isVideoFileType(presentationMimeType, presentationName) ||
     isAudioFileType(presentationMimeType, presentationName);
+  const isLocalPresentationUri = /^(content|file):\/\//i.test(String(presentationUri || ''));
+  const shouldUseLocalDocWebView =
+    !!RNWebView &&
+    !isPresentationMedia &&
+    !!presentationUri &&
+    isCurrentPresenter &&
+    isLocalPresentationUri;
   const shouldUseDocWebView =
     !!embeddedDocViewerUrl &&
     !!RNWebView &&
@@ -26558,6 +26565,35 @@ const LiveStreamModal = ({
                         style={{ width: 320, height: 60, marginTop: 10 }}
                       />
                     </View>
+                  ) : shouldUseLocalDocWebView ? (
+                    React.createElement(RNWebView, {
+                      source: { uri: presentationUri },
+                      style: { width: '100%', height: '100%', backgroundColor: '#0B1426' },
+                      originWhitelist: ['*'],
+                      javaScriptEnabled: true,
+                      domStorageEnabled: true,
+                      allowsInlineMediaPlayback: true,
+                      allowFileAccess: true,
+                      allowUniversalAccessFromFileURLs: true,
+                      allowingReadAccessToURL: presentationUri,
+                      startInLoadingState: true,
+                      renderLoading: () =>
+                        React.createElement(
+                          View,
+                          {
+                            style: {
+                              flex: 1,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#0B1426',
+                            },
+                          },
+                          React.createElement(ActivityIndicator, {
+                            size: 'small',
+                            color: '#9DE6FF',
+                          }),
+                        ),
+                    })
                   ) : shouldUseDocWebView ? (
                     React.createElement(RNWebView, {
                       source: { uri: embeddedDocViewerUrl },

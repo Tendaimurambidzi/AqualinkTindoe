@@ -139,16 +139,6 @@ export default function FileSharePanel({
         }
         return;
       }
-      if (picked?.uri) {
-        // Trigger Android app handler immediately (e.g., WPS Office) for instant open.
-        try {
-          const uri = String(picked.uri);
-          const canOpen = await Linking.canOpenURL(uri);
-          if (canOpen) {
-            Linking.openURL(uri).catch(() => {});
-          }
-        } catch {}
-      }
       // Immediately switch back to meeting view and render selected file in-app.
       onClose();
       const optimisticFile: MeetingSharedFile = {
