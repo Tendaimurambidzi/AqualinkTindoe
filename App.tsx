@@ -22320,7 +22320,10 @@ const LiveStreamModal = ({
   const setupNamePlaceholder = isConferenceMode
     ? 'Conference Title (optional)'
     : 'Drift Title (optional)';
-  const defaultChannel: string = DRIFT_EXPO_FIXED_CHANNEL;
+  const modeChannelPrefix = isConferenceMode ? 'conference' : 'drift';
+  const defaultChannel: string = `${modeChannelPrefix}_${DRIFT_EXPO_FIXED_CHANNEL}`
+    .replace(/[^A-Za-z0-9_]/g, '_')
+    .slice(0, 64);
   const engineRef = React.useRef<any>(null);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraHidden, setCameraHidden] = useState(false);
@@ -22346,6 +22349,12 @@ const LiveStreamModal = ({
     setRemoteParticipantUids([]);
     setPinnedRemoteUid(null);
   }, [visible]);
+  useEffect(() => {
+    if (isLiveStarted) return;
+    if (inviteJoinPreset?.channel) return;
+    setChannelInput(defaultChannel);
+    setLiveChannel(defaultChannel);
+  }, [defaultChannel, inviteJoinPreset?.channel, isLiveStarted]);
   const [liveTitle, setLiveTitle] = useState<string>('');
   const [liveDesc, setLiveDesc] = useState<string>(
     'Say something about your live',
@@ -22515,6 +22524,7 @@ const LiveStreamModal = ({
     null,
   );
   const [beautyFilterEnabled, setBeautyFilterEnabled] = useState(false);
+  const [beautyProfile, setBeautyProfile] = useState<string>('Natural');
   const [liveProducts, setLiveProducts] = useState<any[]>([]);
   const [activePoll, setActivePoll] = useState<any>(null);
   const [coHosts, setCoHosts] = useState<any[]>([]);
@@ -22647,6 +22657,10 @@ const LiveStreamModal = ({
       : !!presentationUri);
   const visualFilterOverlayColor = useMemo(() => {
     switch (activeVisualFilter) {
+      case 'black_white':
+        return 'rgba(128,128,128,0.22)';
+      case 'sepia':
+        return 'rgba(112,66,20,0.2)';
       case 'vivid':
         return 'rgba(255,120,64,0.10)';
       case 'cool':
@@ -22659,6 +22673,14 @@ const LiveStreamModal = ({
         return 'rgba(30,20,55,0.16)';
       case 'ocean':
         return 'rgba(0,150,190,0.14)';
+      case 'retro':
+        return 'rgba(212,140,96,0.14)';
+      case 'neon':
+        return 'rgba(150,72,255,0.14)';
+      case 'soft':
+        return 'rgba(255,230,210,0.1)';
+      case 'dramatic':
+        return 'rgba(20,20,20,0.28)';
       default:
         return '';
     }
@@ -22755,6 +22777,7 @@ const LiveStreamModal = ({
     setConferenceChatSeenAtMs(0);
     setIsSlideAutoPlay(false);
     setActiveVisualFilter('none');
+    setBeautyProfile('Natural');
   }, [visible]);
 
   useEffect(() => {
@@ -23764,8 +23787,8 @@ const LiveStreamModal = ({
           return;
         }
       }
-      // Temporary forced channel for Drift Expo invite/join consistency.
-      const baseChan = DRIFT_EXPO_FIXED_CHANNEL;
+      // Keep conference/drift channels isolated so audio/video sessions never cross.
+      const baseChan = `${modeChannelPrefix}_${DRIFT_EXPO_FIXED_CHANNEL}`;
       const chan = baseChan.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
       const initialTok = (tokenInput || '').trim() || staticToken || null;
       let uidNum = parseInt(uidInput || '0', 10);
@@ -23975,34 +23998,56 @@ const LiveStreamModal = ({
   ]);
                     
   const applyVirtualBackgroundOption = (next: string | null) => {
+    const presets: Record<
+      string,
+      { type: 'color' | 'image'; color?: number; source?: string }
+    > = {
+      ocean_blue: { type: 'color', color: 0x1f6feb },
+      studio_white: { type: 'color', color: 0xf4f7fb },
+      emerald: { type: 'color', color: 0x1f9d55 },
+      sunset: { type: 'color', color: 0xff8a3d },
+      slate: { type: 'color', color: 0x334155 },
+      lavender: { type: 'color', color: 0x8b5cf6 },
+      beach: { type: 'image', source: 'beach' },
+      office: { type: 'image', source: 'office' },
+    };
     setVirtualBackground(next);
     if (!engineRef.current) return;
-    if (next) {
+    if (!next) {
       try {
-        engineRef.current.enableVirtualBackground?.(true, {
-          background_source_type: 1,
-          color: 0xffffff,
-          source: next,
-        });
+        engineRef.current.enableVirtualBackground?.(false, {});
       } catch {}
       return;
     }
+    const selected = presets[next];
+    if (!selected) return;
     try {
-      engineRef.current.enableVirtualBackground?.(false, {});
+      if (selected.type === 'color') {
+        engineRef.current.enableVirtualBackground?.(true, {
+          background_source_type: 2,
+          color: selected.color,
+        });
+      } else {
+        engineRef.current.enableVirtualBackground?.(true, {
+          background_source_type: 1,
+          color: 0xffffff,
+          source: selected.source,
+        });
+      }
     } catch {}
   };
 
   const toggleVirtualBackground = () => {
     const options: Array<{ label: string; value: string | null }> = [
       { label: 'Off', value: null },
+      { label: 'Ocean Blue', value: 'ocean_blue' },
+      { label: 'Studio White', value: 'studio_white' },
+      { label: 'Emerald', value: 'emerald' },
+      { label: 'Sunset', value: 'sunset' },
+      { label: 'Slate', value: 'slate' },
+      { label: 'Lavender', value: 'lavender' },
       { label: 'Beach', value: 'beach' },
-      { label: 'Underwater', value: 'underwater' },
-      { label: 'Studio', value: 'studio' },
-      { label: 'City Night', value: 'city_night' },
-      { label: 'Aurora', value: 'aurora' },
-      { label: 'Mountains', value: 'mountains' },
       { label: 'Office', value: 'office' },
-      { label: 'Space', value: 'space' },
     ];
     Alert.alert(
       'Background',
@@ -24019,16 +24064,51 @@ const LiveStreamModal = ({
   };
                     
   const toggleBeautyFilter = () => {
-    const next = !beautyFilterEnabled;
-    setBeautyFilterEnabled(next);
-    try {
-      engineRef.current?.setBeautyEffectOptions?.(next, {
-        lighteningContrastLevel: 1,
-        lighteningLevel: 0.7,
-        smoothnessLevel: 0.5,
-        rednessLevel: 0.1,
-      });
-    } catch {}
+    const options = [
+      { name: 'Natural', lighteningLevel: 0.25, smoothnessLevel: 0.25, rednessLevel: 0.05 },
+      { name: 'Fresh', lighteningLevel: 0.35, smoothnessLevel: 0.32, rednessLevel: 0.06 },
+      { name: 'Soft Glow', lighteningLevel: 0.45, smoothnessLevel: 0.45, rednessLevel: 0.08 },
+      { name: 'Polished', lighteningLevel: 0.55, smoothnessLevel: 0.5, rednessLevel: 0.1 },
+      { name: 'Studio', lighteningLevel: 0.62, smoothnessLevel: 0.55, rednessLevel: 0.11 },
+      { name: 'Ultra', lighteningLevel: 0.72, smoothnessLevel: 0.62, rednessLevel: 0.14 },
+    ];
+    Alert.alert(
+      'Beauty',
+      'Choose beauty profile',
+      [
+        ...options.map(profile => ({
+          text: `${beautyProfile === profile.name ? '✓ ' : ''}${profile.name}`,
+          onPress: () => {
+            setBeautyProfile(profile.name);
+            setBeautyFilterEnabled(true);
+            try {
+              engineRef.current?.setBeautyEffectOptions?.(true, {
+                lighteningContrastLevel: 1,
+                lighteningLevel: profile.lighteningLevel,
+                smoothnessLevel: profile.smoothnessLevel,
+                rednessLevel: profile.rednessLevel,
+              });
+            } catch {}
+          },
+        })),
+        {
+          text: 'Off',
+          onPress: () => {
+            setBeautyFilterEnabled(false);
+            try {
+              engineRef.current?.setBeautyEffectOptions?.(false, {
+                lighteningContrastLevel: 1,
+                lighteningLevel: 0,
+                smoothnessLevel: 0,
+                rednessLevel: 0,
+              });
+            } catch {}
+          },
+        },
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+      { cancelable: true },
+    );
   };
 
   const applyVisualFilter = (next: string) => {
@@ -24052,7 +24132,21 @@ const LiveStreamModal = ({
   };
 
   const openVisualFiltersMenu = () => {
-    const options = ['none', 'vivid', 'cool', 'warm', 'mono', 'cinematic', 'ocean'];
+    const options = [
+      'none',
+      'black_white',
+      'sepia',
+      'vivid',
+      'cool',
+      'warm',
+      'mono',
+      'cinematic',
+      'ocean',
+      'retro',
+      'neon',
+      'soft',
+      'dramatic',
+    ];
     Alert.alert(
       'Video Filters',
       'Choose filter',
@@ -25488,6 +25582,7 @@ const LiveStreamModal = ({
     mode = 'none',
     searchOceanEntities,
     isInUserCrew,
+    onClosePanel,
   }: {
     viewers: any[];
     onUserAction: (action: string, userId: string, username: string) => void;
@@ -25496,6 +25591,7 @@ const LiveStreamModal = ({
     mode?: 'none' | 'join' | 'block' | 'remove';
     searchOceanEntities: (term: string) => Promise<SearchResult[]>;
     isInUserCrew: { [uid: string]: boolean };
+    onClosePanel?: () => void;
   }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [panelSearchResults, setPanelSearchResults] = useState<SearchResult[]>([]);
@@ -25603,6 +25699,34 @@ const LiveStreamModal = ({
                     
     return (
       <View style={userManagementStyles.panel}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 8,
+          }}
+        >
+          <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 13 }}>
+            {isConferenceMode ? 'Conference Roster' : 'Drift Crew'}
+          </Text>
+          <Pressable
+            onPress={() => {
+              onClosePanel && onClosePanel();
+            }}
+            style={{
+              borderWidth: 1,
+              borderColor: 'rgba(255,255,255,0.25)',
+              borderRadius: 8,
+              paddingHorizontal: 10,
+              paddingVertical: 5,
+            }}
+          >
+            <Text style={{ color: 'white', fontWeight: '700', fontSize: 11 }}>
+              Back
+            </Text>
+          </Pressable>
+        </View>
         <TextInput
           placeholder="Search viewers..."
           value={searchQuery}
@@ -26867,7 +26991,7 @@ const LiveStreamModal = ({
             </ScrollView>
           </View>
         )}
-        {isLiveStarted && remoteParticipantUids.length > 1 && (
+        {isLiveStarted && remoteParticipantUids.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -26876,32 +27000,69 @@ const LiveStreamModal = ({
               right: 10,
               left: 10,
               bottom: insets.bottom + endBarHeight + 54,
-              maxHeight: 44,
+              maxHeight: 92,
             }}
-            contentContainerStyle={{ gap: 8, alignItems: 'center' }}
+            contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 6 }}
           >
-            {remoteParticipantUids.map(uid => (
+            {remoteParticipantUids.slice(0, 8).map(uid => (
               <Pressable
-                key={`remote-pill-${uid}`}
+                key={`remote-tile-${uid}`}
                 onPress={() => setPinnedRemoteUid(uid)}
                 style={{
-                  borderRadius: 20,
-                  borderWidth: 1,
+                  width: 72,
+                  height: 88,
+                  borderRadius: 10,
+                  overflow: 'hidden',
+                  borderWidth: 1.5,
                   borderColor:
                     pinnedRemoteUid === uid
                       ? 'rgba(0,194,255,0.95)'
                       : 'rgba(255,255,255,0.35)',
-                  backgroundColor:
-                    pinnedRemoteUid === uid
-                      ? 'rgba(0,194,255,0.22)'
-                      : 'rgba(6,12,20,0.75)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
+                  backgroundColor: 'rgba(6,12,20,0.8)',
                 }}
               >
-                <Text style={{ color: 'white', fontSize: 11, fontWeight: '700' }}>
-                  Guest {uid}
-                </Text>
+                {RtcSurfaceView ? (
+                  React.createElement(RtcSurfaceView, {
+                    style: { width: '100%', height: '100%' },
+                    canvas: {
+                      uid,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: { width: '100%', height: '100%' },
+                    canvas: {
+                      uid,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
+                ) : RtcRemoteView?.SurfaceView ? (
+                  React.createElement(RtcRemoteView.SurfaceView, {
+                    style: { width: '100%', height: '100%' },
+                    uid,
+                    channelId: liveChannel || channelInput,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  })
+                ) : null}
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.55)',
+                    paddingVertical: 2,
+                    paddingHorizontal: 4,
+                  }}
+                >
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: 'white', fontSize: 9, fontWeight: '700', textAlign: 'center' }}
+                  >
+                    Guest {uid}
+                  </Text>
+                </View>
               </Pressable>
             ))}
           </ScrollView>
@@ -26942,6 +27103,7 @@ const LiveStreamModal = ({
             mode={userPanelMode}
             isInUserCrew={isInUserCrew}
             searchOceanEntities={searchOceanEntities}
+            onClosePanel={() => setShowUserPanel(false)}
             onUserAction={(action, userId, username) => {
               setShowUserPanel(false);
               handleUserAction(action, userId, username);
@@ -26956,6 +27118,7 @@ const LiveStreamModal = ({
             mode={userPanelMode}
             isInUserCrew={isInUserCrew}
             searchOceanEntities={searchOceanEntities}
+            onClosePanel={() => setShowConferenceRosterPanel(false)}
             onUserAction={(action, userId, username) => {
               setShowConferenceRosterPanel(false);
               handleUserAction(action, userId, username);
@@ -27040,43 +27203,6 @@ const LiveStreamModal = ({
               >
                 <Text style={editorStyles.liveRightIcon}>📁</Text>
                 <Text style={editorStyles.liveRightLabel}>Files</Text>
-              </Pressable>
-            )}
-            {isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={() => {
-                  setShowConferenceChatPanel(v => !v);
-                  setShowConferenceRosterPanel(false);
-                  setShowCommentInput(false);
-                }}
-              >
-                <View>
-                  <Text style={editorStyles.liveRightIcon}>💬</Text>
-                  {conferenceUnreadChatCount > 0 ? (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        right: -7,
-                        top: -6,
-                        minWidth: 16,
-                        height: 16,
-                        borderRadius: 8,
-                        backgroundColor: '#FFD400',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        paddingHorizontal: 3,
-                      }}
-                    >
-                      <Text style={{ color: '#111', fontSize: 10, fontWeight: '900' }}>
-                        {conferenceUnreadChatCount > 99 ? '99+' : conferenceUnreadChatCount}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text style={editorStyles.liveRightLabel}>
-                  {showConferenceChatPanel ? 'Chat On' : 'Chat'}
-                </Text>
               </Pressable>
             )}
             {isConferenceMode && (
@@ -27168,7 +27294,7 @@ const LiveStreamModal = ({
             >
               <Text style={editorStyles.liveRightIcon}>✨</Text>
               <Text style={editorStyles.liveRightLabel}>
-                {beautyFilterEnabled ? 'Beauty On' : 'Beauty'}
+                {beautyFilterEnabled ? `Beauty ${beautyProfile}` : 'Beauty'}
               </Text>
             </Pressable>
                     
@@ -27233,15 +27359,15 @@ const LiveStreamModal = ({
               </Pressable>
             )}
                     
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={showSoundBoard}
-            >
-              <Text style={editorStyles.liveRightIcon}>{isConferenceMode ? '😀' : '🔊'}</Text>
-              <Text style={editorStyles.liveRightLabel}>
-                {isConferenceMode ? 'Reactions' : 'Sounds'}
-              </Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={showSoundBoard}
+              >
+                <Text style={editorStyles.liveRightIcon}>🔊</Text>
+                <Text style={editorStyles.liveRightLabel}>Sounds</Text>
+              </Pressable>
+            )}
                     
             {/* Mute mic */}
             <Pressable
@@ -27794,36 +27920,42 @@ const LiveStreamModal = ({
                   /{hostName || 'you'}
                 </Text>
                 <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>
-                  Stream Captain
+                  {isConferenceMode ? 'Conference Host' : 'Stream Captain'}
                 </Text>
               </View>
             </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={editorStyles.liveBottomScroll}
+            <View
+              style={[
+                editorStyles.liveBottomScroll,
+                {
+                  width: '100%',
+                  justifyContent: 'space-evenly',
+                  alignItems: 'center',
+                  gap: 0,
+                },
+              ]}
             >
-              {/* Non-button items (scrollable) */}
-              <Pressable style={editorStyles.liveBottomItem} onPress={showSoundBoard}>
-                <Text style={editorStyles.liveBottomIcon}>🎵</Text>
-                <Text style={editorStyles.liveBottomLabel}>Music</Text>
-              </Pressable>
-              <Pressable style={editorStyles.liveBottomItem} onPress={openVisualFiltersMenu}>
-                <Text style={editorStyles.liveBottomIcon}>🎛️</Text>
-                <Text style={editorStyles.liveBottomLabel}>Filters</Text>
-              </Pressable>
-              <Pressable style={editorStyles.liveBottomItem} onPress={toggleVirtualBackground}>
-                <Text style={editorStyles.liveBottomIcon}>🧱</Text>
-                <Text style={editorStyles.liveBottomLabel}>Backgrounds</Text>
-              </Pressable>
-              <Pressable style={editorStyles.liveBottomItem} onPress={toggleBeautyFilter}>
-                <Text style={editorStyles.liveBottomIcon}>✨</Text>
-                <Text style={editorStyles.liveBottomLabel}>
-                  {beautyFilterEnabled ? 'Beauty On' : 'Beauty'}
-                </Text>
-              </Pressable>
+              {/* Non-button items */}
+              {!isConferenceMode && (
+                <Pressable
+                  style={[editorStyles.liveBottomItem, { flex: 1 }]}
+                  onPress={showSoundBoard}
+                >
+                  <Text style={editorStyles.liveBottomIcon}>🎵</Text>
+                  <Text style={editorStyles.liveBottomLabel}>Music</Text>
+                </Pressable>
+              )}
+              {!isConferenceMode && (
+                <Pressable
+                  style={[editorStyles.liveBottomItem, { flex: 1 }]}
+                  onPress={openVisualFiltersMenu}
+                >
+                  <Text style={editorStyles.liveBottomIcon}>🎛️</Text>
+                  <Text style={editorStyles.liveBottomLabel}>Filters</Text>
+                </Pressable>
+              )}
               <Pressable
-                style={editorStyles.liveBottomItem}
+                style={[editorStyles.liveBottomItem, { flex: 1 }]}
                 onPress={() => {
                   if (isConferenceMode) {
                     setShowConferenceChatPanel(p => !p);
@@ -27834,13 +27966,35 @@ const LiveStreamModal = ({
                   setShowCommentInput(p => !p);
                 }}
               >
-                <Text style={editorStyles.liveBottomIcon}>💬</Text>
+                <View>
+                  <Text style={editorStyles.liveBottomIcon}>💬</Text>
+                  {isConferenceMode && conferenceUnreadChatCount > 0 ? (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        right: -8,
+                        top: -6,
+                        minWidth: 16,
+                        height: 16,
+                        borderRadius: 8,
+                        backgroundColor: '#FFD400',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        paddingHorizontal: 3,
+                      }}
+                    >
+                      <Text style={{ color: '#111', fontSize: 10, fontWeight: '900' }}>
+                        {conferenceUnreadChatCount > 99 ? '99+' : conferenceUnreadChatCount}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
                 <Text style={editorStyles.liveBottomLabel}>
                   {isConferenceMode ? 'Chat' : 'Comment'}
                 </Text>
               </Pressable>
               <Pressable
-                style={editorStyles.liveBottomItem}
+                style={[editorStyles.liveBottomItem, { flex: 1 }]}
                 onPress={() => setShowLiveControls(v => !v)}
               >
                 <Text style={editorStyles.liveBottomIcon}>🕹️</Text>
@@ -27853,7 +28007,7 @@ const LiveStreamModal = ({
                   CONTROLS
                 </Text>
               </Pressable>
-            </ScrollView>
+            </View>
           </View>
         )}
                     
