@@ -22543,11 +22543,13 @@ const LiveStreamModal = ({
   const [showConferenceToolsPanel, setShowConferenceToolsPanel] = useState(false);
   const [showConferenceRosterPanel, setShowConferenceRosterPanel] = useState(false);
   const [showConferenceChatPanel, setShowConferenceChatPanel] = useState(false);
+  const [conferenceChatSeenAtMs, setConferenceChatSeenAtMs] = useState<number>(0);
   const [conferenceAgendaDraft, setConferenceAgendaDraft] = useState('');
   const [conferenceAgendaItems, setConferenceAgendaItems] = useState<string[]>([]);
   const [conferenceActionDraft, setConferenceActionDraft] = useState('');
   const [conferenceActionItems, setConferenceActionItems] = useState<string[]>([]);
   const [isSlideAutoPlay, setIsSlideAutoPlay] = useState(false);
+  const [activeVisualFilter, setActiveVisualFilter] = useState<string>('none');
   const [showLiveControls, setShowLiveControls] = useState(false);
   const [inviteStatusByUid, setInviteStatusByUid] = useState<
     Record<
@@ -22643,39 +22645,72 @@ const LiveStreamModal = ({
     (isCurrentPresenter
       ? !!(localPresentedAsset?.uri || presentationUri)
       : !!presentationUri);
+  const visualFilterOverlayColor = useMemo(() => {
+    switch (activeVisualFilter) {
+      case 'vivid':
+        return 'rgba(255,120,64,0.10)';
+      case 'cool':
+        return 'rgba(100,180,255,0.12)';
+      case 'warm':
+        return 'rgba(255,168,85,0.12)';
+      case 'mono':
+        return 'rgba(120,120,120,0.14)';
+      case 'cinematic':
+        return 'rgba(30,20,55,0.16)';
+      case 'ocean':
+        return 'rgba(0,150,190,0.14)';
+      default:
+        return '';
+    }
+  }, [activeVisualFilter]);
   const safeCommentHandle = (value: any) => {
     const raw = String(value || '').trim();
     if (!raw) return 'User';
     if (raw.toLowerCase() === 'you') return 'You';
     return raw.replace(/^[@/]+/, '');
   };
+  const getCommentCreatedAtMs = useCallback((item: any): number => {
+    const direct = Number(item?.createdAtMs || item?.ts || 0);
+    if (direct > 0) return direct;
+    const ts: any = item?.createdAt;
+    if (ts?.toMillis) {
+      try {
+        return Number(ts.toMillis()) || 0;
+      } catch {}
+    }
+    if (ts?.toDate) {
+      try {
+        return Number(ts.toDate()?.getTime?.()) || 0;
+      } catch {}
+    }
+    return 0;
+  }, []);
   const COMMENT_TTL_MS = 20000;
   const MAX_VISIBLE_COMMENTS = 4;
   const displayedLiveComments = useMemo(() => {
-    const getCreatedAtMs = (item: any): number => {
-      const direct = Number(item?.createdAtMs || item?.ts || 0);
-      if (direct > 0) return direct;
-      const ts: any = item?.createdAt;
-      if (ts?.toMillis) {
-        try {
-          return Number(ts.toMillis()) || 0;
-        } catch {}
-      }
-      if (ts?.toDate) {
-        try {
-          return Number(ts.toDate()?.getTime?.()) || 0;
-        } catch {}
-      }
-      return 0;
-    };
     const now = Number(commentNowMs || Date.now());
     const fresh = (liveComments || []).filter((item: any) => {
-      const at = getCreatedAtMs(item);
+      const at = getCommentCreatedAtMs(item);
       if (at <= 0) return true;
       return now - at <= COMMENT_TTL_MS;
     });
     return fresh.slice(-MAX_VISIBLE_COMMENTS);
-  }, [commentNowMs, liveComments]);
+  }, [commentNowMs, getCommentCreatedAtMs, liveComments]);
+  const conferenceUnreadChatCount = useMemo(() => {
+    if (!isConferenceMode) return 0;
+    const since = Number(conferenceChatSeenAtMs || 0);
+    return (liveComments || []).filter((c: any) => {
+      const fromUid = String(c?.fromUid || '').trim();
+      const at = getCommentCreatedAtMs(c);
+      return fromUid && fromUid !== currentLiveUid && at > since;
+    }).length;
+  }, [
+    conferenceChatSeenAtMs,
+    currentLiveUid,
+    getCommentCreatedAtMs,
+    isConferenceMode,
+    liveComments,
+  ]);
   const latestDisplayedComment = useMemo(() => {
     if (!displayedLiveComments.length) return null;
     return displayedLiveComments[displayedLiveComments.length - 1];
@@ -22717,7 +22752,9 @@ const LiveStreamModal = ({
     setConferenceAgendaItems([]);
     setConferenceActionDraft('');
     setConferenceActionItems([]);
+    setConferenceChatSeenAtMs(0);
     setIsSlideAutoPlay(false);
+    setActiveVisualFilter('none');
   }, [visible]);
 
   useEffect(() => {
@@ -22732,6 +22769,20 @@ const LiveStreamModal = ({
     setLiveSharedFiles([]);
     setLocalPresentedAsset(null);
   }, [isConferenceMode]);
+
+  useEffect(() => {
+    if (!isConferenceMode || !showConferenceChatPanel) return;
+    const latestTs = (liveComments || []).reduce((max: number, item: any) => {
+      const at = getCommentCreatedAtMs(item);
+      return at > max ? at : max;
+    }, Date.now());
+    setConferenceChatSeenAtMs(latestTs);
+  }, [
+    getCommentCreatedAtMs,
+    isConferenceMode,
+    liveComments,
+    showConferenceChatPanel,
+  ]);
 
   useEffect(() => {
     if (!visible || !isLiveStarted || !liveShareScope) {
@@ -23596,6 +23647,69 @@ const LiveStreamModal = ({
       }
     }
   };
+
+  const sendConferenceInviteLink = async (
+    mode: 'whatsapp' | 'email' | 'share',
+  ) => {
+    if (!liveDocId || !liveChannel) {
+      Alert.alert('Invite', 'Start conference first.');
+      return;
+    }
+    try {
+      const result = await shareDriftLink(liveDocId, liveChannel, liveTitle);
+      const msg = String(result?.message || '').trim();
+      const url = String(result?.webLink || '').trim();
+      const payload = [msg, url].filter(Boolean).join('\n');
+      if (mode === 'whatsapp') {
+        const waUrl = `whatsapp://send?text=${encodeURIComponent(payload)}`;
+        const supported = await Linking.canOpenURL(waUrl);
+        if (!supported) {
+          Alert.alert('Invite', 'WhatsApp is not available on this device.');
+          return;
+        }
+        await Linking.openURL(waUrl);
+        return;
+      }
+      if (mode === 'email') {
+        const subject = encodeURIComponent(`Join my conference: ${liveTitle}`);
+        const body = encodeURIComponent(payload);
+        await Linking.openURL(`mailto:?subject=${subject}&body=${body}`);
+        return;
+      }
+      await Share.share({
+        message: payload,
+        url,
+        title: `Join my conference: ${liveTitle}`,
+      });
+    } catch (error) {
+      console.error('Conference invite error:', error);
+      Alert.alert('Invite', 'Failed to prepare invite link.');
+    }
+  };
+
+  const openConferenceInviteOptions = () => {
+    Alert.alert('Send Conference Invite', 'Choose how to send the invite link.', [
+      {
+        text: 'WhatsApp',
+        onPress: () => {
+          void sendConferenceInviteLink('whatsapp');
+        },
+      },
+      {
+        text: 'Email',
+        onPress: () => {
+          void sendConferenceInviteLink('email');
+        },
+      },
+      {
+        text: 'More',
+        onPress: () => {
+          void sendConferenceInviteLink('share');
+        },
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
                     
   const spawnFlyingComment = (c: {
     id: string;
@@ -23860,26 +23974,48 @@ const LiveStreamModal = ({
     isSlideAutoPlay,
   ]);
                     
-  const toggleVirtualBackground = () => {
-    const backgrounds = [null, 'beach', 'underwater', 'space', 'studio'];
-    const idx = backgrounds.indexOf(virtualBackground);
-    const next = backgrounds[(idx + 1) % backgrounds.length];
+  const applyVirtualBackgroundOption = (next: string | null) => {
     setVirtualBackground(next);
-    if (engineRef.current) {
-      if (next) {
-        try {
-          engineRef.current.enableVirtualBackground?.(true, {
-            background_source_type: 1,
-            color: 0xffffff,
-            source: next,
-          });
-        } catch {}
-      } else {
-        try {
-          engineRef.current.enableVirtualBackground?.(false, {});
-        } catch {}
-      }
+    if (!engineRef.current) return;
+    if (next) {
+      try {
+        engineRef.current.enableVirtualBackground?.(true, {
+          background_source_type: 1,
+          color: 0xffffff,
+          source: next,
+        });
+      } catch {}
+      return;
     }
+    try {
+      engineRef.current.enableVirtualBackground?.(false, {});
+    } catch {}
+  };
+
+  const toggleVirtualBackground = () => {
+    const options: Array<{ label: string; value: string | null }> = [
+      { label: 'Off', value: null },
+      { label: 'Beach', value: 'beach' },
+      { label: 'Underwater', value: 'underwater' },
+      { label: 'Studio', value: 'studio' },
+      { label: 'City Night', value: 'city_night' },
+      { label: 'Aurora', value: 'aurora' },
+      { label: 'Mountains', value: 'mountains' },
+      { label: 'Office', value: 'office' },
+      { label: 'Space', value: 'space' },
+    ];
+    Alert.alert(
+      'Background',
+      'Choose background style',
+      [
+        ...options.map(opt => ({
+          text: `${virtualBackground === opt.value ? '✓ ' : ''}${opt.label}`,
+          onPress: () => applyVirtualBackgroundOption(opt.value),
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+      { cancelable: true },
+    );
   };
                     
   const toggleBeautyFilter = () => {
@@ -23893,6 +24029,42 @@ const LiveStreamModal = ({
         rednessLevel: 0.1,
       });
     } catch {}
+  };
+
+  const applyVisualFilter = (next: string) => {
+    setActiveVisualFilter(next);
+    const profiles: Record<string, any> = {
+      none: { lighteningLevel: 0.2, smoothnessLevel: 0.2, rednessLevel: 0 },
+      vivid: { lighteningLevel: 0.45, smoothnessLevel: 0.35, rednessLevel: 0.15 },
+      cool: { lighteningLevel: 0.3, smoothnessLevel: 0.25, rednessLevel: 0.05 },
+      warm: { lighteningLevel: 0.5, smoothnessLevel: 0.35, rednessLevel: 0.2 },
+      mono: { lighteningLevel: 0.28, smoothnessLevel: 0.22, rednessLevel: 0 },
+      cinematic: { lighteningLevel: 0.38, smoothnessLevel: 0.3, rednessLevel: 0.12 },
+      ocean: { lighteningLevel: 0.42, smoothnessLevel: 0.32, rednessLevel: 0.08 },
+    };
+    const profile = profiles[next] || profiles.none;
+    try {
+      engineRef.current?.setBeautyEffectOptions?.(next !== 'none', {
+        lighteningContrastLevel: 1,
+        ...profile,
+      });
+    } catch {}
+  };
+
+  const openVisualFiltersMenu = () => {
+    const options = ['none', 'vivid', 'cool', 'warm', 'mono', 'cinematic', 'ocean'];
+    Alert.alert(
+      'Video Filters',
+      'Choose filter',
+      [
+        ...options.map(name => ({
+          text: `${activeVisualFilter === name ? '✓ ' : ''}${name.toUpperCase()}`,
+          onPress: () => applyVisualFilter(name),
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+      { cancelable: true },
+    );
   };
                     
   const toggleRecording = async () => {
@@ -24545,6 +24717,16 @@ const LiveStreamModal = ({
                     
     try {
       console.log('Attempting to play sound:', sound.label, sound.file);
+      // Try to publish effect to remote audience through Agora first.
+      let publishedToAudience = false;
+      try {
+        if (engineRef.current?.startAudioMixing) {
+          engineRef.current.startAudioMixing(sound.file, false, false, 1);
+          engineRef.current?.adjustAudioMixingPublishVolume?.(100);
+          engineRef.current?.adjustAudioMixingPlayoutVolume?.(100);
+          publishedToAudience = true;
+        }
+      } catch {}
                     
       // Play from raw folder (no extension needed)
       const soundPlayer = new Sound(sound.file, Sound.MAIN_BUNDLE, (error: any) => {
@@ -24563,6 +24745,9 @@ const LiveStreamModal = ({
         soundPlayer.play((success: boolean) => {
           if (success) {
             console.log('Sound played successfully:', sound.label);
+            if (publishedToAudience) {
+              sendSystemMessage(`🔊 ${currentLiveName || 'Host'} played ${sound.label}`);
+            }
           } else {
             console.log('Sound playback failed for:', sound.label);
           }
@@ -25326,7 +25511,9 @@ const LiveStreamModal = ({
       none: null,
       join: 'Search for a viber and tap to add them to your crew.',
       block: 'Search for a viber and tap to add them to the backend block list.',
-      remove: 'Search for a viber and tap to remove them from your crew.',
+      remove: isConferenceMode
+        ? 'Search for a participant and tap to remove from conference.'
+        : 'Search for a viber and tap to remove them from your crew.',
     };
                     
     const runUserPanelSearch = useCallback(async () => {
@@ -25378,7 +25565,16 @@ const LiveStreamModal = ({
       ];
       return [
         ...base,
-        { label: 'Accept To Drift', action: 'acceptDrift', icon: '✅' },
+        {
+          label: isConferenceMode ? 'Accept Join Request' : 'Accept To Drift',
+          action: 'acceptDrift',
+          icon: '✅',
+        },
+        {
+          label: isConferenceMode ? 'Remove Participant' : 'Remove User',
+          action: 'kick',
+          icon: '❌',
+        },
         ...moderation,
         ...restrictive,
         ...crewActions,
@@ -25707,9 +25903,12 @@ const LiveStreamModal = ({
           <View
             style={{
               position: 'absolute',
-              top: insets.top + 2,
+              top: isConferenceMode ? undefined : insets.top + 2,
               left: 8,
               right: 8,
+              bottom: isConferenceMode
+                ? insets.bottom + endBarHeight + mediaBarHeight + 18
+                : undefined,
               zIndex: 15,
               backgroundColor: 'rgba(0,0,0,0.82)',
               borderRadius: 12,
@@ -26115,6 +26314,18 @@ const LiveStreamModal = ({
                 <Text style={{ color: 'white' }}>Initializing preview...</Text>
               </View>
             )}
+            {!isFilePresentationActive && !!visualFilterOverlayColor && (
+              <View
+                pointerEvents="none"
+                style={[
+                  StyleSheet.absoluteFill,
+                  {
+                    backgroundColor: visualFilterOverlayColor,
+                    zIndex: 3,
+                  },
+                ]}
+              />
+            )}
             {!isFilePresentationActive && !cameraHidden && (
               <View
                 style={{
@@ -26180,9 +26391,9 @@ const LiveStreamModal = ({
                   insets.bottom +
                   endBarHeight +
                   mediaBarHeight +
-                  (showCommentInput ? 132 : 64),
+                  (showCommentInput ? 172 : 92),
                 top: insets.top + 110,
-                maxHeight: 220,
+                maxHeight: 240,
               },
             ]}
             pointerEvents="box-none"
@@ -26193,6 +26404,7 @@ const LiveStreamModal = ({
               {displayedLiveComments.map(c => (
                 <Pressable
                   key={c.id}
+                  style={{ marginBottom: 8 }}
                   onLongPress={() => {
                     const actions: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'default' | 'destructive' }> = [
                       {
@@ -26293,7 +26505,7 @@ const LiveStreamModal = ({
             </View>
           </ScrollView>
         )}
-        {isLiveStarted && !isConferenceMode && latestDisplayedComment && (
+        {false && isLiveStarted && !isConferenceMode && latestDisplayedComment && (
           <View
             style={{
               position: 'absolute',
@@ -26408,7 +26620,7 @@ const LiveStreamModal = ({
             <Text
               style={{ color: 'white', fontWeight: '800', marginBottom: 6 }}
             >
-              Pending Drift Requests
+              {isConferenceMode ? 'Pending Join Requests' : 'Pending Drift Requests'}
             </Text>
             {pendingRequests.map(r => (
               <View
@@ -26432,13 +26644,15 @@ const LiveStreamModal = ({
                     handleUserAction('acceptDrift', r.uid, r.name || r.uid)
                   }
                 >
-                  <Text style={styles.primaryBtnText}>Accept</Text>
+                  <Text style={styles.primaryBtnText}>
+                    {isConferenceMode ? 'Accept Join' : 'Accept'}
+                  </Text>
                 </Pressable>
               </View>
             ))}
           </View>
         )}
-        {isLiveStarted && showOnlineInvitePanel && (
+        {isLiveStarted && !isConferenceMode && showOnlineInvitePanel && (
           <View
             style={{
               position: 'absolute',
@@ -26769,21 +26983,37 @@ const LiveStreamModal = ({
             {/* Invite */}
             <Pressable
               style={editorStyles.liveRightButton}
-              onPress={inviteCoHost}
+              onPress={() => {
+                if (isConferenceMode) {
+                  openConferenceInviteOptions();
+                  return;
+                }
+                inviteCoHost();
+              }}
             >
               <Text style={editorStyles.liveRightIcon}>📨</Text>
-              <Text style={editorStyles.liveRightLabel}>Invite</Text>
+              <Text style={editorStyles.liveRightLabel}>
+                {isConferenceMode ? 'Invite Link' : 'Invite'}
+              </Text>
             </Pressable>
             <Pressable
               style={editorStyles.liveRightButton}
-              onPress={() => setShowOnlineInvitePanel(v => !v)}
+              onPress={() => {
+                if (isConferenceMode) {
+                  setShowConferenceRosterPanel(v => !v);
+                  setUserPanelMode('join');
+                  setShowConferenceChatPanel(false);
+                  return;
+                }
+                setShowOnlineInvitePanel(v => !v);
+              }}
             >
               <Text style={editorStyles.liveRightIcon}>👥</Text>
               <Text style={editorStyles.liveRightLabel}>
                 {isConferenceMode
-                  ? showOnlineInvitePanel
-                    ? 'Participants On'
-                    : 'Participants'
+                  ? showConferenceRosterPanel
+                    ? 'Roster On'
+                    : 'Roster'
                   : showOnlineInvitePanel
                   ? 'Here Now! On'
                   : 'Here Now!'}
@@ -26812,27 +27042,43 @@ const LiveStreamModal = ({
                 <Text style={editorStyles.liveRightLabel}>Files</Text>
               </Pressable>
             )}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={() => {
-                if (isConferenceMode) {
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => {
                   setShowConferenceChatPanel(v => !v);
                   setShowConferenceRosterPanel(false);
                   setShowCommentInput(false);
-                  return;
-                }
-                setShowCommentInput(true);
-              }}
-            >
-              <Text style={editorStyles.liveRightIcon}>💬</Text>
-              <Text style={editorStyles.liveRightLabel}>
-                {isConferenceMode
-                  ? showConferenceChatPanel
-                    ? 'Chat On'
-                    : 'Chat'
-                  : 'Comment'}
-              </Text>
-            </Pressable>
+                }}
+              >
+                <View>
+                  <Text style={editorStyles.liveRightIcon}>💬</Text>
+                  {conferenceUnreadChatCount > 0 ? (
+                    <View
+                      style={{
+                        position: 'absolute',
+                        right: -7,
+                        top: -6,
+                        minWidth: 16,
+                        height: 16,
+                        borderRadius: 8,
+                        backgroundColor: '#FFD400',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        paddingHorizontal: 3,
+                      }}
+                    >
+                      <Text style={{ color: '#111', fontSize: 10, fontWeight: '900' }}>
+                        {conferenceUnreadChatCount > 99 ? '99+' : conferenceUnreadChatCount}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+                <Text style={editorStyles.liveRightLabel}>
+                  {showConferenceChatPanel ? 'Chat On' : 'Chat'}
+                </Text>
+              </Pressable>
+            )}
             {isConferenceMode && (
               <Pressable
                 style={editorStyles.liveRightButton}
@@ -26846,6 +27092,19 @@ const LiveStreamModal = ({
                 <Text style={editorStyles.liveRightLabel}>
                   {showConferenceRosterPanel ? 'Roster On' : 'Roster'}
                 </Text>
+              </Pressable>
+            )}
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => {
+                  setShowConferenceRosterPanel(true);
+                  setShowConferenceChatPanel(false);
+                  setUserPanelMode('remove');
+                }}
+              >
+                <Text style={editorStyles.liveRightIcon}>🗑️</Text>
+                <Text style={editorStyles.liveRightLabel}>Remove</Text>
               </Pressable>
             )}
             {isConferenceMode && (
@@ -26989,8 +27248,10 @@ const LiveStreamModal = ({
               style={editorStyles.liveRightButton}
               onPress={() => {
                 try {
-                  setMicMuted(m => !m);
-                  engineRef.current?.muteLocalAudioStream?.(!micMuted);
+                  const next = !micMuted;
+                  setMicMuted(next);
+                  engineRef.current?.enableLocalAudio?.(!next);
+                  engineRef.current?.muteLocalAudioStream?.(next);
                 } catch {}
               }}
             >
@@ -27009,6 +27270,7 @@ const LiveStreamModal = ({
                 try {
                   const newState = !cameraHidden;
                   setCameraHidden(newState);
+                  engineRef.current?.muteLocalVideoStream?.(newState);
                   engineRef.current?.enableLocalVideo?.(!newState);
                 } catch {}
               }}
@@ -27542,18 +27804,24 @@ const LiveStreamModal = ({
               contentContainerStyle={editorStyles.liveBottomScroll}
             >
               {/* Non-button items (scrollable) */}
-              <View style={editorStyles.liveBottomItem}>
+              <Pressable style={editorStyles.liveBottomItem} onPress={showSoundBoard}>
                 <Text style={editorStyles.liveBottomIcon}>🎵</Text>
                 <Text style={editorStyles.liveBottomLabel}>Music</Text>
-              </View>
-              <View style={editorStyles.liveBottomItem}>
+              </Pressable>
+              <Pressable style={editorStyles.liveBottomItem} onPress={openVisualFiltersMenu}>
                 <Text style={editorStyles.liveBottomIcon}>🎛️</Text>
                 <Text style={editorStyles.liveBottomLabel}>Filters</Text>
-              </View>
-              <View style={editorStyles.liveBottomItem}>
+              </Pressable>
+              <Pressable style={editorStyles.liveBottomItem} onPress={toggleVirtualBackground}>
                 <Text style={editorStyles.liveBottomIcon}>🧱</Text>
-                <Text style={editorStyles.liveBottomLabel}>Overlays</Text>
-              </View>
+                <Text style={editorStyles.liveBottomLabel}>Backgrounds</Text>
+              </Pressable>
+              <Pressable style={editorStyles.liveBottomItem} onPress={toggleBeautyFilter}>
+                <Text style={editorStyles.liveBottomIcon}>✨</Text>
+                <Text style={editorStyles.liveBottomLabel}>
+                  {beautyFilterEnabled ? 'Beauty On' : 'Beauty'}
+                </Text>
+              </Pressable>
               <Pressable
                 style={editorStyles.liveBottomItem}
                 onPress={() => {
@@ -27576,8 +27844,13 @@ const LiveStreamModal = ({
                 onPress={() => setShowLiveControls(v => !v)}
               >
                 <Text style={editorStyles.liveBottomIcon}>🕹️</Text>
-                <Text style={editorStyles.liveBottomLabel}>
-                  {showLiveControls ? 'Controls On' : 'Controls'}
+                <Text
+                  style={[
+                    editorStyles.liveBottomLabel,
+                    { color: '#FF3B30', fontWeight: '900' },
+                  ]}
+                >
+                  CONTROLS
                 </Text>
               </Pressable>
             </ScrollView>
@@ -27740,22 +28013,26 @@ const LiveStreamModal = ({
                 ]}
                 onPress={handleEndDrift}
               >
-                <Text style={styles.closeText}>End Vibe</Text>
-              </Pressable>
-              <View
-                style={{
-                  borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.24)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 8,
-                  backgroundColor: 'rgba(0,0,0,0.35)',
-                }}
-              >
-                <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>
-                  {livePrivacy.toUpperCase()}
+                <Text style={styles.closeText}>
+                  {isConferenceMode ? 'End Conference' : 'End Vibe'}
                 </Text>
-              </View>
+              </Pressable>
+              {!isConferenceMode && (
+                <View
+                  style={{
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.24)',
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                    backgroundColor: 'rgba(0,0,0,0.35)',
+                  }}
+                >
+                  <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>
+                    {livePrivacy.toUpperCase()}
+                  </Text>
+                </View>
+              )}
             </View>
           ) : null}
         </View>
