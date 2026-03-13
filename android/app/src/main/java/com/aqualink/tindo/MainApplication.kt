@@ -80,7 +80,16 @@ class MainApplication : Application(), ReactApplication {
           } else {
             longArrayOf(0, 250, 250, 250)
           }
-          if (rawName == null) {
+          if (callStyle) {
+            val ringtoneUri = android.media.RingtoneManager.getDefaultUri(
+              android.media.RingtoneManager.TYPE_RINGTONE,
+            )
+            val audioAttributes = AudioAttributes.Builder()
+              .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+              .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+              .build()
+            setSound(ringtoneUri, audioAttributes)
+          } else if (rawName == null) {
             enableVibration(false)
             vibrationPattern = longArrayOf(0L)
             setSound(null, null)

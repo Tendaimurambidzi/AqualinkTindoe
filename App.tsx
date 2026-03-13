@@ -582,6 +582,8 @@ type LiveInviteJoinPreset = {
   nonce?: number;
 };
 
+type LiveExperienceMode = 'drift' | 'conference';
+
 type AppToneAction =
   | 'incoming_call'
   | 'messages'
@@ -696,7 +698,7 @@ const APP_TONE_OPTIONS: AppToneOption[] = [
   },
 ];
 const DEFAULT_APP_TONE_SETTINGS: Record<AppToneAction, string> = {
-  incoming_call: 'lg_cat_ring',
+  incoming_call: 'default_notification',
   messages: 'default_notification',
   live_invite: 'none',
   call_missed: 'old_ring',
@@ -2039,6 +2041,10 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderColor: 'rgba(255,255,255,0.15)',
   },
+  makeWavesConferenceAction: {
+    backgroundColor: 'rgba(67,229,184,0.14)',
+    borderColor: 'rgba(67,229,184,0.82)',
+  },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
     backgroundColor: 'rgba(255,255,255,0.08)',
@@ -2820,7 +2826,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Fallback for account-switch/same-phone testing:
         // surface incoming call modal from unread call_invite ping.
         const latestUnreadCallInvite = notificationsData
-          .filter(item => !item.read && item.type === 'call_invite' && !!item.callId)
+          .filter(
+            item =>
+              !item.read &&
+              item.type === 'call_invite' &&
+              !!item.callId &&
+              String((item as any)?.fromUid || '').trim() !==
+                String(user.uid || '').trim(),
+          )
           .sort(
             (a, b) =>
               toJSDate(b.createdAt).getTime() - toJSDate(a.createdAt).getTime(),
@@ -3199,6 +3212,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const callRingbackActiveRef = useRef<boolean>(false);
   const incomingCallRingtoneRef = useRef<Sound | null>(null);
   const incomingCallRingtoneActiveRef = useRef<boolean>(false);
+  const nativeIncomingNotificationCallIdRef = useRef<string | null>(null);
   const replyInputRef = useRef<TextInput>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
   const [forceOutgoingRingback, setForceOutgoingRingback] = useState(false);
@@ -3323,6 +3337,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ...DEFAULT_APP_TONE_SETTINGS,
           ...(parsed as Partial<Record<AppToneAction, string>>),
         };
+        if (Platform.OS === 'android') {
+          merged.incoming_call = 'default_notification';
+        }
         setAppToneSettings(merged);
       } catch {}
     };
@@ -3346,6 +3363,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ...DEFAULT_APP_TONE_SETTINGS,
           ...(tones as Partial<Record<AppToneAction, string>>),
         };
+        if (Platform.OS === 'android') {
+          merged.incoming_call = 'default_notification';
+        }
         setAppToneSettings(merged);
       } catch {}
     };
@@ -3397,6 +3417,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ...appToneSettings,
         [action]: toneId,
       };
+      if (Platform.OS === 'android') {
+        next.incoming_call = 'default_notification';
+      }
       setAppToneSettings(next);
       try {
         await AsyncStorage.setItem(APP_TONES_STORAGE_KEY, JSON.stringify(next));
@@ -3545,6 +3568,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
 
   const startIncomingCallRingtone = useCallback(() => {
+    if (Platform.OS === 'android') return;
     if (incomingCallRingtoneActiveRef.current && !incomingCallRingtoneRef.current) {
       incomingCallRingtoneActiveRef.current = false;
     }
@@ -3612,10 +3636,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const hideNativeIncomingCallNotification = useCallback(() => {
     if (Platform.OS !== 'android') return;
+    nativeIncomingNotificationCallIdRef.current = null;
     try {
       NativeModules?.CallNotification?.hideIncomingCallNotification?.();
     } catch {}
   }, []);
+
+  const showNativeIncomingCallNotification = useCallback(
+    (call: DirectCallSession | null | undefined) => {
+      if (Platform.OS !== 'android') return;
+      const callId = String(call?.id || '').trim();
+      if (!callId) return;
+      if (nativeIncomingNotificationCallIdRef.current === callId) return;
+      const callerName = String(call?.callerName || 'Someone').trim() || 'Someone';
+      const callType = call?.callType === 'video' ? 'video' : 'audio';
+      try {
+        NativeModules?.CallNotification?.showIncomingCallNotification?.(
+          callerName,
+          callId,
+          callType,
+        );
+        nativeIncomingNotificationCallIdRef.current = callId;
+      } catch {}
+    },
+    [],
+  );
 
   useEffect(() => {
     const isOutgoingRinging =
@@ -3637,6 +3682,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   ]);
 
   useEffect(() => {
+    if (!activeDirectCall?.id || activeDirectCall.status !== 'accepted') return;
+    setForceOutgoingRingback(false);
+    stopCallRingback();
+    setOutgoingDirectCall(prev =>
+      prev && prev.id === activeDirectCall.id ? null : prev,
+    );
+  }, [activeDirectCall?.id, activeDirectCall?.status, stopCallRingback]);
+
+  useEffect(() => {
     const incomingModalVisible = !!incomingDirectCall && !activeDirectCall;
     const ringSuppressedForCall =
       !!incomingDirectCall?.id &&
@@ -3649,9 +3703,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       incomingDirectCall?.status === 'ringing';
     if (!shouldRingWithModal) {
       stopIncomingCallRingtone();
+      if (
+        Platform.OS === 'android' &&
+        incomingDirectCall?.id &&
+        incomingDirectCall?.status !== 'ringing'
+      ) {
+        hideNativeIncomingCallNotification();
+      }
       return;
     }
     // Ring only while the incoming modal is visible and call is actively ringing.
+    if (Platform.OS === 'android') {
+      showNativeIncomingCallNotification(incomingDirectCall);
+      return;
+    }
     stopIncomingCallRingtone();
     const timer = setTimeout(() => {
       startIncomingCallRingtone();
@@ -3662,18 +3727,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     incomingCallAction,
     incomingDirectCall,
     ringSuppressedCallId,
+    hideNativeIncomingCallNotification,
+    showNativeIncomingCallNotification,
     startIncomingCallRingtone,
     stopIncomingCallRingtone,
   ]);
-
-  useEffect(() => {
-    if (!incomingDirectCall && !activeDirectCall) return;
-    hideNativeIncomingCallNotification();
-    const interval = setInterval(() => {
-      hideNativeIncomingCallNotification();
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeDirectCall, hideNativeIncomingCallNotification, incomingDirectCall]);
 
   useEffect(() => {
     if (!incomingDirectCall) {
@@ -6110,6 +6168,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
   const [isPaused, setIsPaused] = useState(false);
   const [showLive, setShowLive] = useState(false);
+  const [liveExperienceMode, setLiveExperienceMode] =
+    useState<LiveExperienceMode>('drift');
   // Editor playback control + sync helpers
   const [isCharteredDrift, setIsCharteredDrift] = useState(false);
   const [crew, setCrew] = useState<
@@ -6649,6 +6709,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         requireApproval: true,
         nonce: Date.now(),
       });
+      setLiveExperienceMode('drift');
       setShowLive(true);
     },
     [requestToDriftForLiveId],
@@ -6729,6 +6790,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           requireApproval: false,
           nonce: Date.now(),
         });
+        setLiveExperienceMode('drift');
         setShowLive(true);
         if (invite.liveId && normalizedChannel) {
           try {
@@ -11655,6 +11717,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     }
+    setLiveExperienceMode('drift');
     setShowLive(true);
   };
                     
@@ -12739,6 +12802,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       const calleeUid = targetUid;
       if (!calleeUid) return;
+      if (calleeUid === myUid) {
+        Alert.alert('Call unavailable', 'You cannot call yourself.');
+        return;
+      }
       const callerName =
         profileName ||
         accountCreationHandle ||
@@ -13446,6 +13513,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? 'video'
               : 'audio';
           const signalCallerUid = String(data?.fromUid || data?.callerUid || '').trim();
+          if (signalCallerUid && signalCallerUid === myUid) {
+            return;
+          }
           const signalCallerName = String(
             data?.fromName || data?.callerName || 'User',
           ).trim();
@@ -13477,7 +13547,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           if (signalAction === 'answer_call') {
             setPendingNativeAutoAnswerCallId(callId);
           }
-          hideNativeIncomingCallNotification();
           watchDirectCallDoc(callId, 'callee');
           try {
             firestore()
@@ -13524,7 +13593,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       mapDirectCallDoc,
       myUid,
       profileName,
-      hideNativeIncomingCallNotification,
       watchDirectCallDoc,
     ],
   );
@@ -13576,12 +13644,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return;
         }
         handledIncomingInviteCallIdsRef.current.add(callId);
-        hideNativeIncomingCallNotification();
         const signalCallType: DirectCallMode =
           String(data?.callType || '').toLowerCase() === 'video'
             ? 'video'
             : 'audio';
         const signalCallerUid = String(data?.fromUid || data?.callerUid || '').trim();
+        if (signalCallerUid && signalCallerUid === myUid) return;
         const signalCallerName = String(
           data?.fromName || data?.callerName || 'User',
         ).trim();
@@ -13673,7 +13741,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         unsubPings && unsubPings();
       } catch {}
     };
-  }, [handleNotificationNavigation, hideNativeIncomingCallNotification, myUid, profileName]);
+  }, [handleNotificationNavigation, myUid, profileName]);
 
   useEffect(() => {
     if (!myUid) return;
@@ -13919,6 +13987,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     }
     // Open in-app live UI so camera preview and overlays show together
+    setLiveExperienceMode('drift');
+    setShowLive(true);
+  };
+
+  const goConference = async () => {
+    setShowMakeWaves(false);
+    if (Platform.OS === 'android') {
+      try {
+        const results = await PermissionsAndroid.requestMultiple([
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+        ] as any);
+        const cam = results[PermissionsAndroid.PERMISSIONS.CAMERA];
+        const mic = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
+        if (
+          cam !== PermissionsAndroid.RESULTS.GRANTED ||
+          mic !== PermissionsAndroid.RESULTS.GRANTED
+        ) {
+          Alert.alert(
+            'Permission needed',
+            'Camera and microphone are required to start conference.',
+          );
+          return;
+        }
+      } catch {}
+    }
+    setLiveExperienceMode('conference');
     setShowLive(true);
   };
                     
@@ -17210,6 +17305,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     );
                   }}
                 />
+                <Pressable
+                  style={[styles.logbookAction, styles.makeWavesConferenceAction]}
+                  onPress={goConference}
+                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                  pressRetentionOffset={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{
+                    color: 'rgba(255, 255, 255, 0.2)',
+                    borderless: false,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 5,
+                        backgroundColor: '#43E5B8',
+                      }}
+                    />
+                    <Text style={styles.logbookActionText}>CONFERENCE</Text>
+                  </View>
+                </Pressable>
               </ScrollView>
             </View>
           </View>
@@ -20998,11 +21118,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         bridge={bridge}
         dataSaver={dataSaver}
         isWifi={isWifi}
+        experienceMode={liveExperienceMode}
         inviteJoinPreset={liveInviteJoinPreset}
         onClose={() => {
           setShowLive(false);
           setLiveInviteJoinPreset(null);
           setIsCharteredDrift(false);
+          setLiveExperienceMode('drift');
         }}
       />
                     
@@ -21569,7 +21691,7 @@ const DirectCallModal = ({
     if (!visible || !call?.id || isJoined) return;
     joinTimeoutRef.current = setTimeout(() => {
       setShowJoinRecovery(true);
-    }, 12000);
+    }, 2500);
     return () => {
       if (joinTimeoutRef.current) {
         clearTimeout(joinTimeoutRef.current);
@@ -21597,7 +21719,7 @@ const DirectCallModal = ({
     }
     watchdogTimerRef.current = setTimeout(() => {
       setShowVideoJoinWatchdog(true);
-    }, 18000);
+    }, 2200);
     return () => {
       if (watchdogTimerRef.current) {
         clearTimeout(watchdogTimerRef.current);
@@ -21905,8 +22027,38 @@ const DirectCallModal = ({
                 </View>
               )
             ) : (
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: 'white' }}>Waiting for remote video...</Text>
+              <View style={{ flex: 1 }}>
+                {RtcSurfaceView ? (
+                  React.createElement(RtcSurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
+                ) : RtcLocalView?.SurfaceView ? (
+                  React.createElement(RtcLocalView.SurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  })
+                ) : null}
+                <View
+                  style={{
+                    ...StyleSheet.absoluteFillObject,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ color: 'white' }}>Connecting video...</Text>
+                </View>
               </View>
             )}
 
@@ -22122,6 +22274,7 @@ const LiveStreamModal = ({
   onClose,
   styles,
   isChartered,
+  experienceMode,
   searchOceanEntities,
   bridge,
   dataSaver,
@@ -22132,6 +22285,7 @@ const LiveStreamModal = ({
   onClose: () => void;
   styles: any; // Prop to receive styles from parent
   isChartered?: boolean;
+  experienceMode?: LiveExperienceMode;
   searchOceanEntities: (term: string) => Promise<SearchResult[]>;
   bridge: any;
   dataSaver: any;
@@ -22155,6 +22309,13 @@ const LiveStreamModal = ({
   })();
   const appId: string = (cfg && cfg.AGORA_APP_ID) || '';
   const staticToken: string | null = (cfg && cfg.AGORA_STATIC_TOKEN) || null;
+  const isConferenceMode = experienceMode === 'conference';
+  const sessionLabel = isConferenceMode ? 'Conference' : 'Drift Expo';
+  const startSessionLabel = isConferenceMode ? 'Start Conference' : 'Start Drift';
+  const setupTitleLabel = isConferenceMode ? 'Start Conference' : 'Chart a Drift';
+  const setupNamePlaceholder = isConferenceMode
+    ? 'Conference Title (optional)'
+    : 'Drift Title (optional)';
   const defaultChannel: string = DRIFT_EXPO_FIXED_CHANNEL;
   const engineRef = React.useRef<any>(null);
   const [micMuted, setMicMuted] = useState(false);
@@ -22511,6 +22672,11 @@ const LiveStreamModal = ({
   }, [visible]);
 
   useEffect(() => {
+    if (isConferenceMode) return;
+    setShowFileSharePanel(false);
+  }, [isConferenceMode]);
+
+  useEffect(() => {
     if (!visible || !isLiveStarted || !liveShareScope) {
       setLiveSharedFiles([]);
       return;
@@ -22551,7 +22717,7 @@ const LiveStreamModal = ({
     if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
       setLiveDocId(String(inviteJoinPreset.liveId));
       setLiveTitle(
-        String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+        String(inviteJoinPreset.title || inviteJoinPreset.fromName || sessionLabel),
       );
       setAwaitingCaptainApproval(true);
       setJoinApprovalLabel(
@@ -22578,7 +22744,7 @@ const LiveStreamModal = ({
     const mappedUid = (uidHash % 2147483646) + 1;
     setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
     setLiveTitle(
-      String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+      String(inviteJoinPreset.title || inviteJoinPreset.fromName || sessionLabel),
     );
     setChannelInput(suggestedChannel);
     setLiveChannel(suggestedChannel);
@@ -22592,6 +22758,7 @@ const LiveStreamModal = ({
     defaultChannel,
     inviteJoinPreset,
     isLiveStarted,
+    sessionLabel,
     staticToken,
     visible,
   ]);
@@ -23148,7 +23315,7 @@ const LiveStreamModal = ({
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
         const chan = String(liveChannel || defaultChannel || '').trim();
         if (!chan) {
-          setStartError('Channel is missing. Please try Start Drift again.');
+          setStartError(`Channel is missing. Please try ${startSessionLabel} again.`);
           return;
         }
         const uidBase = Number.isFinite(liveUid as any)
@@ -23249,7 +23416,7 @@ const LiveStreamModal = ({
         }
         if (!joined) {
           const msg = String(
-            (lastErr as any)?.message || 'Could not join this drift channel.',
+            (lastErr as any)?.message || `Could not join this ${sessionLabel.toLowerCase()} channel.`,
           );
           setStartError(msg);
         }
@@ -23258,7 +23425,7 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, liveChannel]);
+  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, liveChannel, sessionLabel, startSessionLabel]);
                     
   const handleEndDrift = async () => {
     try {
@@ -23280,7 +23447,7 @@ const LiveStreamModal = ({
                     
   const handleShareDriftLink = async () => {
     if (!liveDocId || !liveChannel) {
-      Alert.alert('Error', 'Drift not started yet');
+      Alert.alert('Error', `${sessionLabel} not started yet`);
       return;
     }
                     
@@ -23289,7 +23456,7 @@ const LiveStreamModal = ({
       await Share.share({
         message: result.message,
         url: result.webLink,
-        title: `Join my Drift: ${liveTitle}`,
+        title: `Join my ${sessionLabel}: ${liveTitle}`,
       });
     } catch (error) {
       console.error('Share drift link error:', error);
@@ -26411,7 +26578,13 @@ const LiveStreamModal = ({
             >
               <Text style={editorStyles.liveRightIcon}>👥</Text>
               <Text style={editorStyles.liveRightLabel}>
-                {showOnlineInvitePanel ? 'Here Now! On' : 'Here Now!'}
+                {isConferenceMode
+                  ? showOnlineInvitePanel
+                    ? 'Participants On'
+                    : 'Participants'
+                  : showOnlineInvitePanel
+                  ? 'Here Now! On'
+                  : 'Here Now!'}
               </Text>
             </Pressable>
             {/* Screen Share */}
@@ -26424,20 +26597,54 @@ const LiveStreamModal = ({
                 {isScreenSharing ? 'Stop Share' : 'Share Screen'}
               </Text>
             </Pressable>
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={() => setShowFileSharePanel(true)}
-            >
-              <Text style={editorStyles.liveRightIcon}>📁</Text>
-              <Text style={editorStyles.liveRightLabel}>Files</Text>
-            </Pressable>
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => setShowFileSharePanel(true)}
+              >
+                <Text style={editorStyles.liveRightIcon}>📁</Text>
+                <Text style={editorStyles.liveRightLabel}>Files</Text>
+              </Pressable>
+            )}
             <Pressable
               style={editorStyles.liveRightButton}
               onPress={() => setShowCommentInput(true)}
             >
               <Text style={editorStyles.liveRightIcon}>💬</Text>
-              <Text style={editorStyles.liveRightLabel}>Comment</Text>
+              <Text style={editorStyles.liveRightLabel}>
+                {isConferenceMode ? 'Chat' : 'Comment'}
+              </Text>
             </Pressable>
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => {
+                  setShowUserPanel(true);
+                  setUserPanelMode('join');
+                }}
+              >
+                <Text style={editorStyles.liveRightIcon}>🧑‍🤝‍🧑</Text>
+                <Text style={editorStyles.liveRightLabel}>Roster</Text>
+              </Pressable>
+            )}
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => Alert.alert('Hand Raised', 'Your hand is raised.')}
+              >
+                <Text style={editorStyles.liveRightIcon}>✋</Text>
+                <Text style={editorStyles.liveRightLabel}>Raise Hand</Text>
+              </Pressable>
+            )}
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={handleShareDriftLink}
+              >
+                <Text style={editorStyles.liveRightIcon}>🔗</Text>
+                <Text style={editorStyles.liveRightLabel}>Meeting Link</Text>
+              </Pressable>
+            )}
                     
             {/* Virtual Background */}
             <Pressable
@@ -26481,58 +26688,64 @@ const LiveStreamModal = ({
               </Text>
             </Pressable>
                     
-            {/* Live Products/Store */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={showProductStore}
-            >
-              <Text style={editorStyles.liveRightIcon}>🛍️</Text>
-              <Text style={editorStyles.liveRightLabel}>Products</Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={showProductStore}
+              >
+                <Text style={editorStyles.liveRightIcon}>🛍️</Text>
+                <Text style={editorStyles.liveRightLabel}>Products</Text>
+              </Pressable>
+            )}
                     
-            {/* Live Polls */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={createLivePoll}
-            >
-              <Text style={editorStyles.liveRightIcon}>📊</Text>
-              <Text style={editorStyles.liveRightLabel}>Polls</Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={createLivePoll}
+              >
+                <Text style={editorStyles.liveRightIcon}>📊</Text>
+                <Text style={editorStyles.liveRightLabel}>Polls</Text>
+              </Pressable>
+            )}
                     
-            {/* Live Goals */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={handleSetLiveGoal}
-            >
-              <Text style={editorStyles.liveRightIcon}>🎯</Text>
-              <Text style={editorStyles.liveRightLabel}>Goals</Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={handleSetLiveGoal}
+              >
+                <Text style={editorStyles.liveRightIcon}>🎯</Text>
+                <Text style={editorStyles.liveRightLabel}>Goals</Text>
+              </Pressable>
+            )}
                     
-            {/* Co-host */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={inviteCoHost}
-            >
-              <Text style={editorStyles.liveRightIcon}>🤝</Text>
-              <Text style={editorStyles.liveRightLabel}>Co-host</Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={inviteCoHost}
+              >
+                <Text style={editorStyles.liveRightIcon}>🤝</Text>
+                <Text style={editorStyles.liveRightLabel}>Co-host</Text>
+              </Pressable>
+            )}
                     
-            {/* Live Analytics */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={showLiveAnalytics}
-            >
-              <Text style={editorStyles.liveRightIcon}>📈</Text>
-              <Text style={editorStyles.liveRightLabel}>Stats</Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={showLiveAnalytics}
+              >
+                <Text style={editorStyles.liveRightIcon}>📈</Text>
+                <Text style={editorStyles.liveRightLabel}>Stats</Text>
+              </Pressable>
+            )}
                     
-            {/* Sound Effects */}
             <Pressable
               style={editorStyles.liveRightButton}
               onPress={showSoundBoard}
             >
-              <Text style={editorStyles.liveRightIcon}>🔊</Text>
-              <Text style={editorStyles.liveRightLabel}>Sounds</Text>
+              <Text style={editorStyles.liveRightIcon}>{isConferenceMode ? '😀' : '🔊'}</Text>
+              <Text style={editorStyles.liveRightLabel}>
+                {isConferenceMode ? 'Reactions' : 'Sounds'}
+              </Text>
             </Pressable>
                     
             {/* Mute mic */}
@@ -26581,37 +26794,41 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightLabel}>Flip</Text>
             </Pressable>
                     
-            {/* Share live */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={handleShareDriftLink}
-            >
-              <Text style={editorStyles.liveRightIcon}>📡</Text>
-              <Text style={editorStyles.liveRightLabel}>Casta drift</Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={handleShareDriftLink}
+              >
+                <Text style={editorStyles.liveRightIcon}>📡</Text>
+                <Text style={editorStyles.liveRightLabel}>Casta drift</Text>
+              </Pressable>
+            )}
                     
-            {/* Report */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={() =>
-                Alert.alert('Report', 'Send report to moderation collection.')
-              }
-            >
-              <Text style={editorStyles.liveRightIcon}>🚩</Text>
-              <Text style={editorStyles.liveRightLabel}>Report</Text>
-            </Pressable>
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() =>
+                  Alert.alert('Report', 'Send report to moderation collection.')
+                }
+              >
+                <Text style={editorStyles.liveRightIcon}>🚩</Text>
+                <Text style={editorStyles.liveRightLabel}>Report</Text>
+              </Pressable>
+            )}
           </ScrollView>
         )}
-        <FileSharePanel
-          visible={showFileSharePanel}
-          onClose={() => setShowFileSharePanel(false)}
-          liveId={liveDocId || liveChannel || null}
-          currentUid={currentLiveUid}
-          currentName={currentLiveName}
-          isHost={isLiveHost}
-          isCoHost={isLiveCoHost}
-          onPresented={onPresentedFromPanel}
-        />
+        {isConferenceMode && (
+          <FileSharePanel
+            visible={showFileSharePanel}
+            onClose={() => setShowFileSharePanel(false)}
+            liveId={liveDocId || liveChannel || null}
+            currentUid={currentLiveUid}
+            currentName={currentLiveName}
+            isHost={isLiveHost}
+            isCoHost={isLiveCoHost}
+            onPresented={onPresentedFromPanel}
+          />
+        )}
                     
         {/* Invite Modal */}
         <Modal
@@ -26646,7 +26863,7 @@ const LiveStreamModal = ({
                   marginBottom: 8,
                 }}
               >
-                Invite to Drift
+                {isConferenceMode ? 'Invite to Conference' : 'Invite to Drift'}
               </Text>
               <TextInput
                 value={inviteQuery}
@@ -27098,7 +27315,7 @@ const LiveStreamModal = ({
               />
             )}
             <View style={editorStyles.liveSetupContainer}>
-              <Text style={editorStyles.liveSetupTitle}>Chart a Drift</Text>
+              <Text style={editorStyles.liveSetupTitle}>{setupTitleLabel}</Text>
               <View style={{ gap: 16 }}>
                 <TextInput
                   value={hostName}
@@ -27110,7 +27327,7 @@ const LiveStreamModal = ({
                 <TextInput
                   value={liveTitle}
                   onChangeText={setLiveTitle}
-                  placeholder="Drift Title (optional)"
+                  placeholder={setupNamePlaceholder}
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   style={editorStyles.liveSetupInput}
                 />
@@ -27140,7 +27357,7 @@ const LiveStreamModal = ({
                   onPress={startLiveNow}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {isStartingLive ? 'Starting...' : 'Start Drift'}
+                    {isStartingLive ? 'Starting...' : startSessionLabel}
                   </Text>
                 </Pressable>
                 {startError ? (
