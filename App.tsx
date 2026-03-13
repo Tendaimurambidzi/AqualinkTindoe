@@ -231,6 +231,16 @@ const buildInAppDocViewerUrl = (
   return `https://docs.google.com/gview?embedded=1&url=${encoded}`;
 };
 
+const toAgoraUidFromAppUid = (rawUid?: string | null): number => {
+  const raw = String(rawUid || '').trim();
+  if (!raw) return 0;
+  let hash = 0;
+  for (let i = 0; i < raw.length; i += 1) {
+    hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
+  }
+  return (hash % 2147483646) + 1;
+};
+
 const normalizeLiveScope = (raw: any): string =>
   String(raw || '')
     .trim()
@@ -3568,7 +3578,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
 
   const startIncomingCallRingtone = useCallback(() => {
-    if (Platform.OS === 'android') return;
     if (incomingCallRingtoneActiveRef.current && !incomingCallRingtoneRef.current) {
       incomingCallRingtoneActiveRef.current = false;
     }
@@ -13026,18 +13035,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     }
-    // Promote to active immediately so ringtone stops and call connection starts without waiting for Firestore round-trip.
-    const optimisticAcceptedCall: DirectCallSession = {
-      ...call,
-      channelName: call.channelName || `aqua_call_${call.id}`,
-      status: 'accepted',
-      acceptedAt: call.acceptedAt || new Date(),
-      agoraToken: call.agoraToken || null,
-    };
-    setIncomingDirectCall(null);
-    setActiveDirectCall(optimisticAcceptedCall);
-    setActiveDirectCallRole('callee');
-    watchDirectCallDoc(call.id, 'callee');
+    // Keep callee in accept state until accepted status is persisted for both peers.
+    // This avoids callee entering far earlier than caller when network is slow.
     try {
       if (!call.channelName || !call.callerUid) {
         try {
@@ -13080,6 +13079,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         await tokenBatch.commit();
       }
+      const synchronizedAcceptedCall: DirectCallSession = {
+        ...call,
+        status: 'accepted',
+        acceptedAt: call.acceptedAt || new Date(),
+        channelName: call.channelName || `aqua_call_${call.id}`,
+        agoraToken: freshToken || call.agoraToken || null,
+      };
+      setIncomingDirectCall(null);
+      setActiveDirectCall(synchronizedAcceptedCall);
+      setActiveDirectCallRole('callee');
+      watchDirectCallDoc(call.id, 'callee');
       upsertCallHistory(call, 'accepted');
       try {
         const calleeNameForSignal =
@@ -13135,7 +13145,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         };
       });
     } catch (err: any) {
-      console.warn('Accept call sync failed, continuing with local active call', err);
+      console.warn('Accept call sync failed', err);
+      Alert.alert(
+        'Call answer failed',
+        'Could not sync this answer yet. Please tap answer again.',
+      );
     } finally {
       setIncomingCallAction(null);
     }
@@ -22537,6 +22551,9 @@ const LiveStreamModal = ({
     setJoinApprovalLabel('');
     setRemoteParticipantUids([]);
     setPinnedRemoteUid(null);
+    setActiveSpeakerRtcUid(null);
+    setActiveSpeakerAtMs(0);
+    setParticipantQuickAction(null);
   }, [visible]);
   useEffect(() => {
     if (isLiveStarted) return;
@@ -22759,6 +22776,13 @@ const LiveStreamModal = ({
   const [joinedParticipants, setJoinedParticipants] = useState<
     Array<{ uid: string; name: string; photo: string | null }>
   >([]);
+  const [activeSpeakerRtcUid, setActiveSpeakerRtcUid] = useState<number | null>(null);
+  const [activeSpeakerAtMs, setActiveSpeakerAtMs] = useState<number>(0);
+  const [participantQuickAction, setParticipantQuickAction] = useState<{
+    uid: string;
+    name: string;
+    rtcUid: number;
+  } | null>(null);
   const currentLiveUid = String(auth?.()?.currentUser?.uid || '');
   const currentLiveName = String(
     auth?.()?.currentUser?.displayName || hostName || 'Host',
@@ -22795,8 +22819,12 @@ const LiveStreamModal = ({
       ) || null
     );
   }, [liveSharedFiles]);
+  const isPresentationWorkflowActive = !!activeSharedFile;
   const isFilePresentationActive =
-    !!activeSharedFile && activeSharedFile.status === 'presenting';
+    !!activeSharedFile &&
+    ['selecting', 'uploading', 'presenting'].includes(
+      String(activeSharedFile.status || '').toLowerCase(),
+    );
   const activePresenterUid = String(
     activeSharedFile?.presenterUid || activeSharedFile?.uploadedBy || '',
   ).trim();
@@ -22816,14 +22844,14 @@ const LiveStreamModal = ({
     activeSharedFile?.name || localPresentedAsset?.name || 'Shared file',
   ).trim();
   const presentationUri = useMemo(() => {
-    if (!isFilePresentationActive) return '';
+    if (!isPresentationWorkflowActive) return '';
     const sharedUrl = String(activeSharedFile?.downloadUrl || '').trim();
     if (sharedUrl) return sharedUrl;
     if (isCurrentPresenter && localPresentedAsset?.uri) {
       return String(localPresentedAsset.uri);
     }
     return '';
-  }, [activeSharedFile?.downloadUrl, isCurrentPresenter, isFilePresentationActive, localPresentedAsset?.uri]);
+  }, [activeSharedFile?.downloadUrl, isCurrentPresenter, isPresentationWorkflowActive, localPresentedAsset?.uri]);
   const embeddedDocViewerUrl = useMemo(
     () => buildInAppDocViewerUrl(presentationUri, presentationMimeType, presentationName),
     [presentationMimeType, presentationName, presentationUri],
@@ -22837,13 +22865,35 @@ const LiveStreamModal = ({
     !!RNWebView &&
     !isPresentationMedia;
   const hasOpenedPresentation =
-    isFilePresentationActive &&
-    (!!presentationUri || (isCurrentPresenter && !!localPresentedAsset?.uri));
+    isPresentationWorkflowActive &&
+    (!!presentationUri ||
+      (isCurrentPresenter && !!localPresentedAsset?.uri) ||
+      String(activeSharedFile?.status || '').toLowerCase() === 'selecting' ||
+      String(activeSharedFile?.status || '').toLowerCase() === 'uploading');
   const canRenderPresentationInApp =
-    isFilePresentationActive &&
+    isPresentationWorkflowActive &&
     (isCurrentPresenter
       ? !!(localPresentedAsset?.uri || presentationUri)
       : !!presentationUri);
+  const activeSpeakerIsRecent = activeSpeakerAtMs > 0 && Date.now() - activeSpeakerAtMs <= 2400;
+  const joinedParticipantsWithRtc = useMemo(
+    () =>
+      joinedParticipants.map(p => ({
+        ...p,
+        rtcUid: toAgoraUidFromAppUid(String(p.uid || '')),
+      })),
+    [joinedParticipants],
+  );
+  const orderedJoinedParticipants = useMemo(() => {
+    const rows = [...joinedParticipantsWithRtc];
+    if (!activeSpeakerIsRecent || !activeSpeakerRtcUid) return rows;
+    rows.sort((a, b) => {
+      const aHot = a.rtcUid === activeSpeakerRtcUid ? 1 : 0;
+      const bHot = b.rtcUid === activeSpeakerRtcUid ? 1 : 0;
+      return bHot - aHot;
+    });
+    return rows;
+  }, [activeSpeakerIsRecent, activeSpeakerRtcUid, joinedParticipantsWithRtc]);
   const visualFilterOverlayColor = useMemo(() => {
     switch (activeVisualFilter) {
       case 'black_white':
@@ -23552,6 +23602,21 @@ const LiveStreamModal = ({
                 setRemoteParticipantUids([]);
                 setPinnedRemoteUid(null);
               },
+              onAudioVolumeIndication: (_conn: any, speakers: any[]) => {
+                try {
+                  const rows = Array.isArray(speakers) ? speakers : [];
+                  const loudest = rows
+                    .map((s: any) => ({
+                      uid: Number(s?.uid || 0),
+                      vol: Number(s?.volume || 0),
+                    }))
+                    .filter((s: any) => Number.isFinite(s.uid) && s.uid > 0 && s.vol > 8)
+                    .sort((a: any, b: any) => b.vol - a.vol)[0];
+                  if (!loudest) return;
+                  setActiveSpeakerRtcUid(loudest.uid);
+                  setActiveSpeakerAtMs(Date.now());
+                } catch {}
+              },
             });
           } catch {}
           applyLiveQualityProfile(engine);
@@ -23590,6 +23655,23 @@ const LiveStreamModal = ({
               setPinnedRemoteUid(prev => (prev === n ? null : prev));
             });
           } catch {}
+          try {
+            engine.addListener?.('AudioVolumeIndication', (speakers: any[]) => {
+              try {
+                const rows = Array.isArray(speakers) ? speakers : [];
+                const loudest = rows
+                  .map((s: any) => ({
+                    uid: Number(s?.uid || 0),
+                    vol: Number(s?.volume || 0),
+                  }))
+                  .filter((s: any) => Number.isFinite(s.uid) && s.uid > 0 && s.vol > 8)
+                  .sort((a: any, b: any) => b.vol - a.vol)[0];
+                if (!loudest) return;
+                setActiveSpeakerRtcUid(loudest.uid);
+                setActiveSpeakerAtMs(Date.now());
+              } catch {}
+            });
+          } catch {}
           applyLiveQualityProfile(engine);
           try {
             engine.startPreview?.();
@@ -23623,6 +23705,8 @@ const LiveStreamModal = ({
       setIsLiveEngineReady(false);
       setRemoteParticipantUids([]);
       setPinnedRemoteUid(null);
+      setActiveSpeakerRtcUid(null);
+      setActiveSpeakerAtMs(0);
     };
   }, [visible, Agora, appId, applyLiveQualityProfile]);
                     
@@ -26135,6 +26219,21 @@ const LiveStreamModal = ({
     },
   });
                     
+  const openParticipantQuickActions = (participant: {
+    uid: string;
+    name: string;
+    rtcUid: number;
+  }) => {
+    if (!participant?.uid) return;
+    setParticipantQuickAction({
+      uid: String(participant.uid || ''),
+      name: String(participant.name || participant.uid || 'Participant'),
+      rtcUid: Number(participant.rtcUid || 0),
+    });
+  };
+
+  const canModerateParticipant = isLiveHost || isLiveCoHost;
+
   if (!visible) return null;
   if (!Agora) {
     return (
@@ -26212,7 +26311,7 @@ const LiveStreamModal = ({
     >
       <View style={editorStyles.editorRoot}>
         
-        {isLiveStarted && hasOpenedPresentation && activeSharedFile && (
+        {isLiveStarted && activeSharedFile && (
           <View
             style={{
               position: 'absolute',
@@ -26253,7 +26352,7 @@ const LiveStreamModal = ({
               >
                 <Text style={styles.secondaryBtnText}>▣</Text>
               </Pressable>
-              {hasOpenedPresentation ? (
+              {isFilePresentationActive ? (
                 <>
                   {isCurrentPresenter ? (
                     <>
@@ -26534,6 +26633,33 @@ const LiveStreamModal = ({
                   }}
                 >
                   {presentationName || 'Shared file'}
+                </Text>
+              </View>
+            ) : isFilePresentationActive ? (
+              <View
+                style={{
+                  position: 'absolute',
+                  top: insets.top + 150,
+                  left: 14,
+                  right: 14,
+                  zIndex: 13,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: 'rgba(0,194,255,0.45)',
+                  backgroundColor: 'rgba(8,20,39,0.88)',
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  alignItems: 'center',
+                }}
+              >
+                <ActivityIndicator size="small" color="#9DE6FF" />
+                <Text style={{ color: '#DCEFFF', marginTop: 6, fontWeight: '700', fontSize: 12 }}>
+                  Opening shared file in-app...
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.72)', marginTop: 2, fontSize: 11 }}>
+                  {String(activeSharedFile?.status || '').toLowerCase() === 'selecting'
+                    ? 'Presenter is selecting a file'
+                    : 'Preparing document preview for everyone'}
                 </Text>
               </View>
             ) : mainRemoteUid ? (
@@ -27138,22 +27264,58 @@ const LiveStreamModal = ({
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {joinedParticipants.map(p => (
-                  <View
+                {orderedJoinedParticipants.map(p => (
+                  <Pressable
                     key={p.uid}
-                    style={{ alignItems: 'center', marginRight: 10, width: 52 }}
+                    onPress={() => openParticipantQuickActions(p)}
+                    style={{
+                      alignItems: 'center',
+                      marginRight: 10,
+                      width: 56,
+                      borderRadius: 10,
+                      paddingVertical: 4,
+                      backgroundColor:
+                        activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
+                          ? 'rgba(0,194,255,0.20)'
+                          : 'transparent',
+                      borderWidth:
+                        activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid ? 1 : 0,
+                      borderColor: 'rgba(0,194,255,0.75)',
+                    }}
                   >
                     {p.photo ? (
                       <Image
                         source={{ uri: p.photo }}
-                        style={{ width: 34, height: 34, borderRadius: 17 }}
+                        style={{
+                          width:
+                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
+                              ? 38
+                              : 34,
+                          height:
+                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
+                              ? 38
+                              : 34,
+                          borderRadius:
+                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
+                              ? 19
+                              : 17,
+                        }}
                       />
                     ) : (
                       <View
                         style={{
-                          width: 34,
-                          height: 34,
-                          borderRadius: 17,
+                          width:
+                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
+                              ? 38
+                              : 34,
+                          height:
+                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
+                              ? 38
+                              : 34,
+                          borderRadius:
+                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
+                              ? 19
+                              : 17,
                           backgroundColor: 'rgba(255,255,255,0.18)',
                           alignItems: 'center',
                           justifyContent: 'center',
@@ -27189,7 +27351,7 @@ const LiveStreamModal = ({
                         ? 'Host'
                         : 'Participant'}
                     </Text>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             </ScrollView>
@@ -27211,15 +27373,30 @@ const LiveStreamModal = ({
             {remoteParticipantUids.slice(0, 8).map(uid => (
               <Pressable
                 key={`remote-tile-${uid}`}
-                onPress={() => setPinnedRemoteUid(uid)}
+                onPress={() => {
+                  setPinnedRemoteUid(uid);
+                  const linked =
+                    orderedJoinedParticipants.find(p => p.rtcUid === uid) || null;
+                  if (linked) {
+                    openParticipantQuickActions(linked);
+                  } else {
+                    openParticipantQuickActions({
+                      uid: String(uid),
+                      name: `Participant ${uid}`,
+                      rtcUid: uid,
+                    });
+                  }
+                }}
                 style={{
                   width: 72,
                   height: 88,
                   borderRadius: 10,
                   overflow: 'hidden',
-                  borderWidth: 1.5,
+                  borderWidth: activeSpeakerIsRecent && activeSpeakerRtcUid === uid ? 2 : 1.5,
                   borderColor:
-                    pinnedRemoteUid === uid
+                    activeSpeakerIsRecent && activeSpeakerRtcUid === uid
+                      ? 'rgba(28,255,136,0.95)'
+                      : pinnedRemoteUid === uid
                       ? 'rgba(0,194,255,0.95)'
                       : 'rgba(255,255,255,0.35)',
                   backgroundColor: 'rgba(6,12,20,0.8)',
@@ -27264,12 +27441,103 @@ const LiveStreamModal = ({
                     numberOfLines={1}
                     style={{ color: 'white', fontSize: 9, fontWeight: '700', textAlign: 'center' }}
                   >
-                    Guest {uid}
+                    {orderedJoinedParticipants.find(p => p.rtcUid === uid)?.name ||
+                      `Guest ${uid}`}
                   </Text>
                 </View>
               </Pressable>
             ))}
           </ScrollView>
+        )}
+        {isLiveStarted && participantQuickAction && (
+          <View
+            style={{
+              position: 'absolute',
+              right: 12,
+              bottom: insets.bottom + endBarHeight + 154,
+              zIndex: 24,
+              width: 182,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.62)',
+              backgroundColor: 'rgba(5,12,22,0.96)',
+              padding: 10,
+              gap: 7,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <Text style={{ color: 'white', fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
+                {participantQuickAction.name}
+              </Text>
+              <Pressable onPress={() => setParticipantQuickAction(null)}>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontWeight: '700' }}>✕</Text>
+              </Pressable>
+            </View>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={() => {
+                setPinnedRemoteUid(participantQuickAction.rtcUid || null);
+                setParticipantQuickAction(null);
+              }}
+            >
+              <Text style={styles.secondaryBtnText}>Pin Video</Text>
+            </Pressable>
+            {canModerateParticipant &&
+            participantQuickAction.uid !== currentLiveUid ? (
+              <>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  onPress={() => {
+                    const isMuted = mutedUsers.includes(participantQuickAction.uid);
+                    if (isMuted) {
+                      unmuteUser(participantQuickAction.uid, participantQuickAction.name);
+                    } else {
+                      handleUserAction('mute', participantQuickAction.uid, participantQuickAction.name);
+                    }
+                    setParticipantQuickAction(null);
+                  }}
+                >
+                  <Text style={styles.secondaryBtnText}>
+                    {mutedUsers.includes(participantQuickAction.uid) ? 'Unmute' : 'Mute'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={styles.secondaryBtn}
+                  onPress={() => {
+                    handleUserAction('featureSupporter', participantQuickAction.uid, participantQuickAction.name);
+                    setParticipantQuickAction(null);
+                  }}
+                >
+                  <Text style={styles.secondaryBtnText}>Feature</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.primaryBtn}
+                  onPress={() => {
+                    handleUserAction('kick', participantQuickAction.uid, participantQuickAction.name);
+                    setParticipantQuickAction(null);
+                  }}
+                >
+                  <Text style={styles.primaryBtnText}>Remove</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Pressable
+                style={styles.secondaryBtn}
+                onPress={() => {
+                  handleUserAction('message', participantQuickAction.uid, participantQuickAction.name);
+                  setParticipantQuickAction(null);
+                }}
+              >
+                <Text style={styles.secondaryBtnText}>Message</Text>
+              </Pressable>
+            )}
+          </View>
         )}
         {awaitingCaptainApproval && !isLiveStarted && (
           <View
