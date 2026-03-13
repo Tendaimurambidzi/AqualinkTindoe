@@ -216,5 +216,18 @@ service cloud.firestore {
                               && resource.data.fromUid == request.auth.uid;
       }
     }
+
+    // Conference in-app presentation state (file + page sync).
+    match /conference_presentations/{presentationId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+                    && request.resource.data.uploadedBy is string
+                    && request.resource.data.uploadedBy == request.auth.uid
+                    && request.resource.data.liveScope is string
+                    && request.resource.data.liveScope.size() > 0;
+      allow update, delete: if isAuthed()
+                            && resource.data.uploadedBy is string
+                            && resource.data.uploadedBy == request.auth.uid;
+    }
   }
 }

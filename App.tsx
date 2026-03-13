@@ -94,13 +94,14 @@ import MediaEditor, {
   defaultMediaEdits,
   MediaEdits,
 } from './src/components/MediaEditor';
-import FileSharePanel from './src/components/meeting/FileSharePanel';
 import {
-  MeetingSharedFile,
-  setMeetingPresentationPage,
-  stopMeetingPresentation,
-  subscribeMeetingFiles,
-} from './src/services/meetingFileService';
+  ConferenceSharedFile,
+  pickConferencePresentationFile,
+  presentConferenceFileLive,
+  setConferencePresentationPage,
+  stopConferencePresentation,
+  subscribeConferencePresentations,
+} from './src/services/conferencePresentationService';
                     
 
 // Navigation stack shared across auth/app flows
@@ -865,6 +866,14 @@ const waveOptionMenu = [
     description: 'Let us know if this splashline violates guidelines.',
   },
 ];
+
+// Make text copyable app-wide via long press.
+if (!(Text as any).defaultProps) {
+  (Text as any).defaultProps = {};
+}
+if (typeof (Text as any).defaultProps.selectable === 'undefined') {
+  (Text as any).defaultProps.selectable = true;
+}
                     
 // ======================== STYLES ========================
 const NAVY_BLUE = 'black';
@@ -909,6 +918,24 @@ const styles = StyleSheet.create({
   // Icons above words
   dolphinIcon: { fontSize: 18, marginBottom: 2 },
   pingsIcon: { fontSize: 18, marginBottom: 2 },
+  vibeAlertsIconBox: {
+    minWidth: 46,
+    paddingHorizontal: 6,
+    height: 20,
+    borderRadius: 4,
+    backgroundColor: '#D7263D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.32)',
+  },
+  vibeAlertsIconText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
   compassIcon: { fontSize: 18, marginBottom: 2 },
   globeIcon: { fontSize: 18, marginBottom: 2, color: '#1E90FF' },
   pingsBadge: {
@@ -1203,7 +1230,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
                     
-  modalRoot: { flex: 1, backgroundColor: 'rgba(0, 10, 20, 0.92)' },
+  modalRoot: { flex: 1, backgroundColor: 'rgba(0, 10, 20, 0.72)' },
   modalHeader: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1219,8 +1246,10 @@ const styles = StyleSheet.create({
   modalContent: {
     padding: 16,
     gap: 12,
-    backgroundColor: 'rgba(10,14,26,0.98)',
+    backgroundColor: 'rgba(10,14,26,0.72)',
     borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
   closeBtn: {
     alignSelf: 'center',
@@ -1451,7 +1480,7 @@ const styles = StyleSheet.create({
                     
   // Generic button for logbook-style modals
   primaryBtn: {
-    backgroundColor: '#1282A2',
+    backgroundColor: 'rgba(18,130,162,0.38)',
     minHeight: 40,
     paddingVertical: 8,
     paddingHorizontal: 14,
@@ -1459,7 +1488,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#1282A2',
+    borderColor: 'rgba(108,220,255,0.88)',
   },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '800', letterSpacing: 0.2 },
   hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
@@ -1751,9 +1780,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#2C6E49',
+    backgroundColor: 'rgba(44,110,73,0.35)',
     borderWidth: 1,
-    borderColor: '#2C6E49',
+    borderColor: 'rgba(122,227,174,0.82)',
   },
   secondaryBtnText: { color: '#F3FFF8', fontWeight: '700' },
   attachActionBtn: {
@@ -2070,16 +2099,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   makeWavesPrimaryAction: {
-    backgroundColor: 'rgba(0,194,255,0.16)',
-    borderColor: 'rgba(0,194,255,0.9)',
+    backgroundColor: '#0D6EFD',
+    borderColor: '#3D8BFF',
   },
   makeWavesSecondaryAction: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#0CA678',
+    borderColor: '#2FD7A1',
+  },
+  makeWavesPremiumAction: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#A78BFA',
   },
   makeWavesConferenceAction: {
-    backgroundColor: 'rgba(67,229,184,0.14)',
-    borderColor: 'rgba(67,229,184,0.82)',
+    backgroundColor: '#E8590C',
+    borderColor: '#FFA94D',
   },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
@@ -2314,7 +2347,7 @@ const editorStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 8,
     paddingTop: 10,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: 'rgba(0,0,0,0.16)',
   },
   // Live media editor strip (sits above End Vibe)
   liveMediaBar: {
@@ -2323,7 +2356,7 @@ const editorStyles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: 'rgba(0,0,0,0.16)',
   },
   liveBottomScroll: { flexDirection: 'row', gap: 16 },
   liveBottomItem: {
@@ -2345,7 +2378,7 @@ const editorStyles = StyleSheet.create({
     right: 0,
     bottom: 0,
     top: 0,
-    backgroundColor: '#08101a',
+    backgroundColor: 'rgba(8,16,26,0.74)',
   },
   liveSetupChartBg: {
     ...StyleSheet.absoluteFillObject,
@@ -2380,7 +2413,18 @@ const editorStyles = StyleSheet.create({
     // This style block is now primarily for positioning.
     zIndex: 25,
   },
-  liveRightButton: { alignItems: 'center', justifyContent: 'center' },
+  liveRightButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 52,
+    minHeight: 52,
+    borderRadius: 26,
+    backgroundColor: 'rgba(0,0,0,0.26)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.24)',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
   liveRightIcon: {
     fontSize: 18,
     color: 'white',
@@ -2938,7 +2982,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             'Someone';
           const toneType =
             latestNewNotification.type === 'call_invite'
-              ? 'incoming_call'
+              ? 'live_invite'
               : latestNewNotification.type === 'call_missed'
               ? 'call_missed'
               : latestNewNotification.type === 'live_invite'
@@ -10518,18 +10562,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.log(`[DEBUG] handleJoinCrew: UI updated for connection to ${targetUid}`);
     } catch (e) {
       console.error('Connect wave error:', e);
-      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
-        setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
-        setLocalJoinedTides(prev => {
-          const next = new Set(prev);
-          next.add(targetUid);
-          persistLocalJoinedTides(next);
-          return next;
-        });
-        loadCrewCounts();
-        await loadDriftWatchers();
-        return;
-      }
       let msg = 'Could not connect wave right now';
       if (e && (e.message || (typeof e === 'string'))) {
         msg = e.message || e.toString();
@@ -10557,18 +10589,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       await loadDriftWatchers();
     } catch (e) {
       console.error('Disconnect wave error:', e);
-      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
-        setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
-        setLocalJoinedTides(prev => {
-          const next = new Set(prev);
-          next.delete(targetUid);
-          persistLocalJoinedTides(next);
-          return next;
-        });
-        loadCrewCounts();
-        await loadDriftWatchers();
-        return;
-      }
       notifyError('Could not disconnect wave right now');
     } finally {
       setCrewLoading(false);
@@ -10614,6 +10634,51 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
   }, []);
 
+  const resetMyTideConnections = useCallback(async () => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) return;
+    try {
+      const boardingSnap = await firestore()
+        .collection('users')
+        .doc(uid)
+        .collection('boarding')
+        .get();
+      if (!boardingSnap.empty) {
+        const jobs = boardingSnap.docs.map(async docSnap => {
+          const targetUid = String(docSnap.id || '').trim();
+          try {
+            await docSnap.ref.delete();
+          } catch {}
+          if (targetUid) {
+            try {
+              await firestore()
+                .collection('users')
+                .doc(targetUid)
+                .collection('crew')
+                .doc(uid)
+                .delete();
+            } catch {}
+          }
+        });
+        await Promise.all(jobs);
+      }
+    } catch (err) {
+      console.log('resetMyTideConnections warning:', err);
+    } finally {
+      setLocalJoinedTides(new Set());
+      setLocalHuggedWaves(new Set());
+      setIsInUserCrew({});
+      setMyBoardingCount(0);
+      setMyCrewCount(0);
+      setUserStats(prev => ({ ...prev, hugsMade: 0 }));
+      try {
+        await AsyncStorage.removeItem(`${LOCAL_JOINED_TIDES_KEY_PREFIX}${uid}`);
+        await AsyncStorage.removeItem(`${LOCAL_HUGGED_WAVES_KEY_PREFIX}${uid}`);
+        await AsyncStorage.removeItem(`${LOCAL_HUGS_MADE_KEY_PREFIX}${uid}`);
+      } catch {}
+    }
+  }, []);
+
   useEffect(() => {
     const uid = auth().currentUser?.uid;
     if (!uid) {
@@ -10623,6 +10688,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     (async () => {
       try {
+        const resetKey = `tide_reset_done_${uid}`;
+        const alreadyReset = await AsyncStorage.getItem(resetKey);
+        if (!alreadyReset) {
+          await resetMyTideConnections();
+          await AsyncStorage.setItem(resetKey, '1');
+        }
         const [joinedRaw, huggedRaw, hugsMadeRaw] = await Promise.all([
           AsyncStorage.getItem(`${LOCAL_JOINED_TIDES_KEY_PREFIX}${uid}`),
           AsyncStorage.getItem(`${LOCAL_HUGGED_WAVES_KEY_PREFIX}${uid}`),
@@ -10659,7 +10730,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     })();
-  }, [user?.uid]);
+  }, [resetMyTideConnections, user?.uid]);
 
   // Record Video Reach function with crash-resistant error handling
   const recordVideoReach = async (postId: string) => {
@@ -10746,22 +10817,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     } catch (e: any) {
       console.error('Toggle vibe error:', e);
-      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
-        const shouldConnect = !isInUserCrew[targetUid];
-        setIsInUserCrew(prev => ({ ...prev, [targetUid]: shouldConnect }));
-        setLocalJoinedTides(prev => {
-          const next = new Set(prev);
-          if (shouldConnect) {
-            next.add(targetUid);
-          } else {
-            next.delete(targetUid);
-          }
-          persistLocalJoinedTides(next);
-          return next;
-        });
-        notifySuccess('Tide connection updated');
-        return;
-      }
       notifyError(e?.message || 'Could not update tide connection right now');
     } finally {
       setCrewLoading(false);
@@ -15302,7 +15357,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <View style={{ position: 'relative' }}>
-                    <Text style={styles.pingsIcon}>🔔</Text>
+                    <View style={styles.vibeAlertsIconBox}>
+                      <Text style={styles.vibeAlertsIconText}>ALERT</Text>
+                    </View>
                     {unreadAlertsCount > 0 && (
                       <View style={styles.notificationBadge}>
                         <Text style={styles.notificationBadgeText}>
@@ -15323,7 +15380,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.dolphinIcon}>🧭</Text>
+                  <Text style={styles.dolphinIcon}>🔍</Text>
                   <Text style={styles.topLabel}>VIBE HUNT</Text>
                 </Pressable>
                     
@@ -15337,7 +15394,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.umbrellaIcon}>🪬</Text>
+                  <Text style={styles.umbrellaIcon}>🏖️</Text>
                   <Text style={styles.topLabel}>MY AURA</Text>
                 </Pressable>
                 {/* THE BRIDGE */}
@@ -16485,7 +16542,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 marginRight: 12,
                               }}>
                                 {selectedNotifications.has(item.id) && (
-                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>?</Text>
+                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>✓</Text>
                                 )}
                               </View>
                             )}
@@ -16553,6 +16610,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           >
                             <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
                               Cancel
+                            </Text>
+                          </Pressable>
+
+                          {/* Select All */}
+                          <Pressable
+                            style={{
+                              backgroundColor: 'rgba(0,194,255,0.8)',
+                              borderRadius: 6,
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              flex: 1,
+                              alignItems: 'center',
+                            }}
+                            onPress={selectAllNotifications}
+                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          >
+                            <Text style={{ color: '#00131A', fontSize: 11, fontWeight: 'bold' }}>
+                              Select All
                             </Text>
                           </Pressable>
 
@@ -17475,7 +17550,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   activeOpacity={0.7}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
-                  <Text style={styles.logbookActionText}>Say Something</Text>
+                  <Text style={styles.logbookActionText}>SAY SOMETHING</Text>
                 </Pressable>
                 <Pressable style={[styles.logbookAction, styles.makeWavesSecondaryAction]} onPress={goDrift}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
@@ -17499,11 +17574,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#00C2FF',
                       }}
                     />
-                    <Text style={styles.logbookActionText}>Drift Expo</Text>
+                    <Text style={styles.logbookActionText}>DRIFT EXPO</Text>
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton
-                  buttonStyle={styles.logbookAction}
+                  buttonStyle={[styles.logbookAction, styles.makeWavesPremiumAction]}
                   buttonTextStyle={styles.logbookActionText}
                   hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {
@@ -22736,8 +22811,8 @@ const LiveStreamModal = ({
   // --- Enhanced Live Controls state (safe stubs) ---
   const [isRecording, setIsRecording] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [showFileSharePanel, setShowFileSharePanel] = useState(false);
-  const [liveSharedFiles, setLiveSharedFiles] = useState<MeetingSharedFile[]>([]);
+  const [isConferencePresentingBusy, setIsConferencePresentingBusy] = useState(false);
+  const [liveSharedFiles, setLiveSharedFiles] = useState<ConferenceSharedFile[]>([]);
   const [localPresentedAsset, setLocalPresentedAsset] = useState<{
     fileId: string;
     uri: string;
@@ -22792,6 +22867,11 @@ const LiveStreamModal = ({
   const [conferenceActionItems, setConferenceActionItems] = useState<string[]>([]);
   const [isSlideAutoPlay, setIsSlideAutoPlay] = useState(false);
   const [activeVisualFilter, setActiveVisualFilter] = useState<string>('none');
+  const [liveOptionPicker, setLiveOptionPicker] = useState<{
+    title: string;
+    options: Array<{ key: string; label: string; selected?: boolean }>;
+    onSelect: (key: string) => void;
+  } | null>(null);
   const [showLiveControls, setShowLiveControls] = useState(false);
   const [inviteStatusByUid, setInviteStatusByUid] = useState<
     Record<
@@ -22845,26 +22925,28 @@ const LiveStreamModal = ({
       ) || null
     );
   }, [liveSharedFiles]);
-  const isPresentationWorkflowActive = !!activeSharedFile;
+  const isPresentationWorkflowActive =
+    !!activeSharedFile || (isConferenceMode && !!localPresentedAsset);
   const isFilePresentationActive =
-    !!activeSharedFile &&
-    ['selecting', 'uploading', 'presenting'].includes(
-      String(activeSharedFile.status || '').toLowerCase(),
-    );
+    (!!activeSharedFile &&
+      ['selecting', 'uploading', 'presenting'].includes(
+        String(activeSharedFile.status || '').toLowerCase(),
+      )) ||
+    (isConferenceMode && !!localPresentedAsset);
   const activePresenterUid = String(
-    activeSharedFile?.presenterUid || activeSharedFile?.uploadedBy || '',
+    activeSharedFile?.presenterUid ||
+      activeSharedFile?.uploadedBy ||
+      (localPresentedAsset ? currentLiveUid : '') ||
+      '',
   ).trim();
   const isCurrentPresenter =
-    !!currentLiveUid &&
-    !!activePresenterUid &&
-    activePresenterUid === String(currentLiveUid);
+    !!currentLiveUid && activePresenterUid === String(currentLiveUid);
   const currentPresentationPage = Math.max(
     1,
     Number(activeSharedFile?.currentPage || 1) || 1,
   );
   const presentationMimeType = String(
-    activeSharedFile?.mimeType ||
-      (isCurrentPresenter ? localPresentedAsset?.mimeType || '' : ''),
+    activeSharedFile?.mimeType || localPresentedAsset?.mimeType || '',
   ).trim();
   const presentationName = String(
     activeSharedFile?.name || localPresentedAsset?.name || 'Shared file',
@@ -22873,11 +22955,11 @@ const LiveStreamModal = ({
     if (!isPresentationWorkflowActive) return '';
     const sharedUrl = String(activeSharedFile?.downloadUrl || '').trim();
     if (sharedUrl) return sharedUrl;
-    if (isCurrentPresenter && localPresentedAsset?.uri) {
+    if (localPresentedAsset?.uri) {
       return String(localPresentedAsset.uri);
     }
     return '';
-  }, [activeSharedFile?.downloadUrl, isCurrentPresenter, isPresentationWorkflowActive, localPresentedAsset?.uri]);
+  }, [activeSharedFile?.downloadUrl, isPresentationWorkflowActive, localPresentedAsset?.uri]);
   const embeddedDocViewerUrl = useMemo(
     () => buildInAppDocViewerUrl(presentationUri, presentationMimeType, presentationName),
     [presentationMimeType, presentationName, presentationUri],
@@ -23036,12 +23118,12 @@ const LiveStreamModal = ({
     setPendingRequests([]);
     setInviteStatusByUid({});
     setJoinedParticipants([]);
-    setShowFileSharePanel(false);
     setLiveSharedFiles([]);
     setLocalPresentedAsset(null);
     setPinnedLiveComment(null);
     setLiveMoments([]);
     setShowConferenceToolsPanel(false);
+    setLiveOptionPicker(null);
     setConferenceAgendaDraft('');
     setConferenceAgendaItems([]);
     setConferenceActionDraft('');
@@ -23058,7 +23140,6 @@ const LiveStreamModal = ({
     setShowConferenceRosterPanel(false);
     setShowConferenceChatPanel(false);
     setShowConferenceToolsPanel(false);
-    setShowFileSharePanel(false);
     setReplyingToLiveComment(null);
     setIsSlideAutoPlay(false);
     setLiveSharedFiles([]);
@@ -23080,11 +23161,11 @@ const LiveStreamModal = ({
   ]);
 
   useEffect(() => {
-    if (!visible || !isLiveStarted || !liveShareScope) {
+    if (!visible || !isLiveStarted || !isConferenceMode || !liveShareScope) {
       setLiveSharedFiles([]);
       return;
     }
-    const unsub = subscribeMeetingFiles(
+    const unsub = subscribeConferencePresentations(
       liveShareScope,
       items => setLiveSharedFiles(items),
       () => {},
@@ -23094,7 +23175,7 @@ const LiveStreamModal = ({
         unsub && unsub();
       } catch {}
     };
-  }, [isLiveStarted, liveShareScope, visible]);
+  }, [isConferenceMode, isLiveStarted, liveShareScope, visible]);
 
   useEffect(() => {
     if (!isFilePresentationActive) {
@@ -24269,8 +24350,8 @@ const LiveStreamModal = ({
     }
   };
 
-  const onPresentedFromPanel = useCallback(
-    async (file: MeetingSharedFile, picked: Asset) => {
+  const onPresentedFromSelection = useCallback(
+    async (file: ConferenceSharedFile, picked: Asset) => {
       if (!file || !picked?.uri) return;
       setCameraHidden(true);
       try {
@@ -24288,11 +24369,51 @@ const LiveStreamModal = ({
     [addLiveMoment, currentLiveName, isLiveStarted, isScreenSharing],
   );
 
+  const beginConferencePresentation = useCallback(async () => {
+    if (!isConferenceMode) return;
+    if (!isLiveStarted || !liveShareScope) {
+      Alert.alert('Conference', 'Start conference first.');
+      return;
+    }
+    if (isConferencePresentingBusy) return;
+    setIsConferencePresentingBusy(true);
+    try {
+      const picked = await pickConferencePresentationFile();
+      if (!picked?.uri) return;
+      const file = await presentConferenceFileLive({
+        liveScope: liveShareScope,
+        file: picked,
+        presenterUid: currentLiveUid,
+        presenterName: currentLiveName,
+      });
+      setLiveSharedFiles(prev => {
+        const next = prev.filter(item => item.id !== file.id);
+        return [file, ...next];
+      });
+      await onPresentedFromSelection(file, picked);
+    } catch (err: any) {
+      Alert.alert(
+        'Conference',
+        String(err?.message || 'Could not share this file right now.'),
+      );
+    } finally {
+      setIsConferencePresentingBusy(false);
+    }
+  }, [
+    currentLiveName,
+    currentLiveUid,
+    isConferenceMode,
+    isConferencePresentingBusy,
+    isLiveStarted,
+    liveShareScope,
+    onPresentedFromSelection,
+  ]);
+
   const goToPresentationPage = async (nextPage: number) => {
     if (!activeSharedFile?.id || !currentLiveUid) return;
     try {
-      await setMeetingPresentationPage({
-        fileId: activeSharedFile.id,
+      await setConferencePresentationPage({
+        presentationId: activeSharedFile.id,
         requesterUid: currentLiveUid,
         page: Math.max(1, nextPage),
       });
@@ -24307,8 +24428,8 @@ const LiveStreamModal = ({
   const stopPresentationNow = async () => {
     if (!activeSharedFile?.id || !currentLiveUid) return;
     try {
-      await stopMeetingPresentation({
-        fileId: activeSharedFile.id,
+      await stopConferencePresentation({
+        presentationId: activeSharedFile.id,
         requesterUid: currentLiveUid,
       });
     } catch (err: any) {
@@ -24394,18 +24515,20 @@ const LiveStreamModal = ({
       { label: 'Beach', value: 'beach' },
       { label: 'Office', value: 'office' },
     ];
-    Alert.alert(
-      'Background',
-      'Choose background style',
-      [
-        ...options.map(opt => ({
-          text: `${virtualBackground === opt.value ? '✓ ' : ''}${opt.label}`,
-          onPress: () => applyVirtualBackgroundOption(opt.value),
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ],
-      { cancelable: true },
-    );
+    setLiveOptionPicker({
+      title: 'Background',
+      options: options.map(opt => ({
+        key: String(opt.value ?? '__none__'),
+        label: opt.label,
+        selected: virtualBackground === opt.value,
+      })),
+      onSelect: key => {
+        const selected = options.find(
+          opt => String(opt.value ?? '__none__') === key,
+        );
+        applyVirtualBackgroundOption(selected ? selected.value : null);
+      },
+    });
   };
                     
   const toggleBeautyFilter = () => {
@@ -24417,43 +24540,47 @@ const LiveStreamModal = ({
       { name: 'Studio', lighteningLevel: 0.62, smoothnessLevel: 0.55, rednessLevel: 0.11 },
       { name: 'Ultra', lighteningLevel: 0.72, smoothnessLevel: 0.62, rednessLevel: 0.14 },
     ];
-    Alert.alert(
-      'Beauty',
-      'Choose beauty profile',
-      [
+    setLiveOptionPicker({
+      title: 'Beauty',
+      options: [
         ...options.map(profile => ({
-          text: `${beautyProfile === profile.name ? '✓ ' : ''}${profile.name}`,
-          onPress: () => {
-            setBeautyProfile(profile.name);
-            setBeautyFilterEnabled(true);
-            try {
-              engineRef.current?.setBeautyEffectOptions?.(true, {
-                lighteningContrastLevel: 1,
-                lighteningLevel: profile.lighteningLevel,
-                smoothnessLevel: profile.smoothnessLevel,
-                rednessLevel: profile.rednessLevel,
-              });
-            } catch {}
-          },
+          key: profile.name,
+          label: profile.name,
+          selected: beautyFilterEnabled && beautyProfile === profile.name,
         })),
         {
-          text: 'Off',
-          onPress: () => {
-            setBeautyFilterEnabled(false);
-            try {
-              engineRef.current?.setBeautyEffectOptions?.(false, {
-                lighteningContrastLevel: 1,
-                lighteningLevel: 0,
-                smoothnessLevel: 0,
-                rednessLevel: 0,
-              });
-            } catch {}
-          },
+          key: '__off__',
+          label: 'Off',
+          selected: !beautyFilterEnabled,
         },
-        { text: 'Cancel', style: 'cancel' as const },
       ],
-      { cancelable: true },
-    );
+      onSelect: key => {
+        if (key === '__off__') {
+          setBeautyFilterEnabled(false);
+          try {
+            engineRef.current?.setBeautyEffectOptions?.(false, {
+              lighteningContrastLevel: 1,
+              lighteningLevel: 0,
+              smoothnessLevel: 0,
+              rednessLevel: 0,
+            });
+          } catch {}
+          return;
+        }
+        const profile = options.find(opt => opt.name === key);
+        if (!profile) return;
+        setBeautyProfile(profile.name);
+        setBeautyFilterEnabled(true);
+        try {
+          engineRef.current?.setBeautyEffectOptions?.(true, {
+            lighteningContrastLevel: 1,
+            lighteningLevel: profile.lighteningLevel,
+            smoothnessLevel: profile.smoothnessLevel,
+            rednessLevel: profile.rednessLevel,
+          });
+        } catch {}
+      },
+    });
   };
 
   const applyVisualFilter = (next: string) => {
@@ -24492,18 +24619,15 @@ const LiveStreamModal = ({
       'soft',
       'dramatic',
     ];
-    Alert.alert(
-      'Video Filters',
-      'Choose filter',
-      [
-        ...options.map(name => ({
-          text: `${activeVisualFilter === name ? '✓ ' : ''}${name.toUpperCase()}`,
-          onPress: () => applyVisualFilter(name),
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ],
-      { cancelable: true },
-    );
+    setLiveOptionPicker({
+      title: 'Video Filters',
+      options: options.map(name => ({
+        key: name,
+        label: name.toUpperCase(),
+        selected: activeVisualFilter === name,
+      })),
+      onSelect: key => applyVisualFilter(key),
+    });
   };
                     
   const toggleRecording = async () => {
@@ -25140,13 +25264,11 @@ const LiveStreamModal = ({
     try {
       console.log('Attempting to play sound:', sound.label, sound.file);
       // Try to publish effect to remote audience through Agora first.
-      let publishedToAudience = false;
       try {
         if (publishToAudience && engineRef.current?.startAudioMixing) {
           engineRef.current.startAudioMixing(sound.file, false, false, 1);
           engineRef.current?.adjustAudioMixingPublishVolume?.(100);
           engineRef.current?.adjustAudioMixingPlayoutVolume?.(100);
-          publishedToAudience = true;
         }
       } catch {}
                     
@@ -25167,7 +25289,7 @@ const LiveStreamModal = ({
         soundPlayer.play((success: boolean) => {
           if (success) {
             console.log('Sound played successfully:', sound.label);
-            if (publishedToAudience && broadcast) {
+            if (broadcast) {
               sendSystemMessage(
                 `🔊 ${currentLiveName || 'Host'} played ${sound.label}`,
                 {
@@ -25197,7 +25319,11 @@ const LiveStreamModal = ({
       [
         ...soundEffects.map(effect => ({
           text: `${effect.icon} ${effect.label}`,
-          onPress: () => playSoundEffect(effect),
+          onPress: () =>
+            playSoundEffect(effect, {
+              publishToAudience: true,
+              broadcast: true,
+            }),
         })),
         { text: 'Cancel', style: 'cancel' },
       ],
@@ -25221,12 +25347,12 @@ const LiveStreamModal = ({
       try {
         firestoreMod = require('@react-native-firebase/firestore').default;
       } catch {}
-      if (firestoreMod && liveDocId) {
+      if (firestoreMod && liveCommentScope) {
         const payload = {
           ...(extra && typeof extra === 'object' ? extra : {}),
         };
         await firestoreMod()
-          .collection(`live/${liveDocId}/comments`)
+          .collection(`live/${liveCommentScope}/comments`)
           .add({
             text: message,
             from: 'System',
@@ -26381,7 +26507,7 @@ const LiveStreamModal = ({
     >
       <View style={editorStyles.editorRoot}>
         
-        {isLiveStarted && activeSharedFile && (
+        {isLiveStarted && (activeSharedFile || (isConferenceMode && localPresentedAsset)) && (
           <View
             style={{
               position: 'absolute',
@@ -26404,7 +26530,7 @@ const LiveStreamModal = ({
               numberOfLines={1}
               style={{ color: '#DCEFFF', fontWeight: '800', fontSize: 12 }}
             >
-              {`${activeSharedFile.uploadedByName || 'Someone'} is presenting "${activeSharedFile.name}"`}
+              {`${activeSharedFile?.uploadedByName || currentLiveName || 'Someone'} is presenting "${activeSharedFile?.name || localPresentedAsset?.name || 'Shared file'}"`}
             </Text>
             <View style={{ flexDirection: 'row', marginTop: 6, gap: 8 }}>
               <Pressable
@@ -26413,14 +26539,15 @@ const LiveStreamModal = ({
                   { minHeight: 34, minWidth: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
                 ]}
                 onPress={() => {
-                  if (isConferenceMode) {
-                    setShowConferenceChatPanel(false);
-                    setShowConferenceRosterPanel(false);
-                  }
-                  setShowFileSharePanel(true);
+                  if (!isConferenceMode) return;
+                  setShowConferenceChatPanel(false);
+                  setShowConferenceRosterPanel(false);
+                  void beginConferencePresentation();
                 }}
               >
-                <Text style={styles.secondaryBtnText}>▣</Text>
+                <Text style={styles.secondaryBtnText}>
+                  {isConferencePresentingBusy ? '...' : '▣'}
+                </Text>
               </Pressable>
               {isFilePresentationActive ? (
                 <>
@@ -26500,7 +26627,7 @@ const LiveStreamModal = ({
                       ]}
                       >
                         <Text style={styles.secondaryBtnText}>
-                        👁 {activeSharedFile.uploadedByName || 'Presenter'}
+                        👁 {activeSharedFile?.uploadedByName || 'Presenter'}
                         </Text>
                       </View>
                   )}
@@ -27769,11 +27896,13 @@ const LiveStreamModal = ({
                 onPress={() => {
                   setShowConferenceChatPanel(false);
                   setShowConferenceRosterPanel(false);
-                  setShowFileSharePanel(true);
+                  void beginConferencePresentation();
                 }}
               >
-                <Text style={editorStyles.liveRightIcon}>📁</Text>
-                <Text style={editorStyles.liveRightLabel}>Files</Text>
+                <Text style={editorStyles.liveRightIcon}>📽️</Text>
+                <Text style={editorStyles.liveRightLabel}>
+                  {isConferencePresentingBusy ? 'Preparing' : 'Present'}
+                </Text>
               </Pressable>
             )}
             {isConferenceMode && (
@@ -28219,19 +28348,101 @@ const LiveStreamModal = ({
             </View>
           </KeyboardAvoidingView>
         )}
-        {isConferenceMode && (
-          <FileSharePanel
-            visible={showFileSharePanel}
-            onClose={() => setShowFileSharePanel(false)}
-            liveId={liveDocId || liveChannel || null}
-            currentUid={currentLiveUid}
-            currentName={currentLiveName}
-            isHost={isLiveHost}
-            isCoHost={isLiveCoHost}
-            onPresented={onPresentedFromPanel}
-          />
-        )}
-                    
+        <Modal
+          visible={!!liveOptionPicker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setLiveOptionPicker(null)}
+        >
+          <View
+            style={{
+              flex: 1,
+              backgroundColor: 'rgba(0,0,0,0.78)',
+              justifyContent: 'center',
+              paddingHorizontal: 18,
+            }}
+          >
+            <View
+              style={{
+                maxHeight: SCREEN_HEIGHT * 0.72,
+                borderRadius: 14,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.18)',
+                backgroundColor: 'rgba(10,15,28,0.96)',
+                paddingHorizontal: 12,
+                paddingVertical: 12,
+              }}
+            >
+              <Text
+                style={{
+                  color: 'white',
+                  fontWeight: '800',
+                  fontSize: 16,
+                  marginBottom: 10,
+                }}
+              >
+                {liveOptionPicker?.title || 'Options'}
+              </Text>
+              <ScrollView>
+                {(liveOptionPicker?.options || []).map(item => (
+                  <Pressable
+                    key={item.key}
+                    style={{
+                      minHeight: 42,
+                      borderRadius: 10,
+                      paddingHorizontal: 12,
+                      marginBottom: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      borderWidth: 1,
+                      borderColor: item.selected
+                        ? 'rgba(0,194,255,0.85)'
+                        : 'rgba(255,255,255,0.18)',
+                      backgroundColor: item.selected
+                        ? 'rgba(0,194,255,0.18)'
+                        : 'rgba(255,255,255,0.03)',
+                    }}
+                    onPress={() => {
+                      try {
+                        liveOptionPicker?.onSelect?.(item.key);
+                      } finally {
+                        setLiveOptionPicker(null);
+                      }
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: 'white',
+                        fontWeight: item.selected ? '800' : '600',
+                        fontSize: 13,
+                      }}
+                    >
+                      {item.label}
+                    </Text>
+                    {item.selected ? (
+                      <Text style={{ color: '#7CE5FF', fontSize: 14 }}>✓</Text>
+                    ) : null}
+                  </Pressable>
+                ))}
+              </ScrollView>
+              <Pressable
+                style={[
+                  styles.secondaryBtn,
+                  {
+                    marginTop: 6,
+                    alignSelf: 'stretch',
+                    minHeight: 40,
+                    justifyContent: 'center',
+                  },
+                ]}
+                onPress={() => setLiveOptionPicker(null)}
+              >
+                <Text style={styles.secondaryBtnText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
         {/* Invite Modal */}
         <Modal
           visible={showInviteModal}
