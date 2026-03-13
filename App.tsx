@@ -3691,6 +3691,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [activeDirectCall?.id, activeDirectCall?.status, stopCallRingback]);
 
   useEffect(() => {
+    if (activeDirectCall?.id) {
+      setForceOutgoingRingback(false);
+      stopCallRingback();
+    }
+  }, [activeDirectCall?.id, stopCallRingback]);
+
+  useEffect(() => {
     const incomingModalVisible = !!incomingDirectCall && !activeDirectCall;
     const ringSuppressedForCall =
       !!incomingDirectCall?.id &&
@@ -13074,6 +13081,51 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         await tokenBatch.commit();
       }
       upsertCallHistory(call, 'accepted');
+      try {
+        const calleeNameForSignal =
+          profileName ||
+          accountCreationHandle ||
+          auth()?.currentUser?.displayName ||
+          call.calleeName ||
+          'User';
+        const channelNameForSignal =
+          String(call.channelName || '').trim() || `aqua_call_${call.id}`;
+        const addPingFn = functions().httpsCallable('addPing');
+        await addPingFn({
+          recipientUid: call.callerUid,
+          type: 'call_answered',
+          text: `${calleeNameForSignal} answered your ${call.callType} call`,
+          fromUid: myUid,
+          fromName: calleeNameForSignal,
+          callId: call.id,
+          callType: call.callType,
+          route: 'Pings',
+          channelName: channelNameForSignal,
+        });
+      } catch {}
+      try {
+        const calleeNameForSignal =
+          profileName ||
+          accountCreationHandle ||
+          auth()?.currentUser?.displayName ||
+          call.calleeName ||
+          'User';
+        const channelNameForSignal =
+          String(call.channelName || '').trim() || `aqua_call_${call.id}`;
+        await firestore()
+          .collection(`users/${call.callerUid}/mentions`)
+          .add({
+            type: 'call_answered',
+            text: `${calleeNameForSignal} answered your ${call.callType} call`,
+            fromUid: myUid,
+            fromName: calleeNameForSignal,
+            route: 'Pings',
+            callId: call.id,
+            callType: call.callType,
+            channelName: channelNameForSignal,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          });
+      } catch {}
       setActiveDirectCall(prev => {
         if (!prev || prev.id !== call.id) return prev;
         return {
@@ -13088,7 +13140,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setIncomingCallAction(null);
     }
   }, [
+    accountCreationHandle,
     fetchDirectCallAgoraToken,
+    profileName,
     stopCallRingback,
     setForceOutgoingRingback,
     hideNativeIncomingCallNotification,
@@ -13502,6 +13556,74 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const handleNotificationNavigation = useCallback(
     (data: any) => {
+      if (data?.type === 'call_answered' && data?.callId && myUid) {
+        const callId = String(data.callId || '').trim();
+        if (!callId) return;
+        const signalCallType: DirectCallMode =
+          String(data?.callType || '').toLowerCase() === 'video'
+            ? 'video'
+            : 'audio';
+        const signalCalleeUid = String(data?.fromUid || data?.calleeUid || '').trim();
+        if (signalCalleeUid && signalCalleeUid === myUid) {
+          return;
+        }
+        const signalCalleeName = String(
+          data?.fromName || data?.calleeName || 'User',
+        ).trim();
+        const signalChannel = String(
+          data?.channelName ||
+            outgoingDirectCall?.channelName ||
+            activeDirectCall?.channelName ||
+            `aqua_call_${callId}`,
+        ).trim();
+        setForceOutgoingRingback(false);
+        stopCallRingback();
+        setOutgoingDirectCall(prev => {
+          if (!prev || prev.id !== callId) return prev;
+          return {
+            ...prev,
+            status: 'accepted',
+            channelName: prev.channelName || signalChannel,
+            calleeUid: prev.calleeUid || signalCalleeUid,
+            calleeName: prev.calleeName || signalCalleeName || 'User',
+          };
+        });
+        setActiveDirectCall(prev => {
+          if (prev?.id === callId) {
+            return {
+              ...prev,
+              status: 'accepted',
+              channelName: prev.channelName || signalChannel,
+            };
+          }
+          if (outgoingDirectCall?.id !== callId) return prev;
+          return {
+            ...outgoingDirectCall,
+            status: 'accepted',
+            callType: signalCallType,
+            channelName: outgoingDirectCall.channelName || signalChannel,
+            calleeUid: outgoingDirectCall.calleeUid || signalCalleeUid,
+            calleeName: outgoingDirectCall.calleeName || signalCalleeName || 'User',
+          };
+        });
+        setActiveDirectCallRole('caller');
+        watchDirectCallDoc(callId, 'caller');
+        try {
+          firestore()
+            .collection(`users/${myUid}/direct_calls`)
+            .doc(callId)
+            .set(
+              {
+                status: 'accepted',
+                acceptedAt: firestore.FieldValue.serverTimestamp(),
+                channelName: signalChannel,
+              },
+              { merge: true },
+            )
+            .catch(() => {});
+        } catch {}
+        return;
+      }
       if (data?.type === 'call_invite' && data?.callId && myUid) {
         const callId = String(data.callId || '').trim();
         if (callId) {
@@ -13589,10 +13711,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     },
     [
+      activeDirectCall?.channelName,
       displayFeed,
       mapDirectCallDoc,
       myUid,
+      outgoingDirectCall,
       profileName,
+      stopCallRingback,
       watchDirectCallDoc,
     ],
   );
@@ -13733,12 +13858,76 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         () => {},
       );
 
+    const processCallAnsweredSignal = (data: any) => {
+      try {
+        const callId = String(data?.callId || '').trim();
+        if (!callId) return;
+        const createdAtMs = toJSDate(data?.createdAt).getTime();
+        if (createdAtMs > 0 && Date.now() - createdAtMs > STALE_RINGING_CALL_MAX_AGE_MS) {
+          return;
+        }
+        handleNotificationNavigation({
+          ...data,
+          type: 'call_answered',
+          callId,
+        });
+      } catch {}
+    };
+
+    const unsubMentionsAnswered = firestore()
+      .collection(`users/${myUid}/mentions`)
+      .where('type', '==', 'call_answered')
+      .limit(20)
+      .onSnapshot(
+        snap => {
+          const docs = (snap?.docs || []).slice().sort((a: any, b: any) => {
+            return (
+              toJSDate((b.data?.() || {}).createdAt).getTime() -
+              toJSDate((a.data?.() || {}).createdAt).getTime()
+            );
+          });
+          if (docs.length === 0) return;
+          processCallAnsweredSignal(docs[0]?.data?.() || {});
+        },
+        () => {},
+      );
+
+    const unsubPingsAnswered = firestore()
+      .collection(`users/${myUid}/pings`)
+      .where('type', '==', 'call_answered')
+      .limit(20)
+      .onSnapshot(
+        snap => {
+          const docs = (snap?.docs || []).filter((doc: any) => {
+            const data = doc?.data?.() || {};
+            return data?.read !== true;
+          });
+          const latest =
+            docs
+              .slice()
+              .sort(
+                (a: any, b: any) =>
+                  toJSDate((b.data?.() || {}).createdAt).getTime() -
+                  toJSDate((a.data?.() || {}).createdAt).getTime(),
+              )[0] || null;
+          if (!latest) return;
+          processCallAnsweredSignal(latest?.data?.() || {});
+        },
+        () => {},
+      );
+
     return () => {
       try {
         unsubMentions && unsubMentions();
       } catch {}
       try {
         unsubPings && unsubPings();
+      } catch {}
+      try {
+        unsubMentionsAnswered && unsubMentionsAnswered();
+      } catch {}
+      try {
+        unsubPingsAnswered && unsubPingsAnswered();
       } catch {}
     };
   }, [handleNotificationNavigation, myUid, profileName]);
@@ -13845,7 +14034,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           'activity';
         const type = String(rawType || '').toLowerCase();
         const isIncomingCallNotification =
-          type === 'call_invite' || type === 'incoming_call';
+          type === 'call_invite' || type === 'incoming_call' || type === 'call_answered';
         const waveId = rm?.data?.waveId || undefined;
         const actor = rm?.data?.actorName || rm?.data?.fromName || 'Viber';
         const text =
@@ -26985,6 +27174,21 @@ const LiveStreamModal = ({
                     >
                       {p.name}
                     </Text>
+                    <Text
+                      style={{
+                        color:
+                          String(p.uid || '') === String(liveHostUid || '')
+                            ? '#9DE6FF'
+                            : 'rgba(255,255,255,0.62)',
+                        fontSize: 9,
+                        marginTop: 1,
+                        fontWeight: '700',
+                      }}
+                    >
+                      {String(p.uid || '') === String(liveHostUid || '')
+                        ? 'Host'
+                        : 'Participant'}
+                    </Text>
                   </View>
                 ))}
               </View>
@@ -27920,7 +28124,11 @@ const LiveStreamModal = ({
                   /{hostName || 'you'}
                 </Text>
                 <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>
-                  {isConferenceMode ? 'Conference Host' : 'Stream Captain'}
+                  {isLiveHost
+                    ? isConferenceMode
+                      ? 'Conference Host'
+                      : 'Drift Host'
+                    : 'Participant'}
                 </Text>
               </View>
             </View>

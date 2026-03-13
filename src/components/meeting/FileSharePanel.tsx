@@ -139,6 +139,31 @@ export default function FileSharePanel({
         }
         return;
       }
+      // Immediately switch back to meeting view and render selected file in-app.
+      onClose();
+      const optimisticFile: MeetingSharedFile = {
+        id:
+          String(selectionId || '').trim() ||
+          `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        liveId: effectiveLiveId,
+        name: String(picked.fileName || 'Shared file'),
+        size: Number(picked.fileSize || 0),
+        mimeType: String(picked.type || 'application/octet-stream'),
+        storagePath: '',
+        downloadUrl: '',
+        uploadedBy: currentUid,
+        uploadedByName: String(currentName || 'Participant'),
+        createdAt: Date.now(),
+        pinned: false,
+        pinnedAt: 0,
+        presenterUid: currentUid,
+        currentPage: 1,
+        status: 'presenting',
+        error: null,
+      };
+      if (onPresented) {
+        await onPresented(optimisticFile, picked);
+      }
       const presented = await presentMeetingFileLive({
         liveId: effectiveLiveId,
         file: picked,
@@ -151,17 +176,11 @@ export default function FileSharePanel({
         const next = prev.filter(item => item.id !== presented.id);
         return [presented, ...next];
       });
-      if (onPresented) {
-        await onPresented(presented, picked);
-      } else if (picked?.uri) {
+      if (!onPresented && picked?.uri) {
         try {
           await Linking.openURL(String(picked.uri));
         } catch {}
       }
-      Alert.alert(
-        'Live shared',
-        `"${presented.name}" is now being presented live in this meeting.`,
-      );
     } catch (err: any) {
       Alert.alert(
         'Share file',

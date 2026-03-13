@@ -15,7 +15,7 @@ import androidx.core.app.Person
 class CallNotificationService : Service() {
     companion object {
         private const val TAG = "CallNotificationSvc"
-        const val CHANNEL_ID = "aqualink_calls_default_ringtone_v3"
+        const val CHANNEL_ID = "aqualink_calls_default_ringtone_v4"
         const val NOTIFICATION_ID = 1001
         const val ACTION_ANSWER = "com.aqualink.tindo.ANSWER_CALL"
         const val ACTION_DECLINE = "com.aqualink.tindo.DECLINE_CALL"
