@@ -21118,6 +21118,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         bridge={bridge}
         dataSaver={dataSaver}
         isWifi={isWifi}
+        isInUserCrewMap={isInUserCrew}
         experienceMode={liveExperienceMode}
         inviteJoinPreset={liveInviteJoinPreset}
         onClose={() => {
@@ -22275,6 +22276,7 @@ const LiveStreamModal = ({
   styles,
   isChartered,
   experienceMode,
+  isInUserCrewMap,
   searchOceanEntities,
   bridge,
   dataSaver,
@@ -22286,6 +22288,7 @@ const LiveStreamModal = ({
   styles: any; // Prop to receive styles from parent
   isChartered?: boolean;
   experienceMode?: LiveExperienceMode;
+  isInUserCrewMap?: { [uid: string]: boolean };
   searchOceanEntities: (term: string) => Promise<SearchResult[]>;
   bridge: any;
   dataSaver: any;
@@ -22309,6 +22312,7 @@ const LiveStreamModal = ({
   })();
   const appId: string = (cfg && cfg.AGORA_APP_ID) || '';
   const staticToken: string | null = (cfg && cfg.AGORA_STATIC_TOKEN) || null;
+  const isInUserCrew = isInUserCrewMap || {};
   const isConferenceMode = experienceMode === 'conference';
   const sessionLabel = isConferenceMode ? 'Conference' : 'Drift Expo';
   const startSessionLabel = isConferenceMode ? 'Start Conference' : 'Start Drift';
@@ -22426,6 +22430,7 @@ const LiveStreamModal = ({
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [commentNowMs, setCommentNowMs] = useState(Date.now());
+  const lastCommentSentAtRef = useRef<number>(0);
   const [liveComments, setLiveComments] = useState<
     Array<{
       id: string;
@@ -22468,12 +22473,24 @@ const LiveStreamModal = ({
       from: comment.from,
       text: comment.text,
     });
-    setShowCommentInput(true);
+    if (isConferenceMode) {
+      setShowConferenceChatPanel(true);
+      setShowCommentInput(false);
+    } else {
+      setShowCommentInput(true);
+    }
     if (!commentText.trim()) {
       const mention = String(comment.from || '').trim();
       setCommentText(mention ? `@${mention} ` : '');
     }
   };
+  const addLiveMoment = useCallback((text: string) => {
+    const msg = String(text || '').trim();
+    if (!msg) return;
+    const at = Date.now();
+    const id = `${at}_${Math.random().toString(36).slice(2, 8)}`;
+    setLiveMoments(prev => [...prev, { id, text: msg, at }].slice(-12));
+  }, []);
                     
   // --- Enhanced Live Controls state (safe stubs) ---
   const [isRecording, setIsRecording] = useState(false);
@@ -22486,6 +22503,14 @@ const LiveStreamModal = ({
     mimeType: string;
     name: string;
   } | null>(null);
+  const [pinnedLiveComment, setPinnedLiveComment] = useState<{
+    id: string;
+    text: string;
+    from?: string;
+  } | null>(null);
+  const [liveMoments, setLiveMoments] = useState<
+    Array<{ id: string; text: string; at: number }>
+  >([]);
   const [virtualBackground, setVirtualBackground] = useState<string | null>(
     null,
   );
@@ -22515,6 +22540,14 @@ const LiveStreamModal = ({
   >([]);
   const [recentlyHereNames, setRecentlyHereNames] = useState<string[]>([]);
   const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(true);
+  const [showConferenceToolsPanel, setShowConferenceToolsPanel] = useState(false);
+  const [showConferenceRosterPanel, setShowConferenceRosterPanel] = useState(false);
+  const [showConferenceChatPanel, setShowConferenceChatPanel] = useState(false);
+  const [conferenceAgendaDraft, setConferenceAgendaDraft] = useState('');
+  const [conferenceAgendaItems, setConferenceAgendaItems] = useState<string[]>([]);
+  const [conferenceActionDraft, setConferenceActionDraft] = useState('');
+  const [conferenceActionItems, setConferenceActionItems] = useState<string[]>([]);
+  const [isSlideAutoPlay, setIsSlideAutoPlay] = useState(false);
   const [showLiveControls, setShowLiveControls] = useState(false);
   const [inviteStatusByUid, setInviteStatusByUid] = useState<
     Record<
@@ -22542,9 +22575,14 @@ const LiveStreamModal = ({
       (!liveHostUid && isLiveStarted));
   const isLiveCoHost =
     !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
+  const modeScopePrefix = isConferenceMode ? 'conference' : 'drift';
   // Use one normalized, channel-first scope so all participants share the same docs/comments path.
-  const liveShareScope = normalizeLiveScope(liveChannel || channelInput || liveDocId || '');
-  const liveCommentScope = normalizeLiveScope(liveChannel || channelInput || liveDocId || '');
+  const liveShareScope = normalizeLiveScope(
+    `${modeScopePrefix}_${liveChannel || channelInput || liveDocId || ''}`,
+  );
+  const liveCommentScope = normalizeLiveScope(
+    `${modeScopePrefix}_${liveChannel || channelInput || liveDocId || ''}`,
+  );
   const activeSharedFile = useMemo(() => {
     if (!liveSharedFiles.length) return null;
     return (
@@ -22647,8 +22685,8 @@ const LiveStreamModal = ({
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
   }, []);
   useEffect(() => {
-    if (!showUserPanel) setUserPanelMode('none');
-  }, [showUserPanel]);
+    if (!showUserPanel && !showConferenceRosterPanel) setUserPanelMode('none');
+  }, [showConferenceRosterPanel, showUserPanel]);
   useEffect(() => {
     if (visible && isLiveStarted) return;
     setShowLiveControls(false);
@@ -22659,6 +22697,9 @@ const LiveStreamModal = ({
     setMicMuted(false);
     setCameraHidden(false);
     setShowCommentInput(false);
+    setShowUserPanel(false);
+    setShowConferenceRosterPanel(false);
+    setShowConferenceChatPanel(false);
     setReplyingToLiveComment(null);
     setAwaitingCaptainApproval(false);
     setJoinApprovalLabel('');
@@ -22669,11 +22710,27 @@ const LiveStreamModal = ({
     setShowFileSharePanel(false);
     setLiveSharedFiles([]);
     setLocalPresentedAsset(null);
+    setPinnedLiveComment(null);
+    setLiveMoments([]);
+    setShowConferenceToolsPanel(false);
+    setConferenceAgendaDraft('');
+    setConferenceAgendaItems([]);
+    setConferenceActionDraft('');
+    setConferenceActionItems([]);
+    setIsSlideAutoPlay(false);
   }, [visible]);
 
   useEffect(() => {
-    if (isConferenceMode) return;
+    setShowCommentInput(false);
+    setShowUserPanel(false);
+    setShowConferenceRosterPanel(false);
+    setShowConferenceChatPanel(false);
+    setShowConferenceToolsPanel(false);
     setShowFileSharePanel(false);
+    setReplyingToLiveComment(null);
+    setIsSlideAutoPlay(false);
+    setLiveSharedFiles([]);
+    setLocalPresentedAsset(null);
   }, [isConferenceMode]);
 
   useEffect(() => {
@@ -23466,8 +23523,17 @@ const LiveStreamModal = ({
   const sendLiveComment = async () => {
     const txt = (commentText || '').trim();
     if (!txt) return;
-    // Close input after sending; user can reopen when needed
-    setShowCommentInput(false);
+    const nowMs = Date.now();
+    const COMMENT_COOLDOWN_MS = 1200;
+    if (nowMs - Number(lastCommentSentAtRef.current || 0) < COMMENT_COOLDOWN_MS) {
+      Alert.alert('Slow down', 'Please wait a moment before sending another comment.');
+      return;
+    }
+    lastCommentSentAtRef.current = nowMs;
+    // Drift uses quick-send composer; Conference keeps its thread panel open.
+    if (!isConferenceMode) {
+      setShowCommentInput(false);
+    }
                     
     let sent = false;
     try {
@@ -23513,15 +23579,21 @@ const LiveStreamModal = ({
         'Send comment',
         String(err?.message || err?.code || 'Failed to send comment.'),
       );
+      lastCommentSentAtRef.current = 0;
     }
                     
     setCommentText('');
     setReplyingToLiveComment(null);
-    setShowCommentInput(false);
+    if (!isConferenceMode) {
+      setShowCommentInput(false);
+    }
                     
     // Spawn local feedback only if write succeeded.
     if (sent) {
       spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
+      if (txt.includes('?')) {
+        addLiveMoment(`Q&A: ${txt.slice(0, 64)}`);
+      }
     }
   };
                     
@@ -23729,8 +23801,9 @@ const LiveStreamModal = ({
         mimeType: String((picked as any)?.type || file.mimeType || ''),
         name: String(picked.fileName || file.name || 'Shared file'),
       });
+      addLiveMoment(`${currentLiveName || 'Host'} started presenting ${String(file.name || 'a file')}`);
     },
-    [isLiveStarted, isScreenSharing],
+    [addLiveMoment, currentLiveName, isLiveStarted, isScreenSharing],
   );
 
   const goToPresentationPage = async (nextPage: number) => {
@@ -23772,6 +23845,20 @@ const LiveStreamModal = ({
       engineRef.current?.muteLocalVideoStream?.(false);
     } catch {}
   };
+
+  useEffect(() => {
+    if (!isSlideAutoPlay || !isCurrentPresenter || !isFilePresentationActive) return;
+    const t = setInterval(() => {
+      void goToPresentationPage(currentPresentationPage + 1);
+    }, 5000);
+    return () => clearInterval(t);
+  }, [
+    currentPresentationPage,
+    goToPresentationPage,
+    isCurrentPresenter,
+    isFilePresentationActive,
+    isSlideAutoPlay,
+  ]);
                     
   const toggleVirtualBackground = () => {
     const backgrounds = [null, 'beach', 'underwater', 'space', 'studio'];
@@ -25644,7 +25731,13 @@ const LiveStreamModal = ({
                   styles.secondaryBtn,
                   { minHeight: 34, minWidth: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
                 ]}
-                onPress={() => setShowFileSharePanel(true)}
+                onPress={() => {
+                  if (isConferenceMode) {
+                    setShowConferenceChatPanel(false);
+                    setShowConferenceRosterPanel(false);
+                  }
+                  setShowFileSharePanel(true);
+                }}
               >
                 <Text style={styles.secondaryBtnText}>▣</Text>
               </Pressable>
@@ -25684,6 +25777,26 @@ const LiveStreamModal = ({
                       </Pressable>
                       <Pressable
                         style={[
+                          styles.secondaryBtn,
+                          {
+                            minHeight: 34,
+                            minWidth: 52,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            paddingHorizontal: 10,
+                            borderColor: isSlideAutoPlay
+                              ? 'rgba(0,194,255,0.85)'
+                              : undefined,
+                          },
+                        ]}
+                        onPress={() => setIsSlideAutoPlay(v => !v)}
+                      >
+                        <Text style={styles.secondaryBtnText}>
+                          {isSlideAutoPlay ? '▮▮' : '▷'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
                           styles.primaryBtn,
                           { minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
                         ]}
@@ -25714,6 +25827,63 @@ const LiveStreamModal = ({
               ) : null}
             </View>
           </View>
+        )}
+        {isLiveStarted && pinnedLiveComment && (
+          <View
+            style={{
+              position: 'absolute',
+              top: insets.top + (hasOpenedPresentation ? 72 : 8),
+              left: 8,
+              right: 8,
+              zIndex: 15,
+              backgroundColor: 'rgba(8,20,39,0.9)',
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.48)',
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+            }}
+          >
+            <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 11 }}>
+              PINNED MESSAGE
+            </Text>
+            <Text numberOfLines={2} style={{ color: 'white', fontSize: 12, marginTop: 2 }}>
+              {safeCommentHandle(pinnedLiveComment.from || 'User')}: {pinnedLiveComment.text}
+            </Text>
+          </View>
+        )}
+        {isLiveStarted && liveMoments.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{
+              position: 'absolute',
+              left: 8,
+              right: showLiveControls ? 108 : 8,
+              top: insets.top + (hasOpenedPresentation ? 114 : 44),
+              zIndex: 14,
+              maxHeight: 34,
+            }}
+            contentContainerStyle={{ alignItems: 'center', gap: 6, paddingRight: 8 }}
+          >
+            {liveMoments.map(moment => (
+              <View
+                key={moment.id}
+                style={{
+                  paddingHorizontal: 8,
+                  paddingVertical: 5,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.28)',
+                  backgroundColor: 'rgba(0,0,0,0.52)',
+                }}
+              >
+                <Text numberOfLines={1} style={{ color: 'white', fontSize: 10, maxWidth: 190 }}>
+                  {moment.text}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
         )}
         {isLiveStarted && (
           <>
@@ -25999,7 +26169,7 @@ const LiveStreamModal = ({
             )}
           </>
         )}
-        {isLiveStarted && displayedLiveComments.length > 0 && (
+        {isLiveStarted && !isConferenceMode && displayedLiveComments.length > 0 && (
           <ScrollView
             style={[
               editorStyles.liveCommentsOverlay,
@@ -26024,7 +26194,7 @@ const LiveStreamModal = ({
                 <Pressable
                   key={c.id}
                   onLongPress={() => {
-                    Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, [
+                    const actions: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'default' | 'destructive' }> = [
                       {
                         text: 'Splash',
                         onPress: () => onSplashComment(c.id),
@@ -26033,8 +26203,26 @@ const LiveStreamModal = ({
                         text: 'Echo Back',
                         onPress: () => onEchoBack(c as any),
                       },
-                      { text: 'Cancel', style: 'cancel' },
-                    ]);
+                    ];
+                    if (isLiveHost || isLiveCoHost) {
+                      actions.push({
+                        text:
+                          pinnedLiveComment?.id === c.id ? 'Unpin Message' : 'Pin Message',
+                        onPress: () => {
+                          if (pinnedLiveComment?.id === c.id) {
+                            setPinnedLiveComment(null);
+                          } else {
+                            setPinnedLiveComment({
+                              id: String(c.id || ''),
+                              text: String((c as any).text || ''),
+                              from: String((c as any).from || 'User'),
+                            });
+                          }
+                        },
+                      });
+                    }
+                    actions.push({ text: 'Cancel', style: 'cancel' });
+                    Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, actions);
                   }}
                 >
                   <View style={editorStyles.liveCommentBubble}>
@@ -26105,7 +26293,7 @@ const LiveStreamModal = ({
             </View>
           </ScrollView>
         )}
-        {isLiveStarted && latestDisplayedComment && (
+        {isLiveStarted && !isConferenceMode && latestDisplayedComment && (
           <View
             style={{
               position: 'absolute',
@@ -26132,7 +26320,7 @@ const LiveStreamModal = ({
             </Text>
           </View>
         )}
-        {isLiveStarted && flyingComments.length > 0 && (
+        {isLiveStarted && !isConferenceMode && flyingComments.length > 0 && (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             {flyingComments.map((fc, idx) => {
               const translateY = fc.anim.interpolate({
@@ -26532,7 +26720,7 @@ const LiveStreamModal = ({
             </Pressable>
           </View>
         )}
-        {isLiveStarted && showUserPanel && (
+        {isLiveStarted && !isConferenceMode && showUserPanel && (
           <UserManagementPanel
             viewers={viewers}
             moderators={moderators}
@@ -26542,6 +26730,20 @@ const LiveStreamModal = ({
             searchOceanEntities={searchOceanEntities}
             onUserAction={(action, userId, username) => {
               setShowUserPanel(false);
+              handleUserAction(action, userId, username);
+            }}
+          />
+        )}
+        {isLiveStarted && isConferenceMode && showConferenceRosterPanel && (
+          <UserManagementPanel
+            viewers={viewers}
+            moderators={moderators}
+            coHosts={coHosts}
+            mode={userPanelMode}
+            isInUserCrew={isInUserCrew}
+            searchOceanEntities={searchOceanEntities}
+            onUserAction={(action, userId, username) => {
+              setShowConferenceRosterPanel(false);
               handleUserAction(action, userId, username);
             }}
           />
@@ -26600,7 +26802,11 @@ const LiveStreamModal = ({
             {isConferenceMode && (
               <Pressable
                 style={editorStyles.liveRightButton}
-                onPress={() => setShowFileSharePanel(true)}
+                onPress={() => {
+                  setShowConferenceChatPanel(false);
+                  setShowConferenceRosterPanel(false);
+                  setShowFileSharePanel(true);
+                }}
               >
                 <Text style={editorStyles.liveRightIcon}>📁</Text>
                 <Text style={editorStyles.liveRightLabel}>Files</Text>
@@ -26608,23 +26814,38 @@ const LiveStreamModal = ({
             )}
             <Pressable
               style={editorStyles.liveRightButton}
-              onPress={() => setShowCommentInput(true)}
+              onPress={() => {
+                if (isConferenceMode) {
+                  setShowConferenceChatPanel(v => !v);
+                  setShowConferenceRosterPanel(false);
+                  setShowCommentInput(false);
+                  return;
+                }
+                setShowCommentInput(true);
+              }}
             >
               <Text style={editorStyles.liveRightIcon}>💬</Text>
               <Text style={editorStyles.liveRightLabel}>
-                {isConferenceMode ? 'Chat' : 'Comment'}
+                {isConferenceMode
+                  ? showConferenceChatPanel
+                    ? 'Chat On'
+                    : 'Chat'
+                  : 'Comment'}
               </Text>
             </Pressable>
             {isConferenceMode && (
               <Pressable
                 style={editorStyles.liveRightButton}
                 onPress={() => {
-                  setShowUserPanel(true);
+                  setShowConferenceRosterPanel(v => !v);
+                  setShowConferenceChatPanel(false);
                   setUserPanelMode('join');
                 }}
               >
                 <Text style={editorStyles.liveRightIcon}>🧑‍🤝‍🧑</Text>
-                <Text style={editorStyles.liveRightLabel}>Roster</Text>
+                <Text style={editorStyles.liveRightLabel}>
+                  {showConferenceRosterPanel ? 'Roster On' : 'Roster'}
+                </Text>
               </Pressable>
             )}
             {isConferenceMode && (
@@ -26643,6 +26864,21 @@ const LiveStreamModal = ({
               >
                 <Text style={editorStyles.liveRightIcon}>🔗</Text>
                 <Text style={editorStyles.liveRightLabel}>Meeting Link</Text>
+              </Pressable>
+            )}
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => {
+                  setShowConferenceChatPanel(false);
+                  setShowConferenceRosterPanel(false);
+                  setShowConferenceToolsPanel(v => !v);
+                }}
+              >
+                <Text style={editorStyles.liveRightIcon}>🗂</Text>
+                <Text style={editorStyles.liveRightLabel}>
+                  {showConferenceToolsPanel ? 'Tools On' : 'Tools'}
+                </Text>
               </Pressable>
             )}
                     
@@ -26816,6 +27052,213 @@ const LiveStreamModal = ({
               </Pressable>
             )}
           </ScrollView>
+        )}
+        {isLiveStarted && isConferenceMode && showConferenceToolsPanel && (
+          <View
+            style={{
+              position: 'absolute',
+              left: 10,
+              right: showLiveControls ? 108 : 10,
+              bottom: insets.bottom + endBarHeight + 82,
+              zIndex: 16,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.45)',
+              backgroundColor: 'rgba(8,16,30,0.95)',
+              padding: 10,
+            }}
+          >
+            <Text style={{ color: '#9DE6FF', fontWeight: '800', marginBottom: 8 }}>
+              Conference Tools
+            </Text>
+            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, marginBottom: 4 }}>
+              Agenda
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+              <TextInput
+                value={conferenceAgendaDraft}
+                onChangeText={setConferenceAgendaDraft}
+                placeholder="Add agenda point"
+                placeholderTextColor="rgba(255,255,255,0.45)"
+                style={[editorStyles.liveSetupInput, { flex: 1, marginBottom: 0 }]}
+              />
+              <Pressable
+                style={[styles.secondaryBtn, { minHeight: 38, paddingHorizontal: 10 }]}
+                onPress={() => {
+                  const v = String(conferenceAgendaDraft || '').trim();
+                  if (!v) return;
+                  setConferenceAgendaItems(prev => [...prev, v].slice(-6));
+                  setConferenceAgendaDraft('');
+                  addLiveMoment(`Agenda: ${v}`);
+                }}
+              >
+                <Text style={styles.secondaryBtnText}>Add</Text>
+              </Pressable>
+            </View>
+            {conferenceAgendaItems.length > 0 && (
+              <Text numberOfLines={2} style={{ color: 'white', fontSize: 11, marginBottom: 8 }}>
+                {conferenceAgendaItems.map((item, idx) => `${idx + 1}. ${item}`).join('   ')}
+              </Text>
+            )}
+            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, marginBottom: 4 }}>
+              Action Items
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                value={conferenceActionDraft}
+                onChangeText={setConferenceActionDraft}
+                placeholder="Add action item"
+                placeholderTextColor="rgba(255,255,255,0.45)"
+                style={[editorStyles.liveSetupInput, { flex: 1, marginBottom: 0 }]}
+              />
+              <Pressable
+                style={[styles.secondaryBtn, { minHeight: 38, paddingHorizontal: 10 }]}
+                onPress={() => {
+                  const v = String(conferenceActionDraft || '').trim();
+                  if (!v) return;
+                  setConferenceActionItems(prev => [...prev, v].slice(-8));
+                  setConferenceActionDraft('');
+                  addLiveMoment(`Action: ${v}`);
+                }}
+              >
+                <Text style={styles.secondaryBtnText}>Add</Text>
+              </Pressable>
+            </View>
+            {conferenceActionItems.length > 0 && (
+              <Text numberOfLines={2} style={{ color: 'white', fontSize: 11, marginTop: 8 }}>
+                {conferenceActionItems.map((item, idx) => `${idx + 1}. ${item}`).join('   ')}
+              </Text>
+            )}
+          </View>
+        )}
+        {isLiveStarted && isConferenceMode && showConferenceChatPanel && (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={{
+              position: 'absolute',
+              left: 10,
+              right: showLiveControls ? 108 : 10,
+              bottom: insets.bottom + endBarHeight + mediaBarHeight + 8,
+              zIndex: 17,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.45)',
+              backgroundColor: 'rgba(8,16,30,0.95)',
+              padding: 10,
+              maxHeight: 320,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 8,
+              }}
+            >
+              <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
+                Conference Chat
+              </Text>
+              <Pressable onPress={() => setShowConferenceChatPanel(false)}>
+                <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Close</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              style={{ flexGrow: 0, maxHeight: 210 }}
+              contentContainerStyle={{ gap: 8, paddingBottom: 6 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {(liveComments || []).length === 0 ? (
+                <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12 }}>
+                  No messages yet.
+                </Text>
+              ) : (
+                (liveComments || []).map((c: any, idx: number) => (
+                  <View
+                    key={String(c?.id || `comment_${idx}`)}
+                    style={{
+                      borderRadius: 8,
+                      backgroundColor: 'rgba(255,255,255,0.06)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.12)',
+                      paddingHorizontal: 8,
+                      paddingVertical: 7,
+                    }}
+                  >
+                    <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 11 }}>
+                      {safeCommentHandle((c as any)?.from || 'User')}
+                    </Text>
+                    {!!(c as any)?.replyToFrom && (
+                      <Text
+                        numberOfLines={1}
+                        style={{
+                          color: 'rgba(157,230,255,0.82)',
+                          fontSize: 10,
+                          marginTop: 1,
+                        }}
+                      >
+                        reply to {safeCommentHandle((c as any)?.replyToFrom || 'message')}:
+                        {' "'}
+                        {String((c as any)?.replyToText || '')}
+                        {'"'}
+                      </Text>
+                    )}
+                    <Text style={{ color: 'white', fontSize: 12, marginTop: 2 }}>
+                      {String((c as any)?.text || '')}
+                    </Text>
+                    <Pressable
+                      style={{ marginTop: 4, alignSelf: 'flex-end' }}
+                      onPress={() =>
+                        onEchoBack({
+                          id: String((c as any)?.id || ''),
+                          from: String((c as any)?.from || ''),
+                          text: String((c as any)?.text || ''),
+                        })
+                      }
+                    >
+                      <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 11 }}>
+                        Reply
+                      </Text>
+                    </Pressable>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+            {!!replyingToLiveComment && (
+              <View
+                style={{
+                  marginTop: 6,
+                  marginBottom: 4,
+                  borderRadius: 8,
+                  backgroundColor: 'rgba(0,194,255,0.16)',
+                  paddingHorizontal: 8,
+                  paddingVertical: 6,
+                }}
+              >
+                <Text numberOfLines={1} style={{ color: '#D8F5FF', fontSize: 12 }}>
+                  Replying to {replyingToLiveComment.from || 'user'}: {replyingToLiveComment.text}
+                </Text>
+              </View>
+            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+              <TextInput
+                value={commentText}
+                onChangeText={setCommentText}
+                placeholder={replyingToLiveComment ? 'Write a reply...' : 'Send a message'}
+                placeholderTextColor="rgba(255,255,255,0.5)"
+                style={[styles.input, { flex: 1, margin: 0 }]}
+              />
+              <Pressable
+                style={[
+                  styles.primaryBtn,
+                  { marginLeft: 8, paddingHorizontal: 12, paddingVertical: 8 },
+                ]}
+                onPress={sendLiveComment}
+              >
+                <Text style={styles.primaryBtnText}>Send</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
         )}
         {isConferenceMode && (
           <FileSharePanel
@@ -27113,10 +27556,20 @@ const LiveStreamModal = ({
               </View>
               <Pressable
                 style={editorStyles.liveBottomItem}
-                onPress={() => setShowCommentInput(p => !p)}
+                onPress={() => {
+                  if (isConferenceMode) {
+                    setShowConferenceChatPanel(p => !p);
+                    setShowConferenceRosterPanel(false);
+                    setShowCommentInput(false);
+                    return;
+                  }
+                  setShowCommentInput(p => !p);
+                }}
               >
                 <Text style={editorStyles.liveBottomIcon}>💬</Text>
-                <Text style={editorStyles.liveBottomLabel}>Comment</Text>
+                <Text style={editorStyles.liveBottomLabel}>
+                  {isConferenceMode ? 'Chat' : 'Comment'}
+                </Text>
               </Pressable>
               <Pressable
                 style={editorStyles.liveBottomItem}
@@ -27132,7 +27585,7 @@ const LiveStreamModal = ({
         )}
                     
         {/* Comment input bar (toggles from media editor) */}
-        {isLiveStarted && showCommentInput && (
+        {isLiveStarted && !isConferenceMode && showCommentInput && (
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={[

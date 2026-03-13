@@ -374,13 +374,20 @@ export async function presentMeetingFileLive({
 
   const rawName = String(file.fileName || 'shared_file');
   const mimeType = String(file.type || 'application/octet-stream');
+  const safeName = sanitizeBaseName(rawName);
+  const ext = safeName.includes('.')
+    ? safeName.substring(safeName.lastIndexOf('.') + 1)
+    : inferExtFromType(mimeType);
+  const baseNoExt = safeName.includes('.')
+    ? safeName.substring(0, safeName.lastIndexOf('.'))
+    : safeName;
   const createdAtMs = Date.now();
   const trimmedSelectionId = String(selectionId || '').trim();
   const docRef = trimmedSelectionId
     ? liveFilesCollection().doc(trimmedSelectionId)
     : liveFilesCollection().doc();
 
-  // Live-present mode: no cloud upload/download step; presenter opens locally while others watch the live feed.
+  // Start presenting immediately in-app for the sharer.
   await docRef.set(
     {
       id: docRef.id,
@@ -403,6 +410,47 @@ export async function presentMeetingFileLive({
     },
     { merge: true },
   );
+
+  // Upload in background so other participants can render the same file in-app as soon as URL is ready.
+  void (async () => {
+    let tempPathToDelete: string | undefined;
+    try {
+      const storagePath = `posts/${trimmedUid}/meetings/${trimmedLiveId}/files/${Date.now()}_${baseNoExt}.${ext}`;
+      const resolved = await toLocalFilePath(fileUri, ext);
+      tempPathToDelete = resolved.tempPath;
+      await storage().ref(storagePath).putFile(resolved.path, {
+        contentType: mimeType || 'application/octet-stream',
+      });
+      const downloadUrl = await storage().ref(storagePath).getDownloadURL();
+      await docRef.set(
+        {
+          storagePath,
+          downloadUrl,
+          status: 'presenting',
+          error: null,
+          presenterUid: trimmedUid,
+        },
+        { merge: true },
+      );
+    } catch (error: any) {
+      await docRef.set(
+        {
+          error: String(error?.message || error || 'Could not prepare shared file.'),
+          status: 'presenting',
+        },
+        { merge: true },
+      );
+    } finally {
+      if (tempPathToDelete) {
+        try {
+          const rnfs = resolveRNFS();
+          if (rnfs?.exists && (await rnfs.exists(tempPathToDelete))) {
+            await rnfs.unlink(tempPathToDelete);
+          }
+        } catch {}
+      }
+    }
+  })();
 
   return {
     id: docRef.id,
