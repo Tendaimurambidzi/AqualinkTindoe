@@ -23164,14 +23164,35 @@ const LiveStreamModal = ({
     () => new Set(joinedParticipants.map(p => String(p.uid || ''))),
     [joinedParticipants],
   );
+  const localRtcUid = useMemo(() => {
+    const n = Number(liveUid || 0);
+    if (Number.isFinite(n) && n > 0) return n;
+    return toAgoraUidFromAppUid(currentLiveUid);
+  }, [currentLiveUid, liveUid]);
+  const knownJoinedRemoteRtcUids = useMemo(() => {
+    const rows = orderedJoinedParticipants
+      .map(p => Number(p.rtcUid || 0))
+      .filter(uid => Number.isFinite(uid) && uid > 0 && uid !== localRtcUid);
+    return Array.from(new Set(rows));
+  }, [localRtcUid, orderedJoinedParticipants]);
+  const remoteDisplayUids = useMemo(() => {
+    const merged = [...remoteParticipantUids, ...knownJoinedRemoteRtcUids]
+      .map(uid => Number(uid || 0))
+      .filter(uid => Number.isFinite(uid) && uid > 0 && uid !== localRtcUid);
+    return Array.from(new Set(merged));
+  }, [knownJoinedRemoteRtcUids, localRtcUid, remoteParticipantUids]);
+  const resolvedMainRemoteUid =
+    (pinnedRemoteUid && remoteDisplayUids.includes(pinnedRemoteUid)
+      ? pinnedRemoteUid
+      : remoteDisplayUids[0]) || null;
   const primaryRemoteName = useMemo(() => {
-    const uid = Number(mainRemoteUid || 0);
+    const uid = Number(resolvedMainRemoteUid || 0);
     if (!uid) return 'Crew';
     const linked = orderedJoinedParticipants.find(p => Number(p.rtcUid || 0) === uid);
     if (linked?.name) return String(linked.name);
     return `Crew ${uid}`;
-  }, [mainRemoteUid, orderedJoinedParticipants]);
-  const extraRemoteCount = Math.max(0, remoteParticipantUids.length - 1);
+  }, [orderedJoinedParticipants, resolvedMainRemoteUid]);
+  const extraRemoteCount = Math.max(0, remoteDisplayUids.length - 1);
   const visualFilterOverlayColor = useMemo(() => {
     switch (activeVisualFilter) {
       case 'black_white':
@@ -26862,11 +26883,7 @@ const LiveStreamModal = ({
   const RtcRemoteView = Agora?.RtcRemoteView;
   const VideoRenderMode = Agora?.VideoRenderMode;
   const VideoSourceType = Agora?.VideoSourceType;
-  const mainRemoteUid =
-    (pinnedRemoteUid &&
-    remoteParticipantUids.includes(pinnedRemoteUid)
-      ? pinnedRemoteUid
-      : remoteParticipantUids[0]) || null;
+  const mainRemoteUid = resolvedMainRemoteUid;
   const localVideoSourceType =
     (VideoSourceType &&
       (VideoSourceType.VideoSourceCameraPrimary ?? VideoSourceType.VideoSourceCamera)) ||
@@ -27461,16 +27478,19 @@ const LiveStreamModal = ({
                         <View
                           style={{
                             borderLeftWidth: 2,
-                            borderLeftColor: 'rgba(157,230,255,0.9)',
+                            borderLeftColor: 'rgba(255,224,130,0.95)',
                             paddingLeft: 6,
                             marginBottom: 3,
+                            backgroundColor: 'rgba(255,255,255,0.04)',
+                            borderRadius: 6,
                           }}
                         >
                           <Text
                             style={{
-                              color: 'rgba(157,230,255,0.95)',
+                              color: '#FFE082',
                               fontSize: 10,
                               marginBottom: 1,
+                              fontWeight: '700',
                             }}
                             numberOfLines={1}
                           >
@@ -27479,8 +27499,9 @@ const LiveStreamModal = ({
                           </Text>
                           <Text
                             style={{
-                              color: 'rgba(157,230,255,0.82)',
+                              color: '#D6C8FF',
                               fontSize: 11,
+                              fontStyle: 'italic',
                             }}
                             numberOfLines={1}
                           >
@@ -27818,7 +27839,7 @@ const LiveStreamModal = ({
             )}
           </View>
         )}
-        {false && isLiveStarted && joinedParticipants.length > 0 && (
+        {isLiveStarted && joinedParticipants.length > 0 && (
           <View
             style={{
               position: 'absolute',
@@ -27930,10 +27951,10 @@ const LiveStreamModal = ({
             </ScrollView>
           </View>
         )}
-        {isLiveStarted && remoteParticipantUids.length > 0 && (
+        {isLiveStarted && remoteDisplayUids.length > 0 && (
           <Pressable
             onPress={() => {
-              const uid = Number(mainRemoteUid || remoteParticipantUids[0] || 0);
+              const uid = Number(mainRemoteUid || remoteDisplayUids[0] || 0);
               if (!uid) return;
               setPinnedRemoteUid(uid);
               const linked = orderedJoinedParticipants.find(p => Number(p.rtcUid || 0) === uid);
@@ -28573,19 +28594,36 @@ const LiveStreamModal = ({
                       {safeCommentHandle((c as any)?.from || 'User')}
                     </Text>
                     {!!(c as any)?.replyToFrom && (
-                      <Text
-                        numberOfLines={1}
+                      <View
                         style={{
-                          color: 'rgba(157,230,255,0.82)',
-                          fontSize: 10,
-                          marginTop: 1,
+                          marginTop: 2,
+                          borderLeftWidth: 2,
+                          borderLeftColor: 'rgba(255,224,130,0.95)',
+                          paddingLeft: 6,
                         }}
                       >
-                        reply to {safeCommentHandle((c as any)?.replyToFrom || 'message')}:
-                        {' "'}
-                        {String((c as any)?.replyToText || '')}
-                        {'"'}
-                      </Text>
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            color: '#FFE082',
+                            fontSize: 10,
+                            fontWeight: '700',
+                          }}
+                        >
+                          reply to {safeCommentHandle((c as any)?.replyToFrom || 'message')}
+                        </Text>
+                        <Text
+                          numberOfLines={1}
+                          style={{
+                            color: '#D6C8FF',
+                            fontSize: 10,
+                            fontStyle: 'italic',
+                            marginTop: 1,
+                          }}
+                        >
+                          "{String((c as any)?.replyToText || '')}"
+                        </Text>
+                      </View>
                     )}
                     <Text style={{ color: 'white', fontSize: 12, marginTop: 2 }}>
                       {String((c as any)?.text || '')}
@@ -28619,8 +28657,14 @@ const LiveStreamModal = ({
                   paddingVertical: 6,
                 }}
               >
-                <Text numberOfLines={1} style={{ color: '#D8F5FF', fontSize: 12 }}>
-                  Replying to {replyingToLiveComment.from || 'user'}: {replyingToLiveComment.text}
+                <Text numberOfLines={1} style={{ fontSize: 12 }}>
+                  <Text style={{ color: '#FFE082', fontWeight: '700' }}>
+                    Replying to {replyingToLiveComment.from || 'user'}:
+                  </Text>
+                  <Text style={{ color: '#D6C8FF', fontStyle: 'italic' }}>
+                    {' '}
+                    {replyingToLiveComment.text}
+                  </Text>
                 </Text>
               </View>
             )}
@@ -29119,9 +29163,15 @@ const LiveStreamModal = ({
               >
                 <Text
                   numberOfLines={1}
-                  style={{ color: '#D8F5FF', flex: 1, marginRight: 8, fontSize: 12 }}
+                  style={{ flex: 1, marginRight: 8, fontSize: 12 }}
                 >
-                  Replying to {replyingToLiveComment.from || 'user'}: {replyingToLiveComment.text}
+                  <Text style={{ color: '#FFE082', fontWeight: '700' }}>
+                    Replying to {replyingToLiveComment.from || 'user'}:
+                  </Text>
+                  <Text style={{ color: '#D6C8FF', fontStyle: 'italic' }}>
+                    {' '}
+                    {replyingToLiveComment.text}
+                  </Text>
                 </Text>
                 <Pressable onPress={() => setReplyingToLiveComment(null)}>
                   <Text style={{ color: '#9DE6FF', fontWeight: '700' }}>Cancel</Text>
