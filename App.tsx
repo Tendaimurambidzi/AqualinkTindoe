@@ -589,6 +589,7 @@ type LiveInviteJoinPreset = {
   channel?: string | null;
   title?: string | null;
   fromName?: string | null;
+  fromUid?: string | null;
   requireApproval?: boolean;
   nonce?: number;
 };
@@ -653,7 +654,7 @@ const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const RINGING_CALL_TIMEOUT_MS = 120 * 1000;
 const MAX_ACTIVE_CALL_DURATION_MS = 30 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = RINGING_CALL_TIMEOUT_MS;
-const ALLOW_TOKENLESS_DRIFT = true;
+const ALLOW_TOKENLESS_DRIFT = false;
 const DRIFT_EXPO_FIXED_CHANNEL = 'Tindoe';
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
@@ -6560,7 +6561,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     const unsubInbox = firestore()
       .collection(`users/${me.uid}/live_invites`)
-      .limit(25)
+      .limit(100)
       .onSnapshot(
         snap => {
           const docs = (snap?.docs || []).filter((doc: any) => {
@@ -6621,7 +6622,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const unsubMentions = firestore()
       .collection(`users/${me.uid}/mentions`)
       .where('type', '==', 'live_invite')
-      .limit(20)
+      .limit(80)
       .onSnapshot(
         snap => {
           const docs = (snap?.docs || []).filter((doc: any) => {
@@ -6680,7 +6681,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const unsubPings = firestore()
       .collection(`users/${me.uid}/pings`)
       .where('type', '==', 'live_invite')
-      .limit(20)
+      .limit(80)
       .onSnapshot(
         snap => {
           const docs = (snap?.docs || []).filter((doc: any) => {
@@ -6792,6 +6793,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         liveId,
         title: liveTitle || 'Drift Expo',
         fromName: hostName || 'Skipper',
+        fromUid: null,
         requireApproval: true,
         nonce: Date.now(),
       });
@@ -6820,6 +6822,51 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (action === 'join') {
         const me = auth?.()?.currentUser;
         const myUid = String(me?.uid || '').trim();
+        if (!myUid) {
+          Alert.alert('Sign in required', 'Please sign in to join this invite.');
+          return;
+        }
+        let inviteAllowed = false;
+        try {
+          const sourcePath =
+            invite.source === 'mention'
+              ? `users/${myUid}/mentions/${invite.id}`
+              : invite.source === 'ping'
+              ? `users/${myUid}/pings/${invite.id}`
+              : `users/${myUid}/live_invites/${invite.id}`;
+          const [sourceSnap, statusSnap] = await Promise.all([
+            firestore().doc(sourcePath).get(),
+            invite.liveId
+              ? firestore()
+                  .collection(`live/${invite.liveId}/invite_status`)
+                  .doc(myUid)
+                  .get()
+              : Promise.resolve(null as any),
+          ]);
+          const sourceData = sourceSnap?.data?.() || {};
+          const sourceStatus = String(sourceData?.status || 'pending').toLowerCase();
+          const sourceExpiry = Number(sourceData?.expiresAtMs || 0) || 0;
+          const sourceNotExpired = !sourceExpiry || Date.now() <= sourceExpiry;
+          const sourceFromUid = String(sourceData?.fromUid || invite.fromUid || '').trim();
+          const expectedFromUid = String(invite.fromUid || '').trim();
+          const sourceSenderMatches =
+            !expectedFromUid || !sourceFromUid || sourceFromUid === expectedFromUid;
+          const statusData = statusSnap?.data?.() || {};
+          const inviteStatus = String(statusData?.status || '').toLowerCase();
+          inviteAllowed =
+            (sourceNotExpired &&
+              sourceSenderMatches &&
+              (sourceStatus === 'pending' || sourceStatus === 'accepted')) ||
+            inviteStatus === 'pending' ||
+            inviteStatus === 'accepted';
+        } catch {}
+        if (!inviteAllowed) {
+          Alert.alert(
+            'Invite expired',
+            'This invite is no longer valid. Ask the host to send a new invite.',
+          );
+          return;
+        }
         let resolvedChannel = String(
           invite.liveChannel ||
             (invite as any)?.channel ||
@@ -6873,6 +6920,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           channel: normalizedChannel,
           title: invite.liveTitle || null,
           fromName: invite.fromName,
+          fromUid: invite.fromUid || null,
           requireApproval: false,
           nonce: Date.now(),
         });
@@ -6890,6 +6938,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     status: 'accepted',
                     channel: normalizedChannel,
                     liveChannel: normalizedChannel,
+                    fromUid: invite.fromUid || null,
                     updatedAt: firestore.FieldValue.serverTimestamp(),
                     respondedAt: firestore.FieldValue.serverTimestamp(),
                   },
@@ -6904,41 +6953,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
-          if (invite.source === 'mention') {
-            await firestore()
+          const nowPatch = {
+            status: nextStatus,
+            respondedAt: firestore.FieldValue.serverTimestamp(),
+          };
+          await Promise.all([
+            firestore()
+              .collection(`users/${me.uid}/live_invites`)
+              .doc(invite.id)
+              .set(nowPatch, { merge: true })
+              .catch(() => {}),
+            firestore()
               .collection(`users/${me.uid}/mentions`)
               .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          } else if (invite.source === 'ping') {
-            await firestore()
+              .set(nowPatch, { merge: true })
+              .catch(() => {}),
+            firestore()
               .collection(`users/${me.uid}/pings`)
               .doc(invite.id)
               .set(
                 {
-                  status: nextStatus,
+                  ...nowPatch,
                   read: true,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
                 },
                 { merge: true },
-              );
-          } else {
-            await firestore()
-              .collection(`users/${me.uid}/live_invites`)
-              .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          }
+              )
+              .catch(() => {}),
+          ]);
           if (invite.liveId) {
             await firestore()
               .collection(`live/${invite.liveId}/invite_status`)
@@ -6947,6 +6988,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {
                   uid: me.uid,
                   status: nextStatus,
+                  channel:
+                    invite.liveChannel || invite.directCallChannel || null,
+                  liveChannel:
+                    invite.liveChannel || invite.directCallChannel || null,
+                  fromUid: invite.fromUid || null,
                   updatedAt: firestore.FieldValue.serverTimestamp(),
                   respondedAt: firestore.FieldValue.serverTimestamp(),
                 },
@@ -14891,7 +14937,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
         />
       )}
-      {hereNowFeedAlert && !vibeAlert && (
+      {false && hereNowFeedAlert && !vibeAlert && (
         <Animated.View
           pointerEvents="box-none"
           style={[
@@ -21586,12 +21632,13 @@ const DirectCallModal = ({
   const autoRetryJoinCountRef = useRef(0);
 
   const rtcUid = useMemo(() => {
+    const meUid = String(auth?.()?.currentUser?.uid || '').trim();
     const source =
       (role === 'caller'
         ? call?.callerUid
         : role === 'callee'
         ? call?.calleeUid
-        : call?.callerUid) || '';
+        : meUid || call?.callerUid || call?.calleeUid) || '';
     const raw = String(source || '').trim();
     if (!raw) return 0;
     let hash = 0;
@@ -21601,6 +21648,7 @@ const DirectCallModal = ({
     // Agora uid must be non-zero uint.
     return (hash % 2147483646) + 1;
   }, [call?.calleeUid, call?.callerUid, role]);
+  const localCanvasUid = Number(rtcUid) > 0 ? Number(rtcUid) : 0;
 
   const applyRtcQualityProfile = useCallback((_engine: any, _mode: DirectCallMode) => {
     // Keep direct call preview/render sizing untouched.
@@ -22337,7 +22385,7 @@ const DirectCallModal = ({
                   React.createElement(RtcSurfaceView, {
                     style: StyleSheet.absoluteFill,
                     canvas: {
-                      uid: 0,
+                      uid: localCanvasUid,
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                   })
@@ -22345,7 +22393,7 @@ const DirectCallModal = ({
                   React.createElement(RtcTextureView, {
                     style: StyleSheet.absoluteFill,
                     canvas: {
-                      uid: 0,
+                      uid: localCanvasUid,
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                   })
@@ -22398,7 +22446,7 @@ const DirectCallModal = ({
                   React.createElement(RtcSurfaceView, {
                     style: StyleSheet.absoluteFill,
                     canvas: {
-                      uid: 0,
+                      uid: localCanvasUid,
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                     zOrderMediaOverlay: true,
@@ -22407,7 +22455,7 @@ const DirectCallModal = ({
                   React.createElement(RtcTextureView, {
                     style: StyleSheet.absoluteFill,
                     canvas: {
-                      uid: 0,
+                      uid: localCanvasUid,
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                   })
@@ -22856,7 +22904,7 @@ const LiveStreamModal = ({
     }>
   >([]);
   const [recentlyHereNames, setRecentlyHereNames] = useState<string[]>([]);
-  const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(true);
+  const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(false);
   const [showConferenceToolsPanel, setShowConferenceToolsPanel] = useState(false);
   const [showConferenceRosterPanel, setShowConferenceRosterPanel] = useState(false);
   const [showConferenceChatPanel, setShowConferenceChatPanel] = useState(false);
@@ -22901,9 +22949,7 @@ const LiveStreamModal = ({
     [coHosts],
   );
   const isLiveHost =
-    !!currentLiveUid &&
-    (currentLiveUid === String(liveHostUid || '') ||
-      (!liveHostUid && isLiveStarted));
+    !!currentLiveUid && currentLiveUid === String(liveHostUid || '');
   const isLiveCoHost =
     !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
   const modeScopePrefix = isConferenceMode ? 'conference' : 'drift';
@@ -23009,32 +23055,36 @@ const LiveStreamModal = ({
     });
     return rows;
   }, [activeSpeakerIsRecent, activeSpeakerRtcUid, joinedParticipantsWithRtc]);
+  const joinedUidSet = useMemo(
+    () => new Set(joinedParticipants.map(p => String(p.uid || ''))),
+    [joinedParticipants],
+  );
   const visualFilterOverlayColor = useMemo(() => {
     switch (activeVisualFilter) {
       case 'black_white':
-        return 'rgba(128,128,128,0.22)';
+        return 'rgba(128,128,128,0.45)';
       case 'sepia':
-        return 'rgba(112,66,20,0.2)';
+        return 'rgba(112,66,20,0.42)';
       case 'vivid':
-        return 'rgba(255,120,64,0.10)';
+        return 'rgba(255,120,64,0.35)';
       case 'cool':
-        return 'rgba(100,180,255,0.12)';
+        return 'rgba(100,180,255,0.35)';
       case 'warm':
-        return 'rgba(255,168,85,0.12)';
+        return 'rgba(255,168,85,0.35)';
       case 'mono':
-        return 'rgba(120,120,120,0.14)';
+        return 'rgba(120,120,120,0.4)';
       case 'cinematic':
-        return 'rgba(30,20,55,0.16)';
+        return 'rgba(30,20,55,0.45)';
       case 'ocean':
-        return 'rgba(0,150,190,0.14)';
+        return 'rgba(0,150,190,0.35)';
       case 'retro':
-        return 'rgba(212,140,96,0.14)';
+        return 'rgba(212,140,96,0.38)';
       case 'neon':
-        return 'rgba(150,72,255,0.14)';
+        return 'rgba(150,72,255,0.4)';
       case 'soft':
-        return 'rgba(255,230,210,0.1)';
+        return 'rgba(255,230,210,0.32)';
       case 'dramatic':
-        return 'rgba(20,20,20,0.28)';
+        return 'rgba(20,20,20,0.55)';
       default:
         return '';
     }
@@ -23198,47 +23248,98 @@ const LiveStreamModal = ({
 
   useEffect(() => {
     if (!visible || !inviteJoinPreset || isLiveStarted) return;
-    if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
-      setLiveDocId(String(inviteJoinPreset.liveId));
+    (async () => {
+      const me = auth?.()?.currentUser;
+      const myUid = String(me?.uid || '').trim();
+      if (!myUid) {
+        setStartError('Please sign in first.');
+        return;
+      }
+      if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
+        setLiveDocId(String(inviteJoinPreset.liveId));
+        setLiveTitle(
+          String(inviteJoinPreset.title || inviteJoinPreset.fromName || sessionLabel),
+        );
+        setAwaitingCaptainApproval(true);
+        setJoinApprovalLabel(
+          `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
+        );
+        setStartError(null);
+        return;
+      }
+      let statusData: any = null;
+      if (inviteJoinPreset.liveId) {
+        try {
+          const snap = await firestore()
+            .collection(`live/${inviteJoinPreset.liveId}/invite_status`)
+            .doc(myUid)
+            .get();
+          statusData = snap?.data?.() || null;
+        } catch {}
+      }
+      const status = String(statusData?.status || '').toLowerCase();
+      if (inviteJoinPreset.liveId && status && status !== 'accepted' && status !== 'pending') {
+        setAwaitingCaptainApproval(false);
+        setJoinApprovalLabel('');
+        setStartError('Invite is not approved. Ask host to re-invite you.');
+        return;
+      }
+      const suggestedChannel = String(
+        statusData?.channel ||
+          statusData?.liveChannel ||
+          inviteJoinPreset.channel ||
+          channelInput ||
+          defaultChannel ||
+          DRIFT_EXPO_FIXED_CHANNEL,
+      )
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
+      if (!suggestedChannel) {
+        setStartError('Invite channel is missing.');
+        return;
+      }
+      const uidSrc = String(myUid || '0');
+      let uidHash = 0;
+      for (let i = 0; i < uidSrc.length; i += 1) {
+        uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
+      }
+      const mappedUid = (uidHash % 2147483646) + 1;
+      setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
       setLiveTitle(
         String(inviteJoinPreset.title || inviteJoinPreset.fromName || sessionLabel),
       );
-      setAwaitingCaptainApproval(true);
-      setJoinApprovalLabel(
-        `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
-      );
+      setChannelInput(suggestedChannel);
+      setLiveChannel(suggestedChannel);
+      setLiveUid(mappedUid);
+      setLiveHostUid(String(inviteJoinPreset.fromUid || statusData?.fromUid || ''));
+      setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
       setStartError(null);
-      return;
-    }
-    const suggestedChannel = String(
-      inviteJoinPreset.channel ||
-        channelInput ||
-        defaultChannel ||
-        DRIFT_EXPO_FIXED_CHANNEL,
-    )
-      .trim()
-      .replace(/[^A-Za-z0-9_]/g, '_')
-      .slice(0, 64);
-    if (!suggestedChannel) return;
-    const uidSrc = String(auth?.()?.currentUser?.uid || '0');
-    let uidHash = 0;
-    for (let i = 0; i < uidSrc.length; i += 1) {
-      uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
-    }
-    const mappedUid = (uidHash % 2147483646) + 1;
-    setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
-    setLiveTitle(
-      String(inviteJoinPreset.title || inviteJoinPreset.fromName || sessionLabel),
-    );
-    setChannelInput(suggestedChannel);
-    setLiveChannel(suggestedChannel);
-    setLiveUid(mappedUid);
-    setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
-    setStartError(null);
-    setAwaitingCaptainApproval(false);
-    setJoinApprovalLabel('');
-    setIsLiveStarted(true);
+      setAwaitingCaptainApproval(false);
+      setJoinApprovalLabel('');
+      setIsLiveStarted(true);
+      if (inviteJoinPreset.liveId) {
+        try {
+          await firestore()
+            .collection(`live/${inviteJoinPreset.liveId}/invite_status`)
+            .doc(myUid)
+            .set(
+              {
+                uid: myUid,
+                status: 'accepted',
+                channel: suggestedChannel,
+                liveChannel: suggestedChannel,
+                fromUid: inviteJoinPreset.fromUid || null,
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+                respondedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+        } catch {}
+      }
+    })();
   }, [
+    channelInput,
     defaultChannel,
     inviteJoinPreset,
     isLiveStarted,
@@ -23283,6 +23384,14 @@ const LiveStreamModal = ({
             setChannelInput(suggestedChannel);
             setLiveChannel(suggestedChannel);
             setLiveUid(mappedUid);
+            setLiveHostUid(
+              String(
+                inviteJoinPreset?.fromUid ||
+                  data.fromUid ||
+                  data.hostUid ||
+                  '',
+              ),
+            );
             setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
             setAwaitingCaptainApproval(false);
             setJoinApprovalLabel('');
@@ -23304,6 +23413,7 @@ const LiveStreamModal = ({
     channelInput,
     defaultChannel,
     inviteJoinPreset?.channel,
+    inviteJoinPreset?.fromUid,
     isLiveStarted,
     liveDocId,
     staticToken,
@@ -24213,8 +24323,9 @@ const LiveStreamModal = ({
           return;
         }
       }
-      // Keep conference/drift channels isolated so audio/video sessions never cross.
-      const baseChan = `${modeChannelPrefix}_${DRIFT_EXPO_FIXED_CHANNEL}`;
+      // Use a unique channel per session to prevent accidental cross-joins.
+      const uniqueChanSuffix = `${String(currentUserUid).slice(0, 8)}_${Date.now().toString(36)}`;
+      const baseChan = `${modeChannelPrefix}_${uniqueChanSuffix}`;
       const chan = baseChan.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
       const initialTok = (tokenInput || '').trim() || staticToken || null;
       let uidNum = parseInt(uidInput || '0', 10);
@@ -24229,6 +24340,7 @@ const LiveStreamModal = ({
         uidNum = (hash % 2147483646) + 1;
       }
                     
+      let resolvedLiveId: string | null = null;
       // Optional: notify backend we're starting and fetch a fresh token/liveId
       try {
         const startUrl = (cfg && cfg.START_LIVE_ENDPOINT) || '';
@@ -24256,7 +24368,7 @@ const LiveStreamModal = ({
               setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
             }
             if (json && (json.liveId || json.id)) {
-              setLiveDocId(String(json.liveId || json.id));
+              resolvedLiveId = String(json.liveId || json.id);
             }
           } else {
             setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
@@ -24267,9 +24379,34 @@ const LiveStreamModal = ({
       } catch {
         setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
       }
+      if (!resolvedLiveId) {
+        try {
+          const liveRef = firestore().collection('live').doc();
+          resolvedLiveId = liveRef.id;
+          await liveRef.set(
+            {
+              hostUid: currentUserUid,
+              hostName,
+              hostPhoto,
+              title: liveTitle || 'Drift Expo',
+              description: liveDesc || '',
+              privacy: livePrivacy,
+              liveChannel: chan,
+              channel: chan,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch {}
+      }
+      if (resolvedLiveId) {
+        setLiveDocId(resolvedLiveId);
+      }
       setChannelInput(chan);
       setLiveChannel(chan);
       setLiveUid(Number.isFinite(uidNum) ? uidNum : 0);
+      setLiveHostUid(currentUserUid);
       setIsLiveStarted(true);
       // Ensure inline preview starts in this interface
       try {
@@ -24533,12 +24670,12 @@ const LiveStreamModal = ({
                     
   const toggleBeautyFilter = () => {
     const options = [
-      { name: 'Natural', lighteningLevel: 0.25, smoothnessLevel: 0.25, rednessLevel: 0.05 },
-      { name: 'Fresh', lighteningLevel: 0.35, smoothnessLevel: 0.32, rednessLevel: 0.06 },
-      { name: 'Soft Glow', lighteningLevel: 0.45, smoothnessLevel: 0.45, rednessLevel: 0.08 },
-      { name: 'Polished', lighteningLevel: 0.55, smoothnessLevel: 0.5, rednessLevel: 0.1 },
-      { name: 'Studio', lighteningLevel: 0.62, smoothnessLevel: 0.55, rednessLevel: 0.11 },
-      { name: 'Ultra', lighteningLevel: 0.72, smoothnessLevel: 0.62, rednessLevel: 0.14 },
+      { name: 'Natural', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      { name: 'Fresh', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      { name: 'Soft Glow', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      { name: 'Polished', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      { name: 'Studio', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      { name: 'Ultra', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
     ];
     setLiveOptionPicker({
       title: 'Beauty',
@@ -24559,7 +24696,7 @@ const LiveStreamModal = ({
           setBeautyFilterEnabled(false);
           try {
             engineRef.current?.setBeautyEffectOptions?.(false, {
-              lighteningContrastLevel: 1,
+              lighteningContrastLevel: 2,
               lighteningLevel: 0,
               smoothnessLevel: 0,
               rednessLevel: 0,
@@ -24573,7 +24710,7 @@ const LiveStreamModal = ({
         setBeautyFilterEnabled(true);
         try {
           engineRef.current?.setBeautyEffectOptions?.(true, {
-            lighteningContrastLevel: 1,
+            lighteningContrastLevel: 2,
             lighteningLevel: profile.lighteningLevel,
             smoothnessLevel: profile.smoothnessLevel,
             rednessLevel: profile.rednessLevel,
@@ -24587,17 +24724,23 @@ const LiveStreamModal = ({
     setActiveVisualFilter(next);
     const profiles: Record<string, any> = {
       none: { lighteningLevel: 0.2, smoothnessLevel: 0.2, rednessLevel: 0 },
-      vivid: { lighteningLevel: 0.45, smoothnessLevel: 0.35, rednessLevel: 0.15 },
-      cool: { lighteningLevel: 0.3, smoothnessLevel: 0.25, rednessLevel: 0.05 },
-      warm: { lighteningLevel: 0.5, smoothnessLevel: 0.35, rednessLevel: 0.2 },
-      mono: { lighteningLevel: 0.28, smoothnessLevel: 0.22, rednessLevel: 0 },
-      cinematic: { lighteningLevel: 0.38, smoothnessLevel: 0.3, rednessLevel: 0.12 },
-      ocean: { lighteningLevel: 0.42, smoothnessLevel: 0.32, rednessLevel: 0.08 },
+      black_white: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      sepia: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      vivid: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      cool: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      warm: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      mono: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      cinematic: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      ocean: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      retro: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      neon: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      soft: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
+      dramatic: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
     };
     const profile = profiles[next] || profiles.none;
     try {
       engineRef.current?.setBeautyEffectOptions?.(next !== 'none', {
-        lighteningContrastLevel: 1,
+        lighteningContrastLevel: 2,
         ...profile,
       });
     } catch {}
@@ -24971,6 +25114,28 @@ const LiveStreamModal = ({
       if (!me?.uid) {
         throw new Error('Sign in required');
       }
+      const existingInviteKeyBase = `${String(liveDocId || 'direct').trim()}_${me.uid}`;
+      const existingInviteDocKey = existingInviteKeyBase
+        .replace(/[^A-Za-z0-9_-]/g, '_')
+        .slice(0, 120);
+      try {
+        const existingInviteSnap = await firestore()
+          .collection(`users/${toUid}/live_invites`)
+          .doc(existingInviteDocKey)
+          .get();
+        const existingInviteData = existingInviteSnap?.data?.() || {};
+        const existingInviteStatus = String(existingInviteData.status || '').toLowerCase();
+        const existingInviteExpiry = Number(existingInviteData.expiresAtMs || 0) || 0;
+        if (
+          existingInviteStatus === 'pending' &&
+          (!existingInviteExpiry || existingInviteExpiry > Date.now())
+        ) {
+          if (!options?.silent) {
+            Alert.alert('Invite already pending', 'This user already has your invite badge.');
+          }
+          return true;
+        }
+      } catch {}
       const callerName = String(
         me.displayName ||
           (me.email ? String(me.email).split('@')[0] : '') ||
@@ -25049,13 +25214,17 @@ const LiveStreamModal = ({
         lastErr = err;
       }
 
-      // Single invite channel to prevent duplicate invite cards/badges.
-
-      if (!inboxInviteWritten) {
-        try {
-          await firestore()
-            .collection(`users/${toUid}/mentions`)
-            .add({
+      // Write redundant invite badge channels for reliability.
+      const inviteRecordId =
+        String(inviteDocId || `${String(liveDocId || 'direct').trim()}_${me.uid}`).trim() ||
+        `${Date.now()}`;
+      const fallbackInviteStatus = inboxInviteWritten ? 'shadow' : 'pending';
+      try {
+        await firestore()
+          .collection(`users/${toUid}/mentions`)
+          .doc(inviteRecordId)
+          .set(
+            {
               type: 'live_invite',
               text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
               fromUid: me.uid,
@@ -25069,19 +25238,24 @@ const LiveStreamModal = ({
               directCallId: directCallId || null,
               directCallChannel: directCallChannel || null,
               callType: directCallType,
-              status: 'pending',
+              status: fallbackInviteStatus,
               expiresAtMs: computedExpiry,
               createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-          fallbackMentionWritten = true;
-        } catch (err) {
-          console.warn('[INVITE DEBUG] mention fallback write failed', err);
-          lastErr = err;
-        }
-        try {
-          await firestore()
-            .collection(`users/${toUid}/pings`)
-            .add({
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        fallbackMentionWritten = true;
+      } catch (err) {
+        console.warn('[INVITE DEBUG] mention fallback write failed', err);
+        lastErr = err;
+      }
+      try {
+        await firestore()
+          .collection(`users/${toUid}/pings`)
+          .doc(inviteRecordId)
+          .set(
+            {
               type: 'live_invite',
               text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
               fromUid: me.uid,
@@ -25094,16 +25268,18 @@ const LiveStreamModal = ({
               directCallId: directCallId || null,
               directCallChannel: directCallChannel || null,
               callType: directCallType,
-              status: 'pending',
+              status: fallbackInviteStatus,
               read: false,
               expiresAtMs: computedExpiry,
               createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-          fallbackPingWritten = true;
-        } catch (err) {
-          console.warn('[INVITE DEBUG] ping fallback write failed', err);
-          lastErr = err;
-        }
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        fallbackPingWritten = true;
+      } catch (err) {
+        console.warn('[INVITE DEBUG] ping fallback write failed', err);
+        lastErr = err;
       }
 
       if (liveDocId && inviteDocId) {
@@ -26423,7 +26599,7 @@ const LiveStreamModal = ({
     if (!participant?.uid) return;
     setParticipantQuickAction({
       uid: String(participant.uid || ''),
-      name: String(participant.name || participant.uid || 'Participant'),
+      name: String(participant.name || participant.uid || 'Crew'),
       rtcUid: Number(participant.rtcUid || 0),
     });
   };
@@ -26497,6 +26673,47 @@ const LiveStreamModal = ({
       ? pinnedRemoteUid
       : remoteParticipantUids[0]) || null;
   const useJoinCallLayout = !!inviteJoinPreset && !isLiveHost;
+  const localVideoSourceType =
+    (VideoSourceType &&
+      (VideoSourceType.VideoSourceCameraPrimary ?? VideoSourceType.VideoSourceCamera)) ||
+    0;
+  const localCanvas = {
+    uid: 0,
+    renderMode: VideoRenderMode?.Fit ?? 2,
+    sourceType: localVideoSourceType,
+  };
+  const renderLocalLivePreview = () => {
+    if (AVView) {
+      return (
+        <AVView
+          style={StyleSheet.absoluteFill}
+          showLocalVideo={true}
+          videoSourceType={localVideoSourceType}
+          renderMode={(VideoRenderMode && (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) || 2}
+        />
+      );
+    }
+    if (RtcLocalView?.SurfaceView) {
+      return React.createElement(RtcLocalView.SurfaceView, {
+        style: StyleSheet.absoluteFill,
+        renderMode: VideoRenderMode?.Fit ?? 2,
+      });
+    }
+    if (RtcSurfaceView) {
+      return React.createElement(RtcSurfaceView, {
+        style: StyleSheet.absoluteFill,
+        canvas: localCanvas,
+        zOrderMediaOverlay: true,
+      });
+    }
+    if (RtcTextureView) {
+      return React.createElement(RtcTextureView, {
+        style: StyleSheet.absoluteFill,
+        canvas: localCanvas,
+      });
+    }
+    return null;
+  };
                     
   return (
     <Modal
@@ -26929,7 +27146,19 @@ const LiveStreamModal = ({
                   { alignItems: 'center', justifyContent: 'center' },
                 ]}
               >
+                {renderLocalLivePreview()}
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    {
+                      backgroundColor: 'rgba(0,0,0,0.22)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    },
+                  ]}
+                >
                 <Text style={{ color: 'white' }}>Waiting for other participant video...</Text>
+                </View>
               </View>
             ) : AVView ? (
               <AVView
@@ -26950,19 +27179,13 @@ const LiveStreamModal = ({
             ) : RtcSurfaceView ? (
               React.createElement(RtcSurfaceView, {
                 style: StyleSheet.absoluteFill,
-                canvas: {
-                  uid: 0,
-                  renderMode: VideoRenderMode?.Fit ?? 2,
-                },
+                canvas: localCanvas,
                 zOrderMediaOverlay: true,
               })
             ) : RtcTextureView ? (
               React.createElement(RtcTextureView, {
                 style: StyleSheet.absoluteFill,
-                canvas: {
-                  uid: 0,
-                  renderMode: VideoRenderMode?.Fit ?? 2,
-                },
+                canvas: localCanvas,
               })
             ) : RtcLocalView?.SurfaceView ? (
               React.createElement(RtcLocalView.SurfaceView, {
@@ -26979,7 +27202,7 @@ const LiveStreamModal = ({
                 <Text style={{ color: 'white' }}>Initializing preview...</Text>
               </View>
             )}
-            {!isFilePresentationActive && !!visualFilterOverlayColor && (
+            {false && !isFilePresentationActive && !!visualFilterOverlayColor && (
               <View
                 pointerEvents="none"
                 style={[
@@ -26996,7 +27219,8 @@ const LiveStreamModal = ({
                 style={{
                   position: 'absolute',
                   right: 12,
-                  bottom: insets.bottom + endBarHeight + 96,
+                  top: useJoinCallLayout ? insets.top + 96 : undefined,
+                  bottom: useJoinCallLayout ? undefined : insets.bottom + endBarHeight + 96,
                   width: 110,
                   height: 156,
                   borderRadius: 12,
@@ -27004,43 +27228,10 @@ const LiveStreamModal = ({
                   borderWidth: 1,
                   borderColor: 'rgba(255,255,255,0.45)',
                   backgroundColor: '#050B15',
+                  zIndex: 6,
                 }}
               >
-                {AVView ? (
-                  <AVView
-                    style={StyleSheet.absoluteFill}
-                    showLocalVideo={true}
-                    videoSourceType={
-                      (VideoSourceType &&
-                        (VideoSourceType.VideoSourceCameraPrimary ??
-                          VideoSourceType.VideoSourceCamera)) ||
-                      0
-                    }
-                    renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
-                  />
-                ) : RtcSurfaceView ? (
-                  React.createElement(RtcSurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: 0,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                    zOrderMediaOverlay: true,
-                  })
-                ) : RtcTextureView ? (
-                  React.createElement(RtcTextureView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: 0,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcLocalView?.SurfaceView ? (
-                  React.createElement(RtcLocalView.SurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    renderMode: VideoRenderMode?.Fit ?? 2,
-                  })
-                ) : null}
+                {renderLocalLivePreview()}
               </View>
             )}
           </>
@@ -27340,7 +27531,10 @@ const LiveStreamModal = ({
               }}
             >
               <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
-                Here now! ({onlineUsers.length})
+                Here now
+              </Text>
+              <Text style={{ color: '#FF3B30', fontWeight: '800', marginLeft: 4 }}>
+                ({onlineUsers.length})
               </Text>
               <Pressable onPress={() => setShowOnlineInvitePanel(false)}>
                 <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Hide</Text>
@@ -27366,8 +27560,9 @@ const LiveStreamModal = ({
                 .slice(0, 6)
                 .map(u => {
                 const status = getInviteStatusLabel(u.uid);
+                const isJoinedCrew = joinedUidSet.has(String(u.uid || ''));
                 const sending = !!hereNowInviteSendingByUid[u.uid];
-                const inviteLocked = status === 'Invited';
+                const inviteLocked = status === 'Invited' || isJoinedCrew;
                 return (
                   <View
                     key={u.uid}
@@ -27410,6 +27605,7 @@ const LiveStreamModal = ({
                           style={{ color: 'white', fontWeight: '700', fontSize: 12 }}
                         >
                           {u.name}
+                          {isJoinedCrew ? ' ✅' : ''}
                         </Text>
                         {status ? (
                           <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 10 }}>
@@ -27458,6 +27654,8 @@ const LiveStreamModal = ({
                       <Text style={[styles.primaryBtnText, { fontSize: 11 }]}>
                         {sending
                           ? '...'
+                          : isJoinedCrew
+                          ? 'Joined'
                           : inviteLocked
                           ? 'Invited'
                           : status === 'Accepted'
@@ -27471,7 +27669,7 @@ const LiveStreamModal = ({
             )}
           </View>
         )}
-        {isLiveStarted && joinedParticipants.length > 0 && (
+        {false && isLiveStarted && joinedParticipants.length > 0 && (
           <View
             style={{
               position: 'absolute',
@@ -27574,8 +27772,8 @@ const LiveStreamModal = ({
                       }}
                     >
                       {String(p.uid || '') === String(liveHostUid || '')
-                        ? 'Host'
-                        : 'Participant'}
+                        ? 'Drift Captain'
+                        : 'Crew'}
                     </Text>
                   </Pressable>
                 ))}
@@ -27608,7 +27806,7 @@ const LiveStreamModal = ({
                   } else {
                     openParticipantQuickActions({
                       uid: String(uid),
-                      name: `Participant ${uid}`,
+                      name: `Crew ${uid}`,
                       rtcUid: uid,
                     });
                   }
@@ -27668,7 +27866,7 @@ const LiveStreamModal = ({
                     style={{ color: 'white', fontSize: 9, fontWeight: '700', textAlign: 'center' }}
                   >
                     {orderedJoinedParticipants.find(p => p.rtcUid === uid)?.name ||
-                      `Guest ${uid}`}
+                      `Crew ${uid}`}
                   </Text>
                 </View>
               </Pressable>
@@ -27870,15 +28068,18 @@ const LiveStreamModal = ({
               }}
             >
               <Text style={editorStyles.liveRightIcon}>👥</Text>
-              <Text style={editorStyles.liveRightLabel}>
-                {isConferenceMode
-                  ? showConferenceRosterPanel
-                    ? 'Roster On'
-                    : 'Roster'
-                  : showOnlineInvitePanel
-                  ? 'Here Now! On'
-                  : 'Here Now!'}
-              </Text>
+              {isConferenceMode ? (
+                <Text style={editorStyles.liveRightLabel}>
+                  {showConferenceRosterPanel ? 'Roster On' : 'Roster'}
+                </Text>
+              ) : (
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={editorStyles.liveRightLabel}>Here Now</Text>
+                  <Text style={{ color: '#FF3B30', fontSize: 10, fontWeight: '800' }}>
+                    {joinedParticipants.length}
+                  </Text>
+                </View>
+              )}
             </Pressable>
             {/* Screen Share */}
             <Pressable
@@ -28705,8 +28906,10 @@ const LiveStreamModal = ({
                   {isLiveHost
                     ? isConferenceMode
                       ? 'Conference Host'
-                      : 'Drift Host'
-                    : 'Participant'}
+                      : 'Drift Captain'
+                    : isConferenceMode
+                    ? 'Participant'
+                    : 'Crew'}
                 </Text>
               </View>
             </View>
