@@ -582,6 +582,8 @@ type LiveInviteNotice = {
   directCallId?: string | null;
   directCallChannel?: string | null;
   callType?: DirectCallMode | null;
+  createdAtMs?: number;
+  expiresAtMs?: number | null;
 };
 
 type LiveInviteJoinPreset = {
@@ -6272,6 +6274,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibeAlert, setVibeAlert] = useState<VibeAlert | null>(null);
   const [incomingLiveInvite, setIncomingLiveInvite] = useState<LiveInviteNotice | null>(null);
   const cachedIncomingInviteRef = useRef<LiveInviteNotice | null>(null);
+  const liveInviteBadgeCutoffMsRef = useRef<number>(0);
   const [liveInviteJoinPreset, setLiveInviteJoinPreset] = useState<LiveInviteJoinPreset | null>(null);
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
@@ -6515,6 +6518,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let inboxInvite: LiveInviteNotice | null = null;
     let mentionInvite: LiveInviteNotice | null = null;
     let pingInvite: LiveInviteNotice | null = null;
+    const sourceRank: Record<'inbox' | 'mention' | 'ping', number> = {
+      inbox: 3,
+      mention: 2,
+      ping: 1,
+    };
+    const inviteCreatedAtMs = (data: any): number => {
+      const created = toJSDate(data?.createdAt).getTime();
+      if (Number.isFinite(created) && created > 0) return created;
+      const updated = toJSDate(data?.updatedAt).getTime();
+      if (Number.isFinite(updated) && updated > 0) return updated;
+      return 0;
+    };
+    const isFreshInvite = (invite: LiveInviteNotice | null): invite is LiveInviteNotice => {
+      if (!invite || !invite.fromUid) return false;
+      const createdAtMs = Number(invite.createdAtMs || 0) || 0;
+      const expiresAtMs = Number(invite.expiresAtMs || 0) || 0;
+      const cutoffMs = Number(liveInviteBadgeCutoffMsRef.current || 0) || 0;
+      if (createdAtMs > 0 && createdAtMs < cutoffMs) return false;
+      if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
+      if (!expiresAtMs && createdAtMs <= 0) return false;
+      if (!expiresAtMs && createdAtMs > 0 && Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS) {
+        return false;
+      }
+      return true;
+    };
     const loadCachedInvite = async () => {
       try {
         const raw = await AsyncStorage.getItem(cacheKey);
@@ -6543,20 +6571,38 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ? String(parsed.directCallChannel)
             : null,
           callType: parsed.callType === 'audio' ? 'audio' : 'video',
+          createdAtMs: Number(parsed.createdAtMs || 0) || 0,
+          expiresAtMs: Number(parsed.expiresAtMs || 0) || 0,
         };
-        if (!cached.fromUid) return;
+        if (!isFreshInvite(cached)) return;
         cachedIncomingInviteRef.current = cached;
         setIncomingLiveInvite(cached);
       } catch {}
     };
     loadCachedInvite();
     const syncIncomingInvite = () => {
+      const all = [
+        inboxInvite,
+        mentionInvite,
+        pingInvite,
+        cachedIncomingInviteRef.current,
+      ].filter(isFreshInvite);
       const next =
-        inboxInvite || mentionInvite || pingInvite || cachedIncomingInviteRef.current || null;
+        all
+          .slice()
+          .sort((a, b) => {
+            const byTime =
+              (Number(b.createdAtMs || 0) || 0) - (Number(a.createdAtMs || 0) || 0);
+            if (byTime !== 0) return byTime;
+            return sourceRank[b.source] - sourceRank[a.source];
+          })[0] || null;
       setIncomingLiveInvite(next);
       if (next) {
         cachedIncomingInviteRef.current = next;
         AsyncStorage.setItem(cacheKey, JSON.stringify(next)).catch(() => {});
+      } else {
+        cachedIncomingInviteRef.current = null;
+        AsyncStorage.removeItem(cacheKey).catch(() => {});
       }
     };
     const unsubInbox = firestore()
@@ -6570,7 +6616,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
             if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            const createdAtMs = toJSDate(data.createdAt).getTime();
+            const createdAtMs = inviteCreatedAtMs(data);
+            if (
+              createdAtMs > 0 &&
+              createdAtMs < Number(liveInviteBadgeCutoffMsRef.current || 0)
+            ) {
+              return false;
+            }
+            if (
+              !expiresAtMs &&
+              createdAtMs <= 0
+            ) {
+              return false;
+            }
             if (
               !expiresAtMs &&
               createdAtMs > 0 &&
@@ -6585,8 +6643,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .slice()
               .sort(
                 (a: any, b: any) =>
-                  toJSDate((b.data() || {}).createdAt).getTime() -
-                  toJSDate((a.data() || {}).createdAt).getTime(),
+                  inviteCreatedAtMs(b.data() || {}) -
+                  inviteCreatedAtMs(a.data() || {}),
               )[0] || null;
           if (!doc) {
             inboxInvite = null;
@@ -6612,6 +6670,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? String(data.directCallChannel)
               : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
+            createdAtMs: inviteCreatedAtMs(data),
+            expiresAtMs: Number(data.expiresAtMs || 0) || 0,
           };
           syncIncomingInvite();
         },
@@ -6631,7 +6691,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
             if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            const createdAtMs = toJSDate(data.createdAt).getTime();
+            const createdAtMs = inviteCreatedAtMs(data);
+            if (
+              createdAtMs > 0 &&
+              createdAtMs < Number(liveInviteBadgeCutoffMsRef.current || 0)
+            ) {
+              return false;
+            }
+            if (
+              !expiresAtMs &&
+              createdAtMs <= 0
+            ) {
+              return false;
+            }
             if (
               !expiresAtMs &&
               createdAtMs > 0 &&
@@ -6646,8 +6718,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .slice()
               .sort(
                 (a: any, b: any) =>
-                  toJSDate((b.data() || {}).createdAt).getTime() -
-                  toJSDate((a.data() || {}).createdAt).getTime(),
+                  inviteCreatedAtMs(b.data() || {}) -
+                  inviteCreatedAtMs(a.data() || {}),
               )[0] || null;
           if (!doc) {
             mentionInvite = null;
@@ -6673,6 +6745,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? String(data.directCallChannel)
               : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
+            createdAtMs: inviteCreatedAtMs(data),
+            expiresAtMs: Number(data.expiresAtMs || 0) || 0,
           };
           syncIncomingInvite();
         },
@@ -6690,6 +6764,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
             if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
+            const createdAtMs = inviteCreatedAtMs(data);
+            if (
+              createdAtMs > 0 &&
+              createdAtMs < Number(liveInviteBadgeCutoffMsRef.current || 0)
+            ) {
+              return false;
+            }
+            if (
+              !expiresAtMs &&
+              createdAtMs <= 0
+            ) {
+              return false;
+            }
+            if (
+              !expiresAtMs &&
+              createdAtMs > 0 &&
+              Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS
+            ) {
+              return false;
+            }
             return !!data?.fromUid;
           });
           const doc =
@@ -6697,8 +6791,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .slice()
               .sort(
                 (a: any, b: any) =>
-                  toJSDate((b.data() || {}).createdAt).getTime() -
-                  toJSDate((a.data() || {}).createdAt).getTime(),
+                  inviteCreatedAtMs(b.data() || {}) -
+                  inviteCreatedAtMs(a.data() || {}),
               )[0] || null;
           if (!doc) {
             pingInvite = null;
@@ -6724,6 +6818,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? String(data.directCallChannel)
               : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
+            createdAtMs: inviteCreatedAtMs(data),
+            expiresAtMs: Number(data.expiresAtMs || 0) || 0,
           };
           syncIncomingInvite();
         },
@@ -6807,6 +6903,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     async (action: 'join' | 'miss') => {
       const invite = incomingLiveInvite;
       if (!invite) return;
+      liveInviteBadgeCutoffMsRef.current = Math.max(
+        Number(liveInviteBadgeCutoffMsRef.current || 0),
+        Date.now(),
+      );
       // Clear badge immediately for responsive UX.
       setIncomingLiveInvite(null);
       try {
@@ -22948,8 +23048,13 @@ const LiveStreamModal = ({
         .filter(Boolean),
     [coHosts],
   );
+  const effectiveLiveHostUid = String(
+    liveHostUid ||
+      inviteJoinPreset?.fromUid ||
+      (isLiveStarted && !inviteJoinPreset ? currentLiveUid : ''),
+  ).trim();
   const isLiveHost =
-    !!currentLiveUid && currentLiveUid === String(liveHostUid || '');
+    !!currentLiveUid && currentLiveUid === effectiveLiveHostUid;
   const isLiveCoHost =
     !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
   const modeScopePrefix = isConferenceMode ? 'conference' : 'drift';
@@ -23059,6 +23164,14 @@ const LiveStreamModal = ({
     () => new Set(joinedParticipants.map(p => String(p.uid || ''))),
     [joinedParticipants],
   );
+  const primaryRemoteName = useMemo(() => {
+    const uid = Number(mainRemoteUid || 0);
+    if (!uid) return 'Crew';
+    const linked = orderedJoinedParticipants.find(p => Number(p.rtcUid || 0) === uid);
+    if (linked?.name) return String(linked.name);
+    return `Crew ${uid}`;
+  }, [mainRemoteUid, orderedJoinedParticipants]);
+  const extraRemoteCount = Math.max(0, remoteParticipantUids.length - 1);
   const visualFilterOverlayColor = useMemo(() => {
     switch (activeVisualFilter) {
       case 'black_white':
@@ -23855,6 +23968,12 @@ const LiveStreamModal = ({
                   prev.includes(n) ? prev : [...prev, n],
                 );
                 setPinnedRemoteUid(prev => prev || n);
+                try {
+                  engineRef.current?.muteRemoteVideoStream?.(n, false);
+                } catch {}
+                try {
+                  engineRef.current?.muteRemoteAudioStream?.(n, false);
+                } catch {}
               },
               onUserOffline: (_conn: any, uid: number) => {
                 const n = Number(uid);
@@ -23909,6 +24028,12 @@ const LiveStreamModal = ({
                 prev.includes(n) ? prev : [...prev, n],
               );
               setPinnedRemoteUid(prev => prev || n);
+              try {
+                engineRef.current?.muteRemoteVideoStream?.(n, false);
+              } catch {}
+              try {
+                engineRef.current?.muteRemoteAudioStream?.(n, false);
+              } catch {}
             });
           } catch {}
           try {
@@ -24093,6 +24218,22 @@ const LiveStreamModal = ({
       }
     })();
   }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, liveChannel, sessionLabel, startSessionLabel]);
+
+  useEffect(() => {
+    if (!isLiveStarted) return;
+    const engine = engineRef.current;
+    if (!engine || remoteParticipantUids.length === 0) return;
+    remoteParticipantUids.forEach(uid => {
+      const n = Number(uid);
+      if (!Number.isFinite(n) || n <= 0) return;
+      try {
+        engine.muteRemoteVideoStream?.(n, false);
+      } catch {}
+      try {
+        engine.muteRemoteAudioStream?.(n, false);
+      } catch {}
+    });
+  }, [isLiveStarted, remoteParticipantUids]);
                     
   const handleEndDrift = async () => {
     try {
@@ -26672,7 +26813,6 @@ const LiveStreamModal = ({
     remoteParticipantUids.includes(pinnedRemoteUid)
       ? pinnedRemoteUid
       : remoteParticipantUids[0]) || null;
-  const useJoinCallLayout = !!inviteJoinPreset && !isLiveHost;
   const localVideoSourceType =
     (VideoSourceType &&
       (VideoSourceType.VideoSourceCameraPrimary ?? VideoSourceType.VideoSourceCamera)) ||
@@ -26683,22 +26823,6 @@ const LiveStreamModal = ({
     sourceType: localVideoSourceType,
   };
   const renderLocalLivePreview = () => {
-    if (AVView) {
-      return (
-        <AVView
-          style={StyleSheet.absoluteFill}
-          showLocalVideo={true}
-          videoSourceType={localVideoSourceType}
-          renderMode={(VideoRenderMode && (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) || 2}
-        />
-      );
-    }
-    if (RtcLocalView?.SurfaceView) {
-      return React.createElement(RtcLocalView.SurfaceView, {
-        style: StyleSheet.absoluteFill,
-        renderMode: VideoRenderMode?.Fit ?? 2,
-      });
-    }
     if (RtcSurfaceView) {
       return React.createElement(RtcSurfaceView, {
         style: StyleSheet.absoluteFill,
@@ -26711,6 +26835,22 @@ const LiveStreamModal = ({
         style: StyleSheet.absoluteFill,
         canvas: localCanvas,
       });
+    }
+    if (RtcLocalView?.SurfaceView) {
+      return React.createElement(RtcLocalView.SurfaceView, {
+        style: StyleSheet.absoluteFill,
+        renderMode: VideoRenderMode?.Fit ?? 2,
+      });
+    }
+    if (AVView) {
+      return (
+        <AVView
+          style={StyleSheet.absoluteFill}
+          showLocalVideo={true}
+          videoSourceType={localVideoSourceType}
+          renderMode={(VideoRenderMode && (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) || 2}
+        />
+      );
     }
     return null;
   };
@@ -27136,71 +27276,20 @@ const LiveStreamModal = ({
                     { alignItems: 'center', justifyContent: 'center' },
                   ]}
                 >
-                  <Text style={{ color: 'white' }}>Connecting remote video...</Text>
+                  <Text style={{ color: 'white' }}>Fetching participant video...</Text>
                 </View>
               )
-            ) : useJoinCallLayout ? (
-              <View
-                style={[
-                  StyleSheet.absoluteFill,
-                  { alignItems: 'center', justifyContent: 'center' },
-                ]}
-              >
-                {renderLocalLivePreview()}
+            ) : (
+              renderLocalLivePreview() || (
                 <View
                   style={[
                     StyleSheet.absoluteFill,
-                    {
-                      backgroundColor: 'rgba(0,0,0,0.22)',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    },
+                    { alignItems: 'center', justifyContent: 'center' },
                   ]}
                 >
-                <Text style={{ color: 'white' }}>Waiting for other participant video...</Text>
+                  <Text style={{ color: 'white' }}>Initializing camera preview...</Text>
                 </View>
-              </View>
-            ) : AVView ? (
-              <AVView
-                style={StyleSheet.absoluteFill}
-                showLocalVideo={true}
-                videoSourceType={
-                  (VideoSourceType &&
-                    (VideoSourceType.VideoSourceCameraPrimary ??
-                      VideoSourceType.VideoSourceCamera)) ||
-                  0
-                }
-                renderMode={
-                  (VideoRenderMode &&
-                    (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) ||
-                  2
-                }
-              />
-            ) : RtcSurfaceView ? (
-              React.createElement(RtcSurfaceView, {
-                style: StyleSheet.absoluteFill,
-                canvas: localCanvas,
-                zOrderMediaOverlay: true,
-              })
-            ) : RtcTextureView ? (
-              React.createElement(RtcTextureView, {
-                style: StyleSheet.absoluteFill,
-                canvas: localCanvas,
-              })
-            ) : RtcLocalView?.SurfaceView ? (
-              React.createElement(RtcLocalView.SurfaceView, {
-                style: StyleSheet.absoluteFill,
-                renderMode: VideoRenderMode?.Fit ?? 2,
-              })
-            ) : (
-              <View
-                style={[
-                  StyleSheet.absoluteFill,
-                  { alignItems: 'center', justifyContent: 'center' },
-                ]}
-              >
-                <Text style={{ color: 'white' }}>Initializing preview...</Text>
-              </View>
+              )
             )}
             {false && !isFilePresentationActive && !!visualFilterOverlayColor && (
               <View
@@ -27218,9 +27307,8 @@ const LiveStreamModal = ({
               <View
                 style={{
                   position: 'absolute',
-                  right: 12,
-                  top: useJoinCallLayout ? insets.top + 96 : undefined,
-                  bottom: useJoinCallLayout ? undefined : insets.bottom + endBarHeight + 96,
+                  left: 12,
+                  top: insets.top + 96,
                   width: 110,
                   height: 156,
                   borderRadius: 12,
@@ -27763,7 +27851,7 @@ const LiveStreamModal = ({
                     <Text
                       style={{
                         color:
-                          String(p.uid || '') === String(liveHostUid || '')
+                          String(p.uid || '') === effectiveLiveHostUid
                             ? '#9DE6FF'
                             : 'rgba(255,255,255,0.62)',
                         fontSize: 9,
@@ -27771,7 +27859,7 @@ const LiveStreamModal = ({
                         fontWeight: '700',
                       }}
                     >
-                      {String(p.uid || '') === String(liveHostUid || '')
+                      {String(p.uid || '') === effectiveLiveHostUid
                         ? 'Drift Captain'
                         : 'Crew'}
                     </Text>
@@ -27782,96 +27870,42 @@ const LiveStreamModal = ({
           </View>
         )}
         {isLiveStarted && remoteParticipantUids.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
+          <Pressable
+            onPress={() => {
+              const uid = Number(mainRemoteUid || remoteParticipantUids[0] || 0);
+              if (!uid) return;
+              setPinnedRemoteUid(uid);
+              const linked = orderedJoinedParticipants.find(p => Number(p.rtcUid || 0) === uid);
+              if (linked) {
+                openParticipantQuickActions(linked);
+              } else {
+                openParticipantQuickActions({
+                  uid: String(uid),
+                  name: primaryRemoteName,
+                  rtcUid: uid,
+                });
+              }
+            }}
             style={{
               position: 'absolute',
-              right: 10,
               left: 10,
               bottom: insets.bottom + endBarHeight + 54,
-              maxHeight: 92,
+              zIndex: 9,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.62)',
+              backgroundColor: 'rgba(6,12,20,0.84)',
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              maxWidth: Math.min(220, SCREEN_WIDTH - 130),
             }}
-            contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 6 }}
           >
-            {remoteParticipantUids.slice(0, 8).map(uid => (
-              <Pressable
-                key={`remote-tile-${uid}`}
-                onPress={() => {
-                  setPinnedRemoteUid(uid);
-                  const linked =
-                    orderedJoinedParticipants.find(p => p.rtcUid === uid) || null;
-                  if (linked) {
-                    openParticipantQuickActions(linked);
-                  } else {
-                    openParticipantQuickActions({
-                      uid: String(uid),
-                      name: `Crew ${uid}`,
-                      rtcUid: uid,
-                    });
-                  }
-                }}
-                style={{
-                  width: 72,
-                  height: 88,
-                  borderRadius: 10,
-                  overflow: 'hidden',
-                  borderWidth: activeSpeakerIsRecent && activeSpeakerRtcUid === uid ? 2 : 1.5,
-                  borderColor:
-                    activeSpeakerIsRecent && activeSpeakerRtcUid === uid
-                      ? 'rgba(28,255,136,0.95)'
-                      : pinnedRemoteUid === uid
-                      ? 'rgba(0,194,255,0.95)'
-                      : 'rgba(255,255,255,0.35)',
-                  backgroundColor: 'rgba(6,12,20,0.8)',
-                }}
-              >
-                {RtcSurfaceView ? (
-                  React.createElement(RtcSurfaceView, {
-                    style: { width: '100%', height: '100%' },
-                    canvas: {
-                      uid,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcTextureView ? (
-                  React.createElement(RtcTextureView, {
-                    style: { width: '100%', height: '100%' },
-                    canvas: {
-                      uid,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcRemoteView?.SurfaceView ? (
-                  React.createElement(RtcRemoteView.SurfaceView, {
-                    style: { width: '100%', height: '100%' },
-                    uid,
-                    channelId: liveChannel || channelInput,
-                    renderMode: VideoRenderMode?.Fit ?? 2,
-                  })
-                ) : null}
-                <View
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    backgroundColor: 'rgba(0,0,0,0.55)',
-                    paddingVertical: 2,
-                    paddingHorizontal: 4,
-                  }}
-                >
-                  <Text
-                    numberOfLines={1}
-                    style={{ color: 'white', fontSize: 9, fontWeight: '700', textAlign: 'center' }}
-                  >
-                    {orderedJoinedParticipants.find(p => p.rtcUid === uid)?.name ||
-                      `Crew ${uid}`}
-                  </Text>
-                </View>
-              </Pressable>
-            ))}
-          </ScrollView>
+            <Text numberOfLines={1} style={{ color: 'white', fontWeight: '800', fontSize: 11 }}>
+              {extraRemoteCount > 0
+                ? `${primaryRemoteName} +More`
+                : primaryRemoteName}
+            </Text>
+          </Pressable>
         )}
         {isLiveStarted && participantQuickAction && (
           <View
