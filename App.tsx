@@ -25277,6 +25277,59 @@ const LiveStreamModal = ({
           return true;
         }
       } catch {}
+      // Keep only one active invite badge per sender->recipient to prevent duplicate badge cascades.
+      try {
+        const markReplaced = {
+          status: 'replaced',
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        };
+        const [liveInvitesSnap, mentionsSnap, pingsSnap] = await Promise.all([
+          firestore()
+            .collection(`users/${toUid}/live_invites`)
+            .where('fromUid', '==', me.uid)
+            .limit(40)
+            .get(),
+          firestore()
+            .collection(`users/${toUid}/mentions`)
+            .where('fromUid', '==', me.uid)
+            .limit(40)
+            .get(),
+          firestore()
+            .collection(`users/${toUid}/pings`)
+            .where('fromUid', '==', me.uid)
+            .limit(40)
+            .get(),
+        ]);
+        const batch = firestore().batch();
+        let mutated = false;
+        (liveInvitesSnap?.docs || []).forEach((doc: any) => {
+          const d = doc.data?.() || {};
+          if (String(d.status || '').toLowerCase() !== 'pending') return;
+          batch.set(doc.ref, markReplaced, { merge: true });
+          mutated = true;
+        });
+        (mentionsSnap?.docs || []).forEach((doc: any) => {
+          const d = doc.data?.() || {};
+          if (String(d.type || '').toLowerCase() !== 'live_invite') return;
+          if (String(d.status || '').toLowerCase() !== 'pending') return;
+          batch.set(doc.ref, markReplaced, { merge: true });
+          mutated = true;
+        });
+        (pingsSnap?.docs || []).forEach((doc: any) => {
+          const d = doc.data?.() || {};
+          if (String(d.type || '').toLowerCase() !== 'live_invite') return;
+          if (String(d.status || '').toLowerCase() !== 'pending') return;
+          batch.set(
+            doc.ref,
+            { ...markReplaced, read: true },
+            { merge: true },
+          );
+          mutated = true;
+        });
+        if (mutated) {
+          await batch.commit();
+        }
+      } catch {}
       const callerName = String(
         me.displayName ||
           (me.email ? String(me.email).split('@')[0] : '') ||
@@ -25355,72 +25408,73 @@ const LiveStreamModal = ({
         lastErr = err;
       }
 
-      // Write redundant invite badge channels for reliability.
-      const inviteRecordId =
-        String(inviteDocId || `${String(liveDocId || 'direct').trim()}_${me.uid}`).trim() ||
-        `${Date.now()}`;
-      const fallbackInviteStatus = inboxInviteWritten ? 'shadow' : 'pending';
-      try {
-        await firestore()
-          .collection(`users/${toUid}/mentions`)
-          .doc(inviteRecordId)
-          .set(
-            {
-              type: 'live_invite',
-              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-              fromUid: me.uid,
-              fromName: callerName,
-              fromPhoto: senderPhoto,
-              route: 'Pings',
-              liveId: liveDocId || '',
-              liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: effectiveInviteChannel || null,
-              channel: effectiveInviteChannel || null,
-              directCallId: directCallId || null,
-              directCallChannel: directCallChannel || null,
-              callType: directCallType,
-              status: fallbackInviteStatus,
-              expiresAtMs: computedExpiry,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-              updatedAt: firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-        fallbackMentionWritten = true;
-      } catch (err) {
-        console.warn('[INVITE DEBUG] mention fallback write failed', err);
-        lastErr = err;
-      }
-      try {
-        await firestore()
-          .collection(`users/${toUid}/pings`)
-          .doc(inviteRecordId)
-          .set(
-            {
-              type: 'live_invite',
-              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-              fromUid: me.uid,
-              fromName: callerName,
-              fromPhoto: senderPhoto,
-              liveId: liveDocId || '',
-              liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: effectiveInviteChannel || null,
-              channel: effectiveInviteChannel || null,
-              directCallId: directCallId || null,
-              directCallChannel: directCallChannel || null,
-              callType: directCallType,
-              status: fallbackInviteStatus,
-              read: false,
-              expiresAtMs: computedExpiry,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-              updatedAt: firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-        fallbackPingWritten = true;
-      } catch (err) {
-        console.warn('[INVITE DEBUG] ping fallback write failed', err);
-        lastErr = err;
+      if (!inboxInviteWritten) {
+        // Fallback channels only when inbox badge write fails.
+        const inviteRecordId =
+          String(inviteDocId || `${String(liveDocId || 'direct').trim()}_${me.uid}`).trim() ||
+          `${Date.now()}`;
+        try {
+          await firestore()
+            .collection(`users/${toUid}/mentions`)
+            .doc(inviteRecordId)
+            .set(
+              {
+                type: 'live_invite',
+                text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+                fromUid: me.uid,
+                fromName: callerName,
+                fromPhoto: senderPhoto,
+                route: 'Pings',
+                liveId: liveDocId || '',
+                liveTitle: liveTitle || 'Drift Expo',
+                liveChannel: effectiveInviteChannel || null,
+                channel: effectiveInviteChannel || null,
+                directCallId: directCallId || null,
+                directCallChannel: directCallChannel || null,
+                callType: directCallType,
+                status: 'pending',
+                expiresAtMs: computedExpiry,
+                createdAt: firestore.FieldValue.serverTimestamp(),
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+          fallbackMentionWritten = true;
+        } catch (err) {
+          console.warn('[INVITE DEBUG] mention fallback write failed', err);
+          lastErr = err;
+        }
+        try {
+          await firestore()
+            .collection(`users/${toUid}/pings`)
+            .doc(inviteRecordId)
+            .set(
+              {
+                type: 'live_invite',
+                text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+                fromUid: me.uid,
+                fromName: callerName,
+                fromPhoto: senderPhoto,
+                liveId: liveDocId || '',
+                liveTitle: liveTitle || 'Drift Expo',
+                liveChannel: effectiveInviteChannel || null,
+                channel: effectiveInviteChannel || null,
+                directCallId: directCallId || null,
+                directCallChannel: directCallChannel || null,
+                callType: directCallType,
+                status: 'pending',
+                read: false,
+                expiresAtMs: computedExpiry,
+                createdAt: firestore.FieldValue.serverTimestamp(),
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+          fallbackPingWritten = true;
+        } catch (err) {
+          console.warn('[INVITE DEBUG] ping fallback write failed', err);
+          lastErr = err;
+        }
       }
 
       if (liveDocId && inviteDocId) {
@@ -26822,6 +26876,13 @@ const LiveStreamModal = ({
     renderMode: VideoRenderMode?.Fit ?? 2,
     sourceType: localVideoSourceType,
   };
+  const localPreviewTop = insets.top + 8;
+  const localPreviewHeight = 156;
+  const onlineInvitePanelTopBase = insets.top + (pendingRequests.length > 0 ? 210 : 90);
+  const onlineInvitePanelTop = Math.max(
+    onlineInvitePanelTopBase,
+    localPreviewTop + localPreviewHeight + 18,
+  );
   const renderLocalLivePreview = () => {
     if (RtcSurfaceView) {
       return React.createElement(RtcSurfaceView, {
@@ -27308,9 +27369,9 @@ const LiveStreamModal = ({
                 style={{
                   position: 'absolute',
                   left: 12,
-                  top: insets.top + 96,
+                  top: localPreviewTop,
                   width: 110,
-                  height: 156,
+                  height: localPreviewHeight,
                   borderRadius: 12,
                   overflow: 'hidden',
                   borderWidth: 1,
@@ -27600,7 +27661,7 @@ const LiveStreamModal = ({
           <View
             style={{
               position: 'absolute',
-              top: insets.top + (pendingRequests.length > 0 ? 210 : 90),
+              top: onlineInvitePanelTop,
               left: 12,
               width: 220,
               backgroundColor: 'rgba(0,0,0,0.78)',
@@ -28902,7 +28963,7 @@ const LiveStreamModal = ({
               style={{
                 position: 'absolute',
                 right: 16,
-                bottom: mediaBarHeight + 4,
+                bottom: mediaBarHeight + (showCommentInput ? 78 : 4),
                 flexDirection: 'row',
                 alignItems: 'center',
                 backgroundColor: 'rgba(0,0,0,0.35)',
