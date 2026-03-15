@@ -203,31 +203,45 @@ service cloud.firestore {
         allow read: if isAuthed();
         allow create, update, delete: if isAuthed();
       }
+    }
 
-      // Live comments for Drift Expo chat.
+    // Drift Expo live rooms
+    match /driftLives/{liveId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+                    && request.resource.data.hostId is string
+                    && request.resource.data.hostId == request.auth.uid;
+      allow update: if isAuthed() && (
+        resource.data.hostId == request.auth.uid ||
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'viewerCount',
+          'status',
+          'endedAt',
+          'allowComments',
+          'thumbnail'
+        ])
+      );
+      allow delete: if isAuthed() && resource.data.hostId == request.auth.uid;
+
       match /comments/{commentId} {
         allow read: if isAuthed();
         allow create: if isAuthed()
+                      && request.resource.data.userId is string
+                      && request.resource.data.userId == request.auth.uid
+                      && request.resource.data.userName is string
                       && request.resource.data.text is string
                       && request.resource.data.text.size() > 0
-                      && request.resource.data.text.size() <= 1000
-                      && request.resource.data.fromUid == request.auth.uid;
-        allow update, delete: if isAuthed()
-                              && resource.data.fromUid == request.auth.uid;
+                      && request.resource.data.text.size() <= 2000;
+        allow update, delete: if isAuthed() && (
+          resource.data.userId == request.auth.uid ||
+          get(/databases/$(database)/documents/driftLives/$(liveId)).data.hostId == request.auth.uid
+        );
       }
-    }
 
-    // Conference in-app presentation state (file + page sync).
-    match /conference_presentations/{presentationId} {
-      allow read: if isAuthed();
-      allow create: if isAuthed()
-                    && request.resource.data.uploadedBy is string
-                    && request.resource.data.uploadedBy == request.auth.uid
-                    && request.resource.data.liveScope is string
-                    && request.resource.data.liveScope.size() > 0;
-      allow update, delete: if isAuthed()
-                            && resource.data.uploadedBy is string
-                            && resource.data.uploadedBy == request.auth.uid;
+      match /invite_status/{uid} {
+        allow read: if isAuthed();
+        allow create, update, delete: if isAuthed();
+      }
     }
   }
 }

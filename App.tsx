@@ -73,6 +73,16 @@ import messaging from '@react-native-firebase/messaging';
 import database from '@react-native-firebase/database';
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
+import { fetchRtcToken } from './src/live/driftAgoraApi';
+import {
+  createLiveSession,
+  endLiveSession as endDriftLiveSession,
+  getLiveSession,
+  incrementViewerCount,
+  sendLiveComment as sendDriftLiveComment,
+  subscribeToLiveComments,
+  subscribeToLiveSession,
+} from './src/live/driftLiveService';
 import {
   getCrewCount,
   getBoardingCount,
@@ -94,14 +104,6 @@ import MediaEditor, {
   defaultMediaEdits,
   MediaEdits,
 } from './src/components/MediaEditor';
-import {
-  ConferenceSharedFile,
-  pickConferencePresentationFile,
-  presentConferenceFileLive,
-  setConferencePresentationPage,
-  stopConferencePresentation,
-  subscribeConferencePresentations,
-} from './src/services/conferencePresentationService';
                     
 
 // Navigation stack shared across auth/app flows
@@ -113,13 +115,6 @@ try {
   RNVideo = require('react-native-video').default;
 } catch (err) {
   console.warn('react-native-video not available, video playback disabled:', err?.message || err);
-}
-
-let RNWebView: any = null;
-try {
-  RNWebView = require('react-native-webview').WebView;
-} catch (err) {
-  console.warn('react-native-webview not available, document preview disabled:', err?.message || err);
 }
                     
 // Paper texture is optional; keep null-safe to avoid crashes if the asset is missing
@@ -167,86 +162,6 @@ const isImageAsset = (asset: Asset | null | undefined): boolean => {
   const uri = String(asset.uri || '').toLowerCase();
   return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
 };
-
-const isImageFileType = (mimeType?: string | null, name?: string | null): boolean => {
-  const t = String(mimeType || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-  return (
-    t.startsWith('image/') ||
-    /(\.(jpg|jpeg|png|gif|webp|heic|bmp))($|\?)/i.test(n)
-  );
-};
-
-const isVideoFileType = (mimeType?: string | null, name?: string | null): boolean => {
-  const t = String(mimeType || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-  return (
-    t.startsWith('video/') ||
-    /(\.(mp4|mov|m4v|webm|3gp|3gpp|mkv|avi))($|\?)/i.test(n)
-  );
-};
-
-const isAudioFileType = (mimeType?: string | null, name?: string | null): boolean => {
-  const t = String(mimeType || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-  return (
-    t.startsWith('audio/') ||
-    /(\.(mp3|m4a|aac|wav|ogg|flac))($|\?)/i.test(n)
-  );
-};
-
-const isPdfFileType = (mimeType?: string | null, name?: string | null): boolean => {
-  const t = String(mimeType || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-  return t.includes('pdf') || /(\.pdf)($|\?)/i.test(n);
-};
-
-const isOfficeFileType = (mimeType?: string | null, name?: string | null): boolean => {
-  const t = String(mimeType || '').toLowerCase();
-  const n = String(name || '').toLowerCase();
-  if (
-    t.includes('officedocument') ||
-    t.includes('msword') ||
-    t.includes('ms-powerpoint') ||
-    t.includes('ms-excel') ||
-    t.includes('presentation') ||
-    t.includes('spreadsheet')
-  ) {
-    return true;
-  }
-  return /(\.(doc|docx|ppt|pptx|xls|xlsx|odt|odp|ods))($|\?)/i.test(n);
-};
-
-const buildInAppDocViewerUrl = (
-  rawUrl: string,
-  mimeType?: string | null,
-  name?: string | null,
-): string => {
-  const base = String(rawUrl || '').trim();
-  if (!/^https?:\/\//i.test(base)) return '';
-  const encoded = encodeURIComponent(base);
-  if (isOfficeFileType(mimeType, name)) {
-    return `https://view.officeapps.live.com/op/embed.aspx?src=${encoded}`;
-  }
-  // Default all non-media docs to Google viewer so unknown doc mime types still render.
-  return `https://docs.google.com/gview?embedded=1&url=${encoded}`;
-};
-
-const toAgoraUidFromAppUid = (rawUid?: string | null): number => {
-  const raw = String(rawUid || '').trim();
-  if (!raw) return 0;
-  let hash = 0;
-  for (let i = 0; i < raw.length; i += 1) {
-    hash = (hash * 31 + raw.charCodeAt(i)) >>> 0;
-  }
-  return (hash % 2147483646) + 1;
-};
-
-const normalizeLiveScope = (raw: any): string =>
-  String(raw || '')
-    .trim()
-    .replace(/[^A-Za-z0-9_]/g, '_')
-    .toLowerCase();
 
 const inferMediaSceneHints = (
   rawInputs: Array<string | null | undefined>,
@@ -552,8 +467,8 @@ const formatNotificationMessage = (notification: {
     case 'follow':
     case 'CONNECT_VIBE':
     case 'joined_tide':
-      // Ensure username has only one leading @
-      const cleanUsername = username.startsWith('@') ? username : `@${String(username || '').replace(/^[@/]+/, '')}`;
+      // Ensure username has only one leading slash
+      const cleanUsername = username.startsWith('/') ? username : `/${username}`;
       return `${cleanUsername} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
@@ -579,11 +494,10 @@ type LiveInviteNotice = {
   fromPhoto?: string | null;
   liveTitle?: string | null;
   liveChannel?: string | null;
+  channelName?: string | null;
   directCallId?: string | null;
   directCallChannel?: string | null;
   callType?: DirectCallMode | null;
-  createdAtMs?: number;
-  expiresAtMs?: number | null;
 };
 
 type LiveInviteJoinPreset = {
@@ -591,38 +505,9 @@ type LiveInviteJoinPreset = {
   channel?: string | null;
   title?: string | null;
   fromName?: string | null;
-  fromUid?: string | null;
   requireApproval?: boolean;
   nonce?: number;
 };
-
-const LIVE_SOUND_EFFECTS: Array<{
-  id: string;
-  label: string;
-  icon: string;
-  file: string;
-}> = [
-  {
-    id: 'drumroll',
-    label: 'Drumroll',
-    icon: '🥁',
-    file: 'large_underwater_explosion_190270',
-  },
-  {
-    id: 'applause',
-    label: 'Applause',
-    icon: '👏',
-    file: 'downfall_3_208028',
-  },
-  {
-    id: 'airhorn',
-    label: 'Airhorn',
-    icon: '📯',
-    file: 'sci_fi_sound_effect_designed_circuits_hum_10_200831',
-  },
-];
-
-type LiveExperienceMode = 'drift' | 'conference';
 
 type AppToneAction =
   | 'incoming_call'
@@ -656,8 +541,7 @@ const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
 const RINGING_CALL_TIMEOUT_MS = 120 * 1000;
 const MAX_ACTIVE_CALL_DURATION_MS = 30 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = RINGING_CALL_TIMEOUT_MS;
-const ALLOW_TOKENLESS_DRIFT = false;
-const DRIFT_EXPO_FIXED_CHANNEL = 'Tindoe';
+const ALLOW_TOKENLESS_DRIFT = true;
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
@@ -738,7 +622,7 @@ const APP_TONE_OPTIONS: AppToneOption[] = [
   },
 ];
 const DEFAULT_APP_TONE_SETTINGS: Record<AppToneAction, string> = {
-  incoming_call: 'default_notification',
+  incoming_call: 'lg_cat_ring',
   messages: 'default_notification',
   live_invite: 'none',
   call_missed: 'old_ring',
@@ -869,14 +753,6 @@ const waveOptionMenu = [
     description: 'Let us know if this splashline violates guidelines.',
   },
 ];
-
-// Make text copyable app-wide via long press.
-if (!(Text as any).defaultProps) {
-  (Text as any).defaultProps = {};
-}
-if (typeof (Text as any).defaultProps.selectable === 'undefined') {
-  (Text as any).defaultProps.selectable = true;
-}
                     
 // ======================== STYLES ========================
 const NAVY_BLUE = 'black';
@@ -921,24 +797,6 @@ const styles = StyleSheet.create({
   // Icons above words
   dolphinIcon: { fontSize: 18, marginBottom: 2 },
   pingsIcon: { fontSize: 18, marginBottom: 2 },
-  vibeAlertsIconBox: {
-    minWidth: 46,
-    paddingHorizontal: 6,
-    height: 20,
-    borderRadius: 4,
-    backgroundColor: '#D7263D',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.32)',
-  },
-  vibeAlertsIconText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: '900',
-    letterSpacing: 0.5,
-  },
   compassIcon: { fontSize: 18, marginBottom: 2 },
   globeIcon: { fontSize: 18, marginBottom: 2, color: '#1E90FF' },
   pingsBadge: {
@@ -1233,7 +1091,7 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
   },
                     
-  modalRoot: { flex: 1, backgroundColor: 'rgba(0, 10, 20, 0.72)' },
+  modalRoot: { flex: 1, backgroundColor: 'rgba(0, 10, 20, 0.92)' },
   modalHeader: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1249,10 +1107,8 @@ const styles = StyleSheet.create({
   modalContent: {
     padding: 16,
     gap: 12,
-    backgroundColor: 'rgba(10,14,26,0.72)',
+    backgroundColor: 'rgba(10,14,26,0.98)',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
   },
   closeBtn: {
     alignSelf: 'center',
@@ -1483,7 +1339,7 @@ const styles = StyleSheet.create({
                     
   // Generic button for logbook-style modals
   primaryBtn: {
-    backgroundColor: 'rgba(18,130,162,0.38)',
+    backgroundColor: '#1282A2',
     minHeight: 40,
     paddingVertical: 8,
     paddingHorizontal: 14,
@@ -1491,7 +1347,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(108,220,255,0.88)',
+    borderColor: '#1282A2',
   },
   primaryBtnText: { color: '#FFFFFF', fontWeight: '800', letterSpacing: 0.2 },
   hint: { color: 'rgba(255,255,255,0.7)', fontSize: 12 },
@@ -1783,9 +1639,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: 'rgba(44,110,73,0.35)',
+    backgroundColor: '#2C6E49',
     borderWidth: 1,
-    borderColor: 'rgba(122,227,174,0.82)',
+    borderColor: '#2C6E49',
   },
   secondaryBtnText: { color: '#F3FFF8', fontWeight: '700' },
   attachActionBtn: {
@@ -2102,20 +1958,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   makeWavesPrimaryAction: {
-    backgroundColor: '#0D6EFD',
-    borderColor: '#3D8BFF',
+    backgroundColor: 'rgba(0,194,255,0.16)',
+    borderColor: 'rgba(0,194,255,0.9)',
   },
   makeWavesSecondaryAction: {
-    backgroundColor: '#0CA678',
-    borderColor: '#2FD7A1',
-  },
-  makeWavesPremiumAction: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#A78BFA',
-  },
-  makeWavesConferenceAction: {
-    backgroundColor: '#E8590C',
-    borderColor: '#FFA94D',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
@@ -2350,7 +2198,7 @@ const editorStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingBottom: 8,
     paddingTop: 10,
-    backgroundColor: 'rgba(0,0,0,0.16)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   // Live media editor strip (sits above End Vibe)
   liveMediaBar: {
@@ -2359,7 +2207,7 @@ const editorStyles = StyleSheet.create({
     right: 0,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.16)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
   },
   liveBottomScroll: { flexDirection: 'row', gap: 16 },
   liveBottomItem: {
@@ -2381,7 +2229,7 @@ const editorStyles = StyleSheet.create({
     right: 0,
     bottom: 0,
     top: 0,
-    backgroundColor: 'rgba(8,16,26,0.74)',
+    backgroundColor: '#08101a',
   },
   liveSetupChartBg: {
     ...StyleSheet.absoluteFillObject,
@@ -2416,18 +2264,7 @@ const editorStyles = StyleSheet.create({
     // This style block is now primarily for positioning.
     zIndex: 25,
   },
-  liveRightButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: 52,
-    minHeight: 52,
-    borderRadius: 26,
-    backgroundColor: 'rgba(0,0,0,0.26)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)',
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-  },
+  liveRightButton: { alignItems: 'center', justifyContent: 'center' },
   liveRightIcon: {
     fontSize: 18,
     color: 'white',
@@ -2475,7 +2312,7 @@ const editorStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     marginBottom: 8,
-    maxWidth: '86%', // Leave room for controls and avoid blocking the right action rail
+    maxWidth: '95%', // Prevent very long comments from taking the full width
   },
   liveCommentInputBar: {
     position: 'absolute',
@@ -2909,14 +2746,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Fallback for account-switch/same-phone testing:
         // surface incoming call modal from unread call_invite ping.
         const latestUnreadCallInvite = notificationsData
-          .filter(
-            item =>
-              !item.read &&
-              item.type === 'call_invite' &&
-              !!item.callId &&
-              String((item as any)?.fromUid || '').trim() !==
-                String(user.uid || '').trim(),
-          )
+          .filter(item => !item.read && item.type === 'call_invite' && !!item.callId)
           .sort(
             (a, b) =>
               toJSDate(b.createdAt).getTime() - toJSDate(a.createdAt).getTime(),
@@ -2985,7 +2815,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             'Someone';
           const toneType =
             latestNewNotification.type === 'call_invite'
-              ? 'live_invite'
+              ? 'incoming_call'
               : latestNewNotification.type === 'call_missed'
               ? 'call_missed'
               : latestNewNotification.type === 'live_invite'
@@ -3295,7 +3125,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const callRingbackActiveRef = useRef<boolean>(false);
   const incomingCallRingtoneRef = useRef<Sound | null>(null);
   const incomingCallRingtoneActiveRef = useRef<boolean>(false);
-  const nativeIncomingNotificationCallIdRef = useRef<string | null>(null);
   const replyInputRef = useRef<TextInput>(null);
   const [currentSound, setCurrentSound] = useState<number | null>(null);
   const [forceOutgoingRingback, setForceOutgoingRingback] = useState(false);
@@ -3420,9 +3249,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ...DEFAULT_APP_TONE_SETTINGS,
           ...(parsed as Partial<Record<AppToneAction, string>>),
         };
-        if (Platform.OS === 'android') {
-          merged.incoming_call = 'default_notification';
-        }
         setAppToneSettings(merged);
       } catch {}
     };
@@ -3446,9 +3272,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ...DEFAULT_APP_TONE_SETTINGS,
           ...(tones as Partial<Record<AppToneAction, string>>),
         };
-        if (Platform.OS === 'android') {
-          merged.incoming_call = 'default_notification';
-        }
         setAppToneSettings(merged);
       } catch {}
     };
@@ -3500,9 +3323,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         ...appToneSettings,
         [action]: toneId,
       };
-      if (Platform.OS === 'android') {
-        next.incoming_call = 'default_notification';
-      }
       setAppToneSettings(next);
       try {
         await AsyncStorage.setItem(APP_TONES_STORAGE_KEY, JSON.stringify(next));
@@ -3718,31 +3538,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const hideNativeIncomingCallNotification = useCallback(() => {
     if (Platform.OS !== 'android') return;
-    nativeIncomingNotificationCallIdRef.current = null;
     try {
       NativeModules?.CallNotification?.hideIncomingCallNotification?.();
     } catch {}
   }, []);
-
-  const showNativeIncomingCallNotification = useCallback(
-    (call: DirectCallSession | null | undefined) => {
-      if (Platform.OS !== 'android') return;
-      const callId = String(call?.id || '').trim();
-      if (!callId) return;
-      if (nativeIncomingNotificationCallIdRef.current === callId) return;
-      const callerName = String(call?.callerName || 'Someone').trim() || 'Someone';
-      const callType = call?.callType === 'video' ? 'video' : 'audio';
-      try {
-        NativeModules?.CallNotification?.showIncomingCallNotification?.(
-          callerName,
-          callId,
-          callType,
-        );
-        nativeIncomingNotificationCallIdRef.current = callId;
-      } catch {}
-    },
-    [],
-  );
 
   useEffect(() => {
     const isOutgoingRinging =
@@ -3764,22 +3563,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   ]);
 
   useEffect(() => {
-    if (!activeDirectCall?.id || activeDirectCall.status !== 'accepted') return;
-    setForceOutgoingRingback(false);
-    stopCallRingback();
-    setOutgoingDirectCall(prev =>
-      prev && prev.id === activeDirectCall.id ? null : prev,
-    );
-  }, [activeDirectCall?.id, activeDirectCall?.status, stopCallRingback]);
-
-  useEffect(() => {
-    if (activeDirectCall?.id) {
-      setForceOutgoingRingback(false);
-      stopCallRingback();
-    }
-  }, [activeDirectCall?.id, stopCallRingback]);
-
-  useEffect(() => {
     const incomingModalVisible = !!incomingDirectCall && !activeDirectCall;
     const ringSuppressedForCall =
       !!incomingDirectCall?.id &&
@@ -3792,20 +3575,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       incomingDirectCall?.status === 'ringing';
     if (!shouldRingWithModal) {
       stopIncomingCallRingtone();
-      if (
-        Platform.OS === 'android' &&
-        incomingDirectCall?.id &&
-        incomingDirectCall?.status !== 'ringing'
-      ) {
-        hideNativeIncomingCallNotification();
-      }
       return;
     }
     // Ring only while the incoming modal is visible and call is actively ringing.
-    if (Platform.OS === 'android') {
-      showNativeIncomingCallNotification(incomingDirectCall);
-      return;
-    }
     stopIncomingCallRingtone();
     const timer = setTimeout(() => {
       startIncomingCallRingtone();
@@ -3816,11 +3588,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     incomingCallAction,
     incomingDirectCall,
     ringSuppressedCallId,
-    hideNativeIncomingCallNotification,
-    showNativeIncomingCallNotification,
     startIncomingCallRingtone,
     stopIncomingCallRingtone,
   ]);
+
+  useEffect(() => {
+    if (!incomingDirectCall && !activeDirectCall) return;
+    hideNativeIncomingCallNotification();
+    const interval = setInterval(() => {
+      hideNativeIncomingCallNotification();
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeDirectCall, hideNativeIncomingCallNotification, incomingDirectCall]);
 
   useEffect(() => {
     if (!incomingDirectCall) {
@@ -6257,8 +6036,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
   const [isPaused, setIsPaused] = useState(false);
   const [showLive, setShowLive] = useState(false);
-  const [liveExperienceMode, setLiveExperienceMode] =
-    useState<LiveExperienceMode>('drift');
   // Editor playback control + sync helpers
   const [isCharteredDrift, setIsCharteredDrift] = useState(false);
   const [crew, setCrew] = useState<
@@ -6274,7 +6051,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibeAlert, setVibeAlert] = useState<VibeAlert | null>(null);
   const [incomingLiveInvite, setIncomingLiveInvite] = useState<LiveInviteNotice | null>(null);
   const cachedIncomingInviteRef = useRef<LiveInviteNotice | null>(null);
-  const liveInviteBadgeCutoffMsRef = useRef<number>(0);
   const [liveInviteJoinPreset, setLiveInviteJoinPreset] = useState<LiveInviteJoinPreset | null>(null);
   const driftAlertTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastDriftHostRef = useRef<string | null>(null);
@@ -6518,31 +6294,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let inboxInvite: LiveInviteNotice | null = null;
     let mentionInvite: LiveInviteNotice | null = null;
     let pingInvite: LiveInviteNotice | null = null;
-    const sourceRank: Record<'inbox' | 'mention' | 'ping', number> = {
-      inbox: 3,
-      mention: 2,
-      ping: 1,
-    };
-    const inviteCreatedAtMs = (data: any): number => {
-      const created = toJSDate(data?.createdAt).getTime();
-      if (Number.isFinite(created) && created > 0) return created;
-      const updated = toJSDate(data?.updatedAt).getTime();
-      if (Number.isFinite(updated) && updated > 0) return updated;
-      return 0;
-    };
-    const isFreshInvite = (invite: LiveInviteNotice | null): invite is LiveInviteNotice => {
-      if (!invite || !invite.fromUid) return false;
-      const createdAtMs = Number(invite.createdAtMs || 0) || 0;
-      const expiresAtMs = Number(invite.expiresAtMs || 0) || 0;
-      const cutoffMs = Number(liveInviteBadgeCutoffMsRef.current || 0) || 0;
-      if (createdAtMs > 0 && createdAtMs < cutoffMs) return false;
-      if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-      if (!expiresAtMs && createdAtMs <= 0) return false;
-      if (!expiresAtMs && createdAtMs > 0 && Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS) {
-        return false;
-      }
-      return true;
-    };
     const loadCachedInvite = async () => {
       try {
         const raw = await AsyncStorage.getItem(cacheKey);
@@ -6561,53 +6312,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromName: String(parsed.fromName || 'Skipper'),
           fromPhoto: parsed.fromPhoto || null,
           liveTitle: parsed.liveTitle || null,
-          liveChannel: parsed.liveChannel
-            ? String(parsed.liveChannel)
-            : parsed.channel
-            ? String(parsed.channel)
-            : null,
+          liveChannel: parsed.liveChannel ? String(parsed.liveChannel) : null,
+          channelName: parsed.channelName ? String(parsed.channelName) : null,
           directCallId: parsed.directCallId ? String(parsed.directCallId) : null,
           directCallChannel: parsed.directCallChannel
             ? String(parsed.directCallChannel)
             : null,
           callType: parsed.callType === 'audio' ? 'audio' : 'video',
-          createdAtMs: Number(parsed.createdAtMs || 0) || 0,
-          expiresAtMs: Number(parsed.expiresAtMs || 0) || 0,
         };
-        if (!isFreshInvite(cached)) return;
+        if (!cached.fromUid) return;
         cachedIncomingInviteRef.current = cached;
         setIncomingLiveInvite(cached);
       } catch {}
     };
     loadCachedInvite();
     const syncIncomingInvite = () => {
-      const all = [
-        inboxInvite,
-        mentionInvite,
-        pingInvite,
-        cachedIncomingInviteRef.current,
-      ].filter(isFreshInvite);
       const next =
-        all
-          .slice()
-          .sort((a, b) => {
-            const byTime =
-              (Number(b.createdAtMs || 0) || 0) - (Number(a.createdAtMs || 0) || 0);
-            if (byTime !== 0) return byTime;
-            return sourceRank[b.source] - sourceRank[a.source];
-          })[0] || null;
+        inboxInvite || mentionInvite || pingInvite || cachedIncomingInviteRef.current || null;
       setIncomingLiveInvite(next);
       if (next) {
         cachedIncomingInviteRef.current = next;
         AsyncStorage.setItem(cacheKey, JSON.stringify(next)).catch(() => {});
-      } else {
-        cachedIncomingInviteRef.current = null;
-        AsyncStorage.removeItem(cacheKey).catch(() => {});
       }
     };
     const unsubInbox = firestore()
       .collection(`users/${me.uid}/live_invites`)
-      .limit(100)
+      .limit(25)
       .onSnapshot(
         snap => {
           const docs = (snap?.docs || []).filter((doc: any) => {
@@ -6616,19 +6346,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
             if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            const createdAtMs = inviteCreatedAtMs(data);
-            if (
-              createdAtMs > 0 &&
-              createdAtMs < Number(liveInviteBadgeCutoffMsRef.current || 0)
-            ) {
-              return false;
-            }
-            if (
-              !expiresAtMs &&
-              createdAtMs <= 0
-            ) {
-              return false;
-            }
+            const createdAtMs = toJSDate(data.createdAt).getTime();
             if (
               !expiresAtMs &&
               createdAtMs > 0 &&
@@ -6643,8 +6361,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .slice()
               .sort(
                 (a: any, b: any) =>
-                  inviteCreatedAtMs(b.data() || {}) -
-                  inviteCreatedAtMs(a.data() || {}),
+                  toJSDate((b.data() || {}).createdAt).getTime() -
+                  toJSDate((a.data() || {}).createdAt).getTime(),
               )[0] || null;
           if (!doc) {
             inboxInvite = null;
@@ -6660,18 +6378,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel
-              ? String(data.liveChannel)
-              : data.channel
-              ? String(data.channel)
-              : null,
+            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            channelName: data.channelName ? String(data.channelName) : null,
             directCallId: data.directCallId ? String(data.directCallId) : null,
             directCallChannel: data.directCallChannel
               ? String(data.directCallChannel)
               : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
-            createdAtMs: inviteCreatedAtMs(data),
-            expiresAtMs: Number(data.expiresAtMs || 0) || 0,
           };
           syncIncomingInvite();
         },
@@ -6681,29 +6394,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     const unsubMentions = firestore()
       .collection(`users/${me.uid}/mentions`)
-      .where('type', '==', 'live_invite')
-      .limit(80)
+      .limit(20)
       .onSnapshot(
         snap => {
           const docs = (snap?.docs || []).filter((doc: any) => {
             const data = doc.data() || {};
+            const type = String(data.type || '').toUpperCase();
+            if (type !== 'LIVE_INVITE' && type !== 'DRIFT_EXPO_INVITE') {
+              return false;
+            }
             const status = String(data.status || 'pending').toLowerCase();
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
             if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            const createdAtMs = inviteCreatedAtMs(data);
-            if (
-              createdAtMs > 0 &&
-              createdAtMs < Number(liveInviteBadgeCutoffMsRef.current || 0)
-            ) {
-              return false;
-            }
-            if (
-              !expiresAtMs &&
-              createdAtMs <= 0
-            ) {
-              return false;
-            }
+            const createdAtMs = toJSDate(data.createdAt).getTime();
             if (
               !expiresAtMs &&
               createdAtMs > 0 &&
@@ -6718,8 +6422,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .slice()
               .sort(
                 (a: any, b: any) =>
-                  inviteCreatedAtMs(b.data() || {}) -
-                  inviteCreatedAtMs(a.data() || {}),
+                  toJSDate((b.data() || {}).createdAt).getTime() -
+                  toJSDate((a.data() || {}).createdAt).getTime(),
               )[0] || null;
           if (!doc) {
             mentionInvite = null;
@@ -6735,18 +6439,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel
-              ? String(data.liveChannel)
-              : data.channel
-              ? String(data.channel)
-              : null,
+            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            channelName: data.channelName ? String(data.channelName) : null,
             directCallId: data.directCallId ? String(data.directCallId) : null,
             directCallChannel: data.directCallChannel
               ? String(data.directCallChannel)
               : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
-            createdAtMs: inviteCreatedAtMs(data),
-            expiresAtMs: Number(data.expiresAtMs || 0) || 0,
           };
           syncIncomingInvite();
         },
@@ -6754,36 +6453,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     const unsubPings = firestore()
       .collection(`users/${me.uid}/pings`)
-      .where('type', '==', 'live_invite')
-      .limit(80)
+      .limit(20)
       .onSnapshot(
         snap => {
           const docs = (snap?.docs || []).filter((doc: any) => {
             const data = doc.data() || {};
+            const type = String(data.type || '').toUpperCase();
+            if (type !== 'LIVE_INVITE' && type !== 'DRIFT_EXPO_INVITE') {
+              return false;
+            }
             const status = String(data.status || 'pending').toLowerCase();
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
             if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            const createdAtMs = inviteCreatedAtMs(data);
-            if (
-              createdAtMs > 0 &&
-              createdAtMs < Number(liveInviteBadgeCutoffMsRef.current || 0)
-            ) {
-              return false;
-            }
-            if (
-              !expiresAtMs &&
-              createdAtMs <= 0
-            ) {
-              return false;
-            }
-            if (
-              !expiresAtMs &&
-              createdAtMs > 0 &&
-              Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS
-            ) {
-              return false;
-            }
             return !!data?.fromUid;
           });
           const doc =
@@ -6791,8 +6473,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .slice()
               .sort(
                 (a: any, b: any) =>
-                  inviteCreatedAtMs(b.data() || {}) -
-                  inviteCreatedAtMs(a.data() || {}),
+                  toJSDate((b.data() || {}).createdAt).getTime() -
+                  toJSDate((a.data() || {}).createdAt).getTime(),
               )[0] || null;
           if (!doc) {
             pingInvite = null;
@@ -6808,18 +6490,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             fromName: String(data.fromName || 'Skipper'),
             fromPhoto: data.fromPhoto || null,
             liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel
-              ? String(data.liveChannel)
-              : data.channel
-              ? String(data.channel)
-              : null,
+            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+            channelName: data.channelName ? String(data.channelName) : null,
             directCallId: data.directCallId ? String(data.directCallId) : null,
             directCallChannel: data.directCallChannel
               ? String(data.directCallChannel)
               : null,
             callType: data.callType === 'audio' ? 'audio' : 'video',
-            createdAtMs: inviteCreatedAtMs(data),
-            expiresAtMs: Number(data.expiresAtMs || 0) || 0,
           };
           syncIncomingInvite();
         },
@@ -6889,24 +6566,107 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         liveId,
         title: liveTitle || 'Drift Expo',
         fromName: hostName || 'Skipper',
-        fromUid: null,
         requireApproval: true,
         nonce: Date.now(),
       });
-      setLiveExperienceMode('drift');
       setShowLive(true);
     },
     [requestToDriftForLiveId],
   );
 
+  async function resolveDriftExpoInviteTarget({
+    liveId,
+    liveChannel,
+    channelName,
+    fromUid,
+  }: {
+    liveId?: string | null;
+    liveChannel?: string | null;
+    channelName?: string | null;
+    fromUid?: string | null;
+  }) {
+    const normalizeChannel = (value?: string | null) =>
+      String(value || '')
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
+
+    const directChannel = normalizeChannel(liveChannel || channelName);
+    if (directChannel) {
+      return {
+        liveId: liveId ? String(liveId) : null,
+        channel: directChannel,
+      };
+    }
+
+    const liveDocId = String(liveId || '').trim();
+    if (liveDocId) {
+      try {
+        const live = await getLiveSession(liveDocId);
+        const sessionChannel = normalizeChannel(
+          (live as any)?.channelName ||
+            (live as any)?.liveChannel ||
+            (live as any)?.channel ||
+            (live as any)?.agoraChannel,
+        );
+        if (sessionChannel) {
+          return { liveId: liveDocId, channel: sessionChannel };
+        }
+      } catch {}
+      try {
+        const legacySnap = await firestore().doc(`live/${liveDocId}`).get();
+        const legacyData = legacySnap?.data?.() || {};
+        const legacyChannel = normalizeChannel(
+          legacyData.channelName ||
+            legacyData.liveChannel ||
+            legacyData.channel ||
+            legacyData.agoraChannel,
+        );
+        if (legacyChannel) {
+          return { liveId: liveDocId, channel: legacyChannel };
+        }
+      } catch {}
+    }
+
+    const hostUid = String(fromUid || '').trim();
+    if (hostUid) {
+      try {
+        const activeByHost = await firestore()
+          .collection('driftLives')
+          .where('hostId', '==', hostUid)
+          .where('status', '==', 'live')
+          .limit(5)
+          .get();
+        const docs = (activeByHost?.docs || []).slice().sort((a: any, b: any) => {
+          return (
+            toJSDate((b.data?.() || {}).startedAt).getTime() -
+            toJSDate((a.data?.() || {}).startedAt).getTime()
+          );
+        });
+        const activeDoc = docs[0] || null;
+        if (activeDoc) {
+          const activeData = activeDoc.data() || {};
+          const activeChannel = normalizeChannel(
+            activeData.channelName ||
+              activeData.liveChannel ||
+              activeData.channel ||
+              activeData.agoraChannel,
+          );
+          if (activeChannel) {
+            return { liveId: String(activeDoc.id || liveDocId || ''), channel: activeChannel };
+          }
+        }
+      } catch {}
+    }
+
+    return { liveId: liveDocId || null, channel: null };
+  }
+  const resolveDriftEpoInviteTarget = resolveDriftExpoInviteTarget;
+
   const respondToLiveInvite = useCallback(
     async (action: 'join' | 'miss') => {
       const invite = incomingLiveInvite;
       if (!invite) return;
-      liveInviteBadgeCutoffMsRef.current = Math.max(
-        Number(liveInviteBadgeCutoffMsRef.current || 0),
-        Date.now(),
-      );
       // Clear badge immediately for responsive UX.
       setIncomingLiveInvite(null);
       try {
@@ -6920,117 +6680,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
 
       if (action === 'join') {
-        const me = auth?.()?.currentUser;
-        const myUid = String(me?.uid || '').trim();
-        if (!myUid) {
-          Alert.alert('Sign in required', 'Please sign in to join this invite.');
-          return;
-        }
-        let inviteAllowed = false;
-        try {
-          const sourcePath =
-            invite.source === 'mention'
-              ? `users/${myUid}/mentions/${invite.id}`
-              : invite.source === 'ping'
-              ? `users/${myUid}/pings/${invite.id}`
-              : `users/${myUid}/live_invites/${invite.id}`;
-          const [sourceSnap, statusSnap] = await Promise.all([
-            firestore().doc(sourcePath).get(),
-            invite.liveId
-              ? firestore()
-                  .collection(`live/${invite.liveId}/invite_status`)
-                  .doc(myUid)
-                  .get()
-              : Promise.resolve(null as any),
-          ]);
-          const sourceData = sourceSnap?.data?.() || {};
-          const sourceStatus = String(sourceData?.status || 'pending').toLowerCase();
-          const sourceExpiry = Number(sourceData?.expiresAtMs || 0) || 0;
-          const sourceNotExpired = !sourceExpiry || Date.now() <= sourceExpiry;
-          const sourceFromUid = String(sourceData?.fromUid || invite.fromUid || '').trim();
-          const expectedFromUid = String(invite.fromUid || '').trim();
-          const sourceSenderMatches =
-            !expectedFromUid || !sourceFromUid || sourceFromUid === expectedFromUid;
-          const statusData = statusSnap?.data?.() || {};
-          const inviteStatus = String(statusData?.status || '').toLowerCase();
-          inviteAllowed =
-            (sourceNotExpired &&
-              sourceSenderMatches &&
-              (sourceStatus === 'pending' || sourceStatus === 'accepted')) ||
-            inviteStatus === 'pending' ||
-            inviteStatus === 'accepted';
-        } catch {}
-        if (!inviteAllowed) {
+        const resolvedTarget = await resolveDriftExpoInviteTarget({
+          liveId: invite.liveId,
+          liveChannel: invite.liveChannel || invite.directCallChannel || null,
+          channelName: invite.channelName || null,
+          fromUid: invite.fromUid,
+        });
+        const normalizedChannel = resolvedTarget.channel;
+        if (!normalizedChannel) {
           Alert.alert(
-            'Invite expired',
-            'This invite is no longer valid. Ask the host to send a new invite.',
+            'Drift Expo',
+            'Could not resolve the sender Drift Expo room. Please ask the sender to resend the invite.',
           );
           return;
         }
-        let resolvedChannel = String(
-          invite.liveChannel ||
-            (invite as any)?.channel ||
-            invite.directCallChannel ||
-            DRIFT_EXPO_FIXED_CHANNEL,
-        ).trim();
-        if (!resolvedChannel && invite.liveId && myUid) {
-          try {
-            const [statusSnap, inboxSnap, liveSnap] = await Promise.all([
-              firestore()
-                .collection(`live/${invite.liveId}/invite_status`)
-                .doc(myUid)
-                .get(),
-              firestore()
-                .collection(`users/${myUid}/live_invites`)
-                .doc(invite.id)
-                .get(),
-              firestore().doc(`live/${invite.liveId}`).get(),
-            ]);
-            const statusData = statusSnap?.data?.() || {};
-            const inboxData = inboxSnap?.data?.() || {};
-            const liveData = liveSnap?.data?.() || {};
-            resolvedChannel = String(
-              statusData.channel ||
-                statusData.liveChannel ||
-                inboxData.channel ||
-                inboxData.liveChannel ||
-                liveData.liveChannel ||
-                liveData.channel ||
-                liveData.agoraChannel ||
-                DRIFT_EXPO_FIXED_CHANNEL,
-            ).trim();
-          } catch {}
-        } else if (!resolvedChannel && invite.liveId) {
-          try {
-            const liveSnap = await firestore().doc(`live/${invite.liveId}`).get();
-            const liveData = liveSnap?.data?.() || {};
-            resolvedChannel = String(
-              liveData.liveChannel ||
-                liveData.channel ||
-                liveData.agoraChannel ||
-                DRIFT_EXPO_FIXED_CHANNEL,
-            ).trim();
-          } catch {}
-        }
-        const normalizedChannel = resolvedChannel
-          ? resolvedChannel.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64)
-          : DRIFT_EXPO_FIXED_CHANNEL;
+        const needsApproval = false;
         setLiveInviteJoinPreset({
-          liveId: invite.liveId,
+          liveId: resolvedTarget.liveId || invite.liveId,
           channel: normalizedChannel,
           title: invite.liveTitle || null,
           fromName: invite.fromName,
-          fromUid: invite.fromUid || null,
-          requireApproval: false,
+          requireApproval: needsApproval,
           nonce: Date.now(),
         });
-        setLiveExperienceMode('drift');
         setShowLive(true);
-        if (invite.liveId && normalizedChannel) {
+        if ((resolvedTarget.liveId || invite.liveId) && normalizedChannel) {
           try {
+            const me = auth?.()?.currentUser;
             if (me?.uid) {
               await firestore()
-                .collection(`live/${invite.liveId}/invite_status`)
+                .collection(`driftLives/${resolvedTarget.liveId || invite.liveId}/invite_status`)
                 .doc(me.uid)
                 .set(
                   {
@@ -7038,7 +6717,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     status: 'accepted',
                     channel: normalizedChannel,
                     liveChannel: normalizedChannel,
-                    fromUid: invite.fromUid || null,
                     updatedAt: firestore.FieldValue.serverTimestamp(),
                     respondedAt: firestore.FieldValue.serverTimestamp(),
                   },
@@ -7053,46 +6731,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
-          const nowPatch = {
-            status: nextStatus,
-            respondedAt: firestore.FieldValue.serverTimestamp(),
-          };
-          await Promise.all([
-            firestore()
-              .collection(`users/${me.uid}/live_invites`)
-              .doc(invite.id)
-              .set(nowPatch, { merge: true })
-              .catch(() => {}),
-            firestore()
+          if (invite.source === 'mention') {
+            await firestore()
               .collection(`users/${me.uid}/mentions`)
               .doc(invite.id)
-              .set(nowPatch, { merge: true })
-              .catch(() => {}),
-            firestore()
+              .set(
+                {
+                  status: nextStatus,
+                  respondedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+          } else if (invite.source === 'ping') {
+            await firestore()
               .collection(`users/${me.uid}/pings`)
               .doc(invite.id)
               .set(
                 {
-                  ...nowPatch,
+                  status: nextStatus,
                   read: true,
+                  respondedAt: firestore.FieldValue.serverTimestamp(),
                 },
                 { merge: true },
-              )
-              .catch(() => {}),
-          ]);
+              );
+          } else {
+            await firestore()
+              .collection(`users/${me.uid}/live_invites`)
+              .doc(invite.id)
+              .set(
+                {
+                  status: nextStatus,
+                  respondedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+          }
           if (invite.liveId) {
             await firestore()
-              .collection(`live/${invite.liveId}/invite_status`)
+              .collection(`driftLives/${invite.liveId}/invite_status`)
               .doc(me.uid)
               .set(
                 {
                   uid: me.uid,
                   status: nextStatus,
-                  channel:
-                    invite.liveChannel || invite.directCallChannel || null,
-                  liveChannel:
-                    invite.liveChannel || invite.directCallChannel || null,
-                  fromUid: invite.fromUid || null,
                   updatedAt: firestore.FieldValue.serverTimestamp(),
                   respondedAt: firestore.FieldValue.serverTimestamp(),
                 },
@@ -7134,7 +6815,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     },
-    [incomingLiveInvite],
+    [incomingLiveInvite, requestToDriftForLiveId],
   );
   const inviteBadgeTranslateX = useRef(new Animated.Value(0)).current;
   const inviteBadgePanResponder = useMemo(
@@ -8315,11 +7996,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
     // Best-effort remote merge so older waves display the correct handle for others
     try {
-      let firestoreMod: any = null;
       let authMod: any = null;
-      try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
-      } catch {}
       try {
         authMod = require('@react-native-firebase/auth').default;
       } catch {}
@@ -10708,6 +10385,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.log(`[DEBUG] handleJoinCrew: UI updated for connection to ${targetUid}`);
     } catch (e) {
       console.error('Connect wave error:', e);
+      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: true }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          next.add(targetUid);
+          persistLocalJoinedTides(next);
+          return next;
+        });
+        loadCrewCounts();
+        await loadDriftWatchers();
+        return;
+      }
       let msg = 'Could not connect wave right now';
       if (e && (e.message || (typeof e === 'string'))) {
         msg = e.message || e.toString();
@@ -10735,6 +10424,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       await loadDriftWatchers();
     } catch (e) {
       console.error('Disconnect wave error:', e);
+      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: false }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          next.delete(targetUid);
+          persistLocalJoinedTides(next);
+          return next;
+        });
+        loadCrewCounts();
+        await loadDriftWatchers();
+        return;
+      }
       notifyError('Could not disconnect wave right now');
     } finally {
       setCrewLoading(false);
@@ -10780,51 +10481,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
   }, []);
 
-  const resetMyTideConnections = useCallback(async () => {
-    const uid = auth().currentUser?.uid;
-    if (!uid) return;
-    try {
-      const boardingSnap = await firestore()
-        .collection('users')
-        .doc(uid)
-        .collection('boarding')
-        .get();
-      if (!boardingSnap.empty) {
-        const jobs = boardingSnap.docs.map(async docSnap => {
-          const targetUid = String(docSnap.id || '').trim();
-          try {
-            await docSnap.ref.delete();
-          } catch {}
-          if (targetUid) {
-            try {
-              await firestore()
-                .collection('users')
-                .doc(targetUid)
-                .collection('crew')
-                .doc(uid)
-                .delete();
-            } catch {}
-          }
-        });
-        await Promise.all(jobs);
-      }
-    } catch (err) {
-      console.log('resetMyTideConnections warning:', err);
-    } finally {
-      setLocalJoinedTides(new Set());
-      setLocalHuggedWaves(new Set());
-      setIsInUserCrew({});
-      setMyBoardingCount(0);
-      setMyCrewCount(0);
-      setUserStats(prev => ({ ...prev, hugsMade: 0 }));
-      try {
-        await AsyncStorage.removeItem(`${LOCAL_JOINED_TIDES_KEY_PREFIX}${uid}`);
-        await AsyncStorage.removeItem(`${LOCAL_HUGGED_WAVES_KEY_PREFIX}${uid}`);
-        await AsyncStorage.removeItem(`${LOCAL_HUGS_MADE_KEY_PREFIX}${uid}`);
-      } catch {}
-    }
-  }, []);
-
   useEffect(() => {
     const uid = auth().currentUser?.uid;
     if (!uid) {
@@ -10834,12 +10490,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     (async () => {
       try {
-        const resetKey = `tide_reset_done_${uid}`;
-        const alreadyReset = await AsyncStorage.getItem(resetKey);
-        if (!alreadyReset) {
-          await resetMyTideConnections();
-          await AsyncStorage.setItem(resetKey, '1');
-        }
         const [joinedRaw, huggedRaw, hugsMadeRaw] = await Promise.all([
           AsyncStorage.getItem(`${LOCAL_JOINED_TIDES_KEY_PREFIX}${uid}`),
           AsyncStorage.getItem(`${LOCAL_HUGGED_WAVES_KEY_PREFIX}${uid}`),
@@ -10876,7 +10526,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     })();
-  }, [resetMyTideConnections, user?.uid]);
+  }, [user?.uid]);
 
   // Record Video Reach function with crash-resistant error handling
   const recordVideoReach = async (postId: string) => {
@@ -10963,6 +10613,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     } catch (e: any) {
       console.error('Toggle vibe error:', e);
+      if ((e?.code || e?.message || '').toString().includes('permission-denied')) {
+        const shouldConnect = !isInUserCrew[targetUid];
+        setIsInUserCrew(prev => ({ ...prev, [targetUid]: shouldConnect }));
+        setLocalJoinedTides(prev => {
+          const next = new Set(prev);
+          if (shouldConnect) {
+            next.add(targetUid);
+          } else {
+            next.delete(targetUid);
+          }
+          persistLocalJoinedTides(next);
+          return next;
+        });
+        notifySuccess('Tide connection updated');
+        return;
+      }
       notifyError(e?.message || 'Could not update tide connection right now');
     } finally {
       setCrewLoading(false);
@@ -11960,7 +11626,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     }
-    setLiveExperienceMode('drift');
     setShowLive(true);
   };
                     
@@ -13045,10 +12710,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       const calleeUid = targetUid;
       if (!calleeUid) return;
-      if (calleeUid === myUid) {
-        Alert.alert('Call unavailable', 'You cannot call yourself.');
-        return;
-      }
       const callerName =
         profileName ||
         accountCreationHandle ||
@@ -13262,8 +12923,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       } catch {}
     }
-    // Keep callee in accept state until accepted status is persisted for both peers.
-    // This avoids callee entering far earlier than caller when network is slow.
+    // Promote to active immediately so ringtone stops and call connection starts without waiting for Firestore round-trip.
+    const optimisticAcceptedCall: DirectCallSession = {
+      ...call,
+      channelName: call.channelName || `aqua_call_${call.id}`,
+      status: 'accepted',
+      acceptedAt: call.acceptedAt || new Date(),
+      agoraToken: call.agoraToken || null,
+    };
+    setIncomingDirectCall(null);
+    setActiveDirectCall(optimisticAcceptedCall);
+    setActiveDirectCallRole('callee');
+    watchDirectCallDoc(call.id, 'callee');
     try {
       if (!call.channelName || !call.callerUid) {
         try {
@@ -13306,63 +12977,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         await tokenBatch.commit();
       }
-      const synchronizedAcceptedCall: DirectCallSession = {
-        ...call,
-        status: 'accepted',
-        acceptedAt: call.acceptedAt || new Date(),
-        channelName: call.channelName || `aqua_call_${call.id}`,
-        agoraToken: freshToken || call.agoraToken || null,
-      };
-      setIncomingDirectCall(null);
-      setActiveDirectCall(synchronizedAcceptedCall);
-      setActiveDirectCallRole('callee');
-      watchDirectCallDoc(call.id, 'callee');
       upsertCallHistory(call, 'accepted');
-      try {
-        const calleeNameForSignal =
-          profileName ||
-          accountCreationHandle ||
-          auth()?.currentUser?.displayName ||
-          call.calleeName ||
-          'User';
-        const channelNameForSignal =
-          String(call.channelName || '').trim() || `aqua_call_${call.id}`;
-        const addPingFn = functions().httpsCallable('addPing');
-        await addPingFn({
-          recipientUid: call.callerUid,
-          type: 'call_answered',
-          text: `${calleeNameForSignal} answered your ${call.callType} call`,
-          fromUid: myUid,
-          fromName: calleeNameForSignal,
-          callId: call.id,
-          callType: call.callType,
-          route: 'Pings',
-          channelName: channelNameForSignal,
-        });
-      } catch {}
-      try {
-        const calleeNameForSignal =
-          profileName ||
-          accountCreationHandle ||
-          auth()?.currentUser?.displayName ||
-          call.calleeName ||
-          'User';
-        const channelNameForSignal =
-          String(call.channelName || '').trim() || `aqua_call_${call.id}`;
-        await firestore()
-          .collection(`users/${call.callerUid}/mentions`)
-          .add({
-            type: 'call_answered',
-            text: `${calleeNameForSignal} answered your ${call.callType} call`,
-            fromUid: myUid,
-            fromName: calleeNameForSignal,
-            route: 'Pings',
-            callId: call.id,
-            callType: call.callType,
-            channelName: channelNameForSignal,
-            createdAt: firestore.FieldValue.serverTimestamp(),
-          });
-      } catch {}
       setActiveDirectCall(prev => {
         if (!prev || prev.id !== call.id) return prev;
         return {
@@ -13372,18 +12987,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         };
       });
     } catch (err: any) {
-      console.warn('Accept call sync failed', err);
-      Alert.alert(
-        'Call answer failed',
-        'Could not sync this answer yet. Please tap answer again.',
-      );
+      console.warn('Accept call sync failed, continuing with local active call', err);
     } finally {
       setIncomingCallAction(null);
     }
   }, [
-    accountCreationHandle,
     fetchDirectCallAgoraToken,
-    profileName,
     stopCallRingback,
     setForceOutgoingRingback,
     hideNativeIncomingCallNotification,
@@ -13797,74 +13406,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const handleNotificationNavigation = useCallback(
     (data: any) => {
-      if (data?.type === 'call_answered' && data?.callId && myUid) {
-        const callId = String(data.callId || '').trim();
-        if (!callId) return;
-        const signalCallType: DirectCallMode =
-          String(data?.callType || '').toLowerCase() === 'video'
-            ? 'video'
-            : 'audio';
-        const signalCalleeUid = String(data?.fromUid || data?.calleeUid || '').trim();
-        if (signalCalleeUid && signalCalleeUid === myUid) {
-          return;
-        }
-        const signalCalleeName = String(
-          data?.fromName || data?.calleeName || 'User',
-        ).trim();
-        const signalChannel = String(
-          data?.channelName ||
-            outgoingDirectCall?.channelName ||
-            activeDirectCall?.channelName ||
-            `aqua_call_${callId}`,
-        ).trim();
-        setForceOutgoingRingback(false);
-        stopCallRingback();
-        setOutgoingDirectCall(prev => {
-          if (!prev || prev.id !== callId) return prev;
-          return {
-            ...prev,
-            status: 'accepted',
-            channelName: prev.channelName || signalChannel,
-            calleeUid: prev.calleeUid || signalCalleeUid,
-            calleeName: prev.calleeName || signalCalleeName || 'User',
-          };
-        });
-        setActiveDirectCall(prev => {
-          if (prev?.id === callId) {
-            return {
-              ...prev,
-              status: 'accepted',
-              channelName: prev.channelName || signalChannel,
-            };
-          }
-          if (outgoingDirectCall?.id !== callId) return prev;
-          return {
-            ...outgoingDirectCall,
-            status: 'accepted',
-            callType: signalCallType,
-            channelName: outgoingDirectCall.channelName || signalChannel,
-            calleeUid: outgoingDirectCall.calleeUid || signalCalleeUid,
-            calleeName: outgoingDirectCall.calleeName || signalCalleeName || 'User',
-          };
-        });
-        setActiveDirectCallRole('caller');
-        watchDirectCallDoc(callId, 'caller');
-        try {
-          firestore()
-            .collection(`users/${myUid}/direct_calls`)
-            .doc(callId)
-            .set(
-              {
-                status: 'accepted',
-                acceptedAt: firestore.FieldValue.serverTimestamp(),
-                channelName: signalChannel,
-              },
-              { merge: true },
-            )
-            .catch(() => {});
-        } catch {}
-        return;
-      }
       if (data?.type === 'call_invite' && data?.callId && myUid) {
         const callId = String(data.callId || '').trim();
         if (callId) {
@@ -13876,9 +13417,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               ? 'video'
               : 'audio';
           const signalCallerUid = String(data?.fromUid || data?.callerUid || '').trim();
-          if (signalCallerUid && signalCallerUid === myUid) {
-            return;
-          }
           const signalCallerName = String(
             data?.fromName || data?.callerName || 'User',
           ).trim();
@@ -13910,6 +13448,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           if (signalAction === 'answer_call') {
             setPendingNativeAutoAnswerCallId(callId);
           }
+          hideNativeIncomingCallNotification();
           watchDirectCallDoc(callId, 'callee');
           try {
             firestore()
@@ -13952,13 +13491,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     },
     [
-      activeDirectCall?.channelName,
       displayFeed,
       mapDirectCallDoc,
       myUid,
-      outgoingDirectCall,
       profileName,
-      stopCallRingback,
+      hideNativeIncomingCallNotification,
       watchDirectCallDoc,
     ],
   );
@@ -14010,12 +13547,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return;
         }
         handledIncomingInviteCallIdsRef.current.add(callId);
+        hideNativeIncomingCallNotification();
         const signalCallType: DirectCallMode =
           String(data?.callType || '').toLowerCase() === 'video'
             ? 'video'
             : 'audio';
         const signalCallerUid = String(data?.fromUid || data?.callerUid || '').trim();
-        if (signalCallerUid && signalCallerUid === myUid) return;
         const signalCallerName = String(
           data?.fromName || data?.callerName || 'User',
         ).trim();
@@ -14099,64 +13636,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         () => {},
       );
 
-    const processCallAnsweredSignal = (data: any) => {
-      try {
-        const callId = String(data?.callId || '').trim();
-        if (!callId) return;
-        const createdAtMs = toJSDate(data?.createdAt).getTime();
-        if (createdAtMs > 0 && Date.now() - createdAtMs > STALE_RINGING_CALL_MAX_AGE_MS) {
-          return;
-        }
-        handleNotificationNavigation({
-          ...data,
-          type: 'call_answered',
-          callId,
-        });
-      } catch {}
-    };
-
-    const unsubMentionsAnswered = firestore()
-      .collection(`users/${myUid}/mentions`)
-      .where('type', '==', 'call_answered')
-      .limit(20)
-      .onSnapshot(
-        snap => {
-          const docs = (snap?.docs || []).slice().sort((a: any, b: any) => {
-            return (
-              toJSDate((b.data?.() || {}).createdAt).getTime() -
-              toJSDate((a.data?.() || {}).createdAt).getTime()
-            );
-          });
-          if (docs.length === 0) return;
-          processCallAnsweredSignal(docs[0]?.data?.() || {});
-        },
-        () => {},
-      );
-
-    const unsubPingsAnswered = firestore()
-      .collection(`users/${myUid}/pings`)
-      .where('type', '==', 'call_answered')
-      .limit(20)
-      .onSnapshot(
-        snap => {
-          const docs = (snap?.docs || []).filter((doc: any) => {
-            const data = doc?.data?.() || {};
-            return data?.read !== true;
-          });
-          const latest =
-            docs
-              .slice()
-              .sort(
-                (a: any, b: any) =>
-                  toJSDate((b.data?.() || {}).createdAt).getTime() -
-                  toJSDate((a.data?.() || {}).createdAt).getTime(),
-              )[0] || null;
-          if (!latest) return;
-          processCallAnsweredSignal(latest?.data?.() || {});
-        },
-        () => {},
-      );
-
     return () => {
       try {
         unsubMentions && unsubMentions();
@@ -14164,14 +13643,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         unsubPings && unsubPings();
       } catch {}
-      try {
-        unsubMentionsAnswered && unsubMentionsAnswered();
-      } catch {}
-      try {
-        unsubPingsAnswered && unsubPingsAnswered();
-      } catch {}
     };
-  }, [handleNotificationNavigation, myUid, profileName]);
+  }, [handleNotificationNavigation, hideNativeIncomingCallNotification, myUid, profileName]);
 
   useEffect(() => {
     if (!myUid) return;
@@ -14275,7 +13748,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           'activity';
         const type = String(rawType || '').toLowerCase();
         const isIncomingCallNotification =
-          type === 'call_invite' || type === 'incoming_call' || type === 'call_answered';
+          type === 'call_invite' || type === 'incoming_call';
         const waveId = rm?.data?.waveId || undefined;
         const actor = rm?.data?.actorName || rm?.data?.fromName || 'Viber';
         const text =
@@ -14417,33 +13890,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     }
     // Open in-app live UI so camera preview and overlays show together
-    setLiveExperienceMode('drift');
-    setShowLive(true);
-  };
-
-  const goConference = async () => {
-    setShowMakeWaves(false);
-    if (Platform.OS === 'android') {
-      try {
-        const results = await PermissionsAndroid.requestMultiple([
-          PermissionsAndroid.PERMISSIONS.CAMERA,
-          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
-        ] as any);
-        const cam = results[PermissionsAndroid.PERMISSIONS.CAMERA];
-        const mic = results[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
-        if (
-          cam !== PermissionsAndroid.RESULTS.GRANTED ||
-          mic !== PermissionsAndroid.RESULTS.GRANTED
-        ) {
-          Alert.alert(
-            'Permission needed',
-            'Camera and microphone are required to start conference.',
-          );
-          return;
-        }
-      } catch {}
-    }
-    setLiveExperienceMode('conference');
     setShowLive(true);
   };
                     
@@ -15037,7 +14483,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
         />
       )}
-      {false && hereNowFeedAlert && !vibeAlert && (
+      {hereNowFeedAlert && !vibeAlert && (
         <Animated.View
           pointerEvents="box-none"
           style={[
@@ -15503,9 +14949,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <View style={{ position: 'relative' }}>
-                    <View style={styles.vibeAlertsIconBox}>
-                      <Text style={styles.vibeAlertsIconText}>ALERT</Text>
-                    </View>
+                    <Text style={styles.pingsIcon}>🔔</Text>
                     {unreadAlertsCount > 0 && (
                       <View style={styles.notificationBadge}>
                         <Text style={styles.notificationBadgeText}>
@@ -15526,7 +14970,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.dolphinIcon}>🔍</Text>
+                  <Text style={styles.dolphinIcon}>🧭</Text>
                   <Text style={styles.topLabel}>VIBE HUNT</Text>
                 </Pressable>
                     
@@ -15540,7 +14984,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.umbrellaIcon}>🏖️</Text>
+                  <Text style={styles.umbrellaIcon}>🪬</Text>
                   <Text style={styles.topLabel}>MY AURA</Text>
                 </Pressable>
                 {/* THE BRIDGE */}
@@ -16688,7 +16132,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 marginRight: 12,
                               }}>
                                 {selectedNotifications.has(item.id) && (
-                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>✓</Text>
+                                  <Text style={{ color: 'black', fontSize: 16, fontWeight: 'bold' }}>?</Text>
                                 )}
                               </View>
                             )}
@@ -16756,24 +16200,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           >
                             <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
                               Cancel
-                            </Text>
-                          </Pressable>
-
-                          {/* Select All */}
-                          <Pressable
-                            style={{
-                              backgroundColor: 'rgba(0,194,255,0.8)',
-                              borderRadius: 6,
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              flex: 1,
-                              alignItems: 'center',
-                            }}
-                            onPress={selectAllNotifications}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          >
-                            <Text style={{ color: '#00131A', fontSize: 11, fontWeight: 'bold' }}>
-                              Select All
                             </Text>
                           </Pressable>
 
@@ -17696,7 +17122,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   activeOpacity={0.7}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
-                  <Text style={styles.logbookActionText}>SAY SOMETHING</Text>
+                  <Text style={styles.logbookActionText}>Say Something</Text>
                 </Pressable>
                 <Pressable style={[styles.logbookAction, styles.makeWavesSecondaryAction]} onPress={goDrift}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
@@ -17720,11 +17146,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#00C2FF',
                       }}
                     />
-                    <Text style={styles.logbookActionText}>DRIFT EXPO</Text>
+                    <Text style={styles.logbookActionText}>Drift Expo</Text>
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton
-                  buttonStyle={[styles.logbookAction, styles.makeWavesPremiumAction]}
+                  buttonStyle={styles.logbookAction}
                   buttonTextStyle={styles.logbookActionText}
                   hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {
@@ -17755,31 +17181,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     );
                   }}
                 />
-                <Pressable
-                  style={[styles.logbookAction, styles.makeWavesConferenceAction]}
-                  onPress={goConference}
-                  hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
-                  pressRetentionOffset={{ top: 6, bottom: 6, left: 6, right: 6 }}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  activeOpacity={0.7}
-                  android_ripple={{
-                    color: 'rgba(255, 255, 255, 0.2)',
-                    borderless: false,
-                  }}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <View
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 5,
-                        backgroundColor: '#43E5B8',
-                      }}
-                    />
-                    <Text style={styles.logbookActionText}>CONFERENCE</Text>
-                  </View>
-                </Pressable>
               </ScrollView>
             </View>
           </View>
@@ -21568,14 +20969,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         bridge={bridge}
         dataSaver={dataSaver}
         isWifi={isWifi}
-        isInUserCrewMap={isInUserCrew}
-        experienceMode={liveExperienceMode}
         inviteJoinPreset={liveInviteJoinPreset}
         onClose={() => {
           setShowLive(false);
           setLiveInviteJoinPreset(null);
           setIsCharteredDrift(false);
-          setLiveExperienceMode('drift');
         }}
       />
                     
@@ -21732,13 +21130,12 @@ const DirectCallModal = ({
   const autoRetryJoinCountRef = useRef(0);
 
   const rtcUid = useMemo(() => {
-    const meUid = String(auth?.()?.currentUser?.uid || '').trim();
     const source =
       (role === 'caller'
         ? call?.callerUid
         : role === 'callee'
         ? call?.calleeUid
-        : meUid || call?.callerUid || call?.calleeUid) || '';
+        : call?.callerUid) || '';
     const raw = String(source || '').trim();
     if (!raw) return 0;
     let hash = 0;
@@ -21748,7 +21145,6 @@ const DirectCallModal = ({
     // Agora uid must be non-zero uint.
     return (hash % 2147483646) + 1;
   }, [call?.calleeUid, call?.callerUid, role]);
-  const localCanvasUid = Number(rtcUid) > 0 ? Number(rtcUid) : 0;
 
   const applyRtcQualityProfile = useCallback((_engine: any, _mode: DirectCallMode) => {
     // Keep direct call preview/render sizing untouched.
@@ -22144,7 +21540,7 @@ const DirectCallModal = ({
     if (!visible || !call?.id || isJoined) return;
     joinTimeoutRef.current = setTimeout(() => {
       setShowJoinRecovery(true);
-    }, 2500);
+    }, 12000);
     return () => {
       if (joinTimeoutRef.current) {
         clearTimeout(joinTimeoutRef.current);
@@ -22172,7 +21568,7 @@ const DirectCallModal = ({
     }
     watchdogTimerRef.current = setTimeout(() => {
       setShowVideoJoinWatchdog(true);
-    }, 2200);
+    }, 18000);
     return () => {
       if (watchdogTimerRef.current) {
         clearTimeout(watchdogTimerRef.current);
@@ -22480,38 +21876,8 @@ const DirectCallModal = ({
                 </View>
               )
             ) : (
-              <View style={{ flex: 1 }}>
-                {RtcSurfaceView ? (
-                  React.createElement(RtcSurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: localCanvasUid,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcTextureView ? (
-                  React.createElement(RtcTextureView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: localCanvasUid,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcLocalView?.SurfaceView ? (
-                  React.createElement(RtcLocalView.SurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    renderMode: VideoRenderMode?.Fit ?? 2,
-                  })
-                ) : null}
-                <View
-                  style={{
-                    ...StyleSheet.absoluteFillObject,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ color: 'white' }}>Connecting video...</Text>
-                </View>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ color: 'white' }}>Waiting for remote video...</Text>
               </View>
             )}
 
@@ -22546,7 +21912,7 @@ const DirectCallModal = ({
                   React.createElement(RtcSurfaceView, {
                     style: StyleSheet.absoluteFill,
                     canvas: {
-                      uid: localCanvasUid,
+                      uid: 0,
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                     zOrderMediaOverlay: true,
@@ -22555,7 +21921,7 @@ const DirectCallModal = ({
                   React.createElement(RtcTextureView, {
                     style: StyleSheet.absoluteFill,
                     canvas: {
-                      uid: localCanvasUid,
+                      uid: 0,
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                   })
@@ -22727,8 +22093,6 @@ const LiveStreamModal = ({
   onClose,
   styles,
   isChartered,
-  experienceMode,
-  isInUserCrewMap,
   searchOceanEntities,
   bridge,
   dataSaver,
@@ -22739,8 +22103,6 @@ const LiveStreamModal = ({
   onClose: () => void;
   styles: any; // Prop to receive styles from parent
   isChartered?: boolean;
-  experienceMode?: LiveExperienceMode;
-  isInUserCrewMap?: { [uid: string]: boolean };
   searchOceanEntities: (term: string) => Promise<SearchResult[]>;
   bridge: any;
   dataSaver: any;
@@ -22764,18 +22126,7 @@ const LiveStreamModal = ({
   })();
   const appId: string = (cfg && cfg.AGORA_APP_ID) || '';
   const staticToken: string | null = (cfg && cfg.AGORA_STATIC_TOKEN) || null;
-  const isInUserCrew = isInUserCrewMap || {};
-  const isConferenceMode = experienceMode === 'conference';
-  const sessionLabel = isConferenceMode ? 'Conference' : 'Drift Expo';
-  const startSessionLabel = isConferenceMode ? 'Start Conference' : 'Start Drift';
-  const setupTitleLabel = isConferenceMode ? 'Start Conference' : 'Chart a Drift';
-  const setupNamePlaceholder = isConferenceMode
-    ? 'Conference Title (optional)'
-    : 'Drift Title (optional)';
-  const modeChannelPrefix = isConferenceMode ? 'conference' : 'drift';
-  const defaultChannel: string = `${modeChannelPrefix}_${DRIFT_EXPO_FIXED_CHANNEL}`
-    .replace(/[^A-Za-z0-9_]/g, '_')
-    .slice(0, 64);
+  const defaultChannel: string = (cfg && cfg.AGORA_CHANNEL_NAME) || '';
   const engineRef = React.useRef<any>(null);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraHidden, setCameraHidden] = useState(false);
@@ -22800,16 +22151,7 @@ const LiveStreamModal = ({
     setJoinApprovalLabel('');
     setRemoteParticipantUids([]);
     setPinnedRemoteUid(null);
-    setActiveSpeakerRtcUid(null);
-    setActiveSpeakerAtMs(0);
-    setParticipantQuickAction(null);
   }, [visible]);
-  useEffect(() => {
-    if (isLiveStarted) return;
-    if (inviteJoinPreset?.channel) return;
-    setChannelInput(defaultChannel);
-    setLiveChannel(defaultChannel);
-  }, [defaultChannel, inviteJoinPreset?.channel, isLiveStarted]);
   const [liveTitle, setLiveTitle] = useState<string>('');
   const [liveDesc, setLiveDesc] = useState<string>(
     'Say something about your live',
@@ -22818,11 +22160,12 @@ const LiveStreamModal = ({
     'public',
   );
   const [liveDocId, setLiveDocId] = useState<string | null>(null);
-  const [liveHostUid, setLiveHostUid] = useState<string>('');
   const [liveToken, setLiveToken] = useState<string | null>(null);
   const [liveChannel, setLiveChannel] = useState<string>(defaultChannel);
   const [livePoll, setLivePoll] = useState<LivePoll | null>(null);
   const [liveGoal, setLiveGoal] = useState<LiveGoal | null>(null);
+  const [sessionViewerCount, setSessionViewerCount] = useState(0);
+  const [liveHostId, setLiveHostId] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<
     Array<{ uid: string; name?: string }>
   >([]);
@@ -22830,7 +22173,6 @@ const LiveStreamModal = ({
     if (!liveDocId) {
       setLivePoll(null);
       setLiveGoal(null);
-      setLiveHostUid('');
       return;
     }
     let unsub: (() => void) | null = null;
@@ -22840,10 +22182,9 @@ const LiveStreamModal = ({
     } catch {}
     if (!firestoreMod) return;
     try {
-      const ref = firestoreMod().collection('live').doc(liveDocId);
+      const ref = firestoreMod().collection('driftLives').doc(liveDocId);
       unsub = ref.onSnapshot((snap: any) => {
         const data = snap?.data?.() || snap?.data || {};
-        setLiveHostUid(String(data?.hostUid || ''));
         const pollData = data?.poll || null;
         if (pollData && pollData.question && Array.isArray(pollData.options)) {
           const options = pollData.options
@@ -22893,8 +22234,6 @@ const LiveStreamModal = ({
   const [endBarHeight, setEndBarHeight] = useState<number>(44);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
-  const [commentNowMs, setCommentNowMs] = useState(Date.now());
-  const lastCommentSentAtRef = useRef<number>(0);
   const [liveComments, setLiveComments] = useState<
     Array<{
       id: string;
@@ -22920,7 +22259,6 @@ const LiveStreamModal = ({
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
   const liveCommentsPrimedRef = useRef(false);
   const lastLiveCommentsSigRef = useRef('');
-  const lastLiveCommentErrRef = useRef('');
   const [splashedComment, setSplashedComment] = useState<{
     id: string;
     text: string;
@@ -22937,49 +22275,17 @@ const LiveStreamModal = ({
       from: comment.from,
       text: comment.text,
     });
-    if (isConferenceMode) {
-      setShowConferenceChatPanel(true);
-      setShowCommentInput(false);
-    } else {
-      setShowCommentInput(true);
-    }
-    if (!commentText.trim()) {
-      const mention = String(comment.from || '').trim();
-      setCommentText(mention ? `@${mention} ` : '');
-    }
+    setShowCommentInput(true);
+    setCommentText('');
   };
-  const addLiveMoment = useCallback((text: string) => {
-    const msg = String(text || '').trim();
-    if (!msg) return;
-    const at = Date.now();
-    const id = `${at}_${Math.random().toString(36).slice(2, 8)}`;
-    setLiveMoments(prev => [...prev, { id, text: msg, at }].slice(-12));
-  }, []);
                     
   // --- Enhanced Live Controls state (safe stubs) ---
   const [isRecording, setIsRecording] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [isConferencePresentingBusy, setIsConferencePresentingBusy] = useState(false);
-  const [liveSharedFiles, setLiveSharedFiles] = useState<ConferenceSharedFile[]>([]);
-  const [localPresentedAsset, setLocalPresentedAsset] = useState<{
-    fileId: string;
-    uri: string;
-    mimeType: string;
-    name: string;
-  } | null>(null);
-  const [pinnedLiveComment, setPinnedLiveComment] = useState<{
-    id: string;
-    text: string;
-    from?: string;
-  } | null>(null);
-  const [liveMoments, setLiveMoments] = useState<
-    Array<{ id: string; text: string; at: number }>
-  >([]);
   const [virtualBackground, setVirtualBackground] = useState<string | null>(
     null,
   );
   const [beautyFilterEnabled, setBeautyFilterEnabled] = useState(false);
-  const [beautyProfile, setBeautyProfile] = useState<string>('Natural');
   const [liveProducts, setLiveProducts] = useState<any[]>([]);
   const [activePoll, setActivePoll] = useState<any>(null);
   const [coHosts, setCoHosts] = useState<any[]>([]);
@@ -23004,22 +22310,7 @@ const LiveStreamModal = ({
     }>
   >([]);
   const [recentlyHereNames, setRecentlyHereNames] = useState<string[]>([]);
-  const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(false);
-  const [showConferenceToolsPanel, setShowConferenceToolsPanel] = useState(false);
-  const [showConferenceRosterPanel, setShowConferenceRosterPanel] = useState(false);
-  const [showConferenceChatPanel, setShowConferenceChatPanel] = useState(false);
-  const [conferenceChatSeenAtMs, setConferenceChatSeenAtMs] = useState<number>(0);
-  const [conferenceAgendaDraft, setConferenceAgendaDraft] = useState('');
-  const [conferenceAgendaItems, setConferenceAgendaItems] = useState<string[]>([]);
-  const [conferenceActionDraft, setConferenceActionDraft] = useState('');
-  const [conferenceActionItems, setConferenceActionItems] = useState<string[]>([]);
-  const [isSlideAutoPlay, setIsSlideAutoPlay] = useState(false);
-  const [activeVisualFilter, setActiveVisualFilter] = useState<string>('none');
-  const [liveOptionPicker, setLiveOptionPicker] = useState<{
-    title: string;
-    options: Array<{ key: string; label: string; selected?: boolean }>;
-    onSelect: (key: string) => void;
-  } | null>(null);
+  const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(true);
   const [showLiveControls, setShowLiveControls] = useState(false);
   const [inviteStatusByUid, setInviteStatusByUid] = useState<
     Record<
@@ -23030,258 +22321,19 @@ const LiveStreamModal = ({
   const [joinedParticipants, setJoinedParticipants] = useState<
     Array<{ uid: string; name: string; photo: string | null }>
   >([]);
-  const [activeSpeakerRtcUid, setActiveSpeakerRtcUid] = useState<number | null>(null);
-  const [activeSpeakerAtMs, setActiveSpeakerAtMs] = useState<number>(0);
-  const [participantQuickAction, setParticipantQuickAction] = useState<{
-    uid: string;
-    name: string;
-    rtcUid: number;
-  } | null>(null);
-  const currentLiveUid = String(auth?.()?.currentUser?.uid || '');
-  const currentLiveName = String(
-    auth?.()?.currentUser?.displayName || hostName || 'Host',
-  );
-  const coHostIds = useMemo(
-    () =>
-      coHosts
-        .map((entry: any) => String(entry?.id || entry?.uid || entry || ''))
-        .filter(Boolean),
-    [coHosts],
-  );
-  const effectiveLiveHostUid = String(
-    liveHostUid ||
-      inviteJoinPreset?.fromUid ||
-      (isLiveStarted && !inviteJoinPreset ? currentLiveUid : ''),
-  ).trim();
-  const isLiveHost =
-    !!currentLiveUid && currentLiveUid === effectiveLiveHostUid;
-  const isLiveCoHost =
-    !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
-  const modeScopePrefix = isConferenceMode ? 'conference' : 'drift';
-  // Use one normalized, channel-first scope so all participants share the same docs/comments path.
-  const liveShareScope = normalizeLiveScope(
-    `${modeScopePrefix}_${liveChannel || channelInput || liveDocId || ''}`,
-  );
-  const liveCommentScope = normalizeLiveScope(
-    `${modeScopePrefix}_${liveChannel || channelInput || liveDocId || ''}`,
-  );
-  const activeSharedFile = useMemo(() => {
-    if (!liveSharedFiles.length) return null;
-    return (
-      liveSharedFiles.find(
-        item =>
-          item.status === 'selecting' ||
-          item.status === 'uploading' ||
-          item.status === 'presenting',
-      ) || null
-    );
-  }, [liveSharedFiles]);
-  const isPresentationWorkflowActive =
-    !!activeSharedFile || (isConferenceMode && !!localPresentedAsset);
-  const isFilePresentationActive =
-    (!!activeSharedFile &&
-      ['selecting', 'uploading', 'presenting'].includes(
-        String(activeSharedFile.status || '').toLowerCase(),
-      )) ||
-    (isConferenceMode && !!localPresentedAsset);
-  const activePresenterUid = String(
-    activeSharedFile?.presenterUid ||
-      activeSharedFile?.uploadedBy ||
-      (localPresentedAsset ? currentLiveUid : '') ||
-      '',
-  ).trim();
-  const isCurrentPresenter =
-    !!currentLiveUid && activePresenterUid === String(currentLiveUid);
-  const currentPresentationPage = Math.max(
-    1,
-    Number(activeSharedFile?.currentPage || 1) || 1,
-  );
-  const presentationMimeType = String(
-    activeSharedFile?.mimeType || localPresentedAsset?.mimeType || '',
-  ).trim();
-  const presentationName = String(
-    activeSharedFile?.name || localPresentedAsset?.name || 'Shared file',
-  ).trim();
-  const presentationUri = useMemo(() => {
-    if (!isPresentationWorkflowActive) return '';
-    const sharedUrl = String(activeSharedFile?.downloadUrl || '').trim();
-    if (sharedUrl) return sharedUrl;
-    if (localPresentedAsset?.uri) {
-      return String(localPresentedAsset.uri);
-    }
-    return '';
-  }, [activeSharedFile?.downloadUrl, isPresentationWorkflowActive, localPresentedAsset?.uri]);
-  const embeddedDocViewerUrl = useMemo(
-    () => buildInAppDocViewerUrl(presentationUri, presentationMimeType, presentationName),
-    [presentationMimeType, presentationName, presentationUri],
-  );
-  const isPresentationMedia =
-    isImageFileType(presentationMimeType, presentationName) ||
-    isVideoFileType(presentationMimeType, presentationName) ||
-    isAudioFileType(presentationMimeType, presentationName);
-  const isLocalPresentationUri = /^(content|file):\/\//i.test(String(presentationUri || ''));
-  const shouldUseLocalDocWebView =
-    !!RNWebView &&
-    !isPresentationMedia &&
-    !!presentationUri &&
-    isCurrentPresenter &&
-    isLocalPresentationUri;
-  const shouldUseDocWebView =
-    !!embeddedDocViewerUrl &&
-    !!RNWebView &&
-    !isPresentationMedia;
-  const hasOpenedPresentation =
-    isPresentationWorkflowActive &&
-    (!!presentationUri ||
-      (isCurrentPresenter && !!localPresentedAsset?.uri) ||
-      String(activeSharedFile?.status || '').toLowerCase() === 'selecting' ||
-      String(activeSharedFile?.status || '').toLowerCase() === 'uploading');
-  const canRenderPresentationInApp =
-    isPresentationWorkflowActive &&
-    (isCurrentPresenter
-      ? !!(localPresentedAsset?.uri || presentationUri)
-      : !!presentationUri);
-  const activeSpeakerIsRecent = activeSpeakerAtMs > 0 && Date.now() - activeSpeakerAtMs <= 2400;
-  const joinedParticipantsWithRtc = useMemo(
-    () =>
-      joinedParticipants.map(p => ({
-        ...p,
-        rtcUid: toAgoraUidFromAppUid(String(p.uid || '')),
-      })),
-    [joinedParticipants],
-  );
-  const orderedJoinedParticipants = useMemo(() => {
-    const rows = [...joinedParticipantsWithRtc];
-    if (!activeSpeakerIsRecent || !activeSpeakerRtcUid) return rows;
-    rows.sort((a, b) => {
-      const aHot = a.rtcUid === activeSpeakerRtcUid ? 1 : 0;
-      const bHot = b.rtcUid === activeSpeakerRtcUid ? 1 : 0;
-      return bHot - aHot;
-    });
-    return rows;
-  }, [activeSpeakerIsRecent, activeSpeakerRtcUid, joinedParticipantsWithRtc]);
-  const joinedUidSet = useMemo(
-    () => new Set(joinedParticipants.map(p => String(p.uid || ''))),
-    [joinedParticipants],
-  );
-  const localRtcUid = useMemo(() => {
-    const n = Number(liveUid || 0);
-    if (Number.isFinite(n) && n > 0) return n;
-    return toAgoraUidFromAppUid(currentLiveUid);
-  }, [currentLiveUid, liveUid]);
-  const knownJoinedRemoteRtcUids = useMemo(() => {
-    const rows = orderedJoinedParticipants
-      .map(p => Number(p.rtcUid || 0))
-      .filter(uid => Number.isFinite(uid) && uid > 0 && uid !== localRtcUid);
-    return Array.from(new Set(rows));
-  }, [localRtcUid, orderedJoinedParticipants]);
-  const remoteDisplayUids = useMemo(() => {
-    const merged = [...remoteParticipantUids, ...knownJoinedRemoteRtcUids]
-      .map(uid => Number(uid || 0))
-      .filter(uid => Number.isFinite(uid) && uid > 0 && uid !== localRtcUid);
-    return Array.from(new Set(merged));
-  }, [knownJoinedRemoteRtcUids, localRtcUid, remoteParticipantUids]);
-  const resolvedMainRemoteUid =
-    (pinnedRemoteUid && remoteDisplayUids.includes(pinnedRemoteUid)
-      ? pinnedRemoteUid
-      : remoteDisplayUids[0]) || null;
-  const primaryRemoteName = useMemo(() => {
-    const uid = Number(resolvedMainRemoteUid || 0);
-    if (!uid) return 'Crew';
-    const linked = orderedJoinedParticipants.find(p => Number(p.rtcUid || 0) === uid);
-    if (linked?.name) return String(linked.name);
-    return `Crew ${uid}`;
-  }, [orderedJoinedParticipants, resolvedMainRemoteUid]);
-  const extraRemoteCount = Math.max(0, remoteDisplayUids.length - 1);
-  const visualFilterOverlayColor = useMemo(() => {
-    switch (activeVisualFilter) {
-      case 'black_white':
-        return 'rgba(128,128,128,0.45)';
-      case 'sepia':
-        return 'rgba(112,66,20,0.42)';
-      case 'vivid':
-        return 'rgba(255,120,64,0.35)';
-      case 'cool':
-        return 'rgba(100,180,255,0.35)';
-      case 'warm':
-        return 'rgba(255,168,85,0.35)';
-      case 'mono':
-        return 'rgba(120,120,120,0.4)';
-      case 'cinematic':
-        return 'rgba(30,20,55,0.45)';
-      case 'ocean':
-        return 'rgba(0,150,190,0.35)';
-      case 'retro':
-        return 'rgba(212,140,96,0.38)';
-      case 'neon':
-        return 'rgba(150,72,255,0.4)';
-      case 'soft':
-        return 'rgba(255,230,210,0.32)';
-      case 'dramatic':
-        return 'rgba(20,20,20,0.55)';
-      default:
-        return '';
-    }
-  }, [activeVisualFilter]);
-  const safeCommentHandle = (value: any) => {
-    const raw = String(value || '').trim();
-    if (!raw) return 'User';
-    if (raw.toLowerCase() === 'you') return 'You';
-    return raw.replace(/^[@/]+/, '');
-  };
-  const getCommentCreatedAtMs = useCallback((item: any): number => {
-    const direct = Number(item?.createdAtMs || item?.ts || 0);
-    if (direct > 0) return direct;
-    const ts: any = item?.createdAt;
-    if (ts?.toMillis) {
-      try {
-        return Number(ts.toMillis()) || 0;
-      } catch {}
-    }
-    if (ts?.toDate) {
-      try {
-        return Number(ts.toDate()?.getTime?.()) || 0;
-      } catch {}
-    }
-    return 0;
-  }, []);
-  const COMMENT_TTL_MS = 20000;
-  const MAX_VISIBLE_COMMENTS = 4;
-  const displayedLiveComments = useMemo(() => {
-    const now = Number(commentNowMs || Date.now());
-    const fresh = (liveComments || []).filter((item: any) => {
-      const at = getCommentCreatedAtMs(item);
-      if (at <= 0) return true;
-      return now - at <= COMMENT_TTL_MS;
-    });
-    return fresh.slice(-MAX_VISIBLE_COMMENTS);
-  }, [commentNowMs, getCommentCreatedAtMs, liveComments]);
-  const conferenceUnreadChatCount = useMemo(() => {
-    if (!isConferenceMode) return 0;
-    const since = Number(conferenceChatSeenAtMs || 0);
-    return (liveComments || []).filter((c: any) => {
-      const fromUid = String(c?.fromUid || '').trim();
-      const at = getCommentCreatedAtMs(c);
-      return fromUid && fromUid !== currentLiveUid && at > since;
-    }).length;
-  }, [
-    conferenceChatSeenAtMs,
-    currentLiveUid,
-    getCommentCreatedAtMs,
-    isConferenceMode,
-    liveComments,
-  ]);
-  const latestDisplayedComment = useMemo(() => {
-    if (!displayedLiveComments.length) return null;
-    return displayedLiveComments[displayedLiveComments.length - 1];
-  }, [displayedLiveComments]);
+  const currentLiveUserUid = String(auth?.()?.currentUser?.uid || '').trim();
+  const isCurrentUserDriftCaptain =
+    !!currentLiveUserUid &&
+    !!liveHostId &&
+    currentLiveUserUid === String(liveHostId);
+  const viewerCountAddedRef = useRef(false);
   const MAX_HERE_NOW_SCAN = 200;
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
   }, []);
   useEffect(() => {
-    if (!showUserPanel && !showConferenceRosterPanel) setUserPanelMode('none');
-  }, [showConferenceRosterPanel, showUserPanel]);
+    if (!showUserPanel) setUserPanelMode('none');
+  }, [showUserPanel]);
   useEffect(() => {
     if (visible && isLiveStarted) return;
     setShowLiveControls(false);
@@ -23292,85 +22344,65 @@ const LiveStreamModal = ({
     setMicMuted(false);
     setCameraHidden(false);
     setShowCommentInput(false);
-    setShowUserPanel(false);
-    setShowConferenceRosterPanel(false);
-    setShowConferenceChatPanel(false);
     setReplyingToLiveComment(null);
     setAwaitingCaptainApproval(false);
     setJoinApprovalLabel('');
     setLiveDocId(null);
+    setLiveHostId(null);
+    setSessionViewerCount(0);
+    viewerCountAddedRef.current = false;
     setPendingRequests([]);
     setInviteStatusByUid({});
     setJoinedParticipants([]);
-    setLiveSharedFiles([]);
-    setLocalPresentedAsset(null);
-    setPinnedLiveComment(null);
-    setLiveMoments([]);
-    setShowConferenceToolsPanel(false);
-    setLiveOptionPicker(null);
-    setConferenceAgendaDraft('');
-    setConferenceAgendaItems([]);
-    setConferenceActionDraft('');
-    setConferenceActionItems([]);
-    setConferenceChatSeenAtMs(0);
-    setIsSlideAutoPlay(false);
-    setActiveVisualFilter('none');
-    setBeautyProfile('Natural');
   }, [visible]);
-
   useEffect(() => {
-    setShowCommentInput(false);
-    setShowUserPanel(false);
-    setShowConferenceRosterPanel(false);
-    setShowConferenceChatPanel(false);
-    setShowConferenceToolsPanel(false);
-    setReplyingToLiveComment(null);
-    setIsSlideAutoPlay(false);
-    setLiveSharedFiles([]);
-    setLocalPresentedAsset(null);
-  }, [isConferenceMode]);
-
-  useEffect(() => {
-    if (!isConferenceMode || !showConferenceChatPanel) return;
-    const latestTs = (liveComments || []).reduce((max: number, item: any) => {
-      const at = getCommentCreatedAtMs(item);
-      return at > max ? at : max;
-    }, Date.now());
-    setConferenceChatSeenAtMs(latestTs);
-  }, [
-    getCommentCreatedAtMs,
-    isConferenceMode,
-    liveComments,
-    showConferenceChatPanel,
-  ]);
-
-  useEffect(() => {
-    if (!visible || !isLiveStarted || !isConferenceMode || !liveShareScope) {
-      setLiveSharedFiles([]);
+    if (!liveDocId) {
+      setSessionViewerCount(0);
+      setLiveHostId(null);
       return;
     }
-    const unsub = subscribeConferencePresentations(
-      liveShareScope,
-      items => setLiveSharedFiles(items),
-      () => {},
-    );
+    const unsubscribe = subscribeToLiveSession(liveDocId, live => {
+      if (!live) {
+        setStartError('This Drift Expo is no longer available.');
+        return;
+      }
+      setLiveHostId(String(live.hostId || ''));
+      setSessionViewerCount(Number(live.viewerCount || 0));
+      if (live.channelName && live.channelName !== liveChannel) {
+        setLiveChannel(String(live.channelName));
+        setChannelInput(String(live.channelName));
+      }
+      if (live.status === 'ended') {
+        setStartError('This Drift Expo has ended.');
+        setIsLiveStarted(false);
+      }
+    });
     return () => {
       try {
-        unsub && unsub();
+        unsubscribe();
       } catch {}
     };
-  }, [isConferenceMode, isLiveStarted, liveShareScope, visible]);
-
+  }, [liveDocId, liveChannel]);
   useEffect(() => {
-    if (!isFilePresentationActive) {
-      setLocalPresentedAsset(null);
+    const currentUid = String(auth?.()?.currentUser?.uid || '').trim();
+    if (!isLiveStarted || !liveDocId || !currentUid || !liveHostId) {
+      if (!isLiveStarted) viewerCountAddedRef.current = false;
       return;
     }
-    if (!activeSharedFile?.id) return;
-    if (localPresentedAsset?.fileId && localPresentedAsset.fileId !== activeSharedFile.id) {
-      setLocalPresentedAsset(null);
+    if (currentUid === liveHostId || viewerCountAddedRef.current) {
+      return;
     }
-  }, [activeSharedFile?.id, isFilePresentationActive, localPresentedAsset?.fileId]);
+    viewerCountAddedRef.current = true;
+    incrementViewerCount(liveDocId, 1).catch(() => {
+      viewerCountAddedRef.current = false;
+    });
+    return () => {
+      if (viewerCountAddedRef.current && currentUid !== liveHostId) {
+        incrementViewerCount(liveDocId, -1).catch(() => {});
+        viewerCountAddedRef.current = false;
+      }
+    };
+  }, [isLiveStarted, liveDocId, liveHostId]);
   // cross-platform text prompt
   const [promptVisible, setPromptVisible] = useState(false);
   const [promptTitle, setPromptTitle] = useState('');
@@ -23382,102 +22414,63 @@ const LiveStreamModal = ({
 
   useEffect(() => {
     if (!visible || !inviteJoinPreset || isLiveStarted) return;
+    let cancelled = false;
     (async () => {
-      const me = auth?.()?.currentUser;
-      const myUid = String(me?.uid || '').trim();
-      if (!myUid) {
-        setStartError('Please sign in first.');
-        return;
-      }
-      if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
-        setLiveDocId(String(inviteJoinPreset.liveId));
-        setLiveTitle(
-          String(inviteJoinPreset.title || inviteJoinPreset.fromName || sessionLabel),
-        );
-        setAwaitingCaptainApproval(true);
-        setJoinApprovalLabel(
-          `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
-        );
-        setStartError(null);
-        return;
-      }
-      let statusData: any = null;
-      if (inviteJoinPreset.liveId) {
-        try {
-          const snap = await firestore()
-            .collection(`live/${inviteJoinPreset.liveId}/invite_status`)
-            .doc(myUid)
-            .get();
-          statusData = snap?.data?.() || null;
-        } catch {}
-      }
-      const status = String(statusData?.status || '').toLowerCase();
-      if (inviteJoinPreset.liveId && status && status !== 'accepted' && status !== 'pending') {
-        setAwaitingCaptainApproval(false);
-        setJoinApprovalLabel('');
-        setStartError('Invite is not approved. Ask host to re-invite you.');
-        return;
-      }
+      const incomingLiveId = inviteJoinPreset.liveId
+        ? String(inviteJoinPreset.liveId)
+        : null;
+      if (!incomingLiveId) return;
+      setLiveDocId(incomingLiveId);
+      setLiveTitle(
+        String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+      );
+      setStartError(null);
+      let live: any = null;
+      try {
+        live = await getLiveSession(incomingLiveId);
+      } catch {}
+      if (cancelled) return;
       const suggestedChannel = String(
-        statusData?.channel ||
-          statusData?.liveChannel ||
+        live?.channelName ||
           inviteJoinPreset.channel ||
-          channelInput ||
-          defaultChannel ||
-          DRIFT_EXPO_FIXED_CHANNEL,
+          '',
       )
         .trim()
         .replace(/[^A-Za-z0-9_]/g, '_')
         .slice(0, 64);
       if (!suggestedChannel) {
-        setStartError('Invite channel is missing.');
+        setStartError('This Drift Expo invite is missing the host room channel.');
         return;
       }
-      const uidSrc = String(myUid || '0');
+      const uidSrc = String(auth?.()?.currentUser?.uid || '0');
       let uidHash = 0;
       for (let i = 0; i < uidSrc.length; i += 1) {
         uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
       }
       const mappedUid = (uidHash % 2147483646) + 1;
-      setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
-      setLiveTitle(
-        String(inviteJoinPreset.title || inviteJoinPreset.fromName || sessionLabel),
-      );
       setChannelInput(suggestedChannel);
       setLiveChannel(suggestedChannel);
       setLiveUid(mappedUid);
-      setLiveHostUid(String(inviteJoinPreset.fromUid || statusData?.fromUid || ''));
+      setLiveHostId(live?.hostId ? String(live.hostId) : null);
+      if (inviteJoinPreset.requireApproval) {
+        setAwaitingCaptainApproval(true);
+        setJoinApprovalLabel(
+          `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
+        );
+        return;
+      }
       setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
-      setStartError(null);
       setAwaitingCaptainApproval(false);
       setJoinApprovalLabel('');
       setIsLiveStarted(true);
-      if (inviteJoinPreset.liveId) {
-        try {
-          await firestore()
-            .collection(`live/${inviteJoinPreset.liveId}/invite_status`)
-            .doc(myUid)
-            .set(
-              {
-                uid: myUid,
-                status: 'accepted',
-                channel: suggestedChannel,
-                liveChannel: suggestedChannel,
-                fromUid: inviteJoinPreset.fromUid || null,
-                updatedAt: firestore.FieldValue.serverTimestamp(),
-                respondedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
-        } catch {}
-      }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [
-    channelInput,
     defaultChannel,
     inviteJoinPreset,
     isLiveStarted,
-    sessionLabel,
     staticToken,
     visible,
   ]);
@@ -23489,7 +22482,7 @@ const LiveStreamModal = ({
     const me = auth?.()?.currentUser;
     if (!me?.uid) return;
     const unsub = firestore()
-      .collection(`live/${liveDocId}/invite_status`)
+      .collection(`driftLives/${liveDocId}/invite_status`)
       .doc(me.uid)
       .onSnapshot(
         snap => {
@@ -23501,14 +22494,15 @@ const LiveStreamModal = ({
               data.channel ||
                 data.liveChannel ||
                 inviteJoinPreset?.channel ||
-                channelInput ||
-                defaultChannel ||
-                DRIFT_EXPO_FIXED_CHANNEL,
+                '',
             )
               .trim()
               .replace(/[^A-Za-z0-9_]/g, '_')
               .slice(0, 64);
-            if (!suggestedChannel) return;
+            if (!suggestedChannel) {
+              setJoinApprovalLabel('Host accepted, but no room channel was provided.');
+              return;
+            }
             const uidSrc = String(auth?.()?.currentUser?.uid || '0');
             let uidHash = 0;
             for (let i = 0; i < uidSrc.length; i += 1) {
@@ -23518,14 +22512,6 @@ const LiveStreamModal = ({
             setChannelInput(suggestedChannel);
             setLiveChannel(suggestedChannel);
             setLiveUid(mappedUid);
-            setLiveHostUid(
-              String(
-                inviteJoinPreset?.fromUid ||
-                  data.fromUid ||
-                  data.hostUid ||
-                  '',
-              ),
-            );
             setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
             setAwaitingCaptainApproval(false);
             setJoinApprovalLabel('');
@@ -23547,7 +22533,6 @@ const LiveStreamModal = ({
     channelInput,
     defaultChannel,
     inviteJoinPreset?.channel,
-    inviteJoinPreset?.fromUid,
     isLiveStarted,
     liveDocId,
     staticToken,
@@ -23685,115 +22670,52 @@ const LiveStreamModal = ({
       } catch {}
     };
   }, [visible, onClose]);
-
-  useEffect(() => {
-    if (!isLiveStarted) return;
-    const t = setInterval(() => {
-      setCommentNowMs(Date.now());
-    }, 1000);
-    return () => clearInterval(t);
-  }, [isLiveStarted]);
                     
   // Real-time comments listener
   useEffect(() => {
-    if (!isLiveStarted || !liveCommentScope) {
+    if (!isLiveStarted || !liveDocId) {
       setLiveComments([]);
       seenCommentIdsRef.current.clear();
       liveCommentsPrimedRef.current = false;
       lastLiveCommentsSigRef.current = '';
-      lastLiveCommentErrRef.current = '';
       return;
     }
                     
-    let firestoreMod: any = null;
-    try {
-      firestoreMod = require('@react-native-firebase/firestore').default;
-    } catch {}
-    if (!firestoreMod) return;
-                    
-    const unsubscribe = firestoreMod()
-      .collection(`live/${liveCommentScope}/comments`)
-      .orderBy('createdAtMs', 'asc')
-      .limitToLast(80) // Listen to recent comments in deterministic order.
-      .onSnapshot(
-        (querySnapshot: any) => {
-          if (querySnapshot) {
-            const items = (querySnapshot?.docs || []).map((d: any) => ({
-              id: d.id,
-              ...d.data(),
-            }));
-            const sig = items.map((it: any) => String(it.id || '')).join('|');
-            if (sig === lastLiveCommentsSigRef.current) return;
-            lastLiveCommentsSigRef.current = sig;
-            setLiveComments(items);
-            if (!liveCommentsPrimedRef.current) {
-              items.forEach((it: any) => {
-                if (it?.id) seenCommentIdsRef.current.add(String(it.id));
-              });
-              liveCommentsPrimedRef.current = true;
-              return;
-            }
-            // Trigger a small capped number of animations to avoid UI thread stalls.
-            let spawned = 0;
-            for (const it of items) {
-              const id = String(it?.id || '').trim();
-              if (!id || seenCommentIdsRef.current.has(id)) continue;
-              seenCommentIdsRef.current.add(id);
-              const systemType = String((it as any)?.systemType || '').trim().toLowerCase();
-              if (systemType === 'sound_effect') {
-                const fromUid = String((it as any)?.fromUid || '').trim();
-                if (!fromUid || fromUid !== String(currentLiveUid || '').trim()) {
-                  const soundId = String((it as any)?.soundId || '').trim().toLowerCase();
-                  const soundLabel = String((it as any)?.soundLabel || '').trim().toLowerCase();
-                  const soundDef =
-                    LIVE_SOUND_EFFECTS.find(
-                      s =>
-                        String(s.id || '').toLowerCase() === soundId ||
-                        String(s.label || '').toLowerCase() === soundLabel,
-                    ) || null;
-                  if (soundDef?.file && Sound) {
-                    try {
-                      let remoteSound: any = null;
-                      remoteSound = new Sound(
-                        soundDef.file,
-                        Sound.MAIN_BUNDLE,
-                        (error: any) => {
-                          if (error) {
-                            try {
-                              remoteSound.release();
-                            } catch {}
-                            return;
-                          }
-                          try {
-                            remoteSound.setVolume(1.0);
-                          } catch {}
-                          remoteSound.play(() => {
-                            try {
-                              remoteSound.release();
-                            } catch {}
-                          });
-                        },
-                      );
-                    } catch {}
-                  }
-                }
-              }
-              spawnFlyingComment({ id, text: String(it?.text || ''), from: it?.from });
-              spawned += 1;
-              if (spawned >= 3) break;
-            }
-          }
-        },
-        (err: any) => {
-          const msg = String(err?.message || err?.code || 'Live comments sync failed.');
-          if (lastLiveCommentErrRef.current === msg) return;
-          lastLiveCommentErrRef.current = msg;
-          Alert.alert('Live comments', msg);
-        },
-      );
+    const unsubscribe = subscribeToLiveComments(liveDocId, items => {
+      const normalized = items.map((it: any) => ({
+        id: it.id,
+        text: String(it.text || ''),
+        from: String(it.userName || 'Crew'),
+        fromUid: String(it.userId || ''),
+        ts: it.createdAt?.toMillis?.() || Date.now(),
+        replyToId: it.replyToId || null,
+        replyToFrom: it.replyToUserName || null,
+        replyToText: it.replyToText || null,
+      }));
+      const sig = normalized.map((it: any) => String(it.id || '')).join('|');
+      if (sig === lastLiveCommentsSigRef.current) return;
+      lastLiveCommentsSigRef.current = sig;
+      setLiveComments(normalized);
+      if (!liveCommentsPrimedRef.current) {
+        normalized.forEach((it: any) => {
+          if (it?.id) seenCommentIdsRef.current.add(String(it.id));
+        });
+        liveCommentsPrimedRef.current = true;
+        return;
+      }
+      let spawned = 0;
+      for (const it of normalized) {
+        const id = String(it?.id || '').trim();
+        if (!id || seenCommentIdsRef.current.has(id)) continue;
+        seenCommentIdsRef.current.add(id);
+        spawnFlyingComment({ id, text: String(it?.text || ''), from: it?.from });
+        spawned += 1;
+        if (spawned >= 3) break;
+      }
+    });
 
     return () => unsubscribe();
-  }, [currentLiveUid, isLiveStarted, liveCommentScope]);
+  }, [isLiveStarted, liveDocId]);
 
   useEffect(() => {
     if (!visible || !isLiveStarted) {
@@ -23905,7 +22827,7 @@ const LiveStreamModal = ({
       return;
     }
     const unsub = firestore()
-      .collection(`live/${liveDocId}/invite_status`)
+      .collection(`driftLives/${liveDocId}/invite_status`)
       .onSnapshot(
         snap => {
           const next: Record<
@@ -23982,6 +22904,49 @@ const LiveStreamModal = ({
           } catch {}
           try {
             engine.registerEventHandler?.({
+              onJoinChannelSuccess: () => {
+                try {
+                  engine.enableAudio?.();
+                } catch {}
+                try {
+                  engine.enableLocalAudio?.(true);
+                } catch {}
+                try {
+                  engine.muteLocalAudioStream?.(false);
+                } catch {}
+                try {
+                  engine.enableVideo?.();
+                } catch {}
+                try {
+                  engine.enableLocalVideo?.(!cameraHidden);
+                } catch {}
+                try {
+                  engine.muteLocalVideoStream?.(!!cameraHidden);
+                } catch {}
+                try {
+                  engine.startPreview?.();
+                } catch {}
+                try {
+                  engine.updateChannelMediaOptions?.({
+                    clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+                    publishMicrophoneTrack: true,
+                    publishCameraTrack: !cameraHidden,
+                    autoSubscribeAudio: true,
+                    autoSubscribeVideo: true,
+                  });
+                } catch {}
+              },
+              onRejoinChannelSuccess: () => {
+                try {
+                  engine.updateChannelMediaOptions?.({
+                    clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+                    publishMicrophoneTrack: true,
+                    publishCameraTrack: !cameraHidden,
+                    autoSubscribeAudio: true,
+                    autoSubscribeVideo: true,
+                  });
+                } catch {}
+              },
               onUserJoined: (_conn: any, uid: number) => {
                 const n = Number(uid);
                 if (!Number.isFinite(n) || n <= 0) return;
@@ -23989,12 +22954,6 @@ const LiveStreamModal = ({
                   prev.includes(n) ? prev : [...prev, n],
                 );
                 setPinnedRemoteUid(prev => prev || n);
-                try {
-                  engineRef.current?.muteRemoteVideoStream?.(n, false);
-                } catch {}
-                try {
-                  engineRef.current?.muteRemoteAudioStream?.(n, false);
-                } catch {}
               },
               onUserOffline: (_conn: any, uid: number) => {
                 const n = Number(uid);
@@ -24004,21 +22963,6 @@ const LiveStreamModal = ({
               onLeaveChannel: () => {
                 setRemoteParticipantUids([]);
                 setPinnedRemoteUid(null);
-              },
-              onAudioVolumeIndication: (_conn: any, speakers: any[]) => {
-                try {
-                  const rows = Array.isArray(speakers) ? speakers : [];
-                  const loudest = rows
-                    .map((s: any) => ({
-                      uid: Number(s?.uid || 0),
-                      vol: Number(s?.volume || 0),
-                    }))
-                    .filter((s: any) => Number.isFinite(s.uid) && s.uid > 0 && s.vol > 8)
-                    .sort((a: any, b: any) => b.vol - a.vol)[0];
-                  if (!loudest) return;
-                  setActiveSpeakerRtcUid(loudest.uid);
-                  setActiveSpeakerAtMs(Date.now());
-                } catch {}
               },
             });
           } catch {}
@@ -24049,12 +22993,6 @@ const LiveStreamModal = ({
                 prev.includes(n) ? prev : [...prev, n],
               );
               setPinnedRemoteUid(prev => prev || n);
-              try {
-                engineRef.current?.muteRemoteVideoStream?.(n, false);
-              } catch {}
-              try {
-                engineRef.current?.muteRemoteAudioStream?.(n, false);
-              } catch {}
             });
           } catch {}
           try {
@@ -24065,19 +23003,21 @@ const LiveStreamModal = ({
             });
           } catch {}
           try {
-            engine.addListener?.('AudioVolumeIndication', (speakers: any[]) => {
+            engine.addListener?.('JoinChannelSuccess', () => {
               try {
-                const rows = Array.isArray(speakers) ? speakers : [];
-                const loudest = rows
-                  .map((s: any) => ({
-                    uid: Number(s?.uid || 0),
-                    vol: Number(s?.volume || 0),
-                  }))
-                  .filter((s: any) => Number.isFinite(s.uid) && s.uid > 0 && s.vol > 8)
-                  .sort((a: any, b: any) => b.vol - a.vol)[0];
-                if (!loudest) return;
-                setActiveSpeakerRtcUid(loudest.uid);
-                setActiveSpeakerAtMs(Date.now());
+                engine.enableLocalAudio?.(true);
+              } catch {}
+              try {
+                engine.muteLocalAudioStream?.(false);
+              } catch {}
+              try {
+                engine.enableLocalVideo?.(!cameraHidden);
+              } catch {}
+              try {
+                engine.muteLocalVideoStream?.(!!cameraHidden);
+              } catch {}
+              try {
+                engine.startPreview?.();
               } catch {}
             });
           } catch {}
@@ -24114,10 +23054,8 @@ const LiveStreamModal = ({
       setIsLiveEngineReady(false);
       setRemoteParticipantUids([]);
       setPinnedRemoteUid(null);
-      setActiveSpeakerRtcUid(null);
-      setActiveSpeakerAtMs(0);
     };
-  }, [visible, Agora, appId, applyLiveQualityProfile]);
+  }, [visible, Agora, appId, applyLiveQualityProfile, cameraHidden]);
                     
   // Join channel when user taps Start Live (tokenless first when enabled)
   useEffect(() => {
@@ -24128,7 +23066,7 @@ const LiveStreamModal = ({
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
         const chan = String(liveChannel || defaultChannel || '').trim();
         if (!chan) {
-          setStartError(`Channel is missing. Please try ${startSessionLabel} again.`);
+          setStartError('Channel is missing. Please try Start Drift again.');
           return;
         }
         const uidBase = Number.isFinite(liveUid as any)
@@ -24156,27 +23094,12 @@ const LiveStreamModal = ({
         // Optional fallback: only attempt token endpoint when tokenless mode is off.
         if (!ALLOW_TOKENLESS_DRIFT) {
           try {
-            const cfgLocal = (() => {
-              try {
-                return require('./liveConfig');
-              } catch {
-                return null;
-              }
-            })();
-            const tokenEndpoint: string =
-              (cfgLocal && cfgLocal.AGORA_TOKEN_ENDPOINT) || '';
-            if (tokenEndpoint) {
-              const q = `?channel=${encodeURIComponent(
-                chan,
-              )}&role=publisher&uid=${encodeURIComponent(
-                String(uidBase || 0),
-              )}`;
-              const resp = await fetch(`${tokenEndpoint}${q}`);
-              if (resp.ok) {
-                const json = await resp.json();
-                addToken(json?.token);
-              }
-            }
+            const token = await fetchRtcToken({
+              channelName: chan,
+              uid: primaryUid,
+              role: 'host',
+            });
+            addToken(token);
           } catch {}
         }
         let joined = false;
@@ -24208,11 +23131,23 @@ const LiveStreamModal = ({
               } catch {}
               if (isV4) {
                 await engine.joinChannel(tok, chan, uidNum, {
+                  clientRoleType:
+                    Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
                   publishMicrophoneTrack: true,
                   publishCameraTrack: true,
                   autoSubscribeAudio: true,
                   autoSubscribeVideo: true,
                 });
+                try {
+                  engine.updateChannelMediaOptions?.({
+                    clientRoleType:
+                      Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+                    publishMicrophoneTrack: true,
+                    publishCameraTrack: true,
+                    autoSubscribeAudio: true,
+                    autoSubscribeVideo: true,
+                  });
+                } catch {}
               } else {
                 await engine.joinChannel(tok, chan, uidNum);
               }
@@ -24229,7 +23164,7 @@ const LiveStreamModal = ({
         }
         if (!joined) {
           const msg = String(
-            (lastErr as any)?.message || `Could not join this ${sessionLabel.toLowerCase()} channel.`,
+            (lastErr as any)?.message || 'Could not join this drift channel.',
           );
           setStartError(msg);
         }
@@ -24238,25 +23173,14 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, liveChannel, sessionLabel, startSessionLabel]);
-
-  useEffect(() => {
-    if (!isLiveStarted) return;
-    const engine = engineRef.current;
-    if (!engine || remoteParticipantUids.length === 0) return;
-    remoteParticipantUids.forEach(uid => {
-      const n = Number(uid);
-      if (!Number.isFinite(n) || n <= 0) return;
-      try {
-        engine.muteRemoteVideoStream?.(n, false);
-      } catch {}
-      try {
-        engine.muteRemoteAudioStream?.(n, false);
-      } catch {}
-    });
-  }, [isLiveStarted, remoteParticipantUids]);
+  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, liveChannel]);
                     
   const handleEndDrift = async () => {
+    try {
+      if (liveDocId) {
+        await endDriftLiveSession(liveDocId);
+      }
+    } catch {}
     try {
       // notify backend that live ended
       const endUrl = (cfg && cfg.END_LIVE_ENDPOINT) || '';
@@ -24276,7 +23200,7 @@ const LiveStreamModal = ({
                     
   const handleShareDriftLink = async () => {
     if (!liveDocId || !liveChannel) {
-      Alert.alert('Error', `${sessionLabel} not started yet`);
+      Alert.alert('Error', 'Drift not started yet');
       return;
     }
                     
@@ -24285,7 +23209,7 @@ const LiveStreamModal = ({
       await Share.share({
         message: result.message,
         url: result.webLink,
-        title: `Join my ${sessionLabel}: ${liveTitle}`,
+        title: `Join my Drift: ${liveTitle}`,
       });
     } catch (error) {
       console.error('Share drift link error:', error);
@@ -24295,19 +23219,9 @@ const LiveStreamModal = ({
   const sendLiveComment = async () => {
     const txt = (commentText || '').trim();
     if (!txt) return;
-    const nowMs = Date.now();
-    const COMMENT_COOLDOWN_MS = 1200;
-    if (nowMs - Number(lastCommentSentAtRef.current || 0) < COMMENT_COOLDOWN_MS) {
-      Alert.alert('Slow down', 'Please wait a moment before sending another comment.');
-      return;
-    }
-    lastCommentSentAtRef.current = nowMs;
-    // Drift uses quick-send composer; Conference keeps its thread panel open.
-    if (!isConferenceMode) {
-      setShowCommentInput(false);
-    }
+    // Close input after sending; user can reopen when needed
+    setShowCommentInput(false);
                     
-    let sent = false;
     try {
       let firestoreMod: any = null;
       let authMod: any = null;
@@ -24325,111 +23239,26 @@ const LiveStreamModal = ({
           hostName ||
           'Skipper',
       ).trim();
-      if (firestoreMod && liveCommentScope) {
-        const createdAtMs = Date.now();
-        await firestoreMod()
-          .collection(`live/${liveCommentScope}/comments`)
-          .add({
-            text: txt,
-            fromUid: uid,
-            from: fallbackName,
-            replyToId: replyingToLiveComment?.id || null,
-            replyToFrom: replyingToLiveComment?.from || null,
-            replyToText: replyingToLiveComment?.text || null,
-            liveScope: liveCommentScope,
-            createdAtMs,
-            createdAt: firestoreMod.FieldValue?.serverTimestamp
-              ? firestoreMod.FieldValue.serverTimestamp()
-              : new Date(),
-          });
-        sent = true;
-      } else {
-        throw new Error('Live comments channel is not ready yet.');
+      if (liveDocId && uid) {
+        await sendDriftLiveComment({
+          liveId: liveDocId,
+          userId: String(uid),
+          userName: fallbackName,
+          text: txt,
+          avatar: currentUser?.photoURL || null,
+          replyToId: replyingToLiveComment?.id || null,
+          replyToUserName: replyingToLiveComment?.from || null,
+          replyToText: replyingToLiveComment?.text || null,
+        });
       }
-    } catch (err: any) {
-      Alert.alert(
-        'Send comment',
-        String(err?.message || err?.code || 'Failed to send comment.'),
-      );
-      lastCommentSentAtRef.current = 0;
-    }
+    } catch {}
                     
     setCommentText('');
     setReplyingToLiveComment(null);
-    if (!isConferenceMode) {
-      setShowCommentInput(false);
-    }
+    setShowCommentInput(false);
                     
-    // Spawn local feedback only if write succeeded.
-    if (sent) {
-      spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
-      if (txt.includes('?')) {
-        addLiveMoment(`Q&A: ${txt.slice(0, 64)}`);
-      }
-    }
-  };
-
-  const sendConferenceInviteLink = async (
-    mode: 'whatsapp' | 'email' | 'share',
-  ) => {
-    if (!liveDocId || !liveChannel) {
-      Alert.alert('Invite', 'Start conference first.');
-      return;
-    }
-    try {
-      const result = await shareDriftLink(liveDocId, liveChannel, liveTitle);
-      const msg = String(result?.message || '').trim();
-      const url = String(result?.webLink || '').trim();
-      const payload = [msg, url].filter(Boolean).join('\n');
-      if (mode === 'whatsapp') {
-        const waUrl = `whatsapp://send?text=${encodeURIComponent(payload)}`;
-        const supported = await Linking.canOpenURL(waUrl);
-        if (!supported) {
-          Alert.alert('Invite', 'WhatsApp is not available on this device.');
-          return;
-        }
-        await Linking.openURL(waUrl);
-        return;
-      }
-      if (mode === 'email') {
-        const subject = encodeURIComponent(`Join my conference: ${liveTitle}`);
-        const body = encodeURIComponent(payload);
-        await Linking.openURL(`mailto:?subject=${subject}&body=${body}`);
-        return;
-      }
-      await Share.share({
-        message: payload,
-        url,
-        title: `Join my conference: ${liveTitle}`,
-      });
-    } catch (error) {
-      console.error('Conference invite error:', error);
-      Alert.alert('Invite', 'Failed to prepare invite link.');
-    }
-  };
-
-  const openConferenceInviteOptions = () => {
-    Alert.alert('Send Conference Invite', 'Choose how to send the invite link.', [
-      {
-        text: 'WhatsApp',
-        onPress: () => {
-          void sendConferenceInviteLink('whatsapp');
-        },
-      },
-      {
-        text: 'Email',
-        onPress: () => {
-          void sendConferenceInviteLink('email');
-        },
-      },
-      {
-        text: 'More',
-        onPress: () => {
-          void sendConferenceInviteLink('share');
-        },
-      },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+    // Spawn a local flying comment immediately for instant feedback
+    spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
   };
                     
   const spawnFlyingComment = (c: {
@@ -24485,10 +23314,7 @@ const LiveStreamModal = ({
           return;
         }
       }
-      // Use a unique channel per session to prevent accidental cross-joins.
-      const uniqueChanSuffix = `${String(currentUserUid).slice(0, 8)}_${Date.now().toString(36)}`;
-      const baseChan = `${modeChannelPrefix}_${uniqueChanSuffix}`;
-      const chan = baseChan.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
+      // Use user-provided values (fallback to config)
       const initialTok = (tokenInput || '').trim() || staticToken || null;
       let uidNum = parseInt(uidInput || '0', 10);
       if (!Number.isFinite(uidNum) || uidNum < 0) {
@@ -24501,74 +23327,27 @@ const LiveStreamModal = ({
         }
         uidNum = (hash % 2147483646) + 1;
       }
-                    
-      let resolvedLiveId: string | null = null;
-      // Optional: notify backend we're starting and fetch a fresh token/liveId
+      const createdLive = await createLiveSession({
+        hostId: currentUserUid,
+        hostName: hostName || me.displayName || 'Skipper',
+        hostUid: uidNum,
+        thumbnail: hostPhoto || null,
+      });
       try {
-        const startUrl = (cfg && cfg.START_LIVE_ENDPOINT) || '';
-        if (startUrl) {
-          const payload: any = {
-            channel: chan,
-            uid: uidNum,
-            hostUid: currentUserUid,
-            title: liveTitle,
-            description: liveDesc,
-            privacy: livePrivacy,
-            hostName,
-            hostPhoto,
-          };
-          const resp = await fetch(startUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          });
-          if (resp.ok) {
-            const json = await resp.json();
-            if (!ALLOW_TOKENLESS_DRIFT && json && json.token) {
-              setLiveToken(String(json.token));
-            } else {
-              setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
-            }
-            if (json && (json.liveId || json.id)) {
-              resolvedLiveId = String(json.liveId || json.id);
-            }
-          } else {
-            setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
-          }
-        } else {
-          setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
-        }
+        const token = await fetchRtcToken({
+          channelName: createdLive.channelName,
+          uid: uidNum,
+          role: 'host',
+        });
+        setLiveToken(String(token));
       } catch {
         setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
       }
-      if (!resolvedLiveId) {
-        try {
-          const liveRef = firestore().collection('live').doc();
-          resolvedLiveId = liveRef.id;
-          await liveRef.set(
-            {
-              hostUid: currentUserUid,
-              hostName,
-              hostPhoto,
-              title: liveTitle || 'Drift Expo',
-              description: liveDesc || '',
-              privacy: livePrivacy,
-              liveChannel: chan,
-              channel: chan,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-              updatedAt: firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-        } catch {}
-      }
-      if (resolvedLiveId) {
-        setLiveDocId(resolvedLiveId);
-      }
-      setChannelInput(chan);
-      setLiveChannel(chan);
+      setLiveDocId(createdLive.liveId);
+      setLiveHostId(currentUserUid);
+      setChannelInput(createdLive.channelName);
+      setLiveChannel(createdLive.channelName);
       setLiveUid(Number.isFinite(uidNum) ? uidNum : 0);
-      setLiveHostUid(currentUserUid);
       setIsLiveStarted(true);
       // Ensure inline preview starts in this interface
       try {
@@ -24630,309 +23409,40 @@ const LiveStreamModal = ({
       console.warn('Screen share failed:', e);
     }
   };
-
-  const ensureScreenShareStarted = async () => {
-    if (!isLiveStarted) return;
-    if (isScreenSharing) return;
-    try {
-      engineRef.current?.startScreenCapture?.({
-        dimensions: { width: 1280, height: 720 },
-        frameRate: 15,
-        bitrate: 1000,
-      });
-      setIsScreenSharing(true);
-    } catch {
-      Alert.alert(
-        'Screen Share',
-        'Could not start screen sharing on this build/device.',
-      );
-    }
-  };
-
-  const onPresentedFromSelection = useCallback(
-    async (file: ConferenceSharedFile, picked: Asset) => {
-      if (!file || !picked?.uri) return;
-      setCameraHidden(true);
-      try {
-        engineRef.current?.muteLocalVideoStream?.(true);
-      } catch {}
-      await ensureScreenShareStarted();
-      setLocalPresentedAsset({
-        fileId: String(file.id || ''),
-        uri: String(picked.uri || ''),
-        mimeType: String((picked as any)?.type || file.mimeType || ''),
-        name: String(picked.fileName || file.name || 'Shared file'),
-      });
-      addLiveMoment(`${currentLiveName || 'Host'} started presenting ${String(file.name || 'a file')}`);
-    },
-    [addLiveMoment, currentLiveName, isLiveStarted, isScreenSharing],
-  );
-
-  const beginConferencePresentation = useCallback(async () => {
-    if (!isConferenceMode) return;
-    if (!isLiveStarted || !liveShareScope) {
-      Alert.alert('Conference', 'Start conference first.');
-      return;
-    }
-    if (isConferencePresentingBusy) return;
-    setIsConferencePresentingBusy(true);
-    try {
-      const picked = await pickConferencePresentationFile();
-      if (!picked?.uri) return;
-      const file = await presentConferenceFileLive({
-        liveScope: liveShareScope,
-        file: picked,
-        presenterUid: currentLiveUid,
-        presenterName: currentLiveName,
-      });
-      setLiveSharedFiles(prev => {
-        const next = prev.filter(item => item.id !== file.id);
-        return [file, ...next];
-      });
-      await onPresentedFromSelection(file, picked);
-    } catch (err: any) {
-      Alert.alert(
-        'Conference',
-        String(err?.message || 'Could not share this file right now.'),
-      );
-    } finally {
-      setIsConferencePresentingBusy(false);
-    }
-  }, [
-    currentLiveName,
-    currentLiveUid,
-    isConferenceMode,
-    isConferencePresentingBusy,
-    isLiveStarted,
-    liveShareScope,
-    onPresentedFromSelection,
-  ]);
-
-  const goToPresentationPage = async (nextPage: number) => {
-    if (!activeSharedFile?.id || !currentLiveUid) return;
-    try {
-      await setConferencePresentationPage({
-        presentationId: activeSharedFile.id,
-        requesterUid: currentLiveUid,
-        page: Math.max(1, nextPage),
-      });
-    } catch (err: any) {
-      Alert.alert(
-        'Presentation',
-        String(err?.message || 'Could not change presentation page.'),
-      );
-    }
-  };
-
-  const stopPresentationNow = async () => {
-    if (!activeSharedFile?.id || !currentLiveUid) return;
-    try {
-      await stopConferencePresentation({
-        presentationId: activeSharedFile.id,
-        requesterUid: currentLiveUid,
-      });
-    } catch (err: any) {
-      Alert.alert(
-        'Presentation',
-        String(err?.message || 'Could not stop presentation.'),
-      );
-    }
-    try {
-      engineRef.current?.stopScreenCapture?.();
-    } catch {}
-    setIsScreenSharing(false);
-    setCameraHidden(false);
-    setLocalPresentedAsset(null);
-    try {
-      engineRef.current?.muteLocalVideoStream?.(false);
-    } catch {}
-  };
-
-  useEffect(() => {
-    if (!isSlideAutoPlay || !isCurrentPresenter || !isFilePresentationActive) return;
-    const t = setInterval(() => {
-      void goToPresentationPage(currentPresentationPage + 1);
-    }, 5000);
-    return () => clearInterval(t);
-  }, [
-    currentPresentationPage,
-    goToPresentationPage,
-    isCurrentPresenter,
-    isFilePresentationActive,
-    isSlideAutoPlay,
-  ]);
                     
-  const applyVirtualBackgroundOption = (next: string | null) => {
-    const presets: Record<
-      string,
-      { type: 'color' | 'image'; color?: number; source?: string }
-    > = {
-      ocean_blue: { type: 'color', color: 0x1f6feb },
-      studio_white: { type: 'color', color: 0xf4f7fb },
-      emerald: { type: 'color', color: 0x1f9d55 },
-      sunset: { type: 'color', color: 0xff8a3d },
-      slate: { type: 'color', color: 0x334155 },
-      lavender: { type: 'color', color: 0x8b5cf6 },
-      beach: { type: 'image', source: 'beach' },
-      office: { type: 'image', source: 'office' },
-    };
-    setVirtualBackground(next);
-    if (!engineRef.current) return;
-    if (!next) {
-      try {
-        engineRef.current.enableVirtualBackground?.(false, {});
-      } catch {}
-      return;
-    }
-    const selected = presets[next];
-    if (!selected) return;
-    try {
-      if (selected.type === 'color') {
-        engineRef.current.enableVirtualBackground?.(true, {
-          background_source_type: 2,
-          color: selected.color,
-        });
-      } else {
-        engineRef.current.enableVirtualBackground?.(true, {
-          background_source_type: 1,
-          color: 0xffffff,
-          source: selected.source,
-        });
-      }
-    } catch {}
-  };
-
   const toggleVirtualBackground = () => {
-    const options: Array<{ label: string; value: string | null }> = [
-      { label: 'Off', value: null },
-      { label: 'Ocean Blue', value: 'ocean_blue' },
-      { label: 'Studio White', value: 'studio_white' },
-      { label: 'Emerald', value: 'emerald' },
-      { label: 'Sunset', value: 'sunset' },
-      { label: 'Slate', value: 'slate' },
-      { label: 'Lavender', value: 'lavender' },
-      { label: 'Beach', value: 'beach' },
-      { label: 'Office', value: 'office' },
-    ];
-    setLiveOptionPicker({
-      title: 'Background',
-      options: options.map(opt => ({
-        key: String(opt.value ?? '__none__'),
-        label: opt.label,
-        selected: virtualBackground === opt.value,
-      })),
-      onSelect: key => {
-        const selected = options.find(
-          opt => String(opt.value ?? '__none__') === key,
-        );
-        applyVirtualBackgroundOption(selected ? selected.value : null);
-      },
-    });
+    const backgrounds = [null, 'beach', 'underwater', 'space', 'studio'];
+    const idx = backgrounds.indexOf(virtualBackground);
+    const next = backgrounds[(idx + 1) % backgrounds.length];
+    setVirtualBackground(next);
+    if (engineRef.current) {
+      if (next) {
+        try {
+          engineRef.current.enableVirtualBackground?.(true, {
+            background_source_type: 1,
+            color: 0xffffff,
+            source: next,
+          });
+        } catch {}
+      } else {
+        try {
+          engineRef.current.enableVirtualBackground?.(false, {});
+        } catch {}
+      }
+    }
   };
                     
   const toggleBeautyFilter = () => {
-    const options = [
-      { name: 'Natural', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      { name: 'Fresh', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      { name: 'Soft Glow', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      { name: 'Polished', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      { name: 'Studio', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      { name: 'Ultra', lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-    ];
-    setLiveOptionPicker({
-      title: 'Beauty',
-      options: [
-        ...options.map(profile => ({
-          key: profile.name,
-          label: profile.name,
-          selected: beautyFilterEnabled && beautyProfile === profile.name,
-        })),
-        {
-          key: '__off__',
-          label: 'Off',
-          selected: !beautyFilterEnabled,
-        },
-      ],
-      onSelect: key => {
-        if (key === '__off__') {
-          setBeautyFilterEnabled(false);
-          try {
-            engineRef.current?.setBeautyEffectOptions?.(false, {
-              lighteningContrastLevel: 2,
-              lighteningLevel: 0,
-              smoothnessLevel: 0,
-              rednessLevel: 0,
-            });
-          } catch {}
-          return;
-        }
-        const profile = options.find(opt => opt.name === key);
-        if (!profile) return;
-        setBeautyProfile(profile.name);
-        setBeautyFilterEnabled(true);
-        try {
-          engineRef.current?.setBeautyEffectOptions?.(true, {
-            lighteningContrastLevel: 2,
-            lighteningLevel: profile.lighteningLevel,
-            smoothnessLevel: profile.smoothnessLevel,
-            rednessLevel: profile.rednessLevel,
-          });
-        } catch {}
-      },
-    });
-  };
-
-  const applyVisualFilter = (next: string) => {
-    setActiveVisualFilter(next);
-    const profiles: Record<string, any> = {
-      none: { lighteningLevel: 0.2, smoothnessLevel: 0.2, rednessLevel: 0 },
-      black_white: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      sepia: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      vivid: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      cool: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      warm: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      mono: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      cinematic: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      ocean: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      retro: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      neon: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      soft: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-      dramatic: { lighteningLevel: 1, smoothnessLevel: 1, rednessLevel: 1 },
-    };
-    const profile = profiles[next] || profiles.none;
+    const next = !beautyFilterEnabled;
+    setBeautyFilterEnabled(next);
     try {
-      engineRef.current?.setBeautyEffectOptions?.(next !== 'none', {
-        lighteningContrastLevel: 2,
-        ...profile,
+      engineRef.current?.setBeautyEffectOptions?.(next, {
+        lighteningContrastLevel: 1,
+        lighteningLevel: 0.7,
+        smoothnessLevel: 0.5,
+        rednessLevel: 0.1,
       });
     } catch {}
-  };
-
-  const openVisualFiltersMenu = () => {
-    const options = [
-      'none',
-      'black_white',
-      'sepia',
-      'vivid',
-      'cool',
-      'warm',
-      'mono',
-      'cinematic',
-      'ocean',
-      'retro',
-      'neon',
-      'soft',
-      'dramatic',
-    ];
-    setLiveOptionPicker({
-      title: 'Video Filters',
-      options: options.map(name => ({
-        key: name,
-        label: name.toUpperCase(),
-        selected: activeVisualFilter === name,
-      })),
-      onSelect: key => applyVisualFilter(key),
-    });
   };
                     
   const toggleRecording = async () => {
@@ -25013,7 +23523,7 @@ const LiveStreamModal = ({
               .default;
             if (!firestoreMod) throw new Error('Firestore unavailable');
             firestoreMod()
-              .collection('live')
+              .collection('driftLives')
               .doc(liveDocId)
               .set(
                 {
@@ -25050,7 +23560,7 @@ const LiveStreamModal = ({
       if (!firestoreMod) return;
       const key = `poll.votes.${optionId}`;
       await firestoreMod()
-        .collection('live')
+        .collection('driftLives')
         .doc(liveDocId)
         .set(
           {
@@ -25107,7 +23617,7 @@ const LiveStreamModal = ({
             .default;
           if (!firestoreMod) throw new Error('Firestore unavailable');
           firestoreMod()
-            .collection('live')
+            .collection('driftLives')
             .doc(liveDocId)
             .set(
               {
@@ -25253,17 +23763,6 @@ const LiveStreamModal = ({
       Alert.alert('Error', 'Invalid user ID');
       return false;
     }
-    const existingStatus = String(inviteStatusByUid[toUid]?.status || '').toLowerCase();
-    const existingExpiry = Number(inviteStatusByUid[toUid]?.expiresAtMs || 0);
-    if (
-      existingStatus === 'pending' &&
-      (!existingExpiry || existingExpiry > Date.now())
-    ) {
-      if (!options?.silent) {
-        Alert.alert('Invite already pending', 'This user already has your invite badge.');
-      }
-      return true;
-    }
     const inviteGuardKey = `${String(liveDocId || 'no_live')}::${toUid}`;
     if (inviteInFlightRef.current.has(inviteGuardKey)) {
       return false;
@@ -25276,81 +23775,6 @@ const LiveStreamModal = ({
       if (!me?.uid) {
         throw new Error('Sign in required');
       }
-      const existingInviteKeyBase = `${String(liveDocId || 'direct').trim()}_${me.uid}`;
-      const existingInviteDocKey = existingInviteKeyBase
-        .replace(/[^A-Za-z0-9_-]/g, '_')
-        .slice(0, 120);
-      try {
-        const existingInviteSnap = await firestore()
-          .collection(`users/${toUid}/live_invites`)
-          .doc(existingInviteDocKey)
-          .get();
-        const existingInviteData = existingInviteSnap?.data?.() || {};
-        const existingInviteStatus = String(existingInviteData.status || '').toLowerCase();
-        const existingInviteExpiry = Number(existingInviteData.expiresAtMs || 0) || 0;
-        if (
-          existingInviteStatus === 'pending' &&
-          (!existingInviteExpiry || existingInviteExpiry > Date.now())
-        ) {
-          if (!options?.silent) {
-            Alert.alert('Invite already pending', 'This user already has your invite badge.');
-          }
-          return true;
-        }
-      } catch {}
-      // Keep only one active invite badge per sender->recipient to prevent duplicate badge cascades.
-      try {
-        const markReplaced = {
-          status: 'replaced',
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        };
-        const [liveInvitesSnap, mentionsSnap, pingsSnap] = await Promise.all([
-          firestore()
-            .collection(`users/${toUid}/live_invites`)
-            .where('fromUid', '==', me.uid)
-            .limit(40)
-            .get(),
-          firestore()
-            .collection(`users/${toUid}/mentions`)
-            .where('fromUid', '==', me.uid)
-            .limit(40)
-            .get(),
-          firestore()
-            .collection(`users/${toUid}/pings`)
-            .where('fromUid', '==', me.uid)
-            .limit(40)
-            .get(),
-        ]);
-        const batch = firestore().batch();
-        let mutated = false;
-        (liveInvitesSnap?.docs || []).forEach((doc: any) => {
-          const d = doc.data?.() || {};
-          if (String(d.status || '').toLowerCase() !== 'pending') return;
-          batch.set(doc.ref, markReplaced, { merge: true });
-          mutated = true;
-        });
-        (mentionsSnap?.docs || []).forEach((doc: any) => {
-          const d = doc.data?.() || {};
-          if (String(d.type || '').toLowerCase() !== 'live_invite') return;
-          if (String(d.status || '').toLowerCase() !== 'pending') return;
-          batch.set(doc.ref, markReplaced, { merge: true });
-          mutated = true;
-        });
-        (pingsSnap?.docs || []).forEach((doc: any) => {
-          const d = doc.data?.() || {};
-          if (String(d.type || '').toLowerCase() !== 'live_invite') return;
-          if (String(d.status || '').toLowerCase() !== 'pending') return;
-          batch.set(
-            doc.ref,
-            { ...markReplaced, read: true },
-            { merge: true },
-          );
-          mutated = true;
-        });
-        if (mutated) {
-          await batch.commit();
-        }
-      } catch {}
       const callerName = String(
         me.displayName ||
           (me.email ? String(me.email).split('@')[0] : '') ||
@@ -25358,15 +23782,6 @@ const LiveStreamModal = ({
           'Skipper',
       ).trim();
       const senderPhoto = me.photoURL || null;
-      const effectiveInviteChannel = String(
-        liveChannel ||
-          channelInput ||
-          defaultChannel ||
-          DRIFT_EXPO_FIXED_CHANNEL,
-      )
-        .trim()
-        .replace(/[^A-Za-z0-9_]/g, '_')
-        .slice(0, 64);
       let inboxInviteWritten = false;
       let callableInviteSent = false;
       let inviteStatusWritten = false;
@@ -25380,26 +23795,43 @@ const LiveStreamModal = ({
       const directCallChannel: string | null = null;
       const directCallType: DirectCallMode = 'video';
       const computedExpiry = Date.now() + LIVE_INVITE_EXPIRY_MS;
-      const optimisticNow = Date.now();
-      setInviteStatusByUid(prev => ({
-        ...prev,
-        [toUid]: {
-          status: 'pending',
-          expiresAtMs: computedExpiry,
-          updatedAtMs: optimisticNow,
-          name: typeof to === 'string' ? toUid : to?.name || toUid,
-        },
-      }));
+      const normalizedActiveChannel = String(liveChannel || '')
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
+      if (!liveDocId || !normalizedActiveChannel || !isLiveStarted) {
+        throw new Error('Start Drift Expo before sending an invite.');
+      }
+      const resolvedInviteTarget = {
+        liveId: String(liveDocId),
+        channel: normalizedActiveChannel,
+      };
+      const resolvedInviteChannel = String(resolvedInviteTarget.channel || '').trim();
 
       try {
         const liveInvitesRef = firestore().collection(
           `users/${toUid}/live_invites`,
         );
+        let existingPending: any = null;
+        if (liveDocId) {
+          try {
+            existingPending = await liveInvitesRef
+              .where('status', '==', 'pending')
+              .where('fromUid', '==', me.uid)
+              .where('liveId', '==', liveDocId)
+              .limit(1)
+              .get();
+          } catch {
+            existingPending = null;
+          }
+        }
         // Invite-only flow: do not create direct call sessions here.
 
         const invitePayload = {
-          liveId: liveDocId || null,
-          liveChannel: effectiveInviteChannel || null,
+          type: 'DRIFT_EXPO_INVITE',
+          liveId: resolvedInviteTarget.liveId || liveDocId || null,
+          liveChannel: resolvedInviteChannel || null,
+          channelName: resolvedInviteChannel || null,
           liveTitle: liveTitle || 'Live Session',
           fromUid: me.uid,
           fromName: callerName,
@@ -25411,12 +23843,14 @@ const LiveStreamModal = ({
           createdAt: firestore.FieldValue.serverTimestamp(),
           expiresAtMs: computedExpiry,
         };
-        const inviteKeyBase = `${String(liveDocId || 'direct').trim()}_${me.uid}`;
-        const inviteDocKey = inviteKeyBase.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120);
-        inviteDocId = inviteDocKey || null;
-        await liveInvitesRef.doc(inviteDocKey).set(invitePayload, {
-          merge: true,
-        });
+        if (existingPending && !existingPending.empty) {
+          const ref = existingPending.docs[0].ref;
+          inviteDocId = existingPending.docs[0].id;
+          await ref.set(invitePayload, { merge: true });
+        } else {
+          const inviteRef = await liveInvitesRef.add(invitePayload);
+          inviteDocId = inviteRef.id;
+        }
         inboxInviteWritten = true;
 
         if (!options?.silent) {
@@ -25429,37 +23863,30 @@ const LiveStreamModal = ({
         lastErr = err;
       }
 
+      // Single invite channel to prevent duplicate invite cards/badges.
+
       if (!inboxInviteWritten) {
-        // Fallback channels only when inbox badge write fails.
-        const inviteRecordId =
-          String(inviteDocId || `${String(liveDocId || 'direct').trim()}_${me.uid}`).trim() ||
-          `${Date.now()}`;
         try {
           await firestore()
             .collection(`users/${toUid}/mentions`)
-            .doc(inviteRecordId)
-            .set(
-              {
-                type: 'live_invite',
-                text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-                fromUid: me.uid,
-                fromName: callerName,
-                fromPhoto: senderPhoto,
-                route: 'Pings',
-                liveId: liveDocId || '',
-                liveTitle: liveTitle || 'Drift Expo',
-                liveChannel: effectiveInviteChannel || null,
-                channel: effectiveInviteChannel || null,
-                directCallId: directCallId || null,
-                directCallChannel: directCallChannel || null,
-                callType: directCallType,
-                status: 'pending',
-                expiresAtMs: computedExpiry,
-                createdAt: firestore.FieldValue.serverTimestamp(),
-                updatedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
+            .add({
+              type: 'DRIFT_EXPO_INVITE',
+              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+              fromUid: me.uid,
+              fromName: callerName,
+              fromPhoto: senderPhoto,
+              route: 'Pings',
+              liveId: resolvedInviteTarget.liveId || liveDocId || '',
+              liveTitle: liveTitle || 'Drift Expo',
+              liveChannel: resolvedInviteChannel || null,
+              channelName: resolvedInviteChannel || null,
+              directCallId: directCallId || null,
+              directCallChannel: directCallChannel || null,
+              callType: directCallType,
+              status: 'pending',
+              expiresAtMs: computedExpiry,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
           fallbackMentionWritten = true;
         } catch (err) {
           console.warn('[INVITE DEBUG] mention fallback write failed', err);
@@ -25468,29 +23895,24 @@ const LiveStreamModal = ({
         try {
           await firestore()
             .collection(`users/${toUid}/pings`)
-            .doc(inviteRecordId)
-            .set(
-              {
-                type: 'live_invite',
-                text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-                fromUid: me.uid,
-                fromName: callerName,
-                fromPhoto: senderPhoto,
-                liveId: liveDocId || '',
-                liveTitle: liveTitle || 'Drift Expo',
-                liveChannel: effectiveInviteChannel || null,
-                channel: effectiveInviteChannel || null,
-                directCallId: directCallId || null,
-                directCallChannel: directCallChannel || null,
-                callType: directCallType,
-                status: 'pending',
-                read: false,
-                expiresAtMs: computedExpiry,
-                createdAt: firestore.FieldValue.serverTimestamp(),
-                updatedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
+            .add({
+              type: 'DRIFT_EXPO_INVITE',
+              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+              fromUid: me.uid,
+              fromName: callerName,
+              fromPhoto: senderPhoto,
+              liveId: resolvedInviteTarget.liveId || liveDocId || '',
+              liveTitle: liveTitle || 'Drift Expo',
+              liveChannel: resolvedInviteChannel || null,
+              channelName: resolvedInviteChannel || null,
+              directCallId: directCallId || null,
+              directCallChannel: directCallChannel || null,
+              callType: directCallType,
+              status: 'pending',
+              read: false,
+              expiresAtMs: computedExpiry,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            });
           fallbackPingWritten = true;
         } catch (err) {
           console.warn('[INVITE DEBUG] ping fallback write failed', err);
@@ -25498,10 +23920,9 @@ const LiveStreamModal = ({
         }
       }
 
-      if (liveDocId && inviteDocId) {
-        try {
-          await firestore()
-          .collection(`live/${liveDocId}/invite_status`)
+      if ((resolvedInviteTarget.liveId || liveDocId) && inviteDocId) {
+        firestore()
+          .collection(`driftLives/${resolvedInviteTarget.liveId || liveDocId}/invite_status`)
           .doc(toUid)
           .set(
             {
@@ -25513,9 +23934,7 @@ const LiveStreamModal = ({
               status: 'pending',
               inviteId: inviteDocId,
               fromUid: me.uid,
-              liveId: liveDocId,
-              channel: effectiveInviteChannel || null,
-              liveChannel: effectiveInviteChannel || null,
+              liveId: resolvedInviteTarget.liveId || liveDocId,
               directCallId: directCallId || null,
               callType: directCallType,
               directCallChannel: directCallChannel || null,
@@ -25523,11 +23942,11 @@ const LiveStreamModal = ({
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
-          );
-          inviteStatusWritten = true;
-        } catch (err) {
-          lastErr = err;
-        }
+          )
+          .then(() => {
+            inviteStatusWritten = true;
+          })
+          .catch(() => {});
       }
 
       const requireFeedPanel = options?.requireFeedPanel !== false;
@@ -25604,12 +24023,7 @@ const LiveStreamModal = ({
   };
 
   const getInviteStatusLabel = (uid: string) => {
-    const row = inviteStatusByUid[uid];
-    const status = row?.status || '';
-    const expiresAtMs = Number(row?.expiresAtMs || 0);
-    if (status === 'pending' && expiresAtMs > 0 && Date.now() > expiresAtMs) {
-      return null;
-    }
+    const status = inviteStatusByUid[uid]?.status || '';
     if (!status) return null;
     switch (status) {
       case 'pending':
@@ -25640,29 +24054,38 @@ const LiveStreamModal = ({
     );
   };
                     
-  const soundEffects = useMemo(() => LIVE_SOUND_EFFECTS, []);
+  const soundEffects = useMemo(
+    () => [
+      {
+        id: 'drumroll',
+        label: 'Drumroll',
+        icon: '🥁',
+        file: 'large_underwater_explosion_190270',
+      },
+      {
+        id: 'applause',
+        label: 'Applause',
+        icon: '👏',
+        file: 'downfall_3_208028',
+      },
+      {
+        id: 'airhorn',
+        label: 'Airhorn',
+        icon: '📯',
+        file: 'sci_fi_sound_effect_designed_circuits_hum_10_200831',
+      },
+    ],
+    [],
+  );
                     
-  const playSoundEffect = (
-    sound: { id?: string; file: string; label: string },
-    options?: { publishToAudience?: boolean; broadcast?: boolean },
-  ) => {
+  const playSoundEffect = (sound: { file: string; label: string }) => {
     if (!Sound) {
       Alert.alert('Sound Not Available', 'Sound library not loaded');
       return;
     }
-    const publishToAudience = options?.publishToAudience === true;
-    const broadcast = options?.broadcast !== false;
                     
     try {
       console.log('Attempting to play sound:', sound.label, sound.file);
-      // Try to publish effect to remote audience through Agora first.
-      try {
-        if (publishToAudience && engineRef.current?.startAudioMixing) {
-          engineRef.current.startAudioMixing(sound.file, false, false, 1);
-          engineRef.current?.adjustAudioMixingPublishVolume?.(100);
-          engineRef.current?.adjustAudioMixingPlayoutVolume?.(100);
-        }
-      } catch {}
                     
       // Play from raw folder (no extension needed)
       const soundPlayer = new Sound(sound.file, Sound.MAIN_BUNDLE, (error: any) => {
@@ -25681,16 +24104,6 @@ const LiveStreamModal = ({
         soundPlayer.play((success: boolean) => {
           if (success) {
             console.log('Sound played successfully:', sound.label);
-            if (broadcast) {
-              sendSystemMessage(
-                `🔊 ${currentLiveName || 'Host'} played ${sound.label}`,
-                {
-                  systemType: 'sound_effect',
-                  soundId: String(sound.id || '').trim() || undefined,
-                  soundLabel: String(sound.label || '').trim() || undefined,
-                },
-              );
-            }
           } else {
             console.log('Sound playback failed for:', sound.label);
           }
@@ -25711,11 +24124,7 @@ const LiveStreamModal = ({
       [
         ...soundEffects.map(effect => ({
           text: `${effect.icon} ${effect.label}`,
-          onPress: () =>
-            playSoundEffect(effect, {
-              publishToAudience: true,
-              broadcast: true,
-            }),
+          onPress: () => playSoundEffect(effect),
         })),
         { text: 'Cancel', style: 'cancel' },
       ],
@@ -25730,26 +24139,20 @@ const LiveStreamModal = ({
         cfg.USER_MANAGEMENT_BASE_URL)) ||
     '';
                     
-  const sendSystemMessage = async (
-    message: string,
-    extra?: Record<string, any> | null,
-  ) => {
+  const sendSystemMessage = async (message: string) => {
     try {
       let firestoreMod: any = null;
       try {
         firestoreMod = require('@react-native-firebase/firestore').default;
       } catch {}
-      if (firestoreMod && liveCommentScope) {
-        const payload = {
-          ...(extra && typeof extra === 'object' ? extra : {}),
-        };
+      if (firestoreMod && liveDocId) {
         await firestoreMod()
-          .collection(`live/${liveCommentScope}/comments`)
+          .collection(`driftLives/${liveDocId}/comments`)
           .add({
             text: message,
-            from: 'System',
-            fromUid: String(currentLiveUid || '').trim() || null,
-            ...payload,
+            userId: 'system',
+            userName: 'System',
+            avatar: null,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
@@ -26353,7 +24756,7 @@ const LiveStreamModal = ({
             if (!resp.ok) throw new Error('accept failed');
             try {
               await firestore()
-                .collection(`live/${liveDocId}/invite_status`)
+                .collection(`driftLives/${liveDocId}/invite_status`)
                 .doc(userId)
                 .set(
                   {
@@ -26443,7 +24846,6 @@ const LiveStreamModal = ({
     mode = 'none',
     searchOceanEntities,
     isInUserCrew,
-    onClosePanel,
   }: {
     viewers: any[];
     onUserAction: (action: string, userId: string, username: string) => void;
@@ -26452,7 +24854,6 @@ const LiveStreamModal = ({
     mode?: 'none' | 'join' | 'block' | 'remove';
     searchOceanEntities: (term: string) => Promise<SearchResult[]>;
     isInUserCrew: { [uid: string]: boolean };
-    onClosePanel?: () => void;
   }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [panelSearchResults, setPanelSearchResults] = useState<SearchResult[]>([]);
@@ -26468,9 +24869,7 @@ const LiveStreamModal = ({
       none: null,
       join: 'Search for a viber and tap to add them to your crew.',
       block: 'Search for a viber and tap to add them to the backend block list.',
-      remove: isConferenceMode
-        ? 'Search for a participant and tap to remove from conference.'
-        : 'Search for a viber and tap to remove them from your crew.',
+      remove: 'Search for a viber and tap to remove them from your crew.',
     };
                     
     const runUserPanelSearch = useCallback(async () => {
@@ -26522,16 +24921,7 @@ const LiveStreamModal = ({
       ];
       return [
         ...base,
-        {
-          label: isConferenceMode ? 'Accept Join Request' : 'Accept To Drift',
-          action: 'acceptDrift',
-          icon: '✅',
-        },
-        {
-          label: isConferenceMode ? 'Remove Participant' : 'Remove User',
-          action: 'kick',
-          icon: '❌',
-        },
+        { label: 'Accept To Drift', action: 'acceptDrift', icon: '✅' },
         ...moderation,
         ...restrictive,
         ...crewActions,
@@ -26560,34 +24950,6 @@ const LiveStreamModal = ({
                     
     return (
       <View style={userManagementStyles.panel}>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            marginBottom: 8,
-          }}
-        >
-          <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 13 }}>
-            {isConferenceMode ? 'Conference Roster' : 'Drift Crew'}
-          </Text>
-          <Pressable
-            onPress={() => {
-              onClosePanel && onClosePanel();
-            }}
-            style={{
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.25)',
-              borderRadius: 8,
-              paddingHorizontal: 10,
-              paddingVertical: 5,
-            }}
-          >
-            <Text style={{ color: 'white', fontWeight: '700', fontSize: 11 }}>
-              Back
-            </Text>
-          </Pressable>
-        </View>
         <TextInput
           placeholder="Search viewers..."
           value={searchQuery}
@@ -26807,21 +25169,6 @@ const LiveStreamModal = ({
     },
   });
                     
-  const openParticipantQuickActions = (participant: {
-    uid: string;
-    name: string;
-    rtcUid: number;
-  }) => {
-    if (!participant?.uid) return;
-    setParticipantQuickAction({
-      uid: String(participant.uid || ''),
-      name: String(participant.name || participant.uid || 'Crew'),
-      rtcUid: Number(participant.rtcUid || 0),
-    });
-  };
-
-  const canModerateParticipant = isLiveHost || isLiveCoHost;
-
   if (!visible) return null;
   if (!Agora) {
     return (
@@ -26876,6 +25223,12 @@ const LiveStreamModal = ({
     );
   }
                     
+  const liveDisplayHandle = (uid?: string | null, name?: string | null) => {
+    const currentUid = String(auth?.()?.currentUser?.uid || '').trim();
+    if (uid && currentUid && String(uid) === currentUid) return 'You';
+    const raw = String(name || '').trim().replace(/^[@/]+/, '');
+    return raw || 'Crew';
+  };
   const AVView = Agora?.AgoraVideoView;
   const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
   const RtcTextureView = (Agora as any)?.RtcTextureView;
@@ -26883,55 +25236,29 @@ const LiveStreamModal = ({
   const RtcRemoteView = Agora?.RtcRemoteView;
   const VideoRenderMode = Agora?.VideoRenderMode;
   const VideoSourceType = Agora?.VideoSourceType;
-  const mainRemoteUid = resolvedMainRemoteUid;
-  const localVideoSourceType =
-    (VideoSourceType &&
-      (VideoSourceType.VideoSourceCameraPrimary ?? VideoSourceType.VideoSourceCamera)) ||
-    0;
-  const localCanvas = {
-    uid: 0,
-    renderMode: VideoRenderMode?.Fit ?? 2,
-    sourceType: localVideoSourceType,
-  };
-  const localPreviewTop = insets.top + 8;
-  const localPreviewHeight = 156;
-  const onlineInvitePanelTopBase = insets.top + (pendingRequests.length > 0 ? 210 : 90);
-  const onlineInvitePanelTop = Math.max(
-    onlineInvitePanelTopBase,
-    localPreviewTop + localPreviewHeight + 18,
+  const joinedParticipantMeta = joinedParticipants.filter(
+    participant => String(participant.uid || '').trim() !== currentLiveUserUid,
   );
-  const renderLocalLivePreview = () => {
-    if (RtcSurfaceView) {
-      return React.createElement(RtcSurfaceView, {
-        style: StyleSheet.absoluteFill,
-        canvas: localCanvas,
-        zOrderMediaOverlay: true,
-      });
-    }
-    if (RtcTextureView) {
-      return React.createElement(RtcTextureView, {
-        style: StyleSheet.absoluteFill,
-        canvas: localCanvas,
-      });
-    }
-    if (RtcLocalView?.SurfaceView) {
-      return React.createElement(RtcLocalView.SurfaceView, {
-        style: StyleSheet.absoluteFill,
-        renderMode: VideoRenderMode?.Fit ?? 2,
-      });
-    }
-    if (AVView) {
-      return (
-        <AVView
-          style={StyleSheet.absoluteFill}
-          showLocalVideo={true}
-          videoSourceType={localVideoSourceType}
-          renderMode={(VideoRenderMode && (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) || 2}
-        />
-      );
-    }
-    return null;
-  };
+  const remoteDisplayParticipants = remoteParticipantUids.map((rtcUid, index) => {
+    const participant = joinedParticipantMeta[index];
+    const fallbackIsCaptain = !isCurrentUserDriftCaptain && index === 0;
+    const isCaptainParticipant =
+      String(participant?.uid || '') === String(liveHostId || '') || fallbackIsCaptain;
+    return {
+      rtcUid,
+      userUid: participant?.uid || String(rtcUid),
+      name:
+        participant?.name ||
+        (isCaptainParticipant ? hostName || 'Drift Captain' : `Crew ${index + 1}`),
+      photo: participant?.photo || null,
+      role: isCaptainParticipant ? 'Drift Captain' : 'Crew',
+    };
+  });
+  const mainRemoteParticipant =
+    (pinnedRemoteUid
+      ? remoteDisplayParticipants.find(p => p.rtcUid === pinnedRemoteUid)
+      : null) || remoteDisplayParticipants[0] || null;
+  const mainRemoteUid = mainRemoteParticipant?.rtcUid || null;
                     
   return (
     <Modal
@@ -26941,389 +25268,63 @@ const LiveStreamModal = ({
       onRequestClose={onClose}
     >
       <View style={editorStyles.editorRoot}>
-        
-        {isLiveStarted && (activeSharedFile || (isConferenceMode && localPresentedAsset)) && (
-          <View
+        {isLiveStarted && (
+          <Text
             style={{
+              color: 'white',
               position: 'absolute',
-              top: isConferenceMode ? undefined : insets.top + 2,
-              left: 8,
-              right: 8,
-              bottom: isConferenceMode
-                ? insets.bottom + endBarHeight + mediaBarHeight + 18
-                : undefined,
-              zIndex: 15,
-              backgroundColor: 'rgba(0,0,0,0.82)',
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: 'rgba(255,255,255,0.18)',
-              paddingHorizontal: 10,
-              paddingVertical: 6,
+              top: insets.top + 10,
+              left: 16,
+              zIndex: 10,
+              backgroundColor: 'navy',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 4,
+              fontWeight: 'bold',
             }}
           >
-            <Text
-              numberOfLines={1}
-              style={{ color: '#DCEFFF', fontWeight: '800', fontSize: 12 }}
-            >
-              {`${activeSharedFile?.uploadedByName || currentLiveName || 'Someone'} is presenting "${activeSharedFile?.name || localPresentedAsset?.name || 'Shared file'}"`}
-            </Text>
-            <View style={{ flexDirection: 'row', marginTop: 6, gap: 8 }}>
-              <Pressable
-                style={[
-                  styles.secondaryBtn,
-                  { minHeight: 34, minWidth: 44, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
-                ]}
-                onPress={() => {
-                  if (!isConferenceMode) return;
-                  setShowConferenceChatPanel(false);
-                  setShowConferenceRosterPanel(false);
-                  void beginConferencePresentation();
-                }}
-              >
-                <Text style={styles.secondaryBtnText}>
-                  {isConferencePresentingBusy ? '...' : '▣'}
-                </Text>
-              </Pressable>
-              {isFilePresentationActive ? (
-                <>
-                  {isCurrentPresenter ? (
-                    <>
-                      <Pressable
-                        style={[
-                          styles.secondaryBtn,
-                          {
-                            minHeight: 34,
-                            minWidth: 42,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            paddingHorizontal: 10,
-                          },
-                        ]}
-                        onPress={() => goToPresentationPage(currentPresentationPage - 1)}
-                      >
-                        <Text style={styles.secondaryBtnText}>◀</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.secondaryBtn,
-                          {
-                            minHeight: 34,
-                            minWidth: 42,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            paddingHorizontal: 10,
-                          },
-                        ]}
-                        onPress={() => goToPresentationPage(currentPresentationPage + 1)}
-                      >
-                        <Text style={styles.secondaryBtnText}>▶</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.secondaryBtn,
-                          {
-                            minHeight: 34,
-                            minWidth: 52,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            paddingHorizontal: 10,
-                            borderColor: isSlideAutoPlay
-                              ? 'rgba(0,194,255,0.85)'
-                              : undefined,
-                          },
-                        ]}
-                        onPress={() => setIsSlideAutoPlay(v => !v)}
-                      >
-                        <Text style={styles.secondaryBtnText}>
-                          {isSlideAutoPlay ? '▮▮' : '▷'}
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.primaryBtn,
-                          { minHeight: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
-                        ]}
-                        onPress={stopPresentationNow}
-                      >
-                      <Text style={styles.primaryBtnText}>Stop Share</Text>
-                      </Pressable>
-                    </>
-                  ) : (
-                    <View
-                      style={[
-                        styles.secondaryBtn,
-                        {
-                          flex: 1,
-                          minHeight: 34,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          paddingHorizontal: 10,
-                        },
-                      ]}
-                      >
-                        <Text style={styles.secondaryBtnText}>
-                        👁 {activeSharedFile?.uploadedByName || 'Presenter'}
-                        </Text>
-                      </View>
-                  )}
-                </>
-              ) : null}
-            </View>
-          </View>
+            DRIFTING
+          </Text>
         )}
-        {isLiveStarted && pinnedLiveComment && (
-          <View
+        {isLiveStarted && (
+          <Text
             style={{
+              color: 'white',
               position: 'absolute',
-              top: insets.top + (hasOpenedPresentation ? 72 : 8),
-              left: 8,
-              right: 8,
-              zIndex: 15,
-              backgroundColor: 'rgba(8,20,39,0.9)',
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: 'rgba(0,194,255,0.48)',
-              paddingHorizontal: 10,
-              paddingVertical: 6,
+              top: insets.top + 10,
+              right: 16,
+              zIndex: 10,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 4,
+              fontWeight: 'bold',
             }}
           >
-            <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 11 }}>
-              PINNED MESSAGE
-            </Text>
-            <Text numberOfLines={2} style={{ color: 'white', fontSize: 12, marginTop: 2 }}>
-              {safeCommentHandle(pinnedLiveComment.from || 'User')}: {pinnedLiveComment.text}
-            </Text>
-          </View>
+            {livePrivacy.toUpperCase()}
+          </Text>
         )}
-        {isLiveStarted && liveMoments.length > 0 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
+        {isLiveStarted && (
+          <Text
             style={{
+              color: 'white',
               position: 'absolute',
-              left: 8,
-              right: showLiveControls ? 108 : 8,
-              top: insets.top + (hasOpenedPresentation ? 114 : 44),
-              zIndex: 14,
-              maxHeight: 34,
+              top: insets.top + 42,
+              right: 16,
+              zIndex: 10,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 4,
+              fontWeight: 'bold',
             }}
-            contentContainerStyle={{ alignItems: 'center', gap: 6, paddingRight: 8 }}
           >
-            {liveMoments.map(moment => (
-              <View
-                key={moment.id}
-                style={{
-                  paddingHorizontal: 8,
-                  paddingVertical: 5,
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: 'rgba(255,255,255,0.28)',
-                  backgroundColor: 'rgba(0,0,0,0.52)',
-                }}
-              >
-                <Text numberOfLines={1} style={{ color: 'white', fontSize: 10, maxWidth: 190 }}>
-                  {moment.text}
-                </Text>
-              </View>
-            ))}
-          </ScrollView>
+            Viewers {sessionViewerCount}
+          </Text>
         )}
         {isLiveStarted && (
           <>
-            {isFilePresentationActive && canRenderPresentationInApp ? (
-              <View
-                style={[
-                  StyleSheet.absoluteFill,
-                  {
-                    backgroundColor: 'transparent',
-                    alignItems: 'center',
-                    justifyContent: 'flex-start',
-                    paddingTop: insets.top + 92,
-                    paddingBottom: insets.bottom + endBarHeight + 110,
-                    paddingHorizontal: 14,
-                  },
-                ]}
-              >
-                <View
-                  style={{
-                    width: '100%',
-                    maxWidth: Math.min(920, SCREEN_WIDTH - 28),
-                    height: Math.max(200, Math.min(SCREEN_HEIGHT * 0.46, 500)),
-                    borderRadius: 14,
-                    borderWidth: 1,
-                    borderColor: 'rgba(157,230,255,0.35)',
-                    overflow: 'hidden',
-                    backgroundColor: 'rgba(11,20,38,0.94)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {presentationUri && isImageFileType(presentationMimeType, presentationName) ? (
-                    <Image
-                      source={{ uri: presentationUri }}
-                      resizeMode="contain"
-                      style={{ width: '100%', height: '100%' }}
-                    />
-                  ) : presentationUri && isVideoFileType(presentationMimeType, presentationName) && RNVideo ? (
-                    <RNVideo
-                      source={{ uri: presentationUri }}
-                      controls
-                      paused={false}
-                      resizeMode="contain"
-                      style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
-                    />
-                  ) : presentationUri && isAudioFileType(presentationMimeType, presentationName) && RNVideo ? (
-                    <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20 }}>
-                      <Text style={{ color: '#DCEFFF', fontWeight: '800', fontSize: 13 }}>
-                        AUDIO PRESENTATION
-                      </Text>
-                      <Text
-                        numberOfLines={2}
-                        style={{ color: 'white', marginTop: 8, textAlign: 'center', fontWeight: '700' }}
-                      >
-                        {presentationName || 'Audio file'}
-                      </Text>
-                      <RNVideo
-                        source={{ uri: presentationUri }}
-                        controls
-                        paused={false}
-                        style={{ width: 320, height: 60, marginTop: 10 }}
-                      />
-                    </View>
-                  ) : shouldUseLocalDocWebView ? (
-                    React.createElement(RNWebView, {
-                      source: { uri: presentationUri },
-                      style: { width: '100%', height: '100%', backgroundColor: '#0B1426' },
-                      originWhitelist: ['*'],
-                      javaScriptEnabled: true,
-                      domStorageEnabled: true,
-                      allowsInlineMediaPlayback: true,
-                      allowFileAccess: true,
-                      allowUniversalAccessFromFileURLs: true,
-                      allowingReadAccessToURL: presentationUri,
-                      startInLoadingState: true,
-                      renderLoading: () =>
-                        React.createElement(
-                          View,
-                          {
-                            style: {
-                              flex: 1,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: '#0B1426',
-                            },
-                          },
-                          React.createElement(ActivityIndicator, {
-                            size: 'small',
-                            color: '#9DE6FF',
-                          }),
-                        ),
-                    })
-                  ) : shouldUseDocWebView ? (
-                    React.createElement(RNWebView, {
-                      source: { uri: embeddedDocViewerUrl },
-                      style: { width: '100%', height: '100%', backgroundColor: '#0B1426' },
-                      originWhitelist: ['*'],
-                      javaScriptEnabled: true,
-                      domStorageEnabled: true,
-                      allowsInlineMediaPlayback: true,
-                      startInLoadingState: true,
-                      renderLoading: () =>
-                        React.createElement(
-                          View,
-                          {
-                            style: {
-                              flex: 1,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: '#0B1426',
-                            },
-                          },
-                          React.createElement(ActivityIndicator, {
-                            size: 'small',
-                            color: '#9DE6FF',
-                          }),
-                        ),
-                    })
-                  ) : (
-                    <View style={{ alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 }}>
-                      <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 12 }}>
-                        LIVE PRESENTATION
-                      </Text>
-                      <Text
-                        numberOfLines={2}
-                        style={{
-                          color: 'white',
-                          fontWeight: '800',
-                          fontSize: 17,
-                          marginTop: 10,
-                          textAlign: 'center',
-                        }}
-                      >
-                        {presentationName || 'Shared file'}
-                      </Text>
-                      <Text
-                        style={{
-                          color: 'rgba(220,239,255,0.82)',
-                          fontSize: 12,
-                          marginTop: 8,
-                          textAlign: 'center',
-                          lineHeight: 18,
-                        }}
-                      >
-                        This file format is being presented in-session. Keep controls visible and use ◀ ▶ to coordinate pages.
-                      </Text>
-                      {!presentationUri ? (
-                        <View style={{ marginTop: 12, alignItems: 'center' }}>
-                          <ActivityIndicator size="small" color="#9DE6FF" />
-                          <Text style={{ color: 'rgba(220,239,255,0.82)', marginTop: 8, fontSize: 12 }}>
-                            Preparing shared file...
-                          </Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  )}
-                </View>
-                <Text
-                  style={{
-                    color: 'rgba(220,239,255,0.85)',
-                    fontSize: 12,
-                    marginTop: 10,
-                    textAlign: 'center',
-                    paddingHorizontal: 10,
-                  }}
-                >
-                  {presentationName || 'Shared file'}
-                </Text>
-              </View>
-            ) : isFilePresentationActive ? (
-              <View
-                style={{
-                  position: 'absolute',
-                  top: insets.top + 150,
-                  left: 14,
-                  right: 14,
-                  zIndex: 13,
-                  borderRadius: 12,
-                  borderWidth: 1,
-                  borderColor: 'rgba(0,194,255,0.45)',
-                  backgroundColor: 'rgba(8,20,39,0.88)',
-                  paddingHorizontal: 12,
-                  paddingVertical: 10,
-                  alignItems: 'center',
-                }}
-              >
-                <ActivityIndicator size="small" color="#9DE6FF" />
-                <Text style={{ color: '#DCEFFF', marginTop: 6, fontWeight: '700', fontSize: 12 }}>
-                  Opening shared file in-app...
-                </Text>
-                <Text style={{ color: 'rgba(255,255,255,0.72)', marginTop: 2, fontSize: 11 }}>
-                  {String(activeSharedFile?.status || '').toLowerCase() === 'selecting'
-                    ? 'Presenter is selecting a file'
-                    : 'Preparing document preview for everyone'}
-                </Text>
-              </View>
-            ) : mainRemoteUid ? (
+            {mainRemoteUid ? (
               RtcSurfaceView ? (
                 React.createElement(RtcSurfaceView, {
                   style: StyleSheet.absoluteFill,
@@ -27354,81 +25355,204 @@ const LiveStreamModal = ({
                     { alignItems: 'center', justifyContent: 'center' },
                   ]}
                 >
-                  <Text style={{ color: 'white' }}>Fetching participant video...</Text>
+                  <Text style={{ color: 'white' }}>Connecting remote video...</Text>
                 </View>
               )
+            ) : AVView ? (
+              <AVView
+                style={StyleSheet.absoluteFill}
+                showLocalVideo={true}
+                videoSourceType={
+                  (VideoSourceType &&
+                    (VideoSourceType.VideoSourceCameraPrimary ??
+                      VideoSourceType.VideoSourceCamera)) ||
+                  0
+                }
+                renderMode={
+                  (VideoRenderMode &&
+                    (VideoRenderMode.Fit ?? VideoRenderMode.Hidden)) ||
+                  2
+                }
+              />
+            ) : RtcSurfaceView ? (
+              React.createElement(RtcSurfaceView, {
+                style: StyleSheet.absoluteFill,
+                canvas: {
+                  uid: 0,
+                  renderMode: VideoRenderMode?.Fit ?? 2,
+                },
+                zOrderMediaOverlay: true,
+              })
+            ) : RtcTextureView ? (
+              React.createElement(RtcTextureView, {
+                style: StyleSheet.absoluteFill,
+                canvas: {
+                  uid: 0,
+                  renderMode: VideoRenderMode?.Fit ?? 2,
+                },
+              })
+            ) : RtcLocalView?.SurfaceView ? (
+              React.createElement(RtcLocalView.SurfaceView, {
+                style: StyleSheet.absoluteFill,
+                renderMode: VideoRenderMode?.Fit ?? 2,
+              })
             ) : (
-              renderLocalLivePreview() || (
-                <View
-                  style={[
-                    StyleSheet.absoluteFill,
-                    { alignItems: 'center', justifyContent: 'center' },
-                  ]}
-                >
-                  <Text style={{ color: 'white' }}>Initializing camera preview...</Text>
-                </View>
-              )
-            )}
-            {false && !isFilePresentationActive && !!visualFilterOverlayColor && (
               <View
-                pointerEvents="none"
                 style={[
                   StyleSheet.absoluteFill,
-                  {
-                    backgroundColor: visualFilterOverlayColor,
-                    zIndex: 3,
-                  },
+                  { alignItems: 'center', justifyContent: 'center' },
                 ]}
-              />
+              >
+                <Text style={{ color: 'white' }}>Initializing preview...</Text>
+              </View>
             )}
-            {!isFilePresentationActive && !cameraHidden && (
+            {!mainRemoteUid && !cameraHidden && (
               <View
                 style={{
                   position: 'absolute',
-                  left: 12,
-                  top: localPreviewTop,
+                  right: 12,
+                  bottom: insets.bottom + endBarHeight + 96,
                   width: 110,
-                  height: localPreviewHeight,
+                  height: 156,
                   borderRadius: 12,
                   overflow: 'hidden',
                   borderWidth: 1,
                   borderColor: 'rgba(255,255,255,0.45)',
                   backgroundColor: '#050B15',
-                  zIndex: 6,
                 }}
               >
-                {renderLocalLivePreview()}
+                {AVView ? (
+                  <AVView
+                    style={StyleSheet.absoluteFill}
+                    showLocalVideo={true}
+                    videoSourceType={
+                      (VideoSourceType &&
+                        (VideoSourceType.VideoSourceCameraPrimary ??
+                          VideoSourceType.VideoSourceCamera)) ||
+                      0
+                    }
+                    renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
+                  />
+                ) : RtcSurfaceView ? (
+                  React.createElement(RtcSurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                    zOrderMediaOverlay: true,
+                  })
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
+                ) : RtcLocalView?.SurfaceView ? (
+                  React.createElement(RtcLocalView.SurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  })
+                ) : null}
+              </View>
+            )}
+            {!!mainRemoteUid && !cameraHidden && (
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  bottom: insets.bottom + endBarHeight + 108,
+                  zIndex: 6,
+                  backgroundColor: 'rgba(3,10,18,0.72)',
+                  borderRadius: 12,
+                  paddingHorizontal: 10,
+                  paddingVertical: 7,
+                  borderWidth: 1,
+                  borderColor: 'rgba(157,230,255,0.35)',
+                }}
+              >
+                <Text style={{ color: 'white', fontWeight: '800', fontSize: 13 }}>
+                  {mainRemoteParticipant?.name || 'Crew'}
+                </Text>
+                <Text style={{ color: 'rgba(157,230,255,0.95)', fontSize: 11 }}>
+                  {mainRemoteParticipant?.role || 'Crew'}
+                </Text>
+              </View>
+            )}
+            {!!mainRemoteUid && (
+              <View
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  bottom: insets.bottom + endBarHeight + 96,
+                  width: 110,
+                  height: 156,
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.45)',
+                  backgroundColor: '#050B15',
+                }}
+              >
+                {AVView ? (
+                  <AVView
+                    style={StyleSheet.absoluteFill}
+                    showLocalVideo={true}
+                    videoSourceType={
+                      (VideoSourceType &&
+                        (VideoSourceType.VideoSourceCameraPrimary ??
+                          VideoSourceType.VideoSourceCamera)) ||
+                      0
+                    }
+                    renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
+                  />
+                ) : RtcSurfaceView ? (
+                  React.createElement(RtcSurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                    zOrderMediaOverlay: true,
+                  })
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
+                ) : RtcLocalView?.SurfaceView ? (
+                  React.createElement(RtcLocalView.SurfaceView, {
+                    style: StyleSheet.absoluteFill,
+                    renderMode: VideoRenderMode?.Fit ?? 2,
+                  })
+                ) : null}
               </View>
             )}
           </>
         )}
-        {isLiveStarted && !isConferenceMode && displayedLiveComments.length > 0 && (
+        {isLiveStarted && liveComments.length > 0 && (
           <ScrollView
             style={[
               editorStyles.liveCommentsOverlay,
               {
-                left: 10,
-                right: showLiveControls ? 108 : 10,
-                bottom:
-                  insets.bottom +
-                  endBarHeight +
-                  mediaBarHeight +
-                  (showCommentInput ? 172 : 92),
-                top: insets.top + 110,
-                maxHeight: 240,
+                bottom: insets.bottom + endBarHeight + mediaBarHeight + 16,
+                top: '25%',
               },
             ]}
-            pointerEvents="box-none"
             contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}
             showsVerticalScrollIndicator={false}
           >
             <View>
-              {displayedLiveComments.map(c => (
+              {liveComments.map(c => (
                 <Pressable
                   key={c.id}
-                  style={{ marginBottom: 8 }}
                   onLongPress={() => {
-                    const actions: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'default' | 'destructive' }> = [
+                    Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, [
                       {
                         text: 'Splash',
                         onPress: () => onSplashComment(c.id),
@@ -27437,71 +25561,44 @@ const LiveStreamModal = ({
                         text: 'Echo Back',
                         onPress: () => onEchoBack(c as any),
                       },
-                    ];
-                    if (isLiveHost || isLiveCoHost) {
-                      actions.push({
-                        text:
-                          pinnedLiveComment?.id === c.id ? 'Unpin Message' : 'Pin Message',
-                        onPress: () => {
-                          if (pinnedLiveComment?.id === c.id) {
-                            setPinnedLiveComment(null);
-                          } else {
-                            setPinnedLiveComment({
-                              id: String(c.id || ''),
-                              text: String((c as any).text || ''),
-                              from: String((c as any).from || 'User'),
-                            });
-                          }
-                        },
-                      });
-                    }
-                    actions.push({ text: 'Cancel', style: 'cancel' });
-                    Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, actions);
+                      { text: 'Cancel', style: 'cancel' },
+                    ]);
                   }}
                 >
                   <View style={editorStyles.liveCommentBubble}>
                     <View style={{ flex: 1 }}>
                       <Text style={editorStyles.liveCommentAuthor}>
-                        {(() => {
-                          try {
-                            const author = String((c as any)?.from || '').trim();
-                            if (!author) return 'User';
-                            if (author.toLowerCase() === 'you') return 'You';
-                            return safeCommentHandle(author);
-                          } catch {
-                            return 'User';
-                          }
-                        })()}
+                        {(c as any).fromUid
+                          ? liveDisplayHandle((c as any).fromUid, c.from)
+                          : c.from === 'You'
+                          ? 'You'
+                          : formatHandle(c.from)}
                         :
                       </Text>
                       {!!(c as any).replyToFrom && (
                         <View
                           style={{
                             borderLeftWidth: 2,
-                            borderLeftColor: 'rgba(255,224,130,0.95)',
+                            borderLeftColor: 'rgba(157,230,255,0.9)',
                             paddingLeft: 6,
                             marginBottom: 3,
-                            backgroundColor: 'rgba(255,255,255,0.04)',
-                            borderRadius: 6,
                           }}
                         >
                           <Text
                             style={{
-                              color: '#FFE082',
+                              color: 'rgba(157,230,255,0.95)',
                               fontSize: 10,
                               marginBottom: 1,
-                              fontWeight: '700',
                             }}
                             numberOfLines={1}
                           >
-                            {safeCommentHandle((c as any).from || 'User')} replied to{' '}
-                            {safeCommentHandle((c as any).replyToFrom || 'message')}
+                            {liveDisplayHandle((c as any).fromUid, (c as any).from || 'User')} replied to{' '}
+                            {liveDisplayHandle(null, (c as any).replyToFrom || 'message')}
                           </Text>
                           <Text
                             style={{
-                              color: '#D6C8FF',
+                              color: 'rgba(157,230,255,0.82)',
                               fontSize: 11,
-                              fontStyle: 'italic',
                             }}
                             numberOfLines={1}
                           >
@@ -27531,34 +25628,7 @@ const LiveStreamModal = ({
             </View>
           </ScrollView>
         )}
-        {false && isLiveStarted && !isConferenceMode && latestDisplayedComment && (
-          <View
-            style={{
-              position: 'absolute',
-              left: 12,
-              right: showLiveControls ? 108 : 12,
-              bottom: insets.bottom + endBarHeight + mediaBarHeight + 12,
-              zIndex: 12,
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: 'rgba(157,230,255,0.4)',
-              backgroundColor: 'rgba(0,0,0,0.58)',
-              paddingHorizontal: 10,
-              paddingVertical: 8,
-            }}
-          >
-            <Text style={{ color: '#9DE6FF', fontWeight: '800', fontSize: 11 }}>
-              LIVE MESSAGE
-            </Text>
-            <Text
-              numberOfLines={2}
-              style={{ color: 'white', fontSize: 12, marginTop: 2 }}
-            >
-              {safeCommentHandle((latestDisplayedComment as any)?.from || 'User')}: {String((latestDisplayedComment as any)?.text || '')}
-            </Text>
-          </View>
-        )}
-        {isLiveStarted && !isConferenceMode && flyingComments.length > 0 && (
+        {isLiveStarted && flyingComments.length > 0 && (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             {flyingComments.map((fc, idx) => {
               const translateY = fc.anim.interpolate({
@@ -27591,7 +25661,7 @@ const LiveStreamModal = ({
                 >
                   <View style={editorStyles.liveCommentBubble}>
                     <Text style={editorStyles.liveCommentAuthor}>
-                      {safeCommentHandle(fc.from)}:
+                      {fc.from === 'You' ? 'You' : formatHandle(fc.from)}:
                     </Text>
                     <Text style={editorStyles.liveCommentText}>{fc.text}</Text>
                   </View>
@@ -27646,7 +25716,7 @@ const LiveStreamModal = ({
             <Text
               style={{ color: 'white', fontWeight: '800', marginBottom: 6 }}
             >
-              {isConferenceMode ? 'Pending Join Requests' : 'Pending Drift Requests'}
+              Pending Drift Requests
             </Text>
             {pendingRequests.map(r => (
               <View
@@ -27670,19 +25740,17 @@ const LiveStreamModal = ({
                     handleUserAction('acceptDrift', r.uid, r.name || r.uid)
                   }
                 >
-                  <Text style={styles.primaryBtnText}>
-                    {isConferenceMode ? 'Accept Join' : 'Accept'}
-                  </Text>
+                  <Text style={styles.primaryBtnText}>Accept</Text>
                 </Pressable>
               </View>
             ))}
           </View>
         )}
-        {isLiveStarted && !isConferenceMode && showOnlineInvitePanel && (
+        {isLiveStarted && showOnlineInvitePanel && (
           <View
             style={{
               position: 'absolute',
-              top: onlineInvitePanelTop,
+              top: insets.top + (pendingRequests.length > 0 ? 210 : 90),
               left: 12,
               width: 220,
               backgroundColor: 'rgba(0,0,0,0.78)',
@@ -27701,10 +25769,7 @@ const LiveStreamModal = ({
               }}
             >
               <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
-                Here now
-              </Text>
-              <Text style={{ color: '#FF3B30', fontWeight: '800', marginLeft: 4 }}>
-                ({onlineUsers.length})
+                Here now! ({onlineUsers.length})
               </Text>
               <Pressable onPress={() => setShowOnlineInvitePanel(false)}>
                 <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Hide</Text>
@@ -27730,9 +25795,7 @@ const LiveStreamModal = ({
                 .slice(0, 6)
                 .map(u => {
                 const status = getInviteStatusLabel(u.uid);
-                const isJoinedCrew = joinedUidSet.has(String(u.uid || ''));
                 const sending = !!hereNowInviteSendingByUid[u.uid];
-                const inviteLocked = status === 'Invited' || isJoinedCrew;
                 return (
                   <View
                     key={u.uid}
@@ -27775,7 +25838,6 @@ const LiveStreamModal = ({
                           style={{ color: 'white', fontWeight: '700', fontSize: 12 }}
                         >
                           {u.name}
-                          {isJoinedCrew ? ' ✅' : ''}
                         </Text>
                         {status ? (
                           <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 10 }}>
@@ -27785,7 +25847,7 @@ const LiveStreamModal = ({
                       </View>
                     </View>
                     <Pressable
-                      disabled={sending || inviteLocked}
+                      disabled={sending}
                       style={[
                         styles.primaryBtn,
                         {
@@ -27795,7 +25857,8 @@ const LiveStreamModal = ({
                           backgroundColor:
                             sending
                               ? '#2F3640'
-                              : inviteLocked
+                              : 
+                            status === 'Invited'
                               ? '#1E7A4A'
                               : status === 'Accepted'
                               ? '#6C7A89'
@@ -27824,10 +25887,8 @@ const LiveStreamModal = ({
                       <Text style={[styles.primaryBtnText, { fontSize: 11 }]}>
                         {sending
                           ? '...'
-                          : isJoinedCrew
-                          ? 'Joined'
-                          : inviteLocked
-                          ? 'Invited'
+                          : status === 'Invited'
+                          ? 'Resend'
                           : status === 'Accepted'
                           ? 'Invite'
                           : 'Invite'}
@@ -27839,7 +25900,8 @@ const LiveStreamModal = ({
             )}
           </View>
         )}
-        {isLiveStarted && joinedParticipants.length > 0 && (
+        {isLiveStarted &&
+          (remoteDisplayParticipants.length > 0 || joinedParticipants.length > 0) && (
           <View
             style={{
               position: 'absolute',
@@ -27854,68 +25916,97 @@ const LiveStreamModal = ({
             }}
           >
             <Text style={{ color: '#9DE6FF', fontWeight: '800', marginBottom: 6 }}>
-              Joined ({joinedParticipants.length})
+              Joined ({Math.max(remoteDisplayParticipants.length, joinedParticipants.length)})
             </Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {orderedJoinedParticipants.map(p => (
-                  <Pressable
-                    key={p.uid}
-                    onPress={() => openParticipantQuickActions(p)}
-                    style={{
-                      alignItems: 'center',
-                      marginRight: 10,
-                      width: 56,
-                      borderRadius: 10,
-                      paddingVertical: 4,
-                      backgroundColor:
-                        activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
-                          ? 'rgba(0,194,255,0.20)'
-                          : 'transparent',
-                      borderWidth:
-                        activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid ? 1 : 0,
-                      borderColor: 'rgba(0,194,255,0.75)',
-                    }}
+                {(remoteDisplayParticipants.length > 0
+                  ? remoteDisplayParticipants
+                  : joinedParticipants.map(p => ({
+                      rtcUid: null,
+                      userUid: p.uid,
+                      name: p.name,
+                      photo: p.photo,
+                      role:
+                        String(p.uid || '') === String(liveHostId || '')
+                          ? 'Drift Captain'
+                          : 'Crew',
+                    }))).map(p => (
+                  <View
+                    key={p.userUid}
+                    style={{ alignItems: 'center', marginRight: 10, width: 84 }}
                   >
-                    {p.photo ? (
+                    {p.rtcUid && RtcSurfaceView ? (
+                      <View
+                        style={{
+                          width: 72,
+                          height: 108,
+                          borderRadius: 14,
+                          overflow: 'hidden',
+                          backgroundColor: '#040B14',
+                          borderWidth: 1,
+                          borderColor: 'rgba(157,230,255,0.35)',
+                          marginBottom: 4,
+                        }}
+                      >
+                        {React.createElement(RtcSurfaceView, {
+                          style: StyleSheet.absoluteFill,
+                          canvas: {
+                            uid: p.rtcUid,
+                            renderMode: VideoRenderMode?.Fit ?? 2,
+                          },
+                        })}
+                        <View
+                          style={{
+                            position: 'absolute',
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            paddingHorizontal: 6,
+                            paddingVertical: 5,
+                            backgroundColor: 'rgba(0,0,0,0.48)',
+                          }}
+                        >
+                          <Text
+                            numberOfLines={1}
+                            style={{
+                              color: 'white',
+                              fontSize: 10,
+                              fontWeight: '700',
+                            }}
+                          >
+                            {p.name}
+                          </Text>
+                          <Text
+                            numberOfLines={1}
+                            style={{
+                              color: 'rgba(157,230,255,0.9)',
+                              fontSize: 9,
+                              marginTop: 1,
+                            }}
+                          >
+                            {p.role}
+                          </Text>
+                        </View>
+                      </View>
+                    ) : p.photo ? (
                       <Image
                         source={{ uri: p.photo }}
-                        style={{
-                          width:
-                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
-                              ? 38
-                              : 34,
-                          height:
-                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
-                              ? 38
-                              : 34,
-                          borderRadius:
-                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
-                              ? 19
-                              : 17,
-                        }}
+                        style={{ width: 56, height: 56, borderRadius: 28, marginBottom: 4 }}
                       />
                     ) : (
                       <View
                         style={{
-                          width:
-                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
-                              ? 38
-                              : 34,
-                          height:
-                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
-                              ? 38
-                              : 34,
-                          borderRadius:
-                            activeSpeakerIsRecent && p.rtcUid === activeSpeakerRtcUid
-                              ? 19
-                              : 17,
+                          width: 56,
+                          height: 56,
+                          borderRadius: 28,
                           backgroundColor: 'rgba(255,255,255,0.18)',
                           alignItems: 'center',
                           justifyContent: 'center',
+                          marginBottom: 4,
                         }}
                       >
-                        <Text style={{ color: 'white', fontSize: 11 }}>
+                        <Text style={{ color: 'white', fontSize: 16 }}>
                           {p.name.charAt(0).toUpperCase()}
                         </Text>
                       </View>
@@ -27925,159 +26016,64 @@ const LiveStreamModal = ({
                       style={{
                         color: 'rgba(255,255,255,0.86)',
                         fontSize: 10,
-                        marginTop: 3,
                       }}
                     >
                       {p.name}
                     </Text>
                     <Text
+                      numberOfLines={1}
                       style={{
-                        color:
-                          String(p.uid || '') === effectiveLiveHostUid
-                            ? '#9DE6FF'
-                            : 'rgba(255,255,255,0.62)',
+                        color: 'rgba(157,230,255,0.9)',
                         fontSize: 9,
                         marginTop: 1,
-                        fontWeight: '700',
                       }}
                     >
-                      {String(p.uid || '') === effectiveLiveHostUid
-                        ? 'Drift Captain'
-                        : 'Crew'}
+                      {p.role}
                     </Text>
-                  </Pressable>
+                  </View>
                 ))}
               </View>
             </ScrollView>
           </View>
         )}
-        {isLiveStarted && remoteDisplayUids.length > 0 && (
-          <Pressable
-            onPress={() => {
-              const uid = Number(mainRemoteUid || remoteDisplayUids[0] || 0);
-              if (!uid) return;
-              setPinnedRemoteUid(uid);
-              const linked = orderedJoinedParticipants.find(p => Number(p.rtcUid || 0) === uid);
-              if (linked) {
-                openParticipantQuickActions(linked);
-              } else {
-                openParticipantQuickActions({
-                  uid: String(uid),
-                  name: primaryRemoteName,
-                  rtcUid: uid,
-                });
-              }
-            }}
+        {isLiveStarted && remoteDisplayParticipants.length > 1 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
             style={{
               position: 'absolute',
+              right: 10,
               left: 10,
               bottom: insets.bottom + endBarHeight + 54,
-              zIndex: 9,
-              borderRadius: 999,
-              borderWidth: 1,
-              borderColor: 'rgba(0,194,255,0.62)',
-              backgroundColor: 'rgba(6,12,20,0.84)',
-              paddingHorizontal: 10,
-              paddingVertical: 6,
-              maxWidth: Math.min(220, SCREEN_WIDTH - 130),
+              maxHeight: 44,
             }}
+            contentContainerStyle={{ gap: 8, alignItems: 'center' }}
           >
-            <Text numberOfLines={1} style={{ color: 'white', fontWeight: '800', fontSize: 11 }}>
-              {extraRemoteCount > 0
-                ? `${primaryRemoteName} +More`
-                : primaryRemoteName}
-            </Text>
-          </Pressable>
-        )}
-        {isLiveStarted && participantQuickAction && (
-          <View
-            style={{
-              position: 'absolute',
-              right: 12,
-              bottom: insets.bottom + endBarHeight + 154,
-              zIndex: 24,
-              width: 182,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: 'rgba(0,194,255,0.62)',
-              backgroundColor: 'rgba(5,12,22,0.96)',
-              padding: 10,
-              gap: 7,
-            }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-              <Text style={{ color: 'white', fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
-                {participantQuickAction.name}
-              </Text>
-              <Pressable onPress={() => setParticipantQuickAction(null)}>
-                <Text style={{ color: 'rgba(255,255,255,0.75)', fontWeight: '700' }}>✕</Text>
-              </Pressable>
-            </View>
-            <Pressable
-              style={styles.secondaryBtn}
-              onPress={() => {
-                setPinnedRemoteUid(participantQuickAction.rtcUid || null);
-                setParticipantQuickAction(null);
-              }}
-            >
-              <Text style={styles.secondaryBtnText}>Pin Video</Text>
-            </Pressable>
-            {canModerateParticipant &&
-            participantQuickAction.uid !== currentLiveUid ? (
-              <>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={() => {
-                    const isMuted = mutedUsers.includes(participantQuickAction.uid);
-                    if (isMuted) {
-                      unmuteUser(participantQuickAction.uid, participantQuickAction.name);
-                    } else {
-                      handleUserAction('mute', participantQuickAction.uid, participantQuickAction.name);
-                    }
-                    setParticipantQuickAction(null);
-                  }}
-                >
-                  <Text style={styles.secondaryBtnText}>
-                    {mutedUsers.includes(participantQuickAction.uid) ? 'Unmute' : 'Mute'}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.secondaryBtn}
-                  onPress={() => {
-                    handleUserAction('featureSupporter', participantQuickAction.uid, participantQuickAction.name);
-                    setParticipantQuickAction(null);
-                  }}
-                >
-                  <Text style={styles.secondaryBtnText}>Feature</Text>
-                </Pressable>
-                <Pressable
-                  style={styles.primaryBtn}
-                  onPress={() => {
-                    handleUserAction('kick', participantQuickAction.uid, participantQuickAction.name);
-                    setParticipantQuickAction(null);
-                  }}
-                >
-                  <Text style={styles.primaryBtnText}>Remove</Text>
-                </Pressable>
-              </>
-            ) : (
+            {remoteDisplayParticipants.map(p => (
               <Pressable
-                style={styles.secondaryBtn}
-                onPress={() => {
-                  handleUserAction('message', participantQuickAction.uid, participantQuickAction.name);
-                  setParticipantQuickAction(null);
+                key={`remote-pill-${p.rtcUid}`}
+                onPress={() => setPinnedRemoteUid(p.rtcUid)}
+                style={{
+                  borderRadius: 20,
+                  borderWidth: 1,
+                  borderColor:
+                    pinnedRemoteUid === p.rtcUid
+                      ? 'rgba(0,194,255,0.95)'
+                      : 'rgba(255,255,255,0.35)',
+                  backgroundColor:
+                    pinnedRemoteUid === p.rtcUid
+                      ? 'rgba(0,194,255,0.22)'
+                      : 'rgba(6,12,20,0.75)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
                 }}
               >
-                <Text style={styles.secondaryBtnText}>Message</Text>
+                <Text style={{ color: 'white', fontSize: 11, fontWeight: '700' }}>
+                  {p.name}
+                </Text>
               </Pressable>
-            )}
-          </View>
+            ))}
+          </ScrollView>
         )}
         {awaitingCaptainApproval && !isLiveStarted && (
           <View
@@ -28107,7 +26103,7 @@ const LiveStreamModal = ({
             </Pressable>
           </View>
         )}
-        {isLiveStarted && !isConferenceMode && showUserPanel && (
+        {isLiveStarted && showUserPanel && (
           <UserManagementPanel
             viewers={viewers}
             moderators={moderators}
@@ -28115,24 +26111,8 @@ const LiveStreamModal = ({
             mode={userPanelMode}
             isInUserCrew={isInUserCrew}
             searchOceanEntities={searchOceanEntities}
-            onClosePanel={() => setShowUserPanel(false)}
             onUserAction={(action, userId, username) => {
               setShowUserPanel(false);
-              handleUserAction(action, userId, username);
-            }}
-          />
-        )}
-        {isLiveStarted && isConferenceMode && showConferenceRosterPanel && (
-          <UserManagementPanel
-            viewers={viewers}
-            moderators={moderators}
-            coHosts={coHosts}
-            mode={userPanelMode}
-            isInUserCrew={isInUserCrew}
-            searchOceanEntities={searchOceanEntities}
-            onClosePanel={() => setShowConferenceRosterPanel(false)}
-            onUserAction={(action, userId, username) => {
-              setShowConferenceRosterPanel(false);
               handleUserAction(action, userId, username);
             }}
           />
@@ -28158,44 +26138,19 @@ const LiveStreamModal = ({
             {/* Invite */}
             <Pressable
               style={editorStyles.liveRightButton}
-              onPress={() => {
-                if (isConferenceMode) {
-                  openConferenceInviteOptions();
-                  return;
-                }
-                inviteCoHost();
-              }}
+              onPress={inviteCoHost}
             >
               <Text style={editorStyles.liveRightIcon}>📨</Text>
-              <Text style={editorStyles.liveRightLabel}>
-                {isConferenceMode ? 'Invite Link' : 'Invite'}
-              </Text>
+              <Text style={editorStyles.liveRightLabel}>Invite</Text>
             </Pressable>
             <Pressable
               style={editorStyles.liveRightButton}
-              onPress={() => {
-                if (isConferenceMode) {
-                  setShowConferenceRosterPanel(v => !v);
-                  setUserPanelMode('join');
-                  setShowConferenceChatPanel(false);
-                  return;
-                }
-                setShowOnlineInvitePanel(v => !v);
-              }}
+              onPress={() => setShowOnlineInvitePanel(v => !v)}
             >
               <Text style={editorStyles.liveRightIcon}>👥</Text>
-              {isConferenceMode ? (
-                <Text style={editorStyles.liveRightLabel}>
-                  {showConferenceRosterPanel ? 'Roster On' : 'Roster'}
-                </Text>
-              ) : (
-                <View style={{ alignItems: 'center' }}>
-                  <Text style={editorStyles.liveRightLabel}>Here Now</Text>
-                  <Text style={{ color: '#FF3B30', fontSize: 10, fontWeight: '800' }}>
-                    {joinedParticipants.length}
-                  </Text>
-                </View>
-              )}
+              <Text style={editorStyles.liveRightLabel}>
+                {showOnlineInvitePanel ? 'Here Now! On' : 'Here Now!'}
+              </Text>
             </Pressable>
             {/* Screen Share */}
             <Pressable
@@ -28207,82 +26162,6 @@ const LiveStreamModal = ({
                 {isScreenSharing ? 'Stop Share' : 'Share Screen'}
               </Text>
             </Pressable>
-            {isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={() => {
-                  setShowConferenceChatPanel(false);
-                  setShowConferenceRosterPanel(false);
-                  void beginConferencePresentation();
-                }}
-              >
-                <Text style={editorStyles.liveRightIcon}>📽️</Text>
-                <Text style={editorStyles.liveRightLabel}>
-                  {isConferencePresentingBusy ? 'Preparing' : 'Present'}
-                </Text>
-              </Pressable>
-            )}
-            {isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={() => {
-                  setShowConferenceRosterPanel(v => !v);
-                  setShowConferenceChatPanel(false);
-                  setUserPanelMode('join');
-                }}
-              >
-                <Text style={editorStyles.liveRightIcon}>🧑‍🤝‍🧑</Text>
-                <Text style={editorStyles.liveRightLabel}>
-                  {showConferenceRosterPanel ? 'Roster On' : 'Roster'}
-                </Text>
-              </Pressable>
-            )}
-            {isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={() => {
-                  setShowConferenceRosterPanel(true);
-                  setShowConferenceChatPanel(false);
-                  setUserPanelMode('remove');
-                }}
-              >
-                <Text style={editorStyles.liveRightIcon}>🗑️</Text>
-                <Text style={editorStyles.liveRightLabel}>Remove</Text>
-              </Pressable>
-            )}
-            {isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={() => Alert.alert('Hand Raised', 'Your hand is raised.')}
-              >
-                <Text style={editorStyles.liveRightIcon}>✋</Text>
-                <Text style={editorStyles.liveRightLabel}>Raise Hand</Text>
-              </Pressable>
-            )}
-            {isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={handleShareDriftLink}
-              >
-                <Text style={editorStyles.liveRightIcon}>🔗</Text>
-                <Text style={editorStyles.liveRightLabel}>Meeting Link</Text>
-              </Pressable>
-            )}
-            {isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={() => {
-                  setShowConferenceChatPanel(false);
-                  setShowConferenceRosterPanel(false);
-                  setShowConferenceToolsPanel(v => !v);
-                }}
-              >
-                <Text style={editorStyles.liveRightIcon}>🗂</Text>
-                <Text style={editorStyles.liveRightLabel}>
-                  {showConferenceToolsPanel ? 'Tools On' : 'Tools'}
-                </Text>
-              </Pressable>
-            )}
                     
             {/* Virtual Background */}
             <Pressable
@@ -28311,7 +26190,7 @@ const LiveStreamModal = ({
             >
               <Text style={editorStyles.liveRightIcon}>✨</Text>
               <Text style={editorStyles.liveRightLabel}>
-                {beautyFilterEnabled ? `Beauty ${beautyProfile}` : 'Beauty'}
+                {beautyFilterEnabled ? 'Beauty On' : 'Beauty'}
               </Text>
             </Pressable>
                     
@@ -28326,75 +26205,75 @@ const LiveStreamModal = ({
               </Text>
             </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={showProductStore}
-              >
-                <Text style={editorStyles.liveRightIcon}>🛍️</Text>
-                <Text style={editorStyles.liveRightLabel}>Products</Text>
-              </Pressable>
-            )}
+            {/* Live Products/Store */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={showProductStore}
+            >
+              <Text style={editorStyles.liveRightIcon}>🛍️</Text>
+              <Text style={editorStyles.liveRightLabel}>Products</Text>
+            </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={createLivePoll}
-              >
-                <Text style={editorStyles.liveRightIcon}>📊</Text>
-                <Text style={editorStyles.liveRightLabel}>Polls</Text>
-              </Pressable>
-            )}
+            {/* Live Polls */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={createLivePoll}
+            >
+              <Text style={editorStyles.liveRightIcon}>📊</Text>
+              <Text style={editorStyles.liveRightLabel}>Polls</Text>
+            </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={handleSetLiveGoal}
-              >
-                <Text style={editorStyles.liveRightIcon}>🎯</Text>
-                <Text style={editorStyles.liveRightLabel}>Goals</Text>
-              </Pressable>
-            )}
+            {/* Live Goals */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={handleSetLiveGoal}
+            >
+              <Text style={editorStyles.liveRightIcon}>🎯</Text>
+              <Text style={editorStyles.liveRightLabel}>Goals</Text>
+            </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={inviteCoHost}
-              >
-                <Text style={editorStyles.liveRightIcon}>🤝</Text>
-                <Text style={editorStyles.liveRightLabel}>Co-host</Text>
-              </Pressable>
-            )}
+            {/* Co-host */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={inviteCoHost}
+            >
+              <Text style={editorStyles.liveRightIcon}>🤝</Text>
+              <Text style={editorStyles.liveRightLabel}>Co-host</Text>
+            </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={showLiveAnalytics}
-              >
-                <Text style={editorStyles.liveRightIcon}>📈</Text>
-                <Text style={editorStyles.liveRightLabel}>Stats</Text>
-              </Pressable>
-            )}
+            {/* Live Analytics */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={showLiveAnalytics}
+            >
+              <Text style={editorStyles.liveRightIcon}>📈</Text>
+              <Text style={editorStyles.liveRightLabel}>Stats</Text>
+            </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={showSoundBoard}
-              >
-                <Text style={editorStyles.liveRightIcon}>🔊</Text>
-                <Text style={editorStyles.liveRightLabel}>Sounds</Text>
-              </Pressable>
-            )}
+            {/* Sound Effects */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={showSoundBoard}
+            >
+              <Text style={editorStyles.liveRightIcon}>🔊</Text>
+              <Text style={editorStyles.liveRightLabel}>Sounds</Text>
+            </Pressable>
                     
             {/* Mute mic */}
             <Pressable
               style={editorStyles.liveRightButton}
               onPress={() => {
                 try {
-                  const next = !micMuted;
-                  setMicMuted(next);
-                  engineRef.current?.enableLocalAudio?.(!next);
-                  engineRef.current?.muteLocalAudioStream?.(next);
+                  const newMuted = !micMuted;
+                  setMicMuted(newMuted);
+                  engineRef.current?.muteLocalAudioStream?.(newMuted);
+                  engineRef.current?.updateChannelMediaOptions?.({
+                    clientRoleType: Agora?.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+                    publishMicrophoneTrack: !newMuted,
+                    publishCameraTrack: !cameraHidden,
+                    autoSubscribeAudio: true,
+                    autoSubscribeVideo: true,
+                  });
                 } catch {}
               }}
             >
@@ -28413,8 +26292,16 @@ const LiveStreamModal = ({
                 try {
                   const newState = !cameraHidden;
                   setCameraHidden(newState);
-                  engineRef.current?.muteLocalVideoStream?.(newState);
                   engineRef.current?.enableLocalVideo?.(!newState);
+                  engineRef.current?.muteLocalVideoStream?.(newState);
+                  engineRef.current?.startPreview?.();
+                  engineRef.current?.updateChannelMediaOptions?.({
+                    clientRoleType: Agora?.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+                    publishMicrophoneTrack: !micMuted,
+                    publishCameraTrack: !newState,
+                    autoSubscribeAudio: true,
+                    autoSubscribeVideo: true,
+                  });
                 } catch {}
               }}
             >
@@ -28435,354 +26322,28 @@ const LiveStreamModal = ({
               <Text style={editorStyles.liveRightLabel}>Flip</Text>
             </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={handleShareDriftLink}
-              >
-                <Text style={editorStyles.liveRightIcon}>📡</Text>
-                <Text style={editorStyles.liveRightLabel}>Casta drift</Text>
-              </Pressable>
-            )}
+            {/* Share live */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={handleShareDriftLink}
+            >
+              <Text style={editorStyles.liveRightIcon}>📡</Text>
+              <Text style={editorStyles.liveRightLabel}>Casta drift</Text>
+            </Pressable>
                     
-            {!isConferenceMode && (
-              <Pressable
-                style={editorStyles.liveRightButton}
-                onPress={() =>
-                  Alert.alert('Report', 'Send report to moderation collection.')
-                }
-              >
-                <Text style={editorStyles.liveRightIcon}>🚩</Text>
-                <Text style={editorStyles.liveRightLabel}>Report</Text>
-              </Pressable>
-            )}
+            {/* Report */}
+            <Pressable
+              style={editorStyles.liveRightButton}
+              onPress={() =>
+                Alert.alert('Report', 'Send report to moderation collection.')
+              }
+            >
+              <Text style={editorStyles.liveRightIcon}>🚩</Text>
+              <Text style={editorStyles.liveRightLabel}>Report</Text>
+            </Pressable>
           </ScrollView>
         )}
-        {isLiveStarted && isConferenceMode && showConferenceToolsPanel && (
-          <View
-            style={{
-              position: 'absolute',
-              left: 10,
-              right: showLiveControls ? 108 : 10,
-              bottom: insets.bottom + endBarHeight + 82,
-              zIndex: 16,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: 'rgba(0,194,255,0.45)',
-              backgroundColor: 'rgba(8,16,30,0.95)',
-              padding: 10,
-            }}
-          >
-            <Text style={{ color: '#9DE6FF', fontWeight: '800', marginBottom: 8 }}>
-              Conference Tools
-            </Text>
-            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, marginBottom: 4 }}>
-              Agenda
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-              <TextInput
-                value={conferenceAgendaDraft}
-                onChangeText={setConferenceAgendaDraft}
-                placeholder="Add agenda point"
-                placeholderTextColor="rgba(255,255,255,0.45)"
-                style={[editorStyles.liveSetupInput, { flex: 1, marginBottom: 0 }]}
-              />
-              <Pressable
-                style={[styles.secondaryBtn, { minHeight: 38, paddingHorizontal: 10 }]}
-                onPress={() => {
-                  const v = String(conferenceAgendaDraft || '').trim();
-                  if (!v) return;
-                  setConferenceAgendaItems(prev => [...prev, v].slice(-6));
-                  setConferenceAgendaDraft('');
-                  addLiveMoment(`Agenda: ${v}`);
-                }}
-              >
-                <Text style={styles.secondaryBtnText}>Add</Text>
-              </Pressable>
-            </View>
-            {conferenceAgendaItems.length > 0 && (
-              <Text numberOfLines={2} style={{ color: 'white', fontSize: 11, marginBottom: 8 }}>
-                {conferenceAgendaItems.map((item, idx) => `${idx + 1}. ${item}`).join('   ')}
-              </Text>
-            )}
-            <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 11, marginBottom: 4 }}>
-              Action Items
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <TextInput
-                value={conferenceActionDraft}
-                onChangeText={setConferenceActionDraft}
-                placeholder="Add action item"
-                placeholderTextColor="rgba(255,255,255,0.45)"
-                style={[editorStyles.liveSetupInput, { flex: 1, marginBottom: 0 }]}
-              />
-              <Pressable
-                style={[styles.secondaryBtn, { minHeight: 38, paddingHorizontal: 10 }]}
-                onPress={() => {
-                  const v = String(conferenceActionDraft || '').trim();
-                  if (!v) return;
-                  setConferenceActionItems(prev => [...prev, v].slice(-8));
-                  setConferenceActionDraft('');
-                  addLiveMoment(`Action: ${v}`);
-                }}
-              >
-                <Text style={styles.secondaryBtnText}>Add</Text>
-              </Pressable>
-            </View>
-            {conferenceActionItems.length > 0 && (
-              <Text numberOfLines={2} style={{ color: 'white', fontSize: 11, marginTop: 8 }}>
-                {conferenceActionItems.map((item, idx) => `${idx + 1}. ${item}`).join('   ')}
-              </Text>
-            )}
-          </View>
-        )}
-        {isLiveStarted && isConferenceMode && showConferenceChatPanel && (
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={{
-              position: 'absolute',
-              left: 10,
-              right: showLiveControls ? 108 : 10,
-              bottom: insets.bottom + endBarHeight + mediaBarHeight + 8,
-              zIndex: 17,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: 'rgba(0,194,255,0.45)',
-              backgroundColor: 'rgba(8,16,30,0.95)',
-              padding: 10,
-              maxHeight: 320,
-            }}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 8,
-              }}
-            >
-              <Text style={{ color: '#9DE6FF', fontWeight: '800' }}>
-                Conference Chat
-              </Text>
-              <Pressable onPress={() => setShowConferenceChatPanel(false)}>
-                <Text style={{ color: 'rgba(255,255,255,0.8)' }}>Close</Text>
-              </Pressable>
-            </View>
-            <ScrollView
-              style={{ flexGrow: 0, maxHeight: 210 }}
-              contentContainerStyle={{ gap: 8, paddingBottom: 6 }}
-              showsVerticalScrollIndicator={false}
-            >
-              {(liveComments || []).length === 0 ? (
-                <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12 }}>
-                  No messages yet.
-                </Text>
-              ) : (
-                (liveComments || []).map((c: any, idx: number) => (
-                  <View
-                    key={String(c?.id || `comment_${idx}`)}
-                    style={{
-                      borderRadius: 8,
-                      backgroundColor: 'rgba(255,255,255,0.06)',
-                      borderWidth: 1,
-                      borderColor: 'rgba(255,255,255,0.12)',
-                      paddingHorizontal: 8,
-                      paddingVertical: 7,
-                    }}
-                  >
-                    <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 11 }}>
-                      {safeCommentHandle((c as any)?.from || 'User')}
-                    </Text>
-                    {!!(c as any)?.replyToFrom && (
-                      <View
-                        style={{
-                          marginTop: 2,
-                          borderLeftWidth: 2,
-                          borderLeftColor: 'rgba(255,224,130,0.95)',
-                          paddingLeft: 6,
-                        }}
-                      >
-                        <Text
-                          numberOfLines={1}
-                          style={{
-                            color: '#FFE082',
-                            fontSize: 10,
-                            fontWeight: '700',
-                          }}
-                        >
-                          reply to {safeCommentHandle((c as any)?.replyToFrom || 'message')}
-                        </Text>
-                        <Text
-                          numberOfLines={1}
-                          style={{
-                            color: '#D6C8FF',
-                            fontSize: 10,
-                            fontStyle: 'italic',
-                            marginTop: 1,
-                          }}
-                        >
-                          "{String((c as any)?.replyToText || '')}"
-                        </Text>
-                      </View>
-                    )}
-                    <Text style={{ color: 'white', fontSize: 12, marginTop: 2 }}>
-                      {String((c as any)?.text || '')}
-                    </Text>
-                    <Pressable
-                      style={{ marginTop: 4, alignSelf: 'flex-end' }}
-                      onPress={() =>
-                        onEchoBack({
-                          id: String((c as any)?.id || ''),
-                          from: String((c as any)?.from || ''),
-                          text: String((c as any)?.text || ''),
-                        })
-                      }
-                    >
-                      <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 11 }}>
-                        Reply
-                      </Text>
-                    </Pressable>
-                  </View>
-                ))
-              )}
-            </ScrollView>
-            {!!replyingToLiveComment && (
-              <View
-                style={{
-                  marginTop: 6,
-                  marginBottom: 4,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(0,194,255,0.16)',
-                  paddingHorizontal: 8,
-                  paddingVertical: 6,
-                }}
-              >
-                <Text numberOfLines={1} style={{ fontSize: 12 }}>
-                  <Text style={{ color: '#FFE082', fontWeight: '700' }}>
-                    Replying to {replyingToLiveComment.from || 'user'}:
-                  </Text>
-                  <Text style={{ color: '#D6C8FF', fontStyle: 'italic' }}>
-                    {' '}
-                    {replyingToLiveComment.text}
-                  </Text>
-                </Text>
-              </View>
-            )}
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-              <TextInput
-                value={commentText}
-                onChangeText={setCommentText}
-                placeholder={replyingToLiveComment ? 'Write a reply...' : 'Send a message'}
-                placeholderTextColor="rgba(255,255,255,0.5)"
-                style={[styles.input, { flex: 1, margin: 0 }]}
-              />
-              <Pressable
-                style={[
-                  styles.primaryBtn,
-                  { marginLeft: 8, paddingHorizontal: 12, paddingVertical: 8 },
-                ]}
-                onPress={sendLiveComment}
-              >
-                <Text style={styles.primaryBtnText}>Send</Text>
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        )}
-        <Modal
-          visible={!!liveOptionPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setLiveOptionPicker(null)}
-        >
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: 'rgba(0,0,0,0.78)',
-              justifyContent: 'center',
-              paddingHorizontal: 18,
-            }}
-          >
-            <View
-              style={{
-                maxHeight: SCREEN_HEIGHT * 0.72,
-                borderRadius: 14,
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.18)',
-                backgroundColor: 'rgba(10,15,28,0.96)',
-                paddingHorizontal: 12,
-                paddingVertical: 12,
-              }}
-            >
-              <Text
-                style={{
-                  color: 'white',
-                  fontWeight: '800',
-                  fontSize: 16,
-                  marginBottom: 10,
-                }}
-              >
-                {liveOptionPicker?.title || 'Options'}
-              </Text>
-              <ScrollView>
-                {(liveOptionPicker?.options || []).map(item => (
-                  <Pressable
-                    key={item.key}
-                    style={{
-                      minHeight: 42,
-                      borderRadius: 10,
-                      paddingHorizontal: 12,
-                      marginBottom: 8,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      borderWidth: 1,
-                      borderColor: item.selected
-                        ? 'rgba(0,194,255,0.85)'
-                        : 'rgba(255,255,255,0.18)',
-                      backgroundColor: item.selected
-                        ? 'rgba(0,194,255,0.18)'
-                        : 'rgba(255,255,255,0.03)',
-                    }}
-                    onPress={() => {
-                      try {
-                        liveOptionPicker?.onSelect?.(item.key);
-                      } finally {
-                        setLiveOptionPicker(null);
-                      }
-                    }}
-                  >
-                    <Text
-                      style={{
-                        color: 'white',
-                        fontWeight: item.selected ? '800' : '600',
-                        fontSize: 13,
-                      }}
-                    >
-                      {item.label}
-                    </Text>
-                    {item.selected ? (
-                      <Text style={{ color: '#7CE5FF', fontSize: 14 }}>✓</Text>
-                    ) : null}
-                  </Pressable>
-                ))}
-              </ScrollView>
-              <Pressable
-                style={[
-                  styles.secondaryBtn,
-                  {
-                    marginTop: 6,
-                    alignSelf: 'stretch',
-                    minHeight: 40,
-                    justifyContent: 'center',
-                  },
-                ]}
-                onPress={() => setLiveOptionPicker(null)}
-              >
-                <Text style={styles.secondaryBtnText}>Close</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Modal>
+                    
         {/* Invite Modal */}
         <Modal
           visible={showInviteModal}
@@ -28816,7 +26377,7 @@ const LiveStreamModal = ({
                   marginBottom: 8,
                 }}
               >
-                {isConferenceMode ? 'Invite to Conference' : 'Invite to Drift'}
+                Invite to Drift
               </Text>
               <TextInput
                 value={inviteQuery}
@@ -29007,7 +26568,7 @@ const LiveStreamModal = ({
               style={{
                 position: 'absolute',
                 right: 16,
-                bottom: mediaBarHeight + (showCommentInput ? 78 : 4),
+                bottom: mediaBarHeight + 4,
                 flexDirection: 'row',
                 alignItems: 'center',
                 backgroundColor: 'rgba(0,0,0,0.35)',
@@ -29039,108 +26600,53 @@ const LiveStreamModal = ({
               )}
               <View style={{ marginLeft: 8 }}>
                 <Text style={{ color: 'white', fontWeight: '700' }}>
-                  @{String(hostName || 'you').replace(/^[@/]+/, '')}
+                  /{hostName || 'you'}
                 </Text>
                 <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>
-                  {isLiveHost
-                    ? isConferenceMode
-                      ? 'Conference Host'
-                      : 'Drift Captain'
-                    : isConferenceMode
-                    ? 'Participant'
-                    : 'Crew'}
+                  Stream Captain
                 </Text>
               </View>
             </View>
-            <View
-              style={[
-                editorStyles.liveBottomScroll,
-                {
-                  width: '100%',
-                  justifyContent: 'space-evenly',
-                  alignItems: 'center',
-                  gap: 0,
-                },
-              ]}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={editorStyles.liveBottomScroll}
             >
-              {/* Non-button items */}
-              {!isConferenceMode && (
-                <Pressable
-                  style={[editorStyles.liveBottomItem, { flex: 1 }]}
-                  onPress={showSoundBoard}
-                >
-                  <Text style={editorStyles.liveBottomIcon}>🎵</Text>
-                  <Text style={editorStyles.liveBottomLabel}>Music</Text>
-                </Pressable>
-              )}
-              {!isConferenceMode && (
-                <Pressable
-                  style={[editorStyles.liveBottomItem, { flex: 1 }]}
-                  onPress={openVisualFiltersMenu}
-                >
-                  <Text style={editorStyles.liveBottomIcon}>🎛️</Text>
-                  <Text style={editorStyles.liveBottomLabel}>Filters</Text>
-                </Pressable>
-              )}
+              {/* Non-button items (scrollable) */}
+              <View style={editorStyles.liveBottomItem}>
+                <Text style={editorStyles.liveBottomIcon}>🎵</Text>
+                <Text style={editorStyles.liveBottomLabel}>Music</Text>
+              </View>
+              <View style={editorStyles.liveBottomItem}>
+                <Text style={editorStyles.liveBottomIcon}>🎛️</Text>
+                <Text style={editorStyles.liveBottomLabel}>Filters</Text>
+              </View>
+              <View style={editorStyles.liveBottomItem}>
+                <Text style={editorStyles.liveBottomIcon}>🧱</Text>
+                <Text style={editorStyles.liveBottomLabel}>Overlays</Text>
+              </View>
               <Pressable
-                style={[editorStyles.liveBottomItem, { flex: 1 }]}
-                onPress={() => {
-                  if (isConferenceMode) {
-                    setShowConferenceChatPanel(p => !p);
-                    setShowConferenceRosterPanel(false);
-                    setShowCommentInput(false);
-                    return;
-                  }
-                  setShowCommentInput(p => !p);
-                }}
+                style={editorStyles.liveBottomItem}
+                onPress={() => setShowCommentInput(p => !p)}
               >
-                <View>
-                  <Text style={editorStyles.liveBottomIcon}>💬</Text>
-                  {isConferenceMode && conferenceUnreadChatCount > 0 ? (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        right: -8,
-                        top: -6,
-                        minWidth: 16,
-                        height: 16,
-                        borderRadius: 8,
-                        backgroundColor: '#FFD400',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        paddingHorizontal: 3,
-                      }}
-                    >
-                      <Text style={{ color: '#111', fontSize: 10, fontWeight: '900' }}>
-                        {conferenceUnreadChatCount > 99 ? '99+' : conferenceUnreadChatCount}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-                <Text style={editorStyles.liveBottomLabel}>
-                  {isConferenceMode ? 'Chat' : 'Comment'}
-                </Text>
+                <Text style={editorStyles.liveBottomIcon}>💬</Text>
+                <Text style={editorStyles.liveBottomLabel}>Comment</Text>
               </Pressable>
               <Pressable
-                style={[editorStyles.liveBottomItem, { flex: 1 }]}
+                style={editorStyles.liveBottomItem}
                 onPress={() => setShowLiveControls(v => !v)}
               >
                 <Text style={editorStyles.liveBottomIcon}>🕹️</Text>
-                <Text
-                  style={[
-                    editorStyles.liveBottomLabel,
-                    { color: '#FF3B30', fontWeight: '900' },
-                  ]}
-                >
-                  CONTROLS
+                <Text style={editorStyles.liveBottomLabel}>
+                  {showLiveControls ? 'Controls On' : 'Controls'}
                 </Text>
               </Pressable>
-            </View>
+            </ScrollView>
           </View>
         )}
                     
         {/* Comment input bar (toggles from media editor) */}
-        {isLiveStarted && !isConferenceMode && showCommentInput && (
+        {isLiveStarted && showCommentInput && (
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={[
@@ -29151,46 +26657,122 @@ const LiveStreamModal = ({
             {!!replyingToLiveComment && (
               <View
                 style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
                   marginBottom: 8,
-                  backgroundColor: 'rgba(0,194,255,0.16)',
-                  borderRadius: 8,
-                  paddingHorizontal: 8,
-                  paddingVertical: 6,
+                  backgroundColor: 'rgba(5,18,30,0.94)',
+                  borderRadius: 12,
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  borderWidth: 1,
+                  borderColor: 'rgba(0,194,255,0.28)',
                 }}
               >
-                <Text
-                  numberOfLines={1}
-                  style={{ flex: 1, marginRight: 8, fontSize: 12 }}
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 6,
+                  }}
                 >
-                  <Text style={{ color: '#FFE082', fontWeight: '700' }}>
-                    Replying to {replyingToLiveComment.from || 'user'}:
+                  <Text style={{ color: '#D8F5FF', fontSize: 12, fontWeight: '800' }}>
+                    Replying to comment
                   </Text>
-                  <Text style={{ color: '#D6C8FF', fontStyle: 'italic' }}>
-                    {' '}
+                  <Pressable
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 999,
+                      backgroundColor: 'rgba(255,255,255,0.08)',
+                    }}
+                    onPress={() => {
+                      setReplyingToLiveComment(null);
+                      setCommentText('');
+                    }}
+                  >
+                    <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 12 }}>
+                      Cancel reply
+                    </Text>
+                  </Pressable>
+                </View>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    flexWrap: 'wrap',
+                    marginBottom: 4,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: '#35C9FF',
+                      fontSize: 12,
+                      fontWeight: '800',
+                      marginRight: 6,
+                    }}
+                  >
+                    @{String(replyingToLiveComment.from || 'user').replace(/^[@/]+/, '')}
+                  </Text>
+                  <Text
+                    numberOfLines={2}
+                    style={{
+                      color: 'rgba(216,245,255,0.82)',
+                      flexShrink: 1,
+                      fontSize: 12,
+                    }}
+                  >
                     {replyingToLiveComment.text}
                   </Text>
-                </Text>
-                <Pressable onPress={() => setReplyingToLiveComment(null)}>
-                  <Text style={{ color: '#9DE6FF', fontWeight: '700' }}>Cancel</Text>
-                </Pressable>
+                </View>
               </View>
             )}
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+              {!!replyingToLiveComment && (
+                <View
+                  style={{
+                    marginRight: 8,
+                    marginBottom: 8,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    backgroundColor: 'rgba(53,201,255,0.15)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(53,201,255,0.35)',
+                  }}
+                >
+                  <Text style={{ color: '#35C9FF', fontSize: 12, fontWeight: '800' }}>
+                    @{String(replyingToLiveComment.from || 'user').replace(/^[@/]+/, '')}
+                  </Text>
+                </View>
+              )}
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
                 placeholder={replyingToLiveComment ? 'Write a reply...' : 'Say something...'}
                 placeholderTextColor="rgba(255,255,255,0.6)"
-                style={[styles.input, { flex: 1, margin: 0 }]}
+                style={[
+                  styles.input,
+                  {
+                    flex: 1,
+                    margin: 0,
+                    minHeight: 46,
+                    maxHeight: 110,
+                    paddingTop: 12,
+                    paddingBottom: 12,
+                  },
+                ]}
                 autoFocus
+                multiline
               />
               <Pressable
                 style={[
                   styles.primaryBtn,
-                  { marginLeft: 8, paddingHorizontal: 12, paddingVertical: 8 },
+                  {
+                    marginLeft: 8,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    minHeight: 46,
+                    justifyContent: 'center',
+                  },
                 ]}
                 onPress={sendLiveComment}
               >
@@ -29287,7 +26869,6 @@ const LiveStreamModal = ({
                 flexDirection: 'row',
                 justifyContent: 'center',
                 alignItems: 'center',
-                gap: 10,
               }}
             >
               <Pressable
@@ -29301,26 +26882,8 @@ const LiveStreamModal = ({
                 ]}
                 onPress={handleEndDrift}
               >
-                <Text style={styles.closeText}>
-                  {isConferenceMode ? 'End Conference' : 'End Vibe'}
-                </Text>
+                <Text style={styles.closeText}>End Vibe</Text>
               </Pressable>
-              {!isConferenceMode && (
-                <View
-                  style={{
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.24)',
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                    backgroundColor: 'rgba(0,0,0,0.35)',
-                  }}
-                >
-                  <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>
-                    {livePrivacy.toUpperCase()}
-                  </Text>
-                </View>
-              )}
             </View>
           ) : null}
         </View>
@@ -29333,7 +26896,7 @@ const LiveStreamModal = ({
               />
             )}
             <View style={editorStyles.liveSetupContainer}>
-              <Text style={editorStyles.liveSetupTitle}>{setupTitleLabel}</Text>
+              <Text style={editorStyles.liveSetupTitle}>Chart a Drift</Text>
               <View style={{ gap: 16 }}>
                 <TextInput
                   value={hostName}
@@ -29345,7 +26908,7 @@ const LiveStreamModal = ({
                 <TextInput
                   value={liveTitle}
                   onChangeText={setLiveTitle}
-                  placeholder={setupNamePlaceholder}
+                  placeholder="Drift Title (optional)"
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   style={editorStyles.liveSetupInput}
                 />
@@ -29375,7 +26938,7 @@ const LiveStreamModal = ({
                   onPress={startLiveNow}
                 >
                   <Text style={styles.primaryBtnText}>
-                    {isStartingLive ? 'Starting...' : startSessionLabel}
+                    {isStartingLive ? 'Starting...' : 'Start Drift'}
                   </Text>
                 </Pressable>
                 {startError ? (

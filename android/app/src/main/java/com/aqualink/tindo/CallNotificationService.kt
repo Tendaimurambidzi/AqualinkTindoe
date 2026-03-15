@@ -15,7 +15,7 @@ import androidx.core.app.Person
 class CallNotificationService : Service() {
     companion object {
         private const val TAG = "CallNotificationSvc"
-        const val CHANNEL_ID = "aqualink_calls_default_ringtone_v4"
+        const val CHANNEL_ID = "aqualink_calls_lg_cat_ring_v2"
         const val NOTIFICATION_ID = 1001
         const val ACTION_ANSWER = "com.aqualink.tindo.ANSWER_CALL"
         const val ACTION_DECLINE = "com.aqualink.tindo.DECLINE_CALL"
@@ -75,7 +75,11 @@ class CallNotificationService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            val soundUri = try {
+                Uri.parse("android.resource://$packageName/${R.raw.lg_cat_ring_freetone_org}")
+            } catch (_: Exception) {
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+            }
             val audioAttributes = AudioAttributes.Builder()
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
@@ -136,7 +140,11 @@ class CallNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val soundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        val soundUri = try {
+            Uri.parse("android.resource://$packageName/${R.raw.lg_cat_ring_freetone_org}")
+        } catch (_: Exception) {
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        }
         
         val callTypeText = if (callType == "video") "Video Call" else "Audio Call"
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
