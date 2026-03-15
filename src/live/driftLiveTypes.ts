@@ -19,6 +19,8 @@ export interface DriftLiveComment {
   userName: string;
   text: string;
   createdAt: any;
+  createdAtMs?: number;
+  clientCommentId?: string;
   avatar: string | null;
   replyToId?: string | null;
   replyToUserName?: string | null;

@@ -86,6 +86,8 @@ export const sendLiveComment = async ({
   replyToId = null,
   replyToUserName = null,
   replyToText = null,
+  createdAtMs = Date.now(),
+  clientCommentId = null,
 }: {
   liveId: string;
   userId: string;
@@ -95,6 +97,8 @@ export const sendLiveComment = async ({
   replyToId?: string | null;
   replyToUserName?: string | null;
   replyToText?: string | null;
+  createdAtMs?: number;
+  clientCommentId?: string | null;
 }) => {
   const trimmed = text.trim();
   if (!trimmed) return;
@@ -111,6 +115,8 @@ export const sendLiveComment = async ({
       replyToId,
       replyToUserName,
       replyToText,
+      createdAtMs,
+      clientCommentId,
       createdAt: firestore.FieldValue.serverTimestamp(),
     });
 };
@@ -123,7 +129,7 @@ export const subscribeToLiveComments = (
     .collection(LIVES)
     .doc(liveId)
     .collection('comments')
-    .orderBy('createdAt', 'asc')
+    .orderBy('createdAtMs', 'asc')
     .limitToLast(100)
     .onSnapshot(snapshot => {
       const comments: DriftLiveComment[] = snapshot.docs.map(doc => ({
