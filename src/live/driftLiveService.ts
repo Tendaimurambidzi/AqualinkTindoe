@@ -2,6 +2,7 @@ import firestore from '@react-native-firebase/firestore';
 import { DriftLiveComment, DriftLiveDoc } from './driftLiveTypes';
 
 const LIVES = 'driftLives';
+const SHARED_DRIFT_EXPO_CHANNEL = 'drift_expo_shared';
 
 export const createLiveSession = async ({
   hostId,
@@ -16,7 +17,7 @@ export const createLiveSession = async ({
 }) => {
   const liveRef = firestore().collection(LIVES).doc();
   const liveId = String(liveRef.id);
-  const channelName = `drift_expo_${liveId.replace(/[^A-Za-z0-9_]/g, '_')}`;
+  const channelName = SHARED_DRIFT_EXPO_CHANNEL;
 
   const payload: DriftLiveDoc = {
     hostId,

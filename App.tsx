@@ -6585,6 +6585,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     channelName?: string | null;
     fromUid?: string | null;
   }) {
+    const SHARED_DRIFT_EXPO_CHANNEL = 'drift_expo_shared';
     const normalizeChannel = (value?: string | null) =>
       String(value || '')
         .trim()
@@ -6659,7 +6660,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     }
 
-    return { liveId: liveDocId || null, channel: null };
+    return {
+      liveId: liveDocId || null,
+      channel: normalizeChannel(SHARED_DRIFT_EXPO_CHANNEL),
+    };
   }
   const resolveDriftEpoInviteTarget = resolveDriftExpoInviteTarget;
 
@@ -22452,6 +22456,8 @@ const LiveStreamModal = ({
       setLiveChannel(suggestedChannel);
       setLiveUid(mappedUid);
       setLiveHostId(live?.hostId ? String(live.hostId) : null);
+      setMicMuted(false);
+      setCameraHidden(false);
       if (inviteJoinPreset.requireApproval) {
         setAwaitingCaptainApproval(true);
         setJoinApprovalLabel(
@@ -22513,6 +22519,8 @@ const LiveStreamModal = ({
             setLiveChannel(suggestedChannel);
             setLiveUid(mappedUid);
             setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
+            setMicMuted(false);
+            setCameraHidden(false);
             setAwaitingCaptainApproval(false);
             setJoinApprovalLabel('');
             setIsLiveStarted(true);
@@ -23219,15 +23227,9 @@ const LiveStreamModal = ({
   const sendLiveComment = async () => {
     const txt = (commentText || '').trim();
     if (!txt) return;
-    // Close input after sending; user can reopen when needed
-    setShowCommentInput(false);
                     
     try {
-      let firestoreMod: any = null;
       let authMod: any = null;
-      try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
-      } catch {}
       try {
         authMod = require('@react-native-firebase/auth').default;
       } catch {}
@@ -23250,15 +23252,21 @@ const LiveStreamModal = ({
           replyToUserName: replyingToLiveComment?.from || null,
           replyToText: replyingToLiveComment?.text || null,
         });
+      } else {
+        throw new Error('Drift Expo room is not ready.');
       }
-    } catch {}
+      setCommentText('');
+      setReplyingToLiveComment(null);
+      setShowCommentInput(false);
+      // Spawn a local flying comment after the shared write succeeds.
+      spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
+    } catch (error: any) {
+      Alert.alert(
+        'Comment',
+        String(error?.message || 'Failed to send comment'),
+      );
+    }
                     
-    setCommentText('');
-    setReplyingToLiveComment(null);
-    setShowCommentInput(false);
-                    
-    // Spawn a local flying comment immediately for instant feedback
-    spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
   };
                     
   const spawnFlyingComment = (c: {
@@ -25458,29 +25466,6 @@ const LiveStreamModal = ({
                 ) : null}
               </View>
             )}
-            {!!mainRemoteUid && !cameraHidden && (
-              <View
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  bottom: insets.bottom + endBarHeight + 108,
-                  zIndex: 6,
-                  backgroundColor: 'rgba(3,10,18,0.72)',
-                  borderRadius: 12,
-                  paddingHorizontal: 10,
-                  paddingVertical: 7,
-                  borderWidth: 1,
-                  borderColor: 'rgba(157,230,255,0.35)',
-                }}
-              >
-                <Text style={{ color: 'white', fontWeight: '800', fontSize: 13 }}>
-                  {mainRemoteParticipant?.name || 'Crew'}
-                </Text>
-                <Text style={{ color: 'rgba(157,230,255,0.95)', fontSize: 11 }}>
-                  {mainRemoteParticipant?.role || 'Crew'}
-                </Text>
-              </View>
-            )}
             {!!mainRemoteUid && (
               <View
                 style={{
@@ -25572,7 +25557,7 @@ const LiveStreamModal = ({
                           ? liveDisplayHandle((c as any).fromUid, c.from)
                           : c.from === 'You'
                           ? 'You'
-                          : formatHandle(c.from)}
+                          : liveDisplayHandle(null, c.from)}
                         :
                       </Text>
                       {!!(c as any).replyToFrom && (
@@ -25899,181 +25884,6 @@ const LiveStreamModal = ({
               })
             )}
           </View>
-        )}
-        {isLiveStarted &&
-          (remoteDisplayParticipants.length > 0 || joinedParticipants.length > 0) && (
-          <View
-            style={{
-              position: 'absolute',
-              top: insets.top + (pendingRequests.length > 0 ? 330 : 210),
-              left: 12,
-              right: 12,
-              backgroundColor: 'rgba(0,0,0,0.72)',
-              borderRadius: 10,
-              borderWidth: 1,
-              borderColor: 'rgba(0,194,255,0.35)',
-              padding: 8,
-            }}
-          >
-            <Text style={{ color: '#9DE6FF', fontWeight: '800', marginBottom: 6 }}>
-              Joined ({Math.max(remoteDisplayParticipants.length, joinedParticipants.length)})
-            </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                {(remoteDisplayParticipants.length > 0
-                  ? remoteDisplayParticipants
-                  : joinedParticipants.map(p => ({
-                      rtcUid: null,
-                      userUid: p.uid,
-                      name: p.name,
-                      photo: p.photo,
-                      role:
-                        String(p.uid || '') === String(liveHostId || '')
-                          ? 'Drift Captain'
-                          : 'Crew',
-                    }))).map(p => (
-                  <View
-                    key={p.userUid}
-                    style={{ alignItems: 'center', marginRight: 10, width: 84 }}
-                  >
-                    {p.rtcUid && RtcSurfaceView ? (
-                      <View
-                        style={{
-                          width: 72,
-                          height: 108,
-                          borderRadius: 14,
-                          overflow: 'hidden',
-                          backgroundColor: '#040B14',
-                          borderWidth: 1,
-                          borderColor: 'rgba(157,230,255,0.35)',
-                          marginBottom: 4,
-                        }}
-                      >
-                        {React.createElement(RtcSurfaceView, {
-                          style: StyleSheet.absoluteFill,
-                          canvas: {
-                            uid: p.rtcUid,
-                            renderMode: VideoRenderMode?.Fit ?? 2,
-                          },
-                        })}
-                        <View
-                          style={{
-                            position: 'absolute',
-                            left: 0,
-                            right: 0,
-                            bottom: 0,
-                            paddingHorizontal: 6,
-                            paddingVertical: 5,
-                            backgroundColor: 'rgba(0,0,0,0.48)',
-                          }}
-                        >
-                          <Text
-                            numberOfLines={1}
-                            style={{
-                              color: 'white',
-                              fontSize: 10,
-                              fontWeight: '700',
-                            }}
-                          >
-                            {p.name}
-                          </Text>
-                          <Text
-                            numberOfLines={1}
-                            style={{
-                              color: 'rgba(157,230,255,0.9)',
-                              fontSize: 9,
-                              marginTop: 1,
-                            }}
-                          >
-                            {p.role}
-                          </Text>
-                        </View>
-                      </View>
-                    ) : p.photo ? (
-                      <Image
-                        source={{ uri: p.photo }}
-                        style={{ width: 56, height: 56, borderRadius: 28, marginBottom: 4 }}
-                      />
-                    ) : (
-                      <View
-                        style={{
-                          width: 56,
-                          height: 56,
-                          borderRadius: 28,
-                          backgroundColor: 'rgba(255,255,255,0.18)',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          marginBottom: 4,
-                        }}
-                      >
-                        <Text style={{ color: 'white', fontSize: 16 }}>
-                          {p.name.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        color: 'rgba(255,255,255,0.86)',
-                        fontSize: 10,
-                      }}
-                    >
-                      {p.name}
-                    </Text>
-                    <Text
-                      numberOfLines={1}
-                      style={{
-                        color: 'rgba(157,230,255,0.9)',
-                        fontSize: 9,
-                        marginTop: 1,
-                      }}
-                    >
-                      {p.role}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        )}
-        {isLiveStarted && remoteDisplayParticipants.length > 1 && (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{
-              position: 'absolute',
-              right: 10,
-              left: 10,
-              bottom: insets.bottom + endBarHeight + 54,
-              maxHeight: 44,
-            }}
-            contentContainerStyle={{ gap: 8, alignItems: 'center' }}
-          >
-            {remoteDisplayParticipants.map(p => (
-              <Pressable
-                key={`remote-pill-${p.rtcUid}`}
-                onPress={() => setPinnedRemoteUid(p.rtcUid)}
-                style={{
-                  borderRadius: 20,
-                  borderWidth: 1,
-                  borderColor:
-                    pinnedRemoteUid === p.rtcUid
-                      ? 'rgba(0,194,255,0.95)'
-                      : 'rgba(255,255,255,0.35)',
-                  backgroundColor:
-                    pinnedRemoteUid === p.rtcUid
-                      ? 'rgba(0,194,255,0.22)'
-                      : 'rgba(6,12,20,0.75)',
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                }}
-              >
-                <Text style={{ color: 'white', fontSize: 11, fontWeight: '700' }}>
-                  {p.name}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
         )}
         {awaitingCaptainApproval && !isLiveStarted && (
           <View
@@ -26630,7 +26440,9 @@ const LiveStreamModal = ({
                 onPress={() => setShowCommentInput(p => !p)}
               >
                 <Text style={editorStyles.liveBottomIcon}>💬</Text>
-                <Text style={editorStyles.liveBottomLabel}>Comment</Text>
+                <Text style={editorStyles.liveBottomLabel}>
+                  {showCommentInput ? 'Chat On' : 'Chat'}
+                </Text>
               </Pressable>
               <Pressable
                 style={editorStyles.liveBottomItem}
@@ -26726,24 +26538,6 @@ const LiveStreamModal = ({
               </View>
             )}
             <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-              {!!replyingToLiveComment && (
-                <View
-                  style={{
-                    marginRight: 8,
-                    marginBottom: 8,
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                    borderRadius: 999,
-                    backgroundColor: 'rgba(53,201,255,0.15)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(53,201,255,0.35)',
-                  }}
-                >
-                  <Text style={{ color: '#35C9FF', fontSize: 12, fontWeight: '800' }}>
-                    @{String(replyingToLiveComment.from || 'user').replace(/^[@/]+/, '')}
-                  </Text>
-                </View>
-              )}
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
@@ -26758,26 +26552,58 @@ const LiveStreamModal = ({
                     maxHeight: 110,
                     paddingTop: 12,
                     paddingBottom: 12,
+                    paddingHorizontal: 14,
                   },
                 ]}
                 autoFocus
                 multiline
               />
-              <Pressable
-                style={[
-                  styles.primaryBtn,
-                  {
-                    marginLeft: 8,
-                    paddingHorizontal: 14,
-                    paddingVertical: 12,
-                    minHeight: 46,
-                    justifyContent: 'center',
-                  },
-                ]}
-                onPress={sendLiveComment}
+              <View
+                style={{
+                  marginLeft: 8,
+                  alignItems: 'stretch',
+                  justifyContent: 'flex-end',
+                }}
               >
-                <Text style={styles.primaryBtnText}>Send</Text>
-              </Pressable>
+                <Pressable
+                  style={[
+                    styles.primaryBtn,
+                    {
+                      marginLeft: 0,
+                      paddingHorizontal: 14,
+                      paddingVertical: 12,
+                      minHeight: 46,
+                      justifyContent: 'center',
+                    },
+                  ]}
+                  onPress={sendLiveComment}
+                >
+                  <Text style={styles.primaryBtnText}>
+                    {replyingToLiveComment ? 'Send reply' : 'Send'}
+                  </Text>
+                </Pressable>
+                {!!replyingToLiveComment && (
+                  <Pressable
+                    style={[
+                      styles.secondaryBtn,
+                      {
+                        marginTop: 8,
+                        marginRight: 0,
+                        minHeight: 42,
+                        justifyContent: 'center',
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                      },
+                    ]}
+                    onPress={() => {
+                      setReplyingToLiveComment(null);
+                      setCommentText('');
+                    }}
+                  >
+                    <Text style={styles.secondaryBtnText}>Cancel</Text>
+                  </Pressable>
+                )}
+              </View>
             </View>
           </KeyboardAvoidingView>
         )}
