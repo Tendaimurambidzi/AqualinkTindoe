@@ -543,6 +543,17 @@ const MAX_ACTIVE_CALL_DURATION_MS = 30 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = RINGING_CALL_TIMEOUT_MS;
 const ALLOW_TOKENLESS_DRIFT = true;
 const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
+const buildDriftInviteDocId = (fromUid?: string | null, liveId?: string | null) => {
+  const sender = String(fromUid || 'sender')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 64);
+  const targetLive = String(liveId || 'shared')
+    .trim()
+    .replace(/[^A-Za-z0-9_-]/g, '_')
+    .slice(0, 96);
+  return `drift_invite_${sender}_${targetLive}`;
+};
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
 const APP_TONES_STORAGE_KEY = 'app_tone_settings_v1';
@@ -6336,6 +6347,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     const unsubInbox = firestore()
       .collection(`users/${me.uid}/live_invites`)
+      .orderBy('createdAt', 'desc')
       .limit(25)
       .onSnapshot(
         snap => {
@@ -6393,6 +6405,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     const unsubMentions = firestore()
       .collection(`users/${me.uid}/mentions`)
+      .orderBy('createdAt', 'desc')
       .limit(20)
       .onSnapshot(
         snap => {
@@ -6452,6 +6465,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     const unsubPings = firestore()
       .collection(`users/${me.uid}/pings`)
+      .orderBy('createdAt', 'desc')
       .limit(20)
       .onSnapshot(
         snap => {
@@ -6665,6 +6679,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }
   const resolveDriftEpoInviteTarget = resolveDriftExpoInviteTarget;
+  const buildDriftInviteDocId = (fromUid?: string | null, liveId?: string | null) => {
+    const sender = String(fromUid || 'sender')
+      .trim()
+      .replace(/[^A-Za-z0-9_-]/g, '_')
+      .slice(0, 64);
+    const targetLive = String(liveId || 'shared')
+      .trim()
+      .replace(/[^A-Za-z0-9_-]/g, '_')
+      .slice(0, 96);
+    return `drift_invite_${sender}_${targetLive}`;
+  };
 
   const respondToLiveInvite = useCallback(
     async (action: 'join' | 'miss') => {
@@ -6714,41 +6739,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
-          if (invite.source === 'mention') {
-            await firestore()
-              .collection(`users/${me.uid}/mentions`)
-              .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          } else if (invite.source === 'ping') {
-            await firestore()
-              .collection(`users/${me.uid}/pings`)
-              .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  read: true,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          } else {
-            await firestore()
+          const inviteDocId = buildDriftInviteDocId(
+            invite.fromUid,
+            invite.liveId || null,
+          );
+          const responsePatch = {
+            status: nextStatus,
+            respondedAt: firestore.FieldValue.serverTimestamp(),
+          };
+          const inviteBatch = firestore().batch();
+          inviteBatch.set(
+            firestore()
               .collection(`users/${me.uid}/live_invites`)
-              .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          }
+              .doc(inviteDocId),
+            responsePatch,
+            { merge: true },
+          );
+          inviteBatch.set(
+            firestore().collection(`users/${me.uid}/mentions`).doc(inviteDocId),
+            responsePatch,
+            { merge: true },
+          );
+          inviteBatch.set(
+            firestore().collection(`users/${me.uid}/pings`).doc(inviteDocId),
+            { ...responsePatch, read: true },
+            { merge: true },
+          );
+          await inviteBatch.commit();
           if (invite.liveId) {
             const driftInvitePatch =
               action === 'join'
@@ -22252,6 +22269,9 @@ const LiveStreamModal = ({
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
   const liveCommentsPrimedRef = useRef(false);
   const lastLiveCommentsSigRef = useRef('');
+  const activeLiveCommentDocId = String(
+    liveDocId || inviteJoinPreset?.liveId || '',
+  ).trim();
   const [splashedComment, setSplashedComment] = useState<{
     id: string;
     text: string;
@@ -22754,7 +22774,7 @@ const LiveStreamModal = ({
                     
   // Real-time comments listener
   useEffect(() => {
-    if (!isLiveStarted || !liveDocId) {
+    if (!isLiveStarted || !activeLiveCommentDocId) {
       setLiveComments([]);
       seenCommentIdsRef.current.clear();
       liveCommentsPrimedRef.current = false;
@@ -22762,7 +22782,7 @@ const LiveStreamModal = ({
       return;
     }
                     
-    const unsubscribe = subscribeToLiveComments(liveDocId, items => {
+    const unsubscribe = subscribeToLiveComments(activeLiveCommentDocId, items => {
       const normalized = items.map((it: any) => ({
         id: it.id,
         text: String(it.text || ''),
@@ -22810,7 +22830,7 @@ const LiveStreamModal = ({
     });
 
     return () => unsubscribe();
-  }, [isLiveStarted, liveDocId]);
+  }, [activeLiveCommentDocId, isLiveStarted]);
 
   useEffect(() => {
     if (!visible || !isLiveStarted) {
@@ -23366,7 +23386,7 @@ const LiveStreamModal = ({
         replyToFrom: replyingToLiveComment?.from || null,
         replyToText: replyingToLiveComment?.text || null,
       };
-      if (liveDocId && uid) {
+      if (activeLiveCommentDocId && uid) {
         pendingLiveCommentIdsRef.current.add(clientCommentId);
         animatedLiveClientCommentIdsRef.current.add(clientCommentId);
         setLiveComments(prev => {
@@ -23381,7 +23401,7 @@ const LiveStreamModal = ({
           from: fallbackName || 'You',
         });
         await sendDriftLiveComment({
-          liveId: liveDocId,
+          liveId: activeLiveCommentDocId,
           userId: String(uid),
           userName: fallbackName,
           text: txt,
@@ -23960,25 +23980,22 @@ const LiveStreamModal = ({
         channel: normalizedActiveChannel,
       };
       const resolvedInviteChannel = String(resolvedInviteTarget.channel || '').trim();
+      const inviteKey = buildDriftInviteDocId(
+        me.uid,
+        resolvedInviteTarget.liveId || liveDocId || null,
+      );
+      inviteDocId = inviteKey;
 
       try {
-        const liveInvitesRef = firestore().collection(
-          `users/${toUid}/live_invites`,
-        );
-        let existingPending: any = null;
-        if (liveDocId) {
-          try {
-            existingPending = await liveInvitesRef
-              .where('status', '==', 'pending')
-              .where('fromUid', '==', me.uid)
-              .where('liveId', '==', liveDocId)
-              .limit(1)
-              .get();
-          } catch {
-            existingPending = null;
-          }
-        }
-        // Invite-only flow: do not create direct call sessions here.
+        const liveInviteRef = firestore()
+          .collection(`users/${toUid}/live_invites`)
+          .doc(inviteKey);
+        const mentionInviteRef = firestore()
+          .collection(`users/${toUid}/mentions`)
+          .doc(inviteKey);
+        const pingInviteRef = firestore()
+          .collection(`users/${toUid}/pings`)
+          .doc(inviteKey);
 
         const invitePayload = {
           type: 'DRIFT_EXPO_INVITE',
@@ -23996,15 +24013,28 @@ const LiveStreamModal = ({
           createdAt: firestore.FieldValue.serverTimestamp(),
           expiresAtMs: computedExpiry,
         };
-        if (existingPending && !existingPending.empty) {
-          const ref = existingPending.docs[0].ref;
-          inviteDocId = existingPending.docs[0].id;
-          await ref.set(invitePayload, { merge: true });
-        } else {
-          const inviteRef = await liveInvitesRef.add(invitePayload);
-          inviteDocId = inviteRef.id;
-        }
+        await liveInviteRef.set(invitePayload, { merge: true });
         inboxInviteWritten = true;
+
+        await mentionInviteRef.set(
+          {
+            ...invitePayload,
+            text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+            route: 'Pings',
+          },
+          { merge: true },
+        );
+        fallbackMentionWritten = true;
+
+        await pingInviteRef.set(
+          {
+            ...invitePayload,
+            text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+            read: false,
+          },
+          { merge: true },
+        );
+        fallbackPingWritten = true;
 
         if (!options?.silent) {
           Alert.alert('Invite Sent', 'Invitation sent to feed badge.');
@@ -24016,65 +24046,8 @@ const LiveStreamModal = ({
         lastErr = err;
       }
 
-      // Single invite channel to prevent duplicate invite cards/badges.
-
-      if (!inboxInviteWritten) {
-        try {
-          await firestore()
-            .collection(`users/${toUid}/mentions`)
-            .add({
-              type: 'DRIFT_EXPO_INVITE',
-              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-              fromUid: me.uid,
-              fromName: callerName,
-              fromPhoto: senderPhoto,
-              route: 'Pings',
-              liveId: resolvedInviteTarget.liveId || liveDocId || '',
-              liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: resolvedInviteChannel || null,
-              channelName: resolvedInviteChannel || null,
-              directCallId: directCallId || null,
-              directCallChannel: directCallChannel || null,
-              callType: directCallType,
-              status: 'pending',
-              expiresAtMs: computedExpiry,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-          fallbackMentionWritten = true;
-        } catch (err) {
-          console.warn('[INVITE DEBUG] mention fallback write failed', err);
-          lastErr = err;
-        }
-        try {
-          await firestore()
-            .collection(`users/${toUid}/pings`)
-            .add({
-              type: 'DRIFT_EXPO_INVITE',
-              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-              fromUid: me.uid,
-              fromName: callerName,
-              fromPhoto: senderPhoto,
-              liveId: resolvedInviteTarget.liveId || liveDocId || '',
-              liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: resolvedInviteChannel || null,
-              channelName: resolvedInviteChannel || null,
-              directCallId: directCallId || null,
-              directCallChannel: directCallChannel || null,
-              callType: directCallType,
-              status: 'pending',
-              read: false,
-              expiresAtMs: computedExpiry,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-          fallbackPingWritten = true;
-        } catch (err) {
-          console.warn('[INVITE DEBUG] ping fallback write failed', err);
-          lastErr = err;
-        }
-      }
-
       if ((resolvedInviteTarget.liveId || liveDocId) && inviteDocId) {
-        firestore()
+        await firestore()
           .collection(`driftLives/${resolvedInviteTarget.liveId || liveDocId}/invite_status`)
           .doc(toUid)
           .set(
@@ -24095,11 +24068,8 @@ const LiveStreamModal = ({
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
-          )
-          .then(() => {
-            inviteStatusWritten = true;
-          })
-          .catch(() => {});
+          );
+        inviteStatusWritten = true;
       }
 
       const requireFeedPanel = options?.requireFeedPanel !== false;
@@ -28474,14 +28444,6 @@ const authStyles = StyleSheet.create({
 });
                     
                     
-
-
-
-
-
-
-
-
 
 
 
