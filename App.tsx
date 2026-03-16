@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useEffect,
   useMemo,
   useState,
@@ -2299,37 +2299,36 @@ const editorStyles = StyleSheet.create({
   // Comments overlay and input
   liveCommentsOverlay: {
     position: 'absolute',
-    left: 16,
-    maxHeight: '40%',
-    zIndex: 15,
+    left: 10,
+    right: 120,
+    zIndex: 40,
+    elevation: 40,
   },
   liveCommentBubble: {
-    flexDirection: 'row',
     alignSelf: 'flex-start',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginBottom: 8,
+    paddingHorizontal: 0,
+    paddingVertical: 1,
+    marginBottom: 3,
     maxWidth: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.06)',
   },
   liveCommentInputBar: {
     position: 'absolute',
     left: 12,
     right: 12,
-    backgroundColor: 'transparent',
-    borderRadius: 12,
-    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    borderRadius: 22,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   liveCommentText: {
-    color: 'white',
+    color: 'rgba(255,255,255,0.93)',
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 17,
   },
   liveCommentAuthor: {
-    color: '#F4FBFF',
-    fontWeight: '700',
+    color: '#62D8FF',
+    fontWeight: '800',
     fontSize: 12,
   },
   commentSplashContainer: {
@@ -6684,50 +6683,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
 
       if (action === 'join') {
-        const resolvedTarget = await resolveDriftExpoInviteTarget({
-          liveId: invite.liveId,
-          liveChannel: invite.liveChannel || invite.directCallChannel || null,
-          channelName: invite.channelName || null,
-          fromUid: invite.fromUid,
-        });
-        const normalizedChannel = resolvedTarget.channel;
-        if (!normalizedChannel) {
-          Alert.alert(
-            'Drift Expo',
-            'Could not resolve the sender Drift Expo room. Please ask the sender to resend the invite.',
-          );
-          return;
-        }
-        const needsApproval = false;
-        setLiveInviteJoinPreset({
-          liveId: resolvedTarget.liveId || invite.liveId,
-          channel: normalizedChannel,
-          title: invite.liveTitle || null,
-          fromName: invite.fromName,
-          requireApproval: needsApproval,
-          nonce: Date.now(),
-        });
-        setShowLive(true);
-        if ((resolvedTarget.liveId || invite.liveId) && normalizedChannel) {
-          try {
-            const me = auth?.()?.currentUser;
-            if (me?.uid) {
-              await firestore()
-                .collection(`driftLives/${resolvedTarget.liveId || invite.liveId}/invite_status`)
-                .doc(me.uid)
-                .set(
-                  {
-                    uid: me.uid,
-                    status: 'accepted',
-                    channel: normalizedChannel,
-                    liveChannel: normalizedChannel,
-                    updatedAt: firestore.FieldValue.serverTimestamp(),
-                    respondedAt: firestore.FieldValue.serverTimestamp(),
-                  },
-                  { merge: true },
-                );
-            }
-          } catch {}
+        // Fast path: use channel directly from invite - no async Firestore lookup
+        const fastChannel = String(
+          invite.liveChannel || invite.directCallChannel || invite.channelName || '',
+        ).trim().replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
+        const doJoin = (resolvedLiveId: string | null, resolvedChannel: string) => {
+          setLiveInviteJoinPreset({
+            liveId: resolvedLiveId || invite.liveId,
+            channel: resolvedChannel,
+            title: invite.liveTitle || null,
+            fromName: invite.fromName,
+            requireApproval: false,
+            nonce: Date.now(),
+          });
+          setShowLive(true);
+        };
+        if (fastChannel) {
+          doJoin(invite.liveId || null, fastChannel);
+        } else {
+          resolveDriftExpoInviteTarget({
+            liveId: invite.liveId, liveChannel: null, channelName: null, fromUid: invite.fromUid,
+          }).then(r => {
+            if (r.channel) doJoin(r.liveId, r.channel);
+            else Alert.alert('Drift Expo', 'Could not resolve the sender room.');
+          }).catch(() => Alert.alert('Drift Expo', 'Could not resolve the sender room.'));
         }
       }
 
@@ -6771,18 +6750,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               );
           }
           if (invite.liveId) {
+            const driftInvitePatch =
+              action === 'join'
+                ? {
+                    uid: me.uid,
+                    status: 'pending',
+                    updatedAt: firestore.FieldValue.serverTimestamp(),
+                    respondedAt: firestore.FieldValue.serverTimestamp(),
+                  }
+                : {
+                    uid: me.uid,
+                    status: nextStatus,
+                    updatedAt: firestore.FieldValue.serverTimestamp(),
+                    respondedAt: firestore.FieldValue.serverTimestamp(),
+                  };
             await firestore()
               .collection(`driftLives/${invite.liveId}/invite_status`)
               .doc(me.uid)
-              .set(
-                {
-                  uid: me.uid,
-                  status: nextStatus,
-                  updatedAt: firestore.FieldValue.serverTimestamp(),
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
+              .set(driftInvitePatch, { merge: true });
           }
           const linkedCallId = String(invite.directCallId || '').trim();
           if (linkedCallId) {
@@ -22258,6 +22243,7 @@ const LiveStreamModal = ({
   const [sendingLiveComment, setSendingLiveComment] = useState(false);
   const pendingLiveCommentIdsRef = useRef<Set<string>>(new Set());
   const animatedLiveClientCommentIdsRef = useRef<Set<string>>(new Set());
+  const handledInviteNonceRef = useRef<number | null>(null);
   const [hostName, setHostName] = useState<string>('');
   const [hostPhoto, setHostPhoto] = useState<string | null>(null);
   const [flyingComments, setFlyingComments] = useState<
@@ -22420,27 +22406,29 @@ const LiveStreamModal = ({
   );
 
   useEffect(() => {
-    if (!visible || !inviteJoinPreset || isLiveStarted) return;
+    if (!visible || !inviteJoinPreset) return;
+    const inviteNonce = Number(inviteJoinPreset.nonce || 0) || Date.now();
+    if (handledInviteNonceRef.current === inviteNonce) return;
+    handledInviteNonceRef.current = inviteNonce;
     let cancelled = false;
     (async () => {
       const incomingLiveId = inviteJoinPreset.liveId
         ? String(inviteJoinPreset.liveId)
         : null;
-      if (!incomingLiveId) return;
-      setLiveDocId(incomingLiveId);
-      setLiveTitle(
-        String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
-      );
-      setStartError(null);
+      // Fast path: if channel already in preset, skip Firestore lookup entirely
+      const presetChannel = String(inviteJoinPreset.channel || '')
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
       let live: any = null;
-      try {
-        live = await getLiveSession(incomingLiveId);
-      } catch {}
+      if (!presetChannel && incomingLiveId) {
+        try {
+          live = await getLiveSession(incomingLiveId);
+        } catch {}
+      }
       if (cancelled) return;
-      const suggestedChannel = String(
-        live?.channelName ||
-          inviteJoinPreset.channel ||
-          '',
+      const suggestedChannel = presetChannel || String(
+        live?.channelName || '',
       )
         .trim()
         .replace(/[^A-Za-z0-9_]/g, '_')
@@ -22455,6 +22443,23 @@ const LiveStreamModal = ({
         uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
       }
       const mappedUid = (uidHash % 2147483646) + 1;
+      const roomChanged =
+        isLiveStarted ||
+        String(liveDocId || '').trim() !== incomingLiveId ||
+        String(liveChannel || '').trim() !== suggestedChannel;
+      if (roomChanged) {
+        try {
+          engineRef.current?.leaveChannel?.();
+        } catch {}
+        setRemoteParticipantUids([]);
+        setPinnedRemoteUid(null);
+        setIsLiveStarted(false);
+      }
+      setLiveDocId(incomingLiveId);
+      setLiveTitle(
+        String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+      );
+      setStartError(null);
       setChannelInput(suggestedChannel);
       setLiveChannel(suggestedChannel);
       setLiveUid(mappedUid);
@@ -22471,6 +22476,29 @@ const LiveStreamModal = ({
       setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
       setAwaitingCaptainApproval(false);
       setJoinApprovalLabel('');
+      try {
+        const me = auth?.()?.currentUser;
+        if (me?.uid && incomingLiveId) {
+          await firestore()
+            .collection(`driftLives/${incomingLiveId}/invite_status`)
+            .doc(me.uid)
+            .set(
+              {
+                uid: me.uid,
+                status: 'accepted',
+                channel: suggestedChannel,
+                liveChannel: suggestedChannel,
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+                respondedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+        }
+      } catch {}
+      if (roomChanged) {
+        await new Promise(resolve => setTimeout(resolve, 80));
+        if (cancelled) return;
+      }
       setIsLiveStarted(true);
     })();
     return () => {
@@ -22480,6 +22508,8 @@ const LiveStreamModal = ({
     defaultChannel,
     inviteJoinPreset,
     isLiveStarted,
+    liveChannel,
+    liveDocId,
     staticToken,
     visible,
   ]);
@@ -22670,10 +22700,34 @@ const LiveStreamModal = ({
     } catch {}
     if (!visible) return;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (showCommentInput) {
-        setShowCommentInput(false);
+      if (promptVisible) {
+        setPromptVisible(false);
+        promptSubmitRef.current = undefined;
+        return true;
+      }
+      if (showInviteModal) {
+        setShowInviteModal(false);
+        return true;
+      }
+      if (showUserPanel) {
+        setShowUserPanel(false);
+        return true;
+      }
+      if (replyingToLiveComment) {
         setReplyingToLiveComment(null);
         setCommentText('');
+        return true;
+      }
+      if (showCommentInput) {
+        setShowCommentInput(false);
+        return true;
+      }
+      if (showLiveControls) {
+        setShowLiveControls(false);
+        return true;
+      }
+      if (showOnlineInvitePanel) {
+        setShowOnlineInvitePanel(false);
         return true;
       }
       try {
@@ -22686,7 +22740,17 @@ const LiveStreamModal = ({
         sub.remove();
       } catch {}
     };
-  }, [visible, onClose, showCommentInput]);
+  }, [
+    onClose,
+    promptVisible,
+    replyingToLiveComment,
+    showCommentInput,
+    showInviteModal,
+    showLiveControls,
+    showOnlineInvitePanel,
+    showUserPanel,
+    visible,
+  ]);
                     
   // Real-time comments listener
   useEffect(() => {
@@ -23268,6 +23332,9 @@ const LiveStreamModal = ({
   const sendLiveComment = async () => {
     const txt = (commentText || '').trim();
     if (!txt || sendingLiveComment) return;
+    // Close input immediately for snappy UX
+    setCommentText('');
+    setShowCommentInput(false);
     let currentClientCommentId = '';
                     
     try {
@@ -23328,9 +23395,7 @@ const LiveStreamModal = ({
       } else {
         throw new Error('Drift Expo room is not ready.');
       }
-      setCommentText('');
       setReplyingToLiveComment(null);
-      setShowCommentInput(false);
     } catch (error: any) {
       if (currentClientCommentId) {
         pendingLiveCommentIdsRef.current.delete(currentClientCommentId);
@@ -23360,8 +23425,8 @@ const LiveStreamModal = ({
     );
     Animated.timing(anim, {
       toValue: 1,
-      duration: 520,
-      easing: Easing.out(Easing.quad),
+      duration: 2800,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
       setFlyingComments(prev => prev.filter(fc => fc.id !== c.id));
@@ -25414,16 +25479,16 @@ const LiveStreamModal = ({
         {isLiveStarted && (
           <>
             {mainRemoteUid ? (
-              RtcSurfaceView ? (
-                React.createElement(RtcSurfaceView, {
+              RtcTextureView ? (
+                React.createElement(RtcTextureView, {
                   style: StyleSheet.absoluteFill,
                   canvas: {
                     uid: mainRemoteUid,
                     renderMode: VideoRenderMode?.Fit ?? 2,
                   },
                 })
-              ) : RtcTextureView ? (
-                React.createElement(RtcTextureView, {
+              ) : RtcSurfaceView ? (
+                React.createElement(RtcSurfaceView, {
                   style: StyleSheet.absoluteFill,
                   canvas: {
                     uid: mainRemoteUid,
@@ -25463,6 +25528,14 @@ const LiveStreamModal = ({
                   2
                 }
               />
+            ) : RtcTextureView ? (
+              React.createElement(RtcTextureView, {
+                style: StyleSheet.absoluteFill,
+                canvas: {
+                  uid: 0,
+                  renderMode: VideoRenderMode?.Fit ?? 2,
+                },
+              })
             ) : RtcSurfaceView ? (
               React.createElement(RtcSurfaceView, {
                 style: StyleSheet.absoluteFill,
@@ -25471,14 +25544,6 @@ const LiveStreamModal = ({
                   renderMode: VideoRenderMode?.Fit ?? 2,
                 },
                 zOrderMediaOverlay: true,
-              })
-            ) : RtcTextureView ? (
-              React.createElement(RtcTextureView, {
-                style: StyleSheet.absoluteFill,
-                canvas: {
-                  uid: 0,
-                  renderMode: VideoRenderMode?.Fit ?? 2,
-                },
               })
             ) : RtcLocalView?.SurfaceView ? (
               React.createElement(RtcLocalView.SurfaceView, {
@@ -25522,6 +25587,14 @@ const LiveStreamModal = ({
                     }
                     renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
                   />
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
                 ) : RtcSurfaceView ? (
                   React.createElement(RtcSurfaceView, {
                     style: StyleSheet.absoluteFill,
@@ -25530,14 +25603,6 @@ const LiveStreamModal = ({
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                     zOrderMediaOverlay: true,
-                  })
-                ) : RtcTextureView ? (
-                  React.createElement(RtcTextureView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: 0,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
                   })
                 ) : RtcLocalView?.SurfaceView ? (
                   React.createElement(RtcLocalView.SurfaceView, {
@@ -25574,6 +25639,14 @@ const LiveStreamModal = ({
                     }
                     renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
                   />
+                ) : RtcTextureView ? (
+                  React.createElement(RtcTextureView, {
+                    style: StyleSheet.absoluteFill,
+                    canvas: {
+                      uid: 0,
+                      renderMode: VideoRenderMode?.Fit ?? 2,
+                    },
+                  })
                 ) : RtcSurfaceView ? (
                   React.createElement(RtcSurfaceView, {
                     style: StyleSheet.absoluteFill,
@@ -25582,14 +25655,6 @@ const LiveStreamModal = ({
                       renderMode: VideoRenderMode?.Fit ?? 2,
                     },
                     zOrderMediaOverlay: true,
-                  })
-                ) : RtcTextureView ? (
-                  React.createElement(RtcTextureView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: 0,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
                   })
                 ) : RtcLocalView?.SurfaceView ? (
                   React.createElement(RtcLocalView.SurfaceView, {
@@ -25602,161 +25667,38 @@ const LiveStreamModal = ({
           </>
         )}
         {isLiveStarted && visibleLiveComments.length > 0 && (
-          <ScrollView
+          <View
+            pointerEvents="box-none"
             style={[
               editorStyles.liveCommentsOverlay,
-              {
-                top: '31%',
-                width: Math.min(SCREEN_WIDTH * 0.72, 320),
-              },
+              { bottom: insets.bottom + endBarHeight + mediaBarHeight + 12 },
             ]}
-            contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}
-            showsVerticalScrollIndicator={false}
           >
-            <View>
-              {visibleLiveComments.map(c => (
-                <Pressable
-                  key={c.id}
-                  onPress={() =>
-                    onEchoBack({
-                      id: c.id,
-                      from: String(c.from || ''),
-                      text: String(c.text || ''),
-                    })
-                  }
-                >
-                  <View
-                    style={[
-                      editorStyles.liveCommentBubble,
-                      {
-                        backgroundColor:
-                          String((c as any).fromUid || '') === currentLiveUserUid
-                            ? 'rgba(0,194,255,0.20)'
-                            : 'rgba(7,12,20,0.72)',
-                      },
-                    ]}
-                  >
-                    <View style={{ flex: 1 }}>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          marginBottom: 4,
-                        }}
-                      >
-                        <Text style={editorStyles.liveCommentAuthor}>
-                          {(c as any).fromUid
-                            ? liveDisplayHandle((c as any).fromUid, c.from)
-                            : c.from === 'You'
-                            ? 'You'
-                            : liveDisplayHandle(null, c.from)}
-                        </Text>
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.56)',
-                            fontSize: 10,
-                            fontWeight: '600',
-                            marginLeft: 6,
-                          }}
-                        >
-                          {String((c as any).fromUid || '') === String(liveHostId || '')
-                            ? 'Captain'
-                            : 'Crew'}
-                        </Text>
-                      </View>
-                      {!!(c as any).replyToFrom && (
-                        <View
-                          style={{
-                            borderLeftWidth: 2,
-                            borderLeftColor: 'rgba(157,230,255,0.9)',
-                            paddingLeft: 8,
-                            marginBottom: 6,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              color: 'rgba(157,230,255,0.95)',
-                              fontSize: 10,
-                              marginBottom: 2,
-                            }}
-                            numberOfLines={1}
-                          >
-                            Replying to @{String((c as any).replyToFrom || 'user').replace(/^[@/]+/, '')}
-                          </Text>
-                          <Text
-                            style={{
-                              color: 'rgba(209,242,255,0.78)',
-                              fontSize: 11,
-                            }}
-                            numberOfLines={1}
-                          >
-                            {(c as any).replyToText || ''}
-                          </Text>
-                        </View>
-                      )}
-                      <Text style={editorStyles.liveCommentText}>{c.text}</Text>
-                    </View>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </ScrollView>
-        )}
-        {isLiveStarted && !!replyingToLiveComment && (
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 16,
-              top: '31%',
-              width: Math.min(SCREEN_WIDTH * 0.62, 280),
-              zIndex: 22,
-            }}
-          >
-            <View
-              style={{
-                backgroundColor: 'rgba(8,14,24,0.88)',
-                borderRadius: 16,
-                paddingHorizontal: 12,
-                paddingVertical: 10,
-                borderWidth: 1,
-                borderColor: 'rgba(0,194,255,0.2)',
-              }}
-            >
-              <Text
-                style={{
-                  color: 'rgba(255,255,255,0.6)',
-                  fontSize: 10,
-                  fontWeight: '700',
-                  marginBottom: 4,
-                  letterSpacing: 0.4,
-                }}
+            {visibleLiveComments.slice(-12).map(c => (
+              <Pressable
+                key={c.id}
+                onPress={() => onEchoBack({ id: c.id, from: String(c.from || ''), text: String(c.text || '') })}
               >
-                ORIGINAL
-              </Text>
-              <Text
-                style={{
-                  color: '#62D8FF',
-                  fontSize: 12,
-                  fontWeight: '800',
-                  marginBottom: 4,
-                }}
-              >
-                @{String(replyingToLiveComment.from || 'user').replace(/^[@/]+/, '')}
-              </Text>
-              <Text
-                numberOfLines={3}
-                style={{
-                  color: 'white',
-                  fontSize: 12,
-                  lineHeight: 18,
-                }}
-              >
-                {replyingToLiveComment.text}
-              </Text>
-            </View>
+                <View style={editorStyles.liveCommentBubble}>
+                  {!!(c as any).replyToFrom && (
+                    <Text style={{ color: 'rgba(157,230,255,0.8)', fontSize: 10, marginBottom: 1 }} numberOfLines={1}>
+                      <Text style={{ fontWeight: '800', fontStyle: 'italic' }}>@{String((c as any).replyToFrom || '').replace(/^[@/]+/, '')}</Text>
+                      {': '}{(c as any).replyToText || ''}
+                    </Text>
+                  )}
+                  <Text>
+                    <Text style={editorStyles.liveCommentAuthor}>
+                      {(c as any).fromUid ? liveDisplayHandle((c as any).fromUid, c.from) : c.from === 'You' ? 'You' : liveDisplayHandle(null, c.from)}
+                      {' '}
+                    </Text>
+                    <Text style={editorStyles.liveCommentText}>{c.text}</Text>
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
           </View>
         )}
+        {/* Reply context shown inline in comment input bar */}
         {isLiveStarted && flyingComments.length > 0 && (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             {flyingComments.map(fc => {
@@ -26641,16 +26583,17 @@ const LiveStreamModal = ({
               }}
             >
               {!!replyingToLiveComment && (
-                <Text
-                  style={{
-                    color: '#62D8FF',
-                    fontSize: 12,
-                    fontWeight: '800',
-                    marginRight: 8,
-                  }}
-                >
-                  @{String(replyingToLiveComment.from || 'user').replace(/^[@/]+/, '')}
-                </Text>
+                <View style={{ marginRight: 8, maxWidth: 120 }}>
+                  <Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 9, fontWeight: '700', letterSpacing: 0.5 }}>
+                    REPLYING TO
+                  </Text>
+                  <Text style={{ color: '#62D8FF', fontSize: 12, fontWeight: '800', fontStyle: 'italic' }} numberOfLines={1}>
+                    @{String(replyingToLiveComment.from || 'user').replace(/^[@/]+/, '')}
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10 }} numberOfLines={1}>
+                    {replyingToLiveComment.text}
+                  </Text>
+                </View>
               )}
               <TextInput
                 value={commentText}
