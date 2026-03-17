@@ -6938,6 +6938,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     status: 'accepted',
                     channel: normalizedChannel,
                     liveChannel: normalizedChannel,
+                    rtcUid: toAgoraUidFromAppUid(String(me.uid || '')),
                     fromUid: invite.fromUid || null,
                     updatedAt: firestore.FieldValue.serverTimestamp(),
                     respondedAt: firestore.FieldValue.serverTimestamp(),
@@ -6992,6 +6993,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     invite.liveChannel || invite.directCallChannel || null,
                   liveChannel:
                     invite.liveChannel || invite.directCallChannel || null,
+                  rtcUid:
+                    nextStatus === 'accepted'
+                      ? toAgoraUidFromAppUid(String(me.uid || ''))
+                      : null,
                   fromUid: invite.fromUid || null,
                   updatedAt: firestore.FieldValue.serverTimestamp(),
                   respondedAt: firestore.FieldValue.serverTimestamp(),
@@ -22818,6 +22823,9 @@ const LiveStreamModal = ({
     Array<{ id: string; text: string; from?: string; anim: Animated.Value }>
   >([]);
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
+  const recentLocalCommentKeysRef = useRef<
+    Array<{ key: string; at: number }>
+  >([]);
   const liveCommentsPrimedRef = useRef(false);
   const lastLiveCommentsSigRef = useRef('');
   const lastLiveCommentErrRef = useRef('');
@@ -22928,7 +22936,7 @@ const LiveStreamModal = ({
     >
   >({});
   const [joinedParticipants, setJoinedParticipants] = useState<
-    Array<{ uid: string; name: string; photo: string | null }>
+    Array<{ uid: string; name: string; photo: string | null; rtcUid: number }>
   >([]);
   const [activeSpeakerRtcUid, setActiveSpeakerRtcUid] = useState<number | null>(null);
   const [activeSpeakerAtMs, setActiveSpeakerAtMs] = useState<number>(0);
@@ -22953,13 +22961,22 @@ const LiveStreamModal = ({
   const isLiveCoHost =
     !!currentLiveUid && coHostIds.includes(String(currentLiveUid));
   const modeScopePrefix = isConferenceMode ? 'conference' : 'drift';
-  // Use one normalized, channel-first scope so all participants share the same docs/comments path.
+  const resolvedLiveDocId = String(inviteJoinPreset?.liveId || liveDocId || '').trim();
+  const resolvedLiveChannel = String(
+    inviteJoinPreset?.channel || liveChannel || channelInput || defaultChannel || '',
+  )
+    .trim()
+    .replace(/[^A-Za-z0-9_]/g, '_')
+    .slice(0, 64);
+  // Prefer the canonical live document id so all accepted participants share one room.
   const liveShareScope = normalizeLiveScope(
-    `${modeScopePrefix}_${liveChannel || channelInput || liveDocId || ''}`,
+    `${modeScopePrefix}_${resolvedLiveDocId || resolvedLiveChannel || ''}`,
   );
   const liveCommentScope = normalizeLiveScope(
-    `${modeScopePrefix}_${liveChannel || channelInput || liveDocId || ''}`,
+    `${modeScopePrefix}_${resolvedLiveDocId || resolvedLiveChannel || ''}`,
   );
+  const liveInviteStatusRoomId = resolvedLiveDocId;
+  const liveCommentRoomId = resolvedLiveDocId || liveCommentScope;
   const activeSharedFile = useMemo(() => {
     if (!liveSharedFiles.length) return null;
     return (
@@ -23041,12 +23058,16 @@ const LiveStreamModal = ({
     () =>
       joinedParticipants.map(p => ({
         ...p,
-        rtcUid: toAgoraUidFromAppUid(String(p.uid || '')),
+        rtcUid:
+          Number((p as any)?.rtcUid || 0) ||
+          toAgoraUidFromAppUid(String(p.uid || '')),
       })),
     [joinedParticipants],
   );
   const orderedJoinedParticipants = useMemo(() => {
-    const rows = [...joinedParticipantsWithRtc];
+    const rows = [...joinedParticipantsWithRtc].filter(
+      p => String(p.uid || '') !== String(currentLiveUid || ''),
+    );
     if (!activeSpeakerIsRecent || !activeSpeakerRtcUid) return rows;
     rows.sort((a, b) => {
       const aHot = a.rtcUid === activeSpeakerRtcUid ? 1 : 0;
@@ -23054,7 +23075,7 @@ const LiveStreamModal = ({
       return bHot - aHot;
     });
     return rows;
-  }, [activeSpeakerIsRecent, activeSpeakerRtcUid, joinedParticipantsWithRtc]);
+  }, [activeSpeakerIsRecent, activeSpeakerRtcUid, currentLiveUid, joinedParticipantsWithRtc]);
   const joinedUidSet = useMemo(
     () => new Set(joinedParticipants.map(p => String(p.uid || ''))),
     [joinedParticipants],
@@ -23329,6 +23350,7 @@ const LiveStreamModal = ({
                 status: 'accepted',
                 channel: suggestedChannel,
                 liveChannel: suggestedChannel,
+                rtcUid: mappedUid,
                 fromUid: inviteJoinPreset.fromUid || null,
                 updatedAt: firestore.FieldValue.serverTimestamp(),
                 respondedAt: firestore.FieldValue.serverTimestamp(),
@@ -23381,6 +23403,7 @@ const LiveStreamModal = ({
               uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
             }
             const mappedUid = (uidHash % 2147483646) + 1;
+            setLiveDocId(String(liveDocId || inviteJoinPreset?.liveId || ''));
             setChannelInput(suggestedChannel);
             setLiveChannel(suggestedChannel);
             setLiveUid(mappedUid);
@@ -23562,7 +23585,7 @@ const LiveStreamModal = ({
                     
   // Real-time comments listener
   useEffect(() => {
-    if (!isLiveStarted || !liveCommentScope) {
+    if (!isLiveStarted || !liveCommentRoomId) {
       setLiveComments([]);
       seenCommentIdsRef.current.clear();
       liveCommentsPrimedRef.current = false;
@@ -23578,7 +23601,7 @@ const LiveStreamModal = ({
     if (!firestoreMod) return;
                     
     const unsubscribe = firestoreMod()
-      .collection(`live/${liveCommentScope}/comments`)
+      .collection(`live/${liveCommentRoomId}/comments`)
       .orderBy('createdAtMs', 'asc')
       .limitToLast(80) // Listen to recent comments in deterministic order.
       .onSnapshot(
@@ -23593,10 +23616,32 @@ const LiveStreamModal = ({
             lastLiveCommentsSigRef.current = sig;
             setLiveComments(items);
             if (!liveCommentsPrimedRef.current) {
+              const nowMs = Date.now();
+              const initialBurst = items
+                .filter((it: any) => {
+                  const id = String(it?.id || '').trim();
+                  const text = String(it?.text || '').trim();
+                  const fromUid = String((it as any)?.fromUid || '').trim();
+                  const createdAtMs = getCommentCreatedAtMs(it);
+                  return (
+                    !!id &&
+                    !!text &&
+                    fromUid !== String(currentLiveUid || '').trim() &&
+                    (!createdAtMs || nowMs - createdAtMs <= 8000)
+                  );
+                })
+                .slice(-2);
               items.forEach((it: any) => {
                 if (it?.id) seenCommentIdsRef.current.add(String(it.id));
               });
               liveCommentsPrimedRef.current = true;
+              initialBurst.forEach((it: any) => {
+                spawnFlyingComment({
+                  id: `prime-${String(it.id || '')}`,
+                  text: String(it?.text || ''),
+                  from: it?.from,
+                });
+              });
               return;
             }
             // Trigger a small capped number of animations to avoid UI thread stalls.
@@ -23605,9 +23650,23 @@ const LiveStreamModal = ({
               const id = String(it?.id || '').trim();
               if (!id || seenCommentIdsRef.current.has(id)) continue;
               seenCommentIdsRef.current.add(id);
+              const fromUid = String((it as any)?.fromUid || '').trim();
+              const text = String(it?.text || '').trim();
+              if (fromUid && fromUid === String(currentLiveUid || '').trim()) {
+                const nowMs = Date.now();
+                const commentKey = `${fromUid}::${text.toLowerCase()}`;
+                recentLocalCommentKeysRef.current = recentLocalCommentKeysRef.current.filter(
+                  row => nowMs - row.at <= 5000,
+                );
+                if (
+                  text &&
+                  recentLocalCommentKeysRef.current.some(row => row.key === commentKey)
+                ) {
+                  continue;
+                }
+              }
               const systemType = String((it as any)?.systemType || '').trim().toLowerCase();
               if (systemType === 'sound_effect') {
-                const fromUid = String((it as any)?.fromUid || '').trim();
                 if (!fromUid || fromUid !== String(currentLiveUid || '').trim()) {
                   const soundId = String((it as any)?.soundId || '').trim().toLowerCase();
                   const soundLabel = String((it as any)?.soundLabel || '').trim().toLowerCase();
@@ -23644,7 +23703,7 @@ const LiveStreamModal = ({
                   }
                 }
               }
-              spawnFlyingComment({ id, text: String(it?.text || ''), from: it?.from });
+              spawnFlyingComment({ id, text, from: it?.from });
               spawned += 1;
               if (spawned >= 3) break;
             }
@@ -23659,7 +23718,7 @@ const LiveStreamModal = ({
       );
 
     return () => unsubscribe();
-  }, [currentLiveUid, isLiveStarted, liveCommentScope]);
+  }, [currentLiveUid, getCommentCreatedAtMs, isLiveStarted, liveCommentRoomId]);
 
   useEffect(() => {
     if (!visible || !isLiveStarted) {
@@ -23765,13 +23824,13 @@ const LiveStreamModal = ({
   }, [visible, isLiveStarted]);
 
   useEffect(() => {
-    if (!isLiveStarted || !liveDocId) {
+    if (!isLiveStarted || !liveInviteStatusRoomId) {
       setInviteStatusByUid({});
       setJoinedParticipants([]);
       return;
     }
     const unsub = firestore()
-      .collection(`live/${liveDocId}/invite_status`)
+      .collection(`live/${liveInviteStatusRoomId}/invite_status`)
       .onSnapshot(
         snap => {
           const next: Record<
@@ -23791,14 +23850,19 @@ const LiveStreamModal = ({
 
           const acceptedUids = (snap?.docs || [])
             .filter((doc: any) => String(doc?.data?.()?.status || '').toLowerCase() === 'accepted')
-            .map((doc: any) => String(doc.id || ''))
-            .filter(Boolean)
+            .map((doc: any) => ({
+              uid: String(doc.id || ''),
+              rtcUid:
+                Number(doc?.data?.()?.rtcUid || 0) ||
+                toAgoraUidFromAppUid(String(doc.id || '')),
+            }))
+            .filter((row: any) => !!row.uid)
             .slice(0, 30);
           if (acceptedUids.length === 0) {
             setJoinedParticipants([]);
           } else {
             Promise.all(
-              acceptedUids.map(async uid => {
+              acceptedUids.map(async ({ uid, rtcUid }) => {
                 try {
                   const userSnap = await firestore().collection('users').doc(uid).get();
                   const d = userSnap?.data?.() || {};
@@ -23806,9 +23870,10 @@ const LiveStreamModal = ({
                     uid,
                     name: String(d.displayName || d.name || d.username || uid),
                     photo: d.photoURL || d.avatar || null,
+                    rtcUid,
                   };
                 } catch {
-                  return { uid, name: uid, photo: null };
+                  return { uid, name: uid, photo: null, rtcUid };
                 }
               }),
             )
@@ -23823,7 +23888,18 @@ const LiveStreamModal = ({
         unsub && unsub();
       } catch {}
     };
-  }, [isLiveStarted, liveDocId]);
+  }, [isLiveStarted, liveInviteStatusRoomId]);
+
+  useEffect(() => {
+    const inferred = orderedJoinedParticipants
+      .map(p => Number(p.rtcUid || 0))
+      .filter((uid: number) => Number.isFinite(uid) && uid > 0);
+    if (!inferred.length) return;
+    setRemoteParticipantUids(prev => Array.from(new Set([...prev, ...inferred])));
+    setPinnedRemoteUid(prev =>
+      prev && inferred.includes(prev) ? prev : inferred[0] || prev,
+    );
+  }, [orderedJoinedParticipants]);
                     
   useEffect(() => {
     if (!visible || !Agora || !appId) return;
@@ -23849,6 +23925,14 @@ const LiveStreamModal = ({
           try {
             engine.registerEventHandler?.({
               onUserJoined: (_conn: any, uid: number) => {
+                const n = Number(uid);
+                if (!Number.isFinite(n) || n <= 0) return;
+                setRemoteParticipantUids(prev =>
+                  prev.includes(n) ? prev : [...prev, n],
+                );
+                setPinnedRemoteUid(prev => prev || n);
+              },
+              onFirstRemoteVideoDecoded: (_conn: any, uid: number) => {
                 const n = Number(uid);
                 if (!Number.isFinite(n) || n <= 0) return;
                 setRemoteParticipantUids(prev =>
@@ -23903,6 +23987,16 @@ const LiveStreamModal = ({
           } catch {}
           try {
             engine.addListener?.('UserJoined', (uid: number) => {
+              const n = Number(uid);
+              if (!Number.isFinite(n) || n <= 0) return;
+              setRemoteParticipantUids(prev =>
+                prev.includes(n) ? prev : [...prev, n],
+              );
+              setPinnedRemoteUid(prev => prev || n);
+            });
+          } catch {}
+          try {
+            engine.addListener?.('FirstRemoteVideoDecoded', (uid: number) => {
               const n = Number(uid);
               if (!Number.isFinite(n) || n <= 0) return;
               setRemoteParticipantUids(prev =>
@@ -24062,6 +24156,7 @@ const LiveStreamModal = ({
               } catch {}
               if (isV4) {
                 await engine.joinChannel(tok, chan, uidNum, {
+                  clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
                   publishMicrophoneTrack: true,
                   publishCameraTrack: true,
                   autoSubscribeAudio: true,
@@ -24071,9 +24166,33 @@ const LiveStreamModal = ({
                 await engine.joinChannel(tok, chan, uidNum);
               }
               joined = true;
+              setLiveUid(uidNum);
               setMicMuted(false);
               setCameraHidden(false);
               setStartError(null);
+              if (resolvedLiveDocId && currentLiveUid) {
+                try {
+                  await firestore()
+                    .collection(`live/${resolvedLiveDocId}/invite_status`)
+                    .doc(currentLiveUid)
+                    .set(
+                      {
+                        uid: currentLiveUid,
+                        name: String(currentLiveName || hostName || 'Host').trim(),
+                        photo: hostPhoto || auth?.()?.currentUser?.photoURL || null,
+                        status: 'accepted',
+                        liveId: resolvedLiveDocId,
+                        channel: chan,
+                        liveChannel: chan,
+                        rtcUid: uidNum,
+                        updatedAt: firestore.FieldValue.serverTimestamp(),
+                        respondedAt: firestore.FieldValue.serverTimestamp(),
+                        joinedAt: firestore.FieldValue.serverTimestamp(),
+                      },
+                      { merge: true },
+                    );
+                } catch {}
+              }
               break;
             } catch (err) {
               lastErr = err;
@@ -24092,7 +24211,7 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, liveChannel, sessionLabel, startSessionLabel]);
+  }, [Agora, applyLiveQualityProfile, bridge?.audioOnlyFallback, currentLiveName, currentLiveUid, dataSaver?.enabled, hostName, hostPhoto, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, resolvedLiveDocId, liveChannel, sessionLabel, startSessionLabel, visible]);
                     
   const handleEndDrift = async () => {
     try {
@@ -24163,10 +24282,10 @@ const LiveStreamModal = ({
           hostName ||
           'Skipper',
       ).trim();
-      if (firestoreMod && liveCommentScope) {
+      if (firestoreMod && liveCommentRoomId) {
         const createdAtMs = Date.now();
         await firestoreMod()
-          .collection(`live/${liveCommentScope}/comments`)
+          .collection(`live/${liveCommentRoomId}/comments`)
           .add({
             text: txt,
             fromUid: uid,
@@ -24174,7 +24293,7 @@ const LiveStreamModal = ({
             replyToId: replyingToLiveComment?.id || null,
             replyToFrom: replyingToLiveComment?.from || null,
             replyToText: replyingToLiveComment?.text || null,
-            liveScope: liveCommentScope,
+            liveScope: liveCommentRoomId,
             createdAtMs,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
@@ -24200,6 +24319,11 @@ const LiveStreamModal = ({
                     
     // Spawn local feedback only if write succeeded.
     if (sent) {
+      const commentKey = `${String(auth?.()?.currentUser?.uid || '').trim()}::${txt.toLowerCase()}`;
+      recentLocalCommentKeysRef.current = [
+        ...recentLocalCommentKeysRef.current.filter(row => nowMs - row.at <= 5000),
+        { key: commentKey, at: nowMs },
+      ].slice(-12);
       spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
       if (txt.includes('?')) {
         addLiveMoment(`Q&A: ${txt.slice(0, 64)}`);
@@ -24408,6 +24532,28 @@ const LiveStreamModal = ({
       setLiveUid(Number.isFinite(uidNum) ? uidNum : 0);
       setLiveHostUid(currentUserUid);
       setIsLiveStarted(true);
+      if (resolvedLiveId) {
+        try {
+          await firestore()
+            .collection(`live/${resolvedLiveId}/invite_status`)
+            .doc(currentUserUid)
+            .set(
+              {
+                uid: currentUserUid,
+                name: String(hostName || me?.displayName || 'Host').trim(),
+                photo: hostPhoto || me?.photoURL || null,
+                status: 'accepted',
+                liveId: resolvedLiveId,
+                channel: chan,
+                liveChannel: chan,
+                rtcUid: Number.isFinite(uidNum) ? uidNum : toAgoraUidFromAppUid(currentUserUid),
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+                respondedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+        } catch {}
+      }
       // Ensure inline preview starts in this interface
       try {
         engineRef.current?.enableVideo?.();
@@ -25523,17 +25669,19 @@ const LiveStreamModal = ({
       try {
         firestoreMod = require('@react-native-firebase/firestore').default;
       } catch {}
-      if (firestoreMod && liveCommentScope) {
+      if (firestoreMod && liveCommentRoomId) {
+        const createdAtMs = Date.now();
         const payload = {
           ...(extra && typeof extra === 'object' ? extra : {}),
         };
         await firestoreMod()
-          .collection(`live/${liveCommentScope}/comments`)
+          .collection(`live/${liveCommentRoomId}/comments`)
           .add({
             text: message,
             from: 'System',
             fromUid: String(currentLiveUid || '').trim() || null,
             ...payload,
+            createdAtMs,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
@@ -26118,10 +26266,12 @@ const LiveStreamModal = ({
           Alert.alert('Live', 'Start live first.');
           return;
         }
-        const chan =
-          liveChannel ||
-          (cfgLocal && (cfgLocal.AGORA_CHANNEL_NAME || 'Drift')) ||
-          'Drift';
+        const chan = String(
+          liveChannel || channelInput || (cfgLocal && cfgLocal.AGORA_CHANNEL_NAME) || 'Drift',
+        )
+          .trim()
+          .replace(/[^A-Za-z0-9_]/g, '_')
+          .slice(0, 64);
         (async () => {
           try {
             const resp = await fetch(`${backendBase}/drift/accept`, {
@@ -26147,7 +26297,11 @@ const LiveStreamModal = ({
                     liveId: liveDocId,
                     channel: chan,
                     liveChannel: chan,
+                    hostUid: auth().currentUser?.uid || null,
+                    fromUid: auth().currentUser?.uid || null,
+                    rtcUid: toAgoraUidFromAppUid(String(userId || '')),
                     updatedAt: firestore.FieldValue.serverTimestamp(),
+                    respondedAt: firestore.FieldValue.serverTimestamp(),
                   },
                   { merge: true },
                 );
@@ -26667,11 +26821,17 @@ const LiveStreamModal = ({
   const RtcRemoteView = Agora?.RtcRemoteView;
   const VideoRenderMode = Agora?.VideoRenderMode;
   const VideoSourceType = Agora?.VideoSourceType;
+  const inferredRemoteParticipantUids = orderedJoinedParticipants
+    .map(p => Number(p.rtcUid || 0))
+    .filter((uid: number) => Number.isFinite(uid) && uid > 0);
+  const effectiveRemoteParticipantUids = Array.from(
+    new Set([...remoteParticipantUids, ...inferredRemoteParticipantUids]),
+  );
   const mainRemoteUid =
     (pinnedRemoteUid &&
-    remoteParticipantUids.includes(pinnedRemoteUid)
+    effectiveRemoteParticipantUids.includes(pinnedRemoteUid)
       ? pinnedRemoteUid
-      : remoteParticipantUids[0]) || null;
+      : effectiveRemoteParticipantUids[0]) || null;
   const useJoinCallLayout = !!inviteJoinPreset && !isLiveHost;
   const localVideoSourceType =
     (VideoSourceType &&
@@ -27219,8 +27379,8 @@ const LiveStreamModal = ({
                 style={{
                   position: 'absolute',
                   right: 12,
-                  top: useJoinCallLayout ? insets.top + 96 : undefined,
-                  bottom: useJoinCallLayout ? undefined : insets.bottom + endBarHeight + 96,
+                  top: useJoinCallLayout ? insets.top + 72 : undefined,
+                  bottom: useJoinCallLayout ? undefined : insets.bottom + endBarHeight + 136,
                   width: 110,
                   height: 156,
                   borderRadius: 12,
@@ -27243,13 +27403,8 @@ const LiveStreamModal = ({
               {
                 left: 10,
                 right: showLiveControls ? 108 : 10,
-                bottom:
-                  insets.bottom +
-                  endBarHeight +
-                  mediaBarHeight +
-                  (showCommentInput ? 172 : 92),
-                top: insets.top + 110,
-                maxHeight: 240,
+                top: Math.max(insets.top + 120, SCREEN_HEIGHT * 0.24),
+                maxHeight: Math.min(260, SCREEN_HEIGHT * 0.26),
               },
             ]}
             pointerEvents="box-none"
@@ -27393,11 +27548,11 @@ const LiveStreamModal = ({
             {flyingComments.map((fc, idx) => {
               const translateY = fc.anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [SCREEN_HEIGHT * 0.15, -SCREEN_HEIGHT * 0.15],
+                outputRange: [0, -(SCREEN_HEIGHT * 0.5)],
               });
               const translateX = fc.anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [16, SCREEN_WIDTH / 2 - 60],
+                outputRange: [12, Math.max(16, SCREEN_WIDTH * 0.18)],
               });
               const opacity = fc.anim.interpolate({
                 inputRange: [0, 0.8, 1],
@@ -27781,7 +27936,7 @@ const LiveStreamModal = ({
             </ScrollView>
           </View>
         )}
-        {isLiveStarted && remoteParticipantUids.length > 0 && (
+        {false && isLiveStarted && effectiveRemoteParticipantUids.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -27794,7 +27949,7 @@ const LiveStreamModal = ({
             }}
             contentContainerStyle={{ gap: 8, alignItems: 'center', paddingRight: 6 }}
           >
-            {remoteParticipantUids.slice(0, 8).map(uid => (
+            {effectiveRemoteParticipantUids.slice(0, 8).map(uid => (
               <Pressable
                 key={`remote-tile-${uid}`}
                 onPress={() => {
