@@ -2460,38 +2460,37 @@ const editorStyles = StyleSheet.create({
   // Comments overlay and input
   liveCommentsOverlay: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    top: 64,
-    zIndex: 15,
+    left: 10,
+    right: 120,
+    zIndex: 40,
+    elevation: 40,
   },
   liveCommentBubble: {
-    flexDirection: 'row',
-    alignSelf: 'flex-start', // Keep bubbles aligned to the left
-    backgroundColor: 'rgba(0,0,0,0.6)', // Slightly darker for better contrast
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 8,
-    maxWidth: '86%', // Leave room for controls and avoid blocking the right action rail
+    alignSelf: 'flex-start',
+    paddingHorizontal: 0,
+    paddingVertical: 1,
+    marginBottom: 3,
+    maxWidth: '100%',
   },
   liveCommentInputBar: {
     position: 'absolute',
     left: 12,
     right: 12,
-    backgroundColor: 'rgba(0,0,0,0.8)',
-    borderRadius: 10,
-    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    borderRadius: 22,
+    padding: 6,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   liveCommentText: {
-    color: 'white',
+    color: 'rgba(255,255,255,0.93)',
+    fontSize: 13,
+    lineHeight: 17,
   },
   liveCommentAuthor: {
-    color: 'white',
-    fontWeight: '700',
-    marginRight: 6, // Space between author and text
+    color: '#62D8FF',
+    fontWeight: '800',
+    fontSize: 12,
   },
   commentSplashContainer: {
     ...StyleSheet.absoluteFillObject,
@@ -22807,6 +22806,7 @@ const LiveStreamModal = ({
       from?: string;
       fromUid?: string;
       ts?: number;
+      clientCommentId?: string | null;
       replyToId?: string;
       replyToFrom?: string;
       replyToText?: string;
@@ -22819,9 +22819,12 @@ const LiveStreamModal = ({
   } | null>(null);
   const [hostName, setHostName] = useState<string>('');
   const [hostPhoto, setHostPhoto] = useState<string | null>(null);
+  const [sendingLiveComment, setSendingLiveComment] = useState(false);
   const [flyingComments, setFlyingComments] = useState<
     Array<{ id: string; text: string; from?: string; anim: Animated.Value }>
   >([]);
+  const pendingLiveCommentIdsRef = useRef<Set<string>>(new Set());
+  const animatedLiveClientCommentIdsRef = useRef<Set<string>>(new Set());
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
   const recentLocalCommentKeysRef = useRef<
     Array<{ key: string; at: number }>
@@ -23080,6 +23083,14 @@ const LiveStreamModal = ({
     () => new Set(joinedParticipants.map(p => String(p.uid || ''))),
     [joinedParticipants],
   );
+  const liveAgoraChannelProfile =
+    isConferenceMode
+      ? Agora?.ChannelProfileType?.ChannelProfileLiveBroadcasting ??
+        Agora?.ChannelProfile?.LiveBroadcasting ??
+        1
+      : Agora?.ChannelProfileType?.ChannelProfileCommunication ??
+        Agora?.ChannelProfile?.Communication ??
+        0;
   const visualFilterOverlayColor = useMemo(() => {
     switch (activeVisualFilter) {
       case 'black_white':
@@ -23587,8 +23598,9 @@ const LiveStreamModal = ({
   useEffect(() => {
     if (!isLiveStarted || !liveCommentRoomId) {
       setLiveComments([]);
+      pendingLiveCommentIdsRef.current.clear();
+      animatedLiveClientCommentIdsRef.current.clear();
       seenCommentIdsRef.current.clear();
-      liveCommentsPrimedRef.current = false;
       lastLiveCommentsSigRef.current = '';
       lastLiveCommentErrRef.current = '';
       return;
@@ -23603,70 +23615,59 @@ const LiveStreamModal = ({
     const unsubscribe = firestoreMod()
       .collection(`live/${liveCommentRoomId}/comments`)
       .orderBy('createdAtMs', 'asc')
-      .limitToLast(80) // Listen to recent comments in deterministic order.
+      .limitToLast(80)
       .onSnapshot(
         (querySnapshot: any) => {
           if (querySnapshot) {
-            const items = (querySnapshot?.docs || []).map((d: any) => ({
-              id: d.id,
-              ...d.data(),
-            }));
-            const sig = items.map((it: any) => String(it.id || '')).join('|');
+            const normalized = (querySnapshot?.docs || []).map((d: any) => {
+              const data = d.data?.() || {};
+              return {
+                id: d.id,
+                text: String(data.text || ''),
+                from: String(data.from || data.userName || 'Crew'),
+                fromUid: String(data.fromUid || data.userId || ''),
+                ts:
+                  Number(data.createdAtMs || 0) ||
+                  data.createdAt?.toMillis?.() ||
+                  Date.now(),
+                clientCommentId: data.clientCommentId
+                  ? String(data.clientCommentId)
+                  : null,
+                replyToId: data.replyToId || null,
+                replyToFrom: data.replyToFrom || data.replyToUserName || null,
+                replyToText: data.replyToText || null,
+              };
+            });
+            normalized.forEach((it: any) => {
+              if (it?.clientCommentId) {
+                pendingLiveCommentIdsRef.current.delete(String(it.clientCommentId));
+              }
+            });
+            const sig = normalized.map((it: any) => String(it.id || '')).join('|');
             if (sig === lastLiveCommentsSigRef.current) return;
             lastLiveCommentsSigRef.current = sig;
-            setLiveComments(items);
+            setLiveComments(normalized);
             if (!liveCommentsPrimedRef.current) {
-              const nowMs = Date.now();
-              const initialBurst = items
-                .filter((it: any) => {
-                  const id = String(it?.id || '').trim();
-                  const text = String(it?.text || '').trim();
-                  const fromUid = String((it as any)?.fromUid || '').trim();
-                  const createdAtMs = getCommentCreatedAtMs(it);
-                  return (
-                    !!id &&
-                    !!text &&
-                    fromUid !== String(currentLiveUid || '').trim() &&
-                    (!createdAtMs || nowMs - createdAtMs <= 8000)
-                  );
-                })
-                .slice(-2);
-              items.forEach((it: any) => {
+              normalized.forEach((it: any) => {
                 if (it?.id) seenCommentIdsRef.current.add(String(it.id));
               });
               liveCommentsPrimedRef.current = true;
-              initialBurst.forEach((it: any) => {
-                spawnFlyingComment({
-                  id: `prime-${String(it.id || '')}`,
-                  text: String(it?.text || ''),
-                  from: it?.from,
-                });
-              });
               return;
             }
-            // Trigger a small capped number of animations to avoid UI thread stalls.
-            let spawned = 0;
-            for (const it of items) {
+            for (const it of normalized) {
               const id = String(it?.id || '').trim();
               if (!id || seenCommentIdsRef.current.has(id)) continue;
               seenCommentIdsRef.current.add(id);
-              const fromUid = String((it as any)?.fromUid || '').trim();
-              const text = String(it?.text || '').trim();
-              if (fromUid && fromUid === String(currentLiveUid || '').trim()) {
-                const nowMs = Date.now();
-                const commentKey = `${fromUid}::${text.toLowerCase()}`;
-                recentLocalCommentKeysRef.current = recentLocalCommentKeysRef.current.filter(
-                  row => nowMs - row.at <= 5000,
-                );
-                if (
-                  text &&
-                  recentLocalCommentKeysRef.current.some(row => row.key === commentKey)
-                ) {
-                  continue;
-                }
+              if (
+                it?.clientCommentId &&
+                animatedLiveClientCommentIdsRef.current.has(String(it.clientCommentId))
+              ) {
+                animatedLiveClientCommentIdsRef.current.delete(String(it.clientCommentId));
+                continue;
               }
               const systemType = String((it as any)?.systemType || '').trim().toLowerCase();
               if (systemType === 'sound_effect') {
+                const fromUid = String((it as any)?.fromUid || '').trim();
                 if (!fromUid || fromUid !== String(currentLiveUid || '').trim()) {
                   const soundId = String((it as any)?.soundId || '').trim().toLowerCase();
                   const soundLabel = String((it as any)?.soundLabel || '').trim().toLowerCase();
@@ -23703,9 +23704,11 @@ const LiveStreamModal = ({
                   }
                 }
               }
-              spawnFlyingComment({ id, text, from: it?.from });
-              spawned += 1;
-              if (spawned >= 3) break;
+              spawnFlyingComment({
+                id,
+                text: String(it?.text || ''),
+                from: it?.from,
+              });
             }
           }
         },
@@ -23718,7 +23721,7 @@ const LiveStreamModal = ({
       );
 
     return () => unsubscribe();
-  }, [currentLiveUid, getCommentCreatedAtMs, isLiveStarted, liveCommentRoomId]);
+  }, [currentLiveUid, isLiveStarted, liveCommentRoomId]);
 
   useEffect(() => {
     if (!visible || !isLiveStarted) {
@@ -23915,8 +23918,7 @@ const LiveStreamModal = ({
           try {
             engine.initialize?.({
               appId,
-              channelProfile:
-                Agora.ChannelProfileType?.ChannelProfileLiveBroadcasting ?? 1,
+              channelProfile: liveAgoraChannelProfile,
             });
           } catch {}
           try {
@@ -23972,7 +23974,12 @@ const LiveStreamModal = ({
           } catch {}
           try {
             engine.updateChannelMediaOptions?.({
+              channelProfile: liveAgoraChannelProfile,
               clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+              publishMicrophoneTrack: true,
+              publishCameraTrack: true,
+              autoSubscribeAudio: true,
+              autoSubscribeVideo: true,
             });
           } catch {}
           setIsLiveEngineReady(true)
@@ -24034,9 +24041,7 @@ const LiveStreamModal = ({
             engine.startPreview?.();
           } catch {}
           try {
-            engine.setChannelProfile(
-              Agora.ChannelProfile?.LiveBroadcasting ?? Agora.ChannelProfile,
-            );
+            engine.setChannelProfile(liveAgoraChannelProfile);
           } catch {}
           try {
             engine.setClientRole(
@@ -24065,7 +24070,7 @@ const LiveStreamModal = ({
       setActiveSpeakerRtcUid(null);
       setActiveSpeakerAtMs(0);
     };
-  }, [visible, Agora, appId, applyLiveQualityProfile]);
+  }, [visible, Agora, appId, applyLiveQualityProfile, liveAgoraChannelProfile]);
                     
   // Join channel when user taps Start Live (tokenless first when enabled)
   useEffect(() => {
@@ -24156,6 +24161,7 @@ const LiveStreamModal = ({
               } catch {}
               if (isV4) {
                 await engine.joinChannel(tok, chan, uidNum, {
+                  channelProfile: liveAgoraChannelProfile,
                   clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
                   publishMicrophoneTrack: true,
                   publishCameraTrack: true,
@@ -24163,6 +24169,14 @@ const LiveStreamModal = ({
                   autoSubscribeVideo: true,
                 });
               } else {
+                try {
+                  engine.setChannelProfile?.(liveAgoraChannelProfile);
+                } catch {}
+                try {
+                  engine.setClientRole?.(
+                    Agora.ClientRole?.Broadcaster ?? Agora.ClientRole,
+                  );
+                } catch {}
                 await engine.joinChannel(tok, chan, uidNum);
               }
               joined = true;
@@ -24211,7 +24225,7 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [Agora, applyLiveQualityProfile, bridge?.audioOnlyFallback, currentLiveName, currentLiveUid, dataSaver?.enabled, hostName, hostPhoto, isLiveStarted, isLiveEngineReady, isWifi, liveUid, liveToken, resolvedLiveDocId, liveChannel, sessionLabel, startSessionLabel, visible]);
+  }, [Agora, applyLiveQualityProfile, bridge?.audioOnlyFallback, currentLiveName, currentLiveUid, dataSaver?.enabled, hostName, hostPhoto, isLiveStarted, isLiveEngineReady, isWifi, liveAgoraChannelProfile, liveUid, liveToken, resolvedLiveDocId, liveChannel, sessionLabel, startSessionLabel, visible]);
                     
   const handleEndDrift = async () => {
     try {
@@ -24251,21 +24265,13 @@ const LiveStreamModal = ({
                     
   const sendLiveComment = async () => {
     const txt = (commentText || '').trim();
-    if (!txt) return;
-    const nowMs = Date.now();
-    const COMMENT_COOLDOWN_MS = 1200;
-    if (nowMs - Number(lastCommentSentAtRef.current || 0) < COMMENT_COOLDOWN_MS) {
-      Alert.alert('Slow down', 'Please wait a moment before sending another comment.');
-      return;
-    }
-    lastCommentSentAtRef.current = nowMs;
-    // Drift uses quick-send composer; Conference keeps its thread panel open.
-    if (!isConferenceMode) {
-      setShowCommentInput(false);
-    }
-                    
-    let sent = false;
+    if (!txt || sendingLiveComment) return;
+    setCommentText('');
+    setShowCommentInput(false);
+    let currentClientCommentId = '';
+
     try {
+      setSendingLiveComment(true);
       let firestoreMod: any = null;
       let authMod: any = null;
       try {
@@ -24282,52 +24288,69 @@ const LiveStreamModal = ({
           hostName ||
           'Skipper',
       ).trim();
-      if (firestoreMod && liveCommentRoomId) {
-        const createdAtMs = Date.now();
+      const clientCommentId = `live-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}`;
+      currentClientCommentId = clientCommentId;
+      const optimisticComment = {
+        id: clientCommentId,
+        text: txt,
+        from: fallbackName || 'You',
+        fromUid: String(uid || ''),
+        ts: Date.now(),
+        clientCommentId,
+        replyToId: replyingToLiveComment?.id || null,
+        replyToFrom: replyingToLiveComment?.from || null,
+        replyToText: replyingToLiveComment?.text || null,
+      };
+      if (firestoreMod && liveCommentRoomId && uid) {
+        pendingLiveCommentIdsRef.current.add(clientCommentId);
+        animatedLiveClientCommentIdsRef.current.add(clientCommentId);
+        setLiveComments(prev => {
+          if (prev.some((item: any) => item.clientCommentId === clientCommentId)) {
+            return prev;
+          }
+          return [...prev, optimisticComment].slice(-100);
+        });
+        spawnFlyingComment({
+          id: clientCommentId,
+          text: txt,
+          from: fallbackName || 'You',
+        });
         await firestoreMod()
           .collection(`live/${liveCommentRoomId}/comments`)
           .add({
             text: txt,
             fromUid: uid,
             from: fallbackName,
+            liveScope: liveCommentRoomId,
+            createdAtMs: optimisticComment.ts,
+            clientCommentId,
             replyToId: replyingToLiveComment?.id || null,
             replyToFrom: replyingToLiveComment?.from || null,
             replyToText: replyingToLiveComment?.text || null,
-            liveScope: liveCommentRoomId,
-            createdAtMs,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
               ? firestoreMod.FieldValue.serverTimestamp()
               : new Date(),
           });
-        sent = true;
       } else {
-        throw new Error('Live comments channel is not ready yet.');
+        throw new Error('Drift Expo room is not ready.');
       }
-    } catch (err: any) {
-      Alert.alert(
-        'Send comment',
-        String(err?.message || err?.code || 'Failed to send comment.'),
-      );
-      lastCommentSentAtRef.current = 0;
-    }
-                    
-    setCommentText('');
-    setReplyingToLiveComment(null);
-    if (!isConferenceMode) {
-      setShowCommentInput(false);
-    }
-                    
-    // Spawn local feedback only if write succeeded.
-    if (sent) {
-      const commentKey = `${String(auth?.()?.currentUser?.uid || '').trim()}::${txt.toLowerCase()}`;
-      recentLocalCommentKeysRef.current = [
-        ...recentLocalCommentKeysRef.current.filter(row => nowMs - row.at <= 5000),
-        { key: commentKey, at: nowMs },
-      ].slice(-12);
-      spawnFlyingComment({ id: `local-${Date.now()}`, text: txt, from: 'You' });
+      setReplyingToLiveComment(null);
       if (txt.includes('?')) {
         addLiveMoment(`Q&A: ${txt.slice(0, 64)}`);
       }
+    } catch (error: any) {
+      if (currentClientCommentId) {
+        pendingLiveCommentIdsRef.current.delete(currentClientCommentId);
+        animatedLiveClientCommentIdsRef.current.delete(currentClientCommentId);
+        setLiveComments(prev =>
+          prev.filter((item: any) => item.clientCommentId !== currentClientCommentId),
+        );
+      }
+      Alert.alert('Comment', String(error?.message || 'Failed to send comment'));
+    } finally {
+      setSendingLiveComment(false);
     }
   };
 
@@ -24401,12 +24424,12 @@ const LiveStreamModal = ({
   }) => {
     const anim = new Animated.Value(0);
     setFlyingComments(prev =>
-      [...prev, { id: c.id, text: c.text, from: c.from, anim }].slice(-10),
+      [...prev, { id: c.id, text: c.text, from: c.from, anim }].slice(-6),
     );
     Animated.timing(anim, {
       toValue: 1,
-      duration: 2500,
-      easing: Easing.out(Easing.quad),
+      duration: 2800,
+      easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
     }).start(() => {
       setFlyingComments(prev => prev.filter(fc => fc.id !== c.id));
@@ -26832,6 +26855,7 @@ const LiveStreamModal = ({
     effectiveRemoteParticipantUids.includes(pinnedRemoteUid)
       ? pinnedRemoteUid
       : effectiveRemoteParticipantUids[0]) || null;
+  const visibleLiveComments = liveComments.slice(-7);
   const useJoinCallLayout = !!inviteJoinPreset && !isLiveHost;
   const localVideoSourceType =
     (VideoSourceType &&
@@ -27396,125 +27420,48 @@ const LiveStreamModal = ({
             )}
           </>
         )}
-        {isLiveStarted && !isConferenceMode && displayedLiveComments.length > 0 && (
-          <ScrollView
+        {isLiveStarted && !isConferenceMode && visibleLiveComments.length > 0 && (
+          <View
+            pointerEvents="box-none"
             style={[
               editorStyles.liveCommentsOverlay,
-              {
-                left: 10,
-                right: showLiveControls ? 108 : 10,
-                top: Math.max(insets.top + 120, SCREEN_HEIGHT * 0.24),
-                maxHeight: Math.min(260, SCREEN_HEIGHT * 0.26),
-              },
+              { bottom: insets.bottom + endBarHeight + mediaBarHeight + 12 },
             ]}
-            pointerEvents="box-none"
-            contentContainerStyle={{ justifyContent: 'flex-end', flexGrow: 1 }}
-            showsVerticalScrollIndicator={false}
           >
-            <View>
-              {displayedLiveComments.map(c => (
-                <Pressable
-                  key={c.id}
-                  style={{ marginBottom: 8 }}
-                  onLongPress={() => {
-                    const actions: Array<{ text: string; onPress?: () => void; style?: 'cancel' | 'default' | 'destructive' }> = [
-                      {
-                        text: 'Splash',
-                        onPress: () => onSplashComment(c.id),
-                      },
-                      {
-                        text: 'Echo Back',
-                        onPress: () => onEchoBack(c as any),
-                      },
-                    ];
-                    if (isLiveHost || isLiveCoHost) {
-                      actions.push({
-                        text:
-                          pinnedLiveComment?.id === c.id ? 'Unpin Message' : 'Pin Message',
-                        onPress: () => {
-                          if (pinnedLiveComment?.id === c.id) {
-                            setPinnedLiveComment(null);
-                          } else {
-                            setPinnedLiveComment({
-                              id: String(c.id || ''),
-                              text: String((c as any).text || ''),
-                              from: String((c as any).from || 'User'),
-                            });
-                          }
-                        },
-                      });
-                    }
-                    actions.push({ text: 'Cancel', style: 'cancel' });
-                    Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, actions);
-                  }}
-                >
-                  <View style={editorStyles.liveCommentBubble}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={editorStyles.liveCommentAuthor}>
-                        {(() => {
-                          try {
-                            const author = String((c as any)?.from || '').trim();
-                            if (!author) return 'User';
-                            if (author.toLowerCase() === 'you') return 'You';
-                            return safeCommentHandle(author);
-                          } catch {
-                            return 'User';
-                          }
-                        })()}
-                        :
-                      </Text>
-                      {!!(c as any).replyToFrom && (
-                        <View
-                          style={{
-                            borderLeftWidth: 2,
-                            borderLeftColor: 'rgba(157,230,255,0.9)',
-                            paddingLeft: 6,
-                            marginBottom: 3,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              color: 'rgba(157,230,255,0.95)',
-                              fontSize: 10,
-                              marginBottom: 1,
-                            }}
-                            numberOfLines={1}
-                          >
-                            {safeCommentHandle((c as any).from || 'User')} replied to{' '}
-                            {safeCommentHandle((c as any).replyToFrom || 'message')}
-                          </Text>
-                          <Text
-                            style={{
-                              color: 'rgba(157,230,255,0.82)',
-                              fontSize: 11,
-                            }}
-                            numberOfLines={1}
-                          >
-                            "{(c as any).replyToText || ''}"
-                          </Text>
-                        </View>
-                      )}
-                      <Text style={editorStyles.liveCommentText}>{c.text}</Text>
-                    </View>
-                    <Pressable
-                      style={{ marginLeft: 8, paddingVertical: 4, paddingHorizontal: 6 }}
-                      onPress={() =>
-                        onEchoBack({
-                          id: c.id,
-                          from: String(c.from || ''),
-                          text: String(c.text || ''),
-                        })
-                      }
+            {visibleLiveComments.slice(-12).map(c => (
+              <Pressable
+                key={c.id}
+                onPress={() =>
+                  onEchoBack({
+                    id: c.id,
+                    from: String(c.from || ''),
+                    text: String(c.text || ''),
+                  })
+                }
+              >
+                <View style={editorStyles.liveCommentBubble}>
+                  {!!(c as any).replyToFrom && (
+                    <Text
+                      style={{ color: 'rgba(157,230,255,0.8)', fontSize: 10, marginBottom: 1 }}
+                      numberOfLines={1}
                     >
-                      <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 11 }}>
-                        Reply
+                      <Text style={{ fontWeight: '800', fontStyle: 'italic' }}>
+                        @{String((c as any).replyToFrom || '').replace(/^[@/]+/, '')}
                       </Text>
-                    </Pressable>
-                  </View>
-                </Pressable>
-              ))}
-            </View>
-          </ScrollView>
+                      {': '}
+                      {(c as any).replyToText || ''}
+                    </Text>
+                  )}
+                  <Text>
+                    <Text style={editorStyles.liveCommentAuthor}>
+                      {safeCommentHandle((c as any).from || 'User')}{' '}
+                    </Text>
+                    <Text style={editorStyles.liveCommentText}>{c.text}</Text>
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
         )}
         {false && isLiveStarted && !isConferenceMode && latestDisplayedComment && (
           <View
@@ -27545,40 +27492,51 @@ const LiveStreamModal = ({
         )}
         {isLiveStarted && !isConferenceMode && flyingComments.length > 0 && (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-            {flyingComments.map((fc, idx) => {
+            {flyingComments.map(fc => {
               const translateY = fc.anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, -(SCREEN_HEIGHT * 0.5)],
+                outputRange: [
+                  SCREEN_HEIGHT - (insets.bottom + endBarHeight + mediaBarHeight + 92),
+                  SCREEN_HEIGHT * 0.31,
+                ],
               });
               const translateX = fc.anim.interpolate({
                 inputRange: [0, 1],
-                outputRange: [12, Math.max(16, SCREEN_WIDTH * 0.18)],
+                outputRange: [22, 16],
               });
               const opacity = fc.anim.interpolate({
-                inputRange: [0, 0.8, 1],
-                outputRange: [1, 1, 0],
+                inputRange: [0, 0.25, 1],
+                outputRange: [0, 1, 0],
               });
               return (
                 <Animated.View
                   key={fc.id}
                   style={{
                     position: 'absolute',
-                    left: 16,
-                    bottom:
-                      endBarHeight +
-                      insets.bottom +
-                      mediaBarHeight +
-                      16 +
-                      (idx % 3) * 8,
+                    left: 0,
                     transform: [{ translateX }, { translateY }],
                     opacity,
+                    zIndex: 23,
+                    width: Math.min(SCREEN_WIDTH * 0.7, 300),
                   }}
                 >
-                  <View style={editorStyles.liveCommentBubble}>
-                    <Text style={editorStyles.liveCommentAuthor}>
-                      {safeCommentHandle(fc.from)}:
-                    </Text>
-                    <Text style={editorStyles.liveCommentText}>{fc.text}</Text>
+                  <View
+                    style={[
+                      editorStyles.liveCommentBubble,
+                      {
+                        backgroundColor: 'rgba(0,182,255,0.18)',
+                        marginBottom: 0,
+                      },
+                    ]}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={editorStyles.liveCommentAuthor}>
+                        {fc.from === 'You' ? 'You' : safeCommentHandle(fc.from)}
+                      </Text>
+                      <Text style={editorStyles.liveCommentText} numberOfLines={2}>
+                        {fc.text}
+                      </Text>
+                    </View>
                   </View>
                 </Animated.View>
               );
@@ -29161,51 +29119,109 @@ const LiveStreamModal = ({
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={[
               editorStyles.liveCommentInputBar,
-              { bottom: insets.bottom + endBarHeight + mediaBarHeight + 8 },
+              replyingToLiveComment
+                ? {
+                    top: SCREEN_HEIGHT * 0.43,
+                    left: 16,
+                    right: SCREEN_WIDTH * 0.22,
+                    opacity: 0.98,
+                  }
+                : {
+                    bottom: insets.bottom + endBarHeight + mediaBarHeight + 8,
+                    opacity: 1,
+                  },
             ]}
           >
-            {!!replyingToLiveComment && (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: 8,
-                  backgroundColor: 'rgba(0,194,255,0.16)',
-                  borderRadius: 8,
-                  paddingHorizontal: 8,
-                  paddingVertical: 6,
-                }}
-              >
-                <Text
-                  numberOfLines={1}
-                  style={{ color: '#D8F5FF', flex: 1, marginRight: 8, fontSize: 12 }}
-                >
-                  Replying to {replyingToLiveComment.from || 'user'}: {replyingToLiveComment.text}
-                </Text>
-                <Pressable onPress={() => setReplyingToLiveComment(null)}>
-                  <Text style={{ color: '#9DE6FF', fontWeight: '700' }}>Cancel</Text>
-                </Pressable>
-              </View>
-            )}
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: 'rgba(6,12,20,0.96)',
+                borderRadius: 16,
+                paddingHorizontal: 10,
+                paddingVertical: 8,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.08)',
+              }}
+            >
+              {!!replyingToLiveComment && (
+                <View style={{ marginRight: 8, maxWidth: 120 }}>
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.45)',
+                      fontSize: 9,
+                      fontWeight: '700',
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    REPLYING TO
+                  </Text>
+                  <Text
+                    style={{
+                      color: '#62D8FF',
+                      fontSize: 12,
+                      fontWeight: '800',
+                      fontStyle: 'italic',
+                    }}
+                    numberOfLines={1}
+                  >
+                    @{String(replyingToLiveComment.from || 'user').replace(/^[@/]+/, '')}
+                  </Text>
+                  <Text
+                    style={{ color: 'rgba(255,255,255,0.55)', fontSize: 10 }}
+                    numberOfLines={1}
+                  >
+                    {replyingToLiveComment.text}
+                  </Text>
+                </View>
+              )}
               <TextInput
                 value={commentText}
                 onChangeText={setCommentText}
-                placeholder={replyingToLiveComment ? 'Write a reply...' : 'Say something...'}
+                placeholder={replyingToLiveComment ? '' : 'Say something live...'}
                 placeholderTextColor="rgba(255,255,255,0.6)"
-                style={[styles.input, { flex: 1, margin: 0 }]}
-                autoFocus
-              />
-              <Pressable
                 style={[
-                  styles.primaryBtn,
-                  { marginLeft: 8, paddingHorizontal: 12, paddingVertical: 8 },
+                  styles.input,
+                  {
+                    flex: 1,
+                    margin: 0,
+                    minHeight: 38,
+                    maxHeight: 88,
+                    paddingTop: 8,
+                    paddingBottom: 8,
+                    paddingHorizontal: 10,
+                    backgroundColor: 'transparent',
+                    borderWidth: 0,
+                  },
                 ]}
-                onPress={sendLiveComment}
+                autoFocus
+                multiline
+              />
+              <View
+                style={{
+                  marginLeft: 8,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                }}
               >
-                <Text style={styles.primaryBtnText}>Send</Text>
-              </Pressable>
+                <Pressable
+                  style={{
+                    height: 34,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#00B6FF',
+                    opacity: sendingLiveComment ? 0.7 : 1,
+                  }}
+                  disabled={sendingLiveComment}
+                  onPress={sendLiveComment}
+                >
+                  <Text style={{ color: '#04131F', fontSize: 12, fontWeight: '800' }}>
+                    {sendingLiveComment ? '...' : 'Send'}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           </KeyboardAvoidingView>
         )}
