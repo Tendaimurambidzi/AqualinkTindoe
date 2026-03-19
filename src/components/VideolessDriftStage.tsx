@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -46,39 +45,23 @@ type MomentItem = {
 };
 
 type Props = {
-  title: string;
   hostName: string;
-  activeSpeakerName?: string | null;
-  listenerCount: number;
-  micMuted: boolean;
   storyCard?: StoryCard | null;
   storyCardCount: number;
   poll?: PollData | null;
   goal?: GoalData | null;
   moments: MomentItem[];
-  reactionEvents: ReactionEvent[];
-  reactionCounts: Record<string, number>;
   onVotePoll?: (optionId: string) => void;
-  onCreateStoryCard?: () => void;
 };
 
-const REACTION_ORDER = ['🔥', '💨', '🏁', '⚡', '🎯'];
-
 export default function VideolessDriftStage({
-  title,
   hostName,
-  activeSpeakerName,
-  listenerCount,
-  micMuted,
   storyCard,
   storyCardCount,
   poll,
   goal,
   moments,
-  reactionEvents,
-  reactionCounts,
   onVotePoll,
-  onCreateStoryCard,
 }: Props) {
   const totalVotes = poll
     ? poll.options.reduce((sum, option) => sum + Number(poll.votes?.[option.id] || 0), 0)
@@ -96,31 +79,8 @@ export default function VideolessDriftStage({
       <View style={styles.glowOrbOne} />
       <View style={styles.glowOrbTwo} />
 
-      <View style={styles.heroCard}>
-        <View style={styles.heroTopRow}>
-          <View style={styles.heroIdentity}>
-            <Text style={styles.title} numberOfLines={1}>
-              {title || 'Drift Expo'}
-            </Text>
-            <Text style={styles.subtitle} numberOfLines={1}>
-              {activeSpeakerName ? `Speaker: ${activeSpeakerName}` : `Host: ${hostName || 'Host'}`}
-            </Text>
-          </View>
-          <View style={styles.compactStats}>
-            <View style={styles.compactStat}>
-              <Text style={styles.compactStatValue}>{listenerCount}</Text>
-              <Text style={styles.compactStatLabel}>live</Text>
-            </View>
-            <View style={styles.compactStat}>
-              <Text style={styles.compactStatValue}>{micMuted ? 'Off' : 'On'}</Text>
-              <Text style={styles.compactStatLabel}>mic</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
       <View style={styles.contentGrid}>
-        <View style={styles.primaryColumn}>
+        <View style={styles.centerColumn}>
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>Story Card</Text>
@@ -155,36 +115,25 @@ export default function VideolessDriftStage({
 
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Reactions</Text>
-              <Text style={styles.cardMeta}>{reactionEvents.length} pulses</Text>
+              <Text style={styles.cardTitle}>Timeline</Text>
+              <Text style={styles.cardMeta}>{moments.length} items</Text>
             </View>
-            <View style={styles.reactionRow}>
-              {REACTION_ORDER.map(emoji => (
-                <View key={emoji} style={styles.reactionBubble}>
-                  <Text style={styles.reactionEmoji}>{emoji}</Text>
-                  <Text style={styles.reactionCount}>{reactionCounts[emoji] || 0}</Text>
+            {topMoments.length > 0 ? (
+              topMoments.map(item => (
+                <View key={item.id} style={styles.momentRow}>
+                  <View style={styles.momentDot} />
+                  <Text style={styles.momentText} numberOfLines={2}>
+                    {item.text}
+                  </Text>
                 </View>
-              ))}
-            </View>
-            {reactionEvents.length > 0 ? (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.reactionFeed}
-              >
-                {reactionEvents.slice(0, 6).map(item => (
-                  <View key={item.id} style={styles.reactionFeedChip}>
-                    <Text style={styles.reactionFeedText}>
-                      {item.emoji} {item.from || 'Crew'}
-                    </Text>
-                  </View>
-                ))}
-              </ScrollView>
-            ) : null}
+              ))
+            ) : (
+              <Text style={styles.storyBody}>
+                Key moments will appear here once the session starts moving.
+              </Text>
+            )}
           </View>
-        </View>
 
-        <View style={styles.sideColumn}>
           {poll ? (
             <View style={styles.card}>
               <View style={styles.cardHeader}>
@@ -226,27 +175,6 @@ export default function VideolessDriftStage({
               </View>
             </View>
           ) : null}
-
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>Timeline</Text>
-              <Text style={styles.cardMeta}>{moments.length} items</Text>
-            </View>
-            {topMoments.length > 0 ? (
-              topMoments.map(item => (
-                <View key={item.id} style={styles.momentRow}>
-                  <View style={styles.momentDot} />
-                  <Text style={styles.momentText} numberOfLines={2}>
-                    {item.text}
-                  </Text>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.storyBody}>
-                Key moments will appear here once the session starts moving.
-              </Text>
-            )}
-          </View>
         </View>
       </View>
     </LinearGradient>
@@ -256,7 +184,7 @@ export default function VideolessDriftStage({
 const styles = StyleSheet.create({
   stage: {
     ...StyleSheet.absoluteFillObject,
-    paddingTop: 72,
+    paddingTop: 22,
     paddingHorizontal: 16,
   },
   glowOrbOne: {
@@ -277,68 +205,18 @@ const styles = StyleSheet.create({
     borderRadius: 80,
     backgroundColor: 'rgba(61,255,174,0.1)',
   },
-  heroCard: {
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: 'rgba(5,15,26,0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(157,230,255,0.2)',
-  },
-  heroTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  heroIdentity: { flex: 1, minWidth: 0 },
-  title: {
-    color: 'white',
-    fontSize: 20,
-    fontWeight: '900',
-  },
-  subtitle: {
-    color: 'rgba(220,239,255,0.82)',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  compactStats: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  compactStat: {
-    minWidth: 58,
-    borderRadius: 14,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    alignItems: 'center',
-  },
-  compactStatLabel: {
-    color: 'rgba(157,230,255,0.7)',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  compactStatValue: {
-    color: 'white',
-    fontSize: 13,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
   contentGrid: {
     flex: 1,
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 58,
     paddingBottom: 142,
   },
-  primaryColumn: {
-    flex: 1.1,
+  centerColumn: {
+    width: '100%',
+    maxWidth: 430,
     gap: 12,
-  },
-  sideColumn: {
-    flex: 0.92,
-    gap: 12,
+    alignSelf: 'center',
   },
   card: {
     borderRadius: 18,
@@ -391,42 +269,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     marginTop: 12,
-  },
-  reactionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  reactionBubble: {
-    flex: 1,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  reactionEmoji: {
-    fontSize: 18,
-  },
-  reactionCount: {
-    color: 'white',
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  reactionFeed: {
-    gap: 8,
-    marginTop: 10,
-    paddingRight: 8,
-  },
-  reactionFeedChip: {
-    borderRadius: 999,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  reactionFeedText: {
-    color: 'rgba(255,255,255,0.88)',
-    fontSize: 11,
-    fontWeight: '700',
   },
   pollQuestion: {
     color: 'white',
