@@ -102,6 +102,7 @@ import {
   stopConferencePresentation,
   subscribeConferencePresentations,
 } from './src/services/conferencePresentationService';
+import VideolessDriftStage from './src/components/VideolessDriftStage';
                     
 
 // Navigation stack shared across auth/app flows
@@ -361,7 +362,6 @@ type CallBottomSlot =
   | 'incomingActions'
   | 'controlDock'
   | 'callerPreviewLabel'
-  | 'localPreviewPip'
   | 'videoWatchdog';
 
 const CALL_BOTTOM_LAYOUT: Record<CallBottomSlot, { offset: number; min: number }> = {
@@ -369,7 +369,6 @@ const CALL_BOTTOM_LAYOUT: Record<CallBottomSlot, { offset: number; min: number }
   incomingActions: { offset: 14, min: 24 },
   controlDock: { offset: 8, min: 14 },
   callerPreviewLabel: { offset: 210, min: 236 },
-  localPreviewPip: { offset: 92, min: 112 },
   videoWatchdog: { offset: 120, min: 136 },
 };
 
@@ -414,6 +413,23 @@ type LiveGoal = {
   target: number;
   current: number;
   label?: string;
+};
+
+type LiveStoryCard = {
+  id: string;
+  title: string;
+  body?: string;
+  tag?: string;
+  author?: string;
+  createdAtMs?: number;
+};
+
+type LiveReactionEvent = {
+  id: string;
+  emoji: string;
+  from?: string;
+  fromUid?: string;
+  createdAtMs?: number;
 };
                     
 const formatCount = (n: number) => {
@@ -2492,6 +2508,334 @@ const editorStyles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 12,
   },
+  liveSessionHeader: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 18,
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(5, 12, 22, 0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(157,230,255,0.18)',
+  },
+  liveSessionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  liveHeaderPills: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  liveHeaderPrimaryPill: {
+    flex: 1,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  liveHeaderSecondaryPill: {
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,182,255,0.16)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  liveHeaderPrimaryText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  liveHeaderSecondaryText: {
+    color: '#9DE6FF',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  liveHeaderAccent: {
+    marginTop: 6,
+    color: '#D7F5FF',
+    fontSize: 9,
+    fontWeight: '600',
+  },
+  liveHeaderMetricStack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  liveHeaderMetricPill: {
+    minWidth: 44,
+    borderRadius: 12,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  liveHeaderMetricValue: {
+    color: 'white',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  liveHeaderMetricLabel: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 8,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  liveActivityPanel: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 20,
+    maxHeight: 320,
+    borderRadius: 18,
+    padding: 12,
+    backgroundColor: 'rgba(7, 14, 26, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(157,230,255,0.18)',
+  },
+  livePanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 10,
+  },
+  livePanelTitle: {
+    color: 'white',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  livePanelSubtitle: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  livePanelClose: {
+    color: '#9DE6FF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  livePanelCard: {
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    gap: 6,
+  },
+  livePanelEyebrow: {
+    color: '#9DE6FF',
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  livePanelBody: {
+    color: 'rgba(255,255,255,0.88)',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  livePanelListRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  livePanelRowText: {
+    flex: 1,
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  livePanelAction: {
+    borderRadius: 10,
+    backgroundColor: '#00B6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  livePanelActionText: {
+    color: '#04131F',
+    fontSize: 11,
+    fontWeight: '900',
+  },
+  livePanelCommentRow: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.08)',
+    paddingTop: 8,
+  },
+  livePanelCommentAuthor: {
+    color: '#9DE6FF',
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  livePanelEmptyText: {
+    color: 'rgba(255,255,255,0.58)',
+    fontSize: 12,
+  },
+  liveProfessionalDock: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 18,
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    justifyContent: 'space-between',
+    gap: 10,
+    borderRadius: 22,
+    padding: 8,
+    backgroundColor: 'rgba(5, 12, 22, 0.94)',
+    borderWidth: 1,
+    borderColor: 'rgba(157,230,255,0.18)',
+  },
+  liveDockButton: {
+    flex: 1,
+    minHeight: 56,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.07)',
+  },
+  liveDockButtonActive: {
+    backgroundColor: 'rgba(0,182,255,0.16)',
+    borderColor: 'rgba(0,182,255,0.42)',
+  },
+  liveDockButtonIcon: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  liveDockButtonLabel: {
+    marginTop: 4,
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  liveDockUnreadBadge: {
+    position: 'absolute',
+    right: -10,
+    top: -8,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFD400',
+  },
+  liveDockUnreadText: {
+    color: '#111',
+    fontSize: 10,
+    fontWeight: '900',
+  },
+  liveCommentComposerPanel: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    zIndex: 19,
+    borderRadius: 18,
+    padding: 12,
+    backgroundColor: 'rgba(5, 12, 22, 0.97)',
+    borderWidth: 1,
+    borderColor: 'rgba(157,230,255,0.18)',
+    maxHeight: 250,
+  },
+  liveComposerCommentRow: {
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+  },
+  liveComposerInputShell: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  liveComposerSendButton: {
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00B6FF',
+  },
+  liveSheetBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.56)',
+    justifyContent: 'flex-end',
+  },
+  liveControlSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 22,
+    backgroundColor: '#08121F',
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(157,230,255,0.16)',
+    maxHeight: SCREEN_HEIGHT * 0.76,
+  },
+  liveSheetGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  liveSheetAction: {
+    width: '48%',
+    minHeight: 92,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  liveSheetActionIcon: {
+    color: 'white',
+    fontSize: 20,
+  },
+  liveSheetActionLabel: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '800',
+    lineHeight: 16,
+  },
+  liveBottomCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#A91B1B',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  liveBottomCloseText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '900',
+  },
   commentSplashContainer: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
@@ -2597,6 +2941,18 @@ export const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
     return ok;
   } catch (e) {
     console.warn('Permission request failed', e);
+    return false;
+  }
+};
+
+export const ensureMicPermissionAndroid = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') return true;
+  try {
+    const mic = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    );
+    return mic === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
     return false;
   }
 };
@@ -21754,44 +22110,13 @@ const DirectCallModal = ({
         const primaryUid = Number(rtcUid) > 0 ? Number(rtcUid) : 1;
         const fallbackUid = primaryUid === 1 ? 2 : primaryUid - 1;
         const uidCandidates = Array.from(new Set([primaryUid, fallbackUid]));
+        const desiredProfile =
+          call.callType === 'video'
+            ? Agora.ChannelProfileType?.ChannelProfileLiveBroadcasting ?? 1
+            : Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0;
+        const broadcasterRole = Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1;
 
-        const joinWithFallback = async (
-          engine: any,
-          isV4Engine: boolean,
-          mode: DirectCallMode,
-        ) => {
-          const attemptJoin = async (token: string | null, uid: number) => {
-            if (typeof engine.joinChannel !== 'function') {
-              throw new Error('joinChannel unavailable');
-            }
-            const joinPromise = isV4Engine
-              ? engine.joinChannel?.(token, call.channelName, uid, {
-                  clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
-                  publishMicrophoneTrack: true,
-                  publishCameraTrack: mode === 'video',
-                  autoSubscribeAudio: true,
-                  autoSubscribeVideo: mode === 'video',
-                })
-              : engine.joinChannel?.(token, call.channelName, uid);
-            const timeout = new Promise<never>((_, reject) => {
-              setTimeout(() => reject(new Error('join-timeout')), 4500);
-            });
-            return Promise.race([joinPromise, timeout]);
-          };
-          let lastErr: any = null;
-          for (const token of tokenCandidates) {
-            for (const uid of uidCandidates) {
-              try {
-                await attemptJoin(token, uid);
-                return;
-              } catch (err) {
-                lastErr = err;
-              }
-            }
-          }
-          throw lastErr || new Error('joinChannel failed');
-        };
-        const ensurePublishedMedia = (engine: any, mode: DirectCallMode) => {
+        const ensurePublishedMedia = (engine: any, mode: DirectCallMode, isV4Engine: boolean) => {
           applyRtcQualityProfile(engine, mode);
           try {
             engine.enableAudio?.();
@@ -21805,6 +22130,14 @@ const DirectCallModal = ({
           try {
             engine.setEnableSpeakerphone?.(true);
           } catch {}
+          if (isV4Engine) {
+            try {
+              engine.setChannelProfile?.(desiredProfile);
+            } catch {}
+            try {
+              engine.setClientRole?.(broadcasterRole);
+            } catch {}
+          }
           if (mode === 'video') {
             try {
               engine.enableVideo?.();
@@ -21852,16 +22185,8 @@ const DirectCallModal = ({
           engineIsV4Ref.current = true;
           const engine = Agora.createAgoraRtcEngine();
           engineRef.current = engine;
-          try {
-            engine.initialize?.({
-              appId,
-              channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
-            });
-          } catch {}
-          try {
-            engine.enableAudio?.();
-          } catch {}
-          ensurePublishedMedia(engine, call.callType);
+          engine.initialize?.({ appId });
+          ensurePublishedMedia(engine, call.callType, true);
           try {
             engine.registerEventHandler?.({
               onJoinChannelSuccess: () => {
@@ -21869,14 +22194,14 @@ const DirectCallModal = ({
                 setIsReconnecting(false);
                 setShowJoinRecovery(false);
                 autoRetryJoinCountRef.current = 0;
-                ensurePublishedMedia(engine, call.callType);
+                ensurePublishedMedia(engine, call.callType, true);
               },
               onRejoinChannelSuccess: () => {
                 setIsJoined(true);
                 setIsReconnecting(false);
                 setShowJoinRecovery(false);
                 autoRetryJoinCountRef.current = 0;
-                ensurePublishedMedia(engine, call.callType);
+                ensurePublishedMedia(engine, call.callType, true);
               },
               onUserJoined: (_conn: any, uid: number) => {
                 setRemoteUid(Number(uid));
@@ -21894,24 +22219,49 @@ const DirectCallModal = ({
                   setIsReconnecting(true);
                 }
               },
+              onError: (_err: number, msg: string) => {
+                console.log('Agora direct call error:', msg);
+              },
             });
           } catch {}
-          await joinWithFallback(engine, true, call.callType);
+          let joined = false;
+          let lastErr: any = null;
+          for (const token of tokenCandidates) {
+            for (const uid of uidCandidates) {
+              try {
+                await Promise.race([
+                  engine.joinChannel?.(token, call.channelName, uid, {
+                    clientRoleType: broadcasterRole,
+                    publishMicrophoneTrack: true,
+                    publishCameraTrack: call.callType === 'video',
+                    autoSubscribeAudio: true,
+                    autoSubscribeVideo: call.callType === 'video',
+                  }),
+                  new Promise<never>((_, reject) => {
+                    setTimeout(() => reject(new Error('join-timeout')), 4500);
+                  }),
+                ]);
+                joined = true;
+                break;
+              } catch (err) {
+                lastErr = err;
+              }
+            }
+            if (joined) break;
+          }
+          if (!joined) throw lastErr || new Error('joinChannel failed');
         } else if (Agora?.RtcEngine && typeof Agora.RtcEngine.create === 'function') {
           engineIsV4Ref.current = false;
           const engine = await Agora.RtcEngine.create(appId);
           engineRef.current = engine;
-          try {
-            engine.enableAudio?.();
-          } catch {}
-          ensurePublishedMedia(engine, call.callType);
+          ensurePublishedMedia(engine, call.callType, false);
           try {
             engine.addListener?.('JoinChannelSuccess', () => {
               setIsJoined(true);
               setIsReconnecting(false);
               setShowJoinRecovery(false);
               autoRetryJoinCountRef.current = 0;
-              ensurePublishedMedia(engine, call.callType);
+              ensurePublishedMedia(engine, call.callType, false);
             });
           } catch {}
           try {
@@ -21920,7 +22270,7 @@ const DirectCallModal = ({
               setIsReconnecting(false);
               setShowJoinRecovery(false);
               autoRetryJoinCountRef.current = 0;
-              ensurePublishedMedia(engine, call.callType);
+              ensurePublishedMedia(engine, call.callType, false);
             });
           } catch {}
           try {
@@ -21940,12 +22290,31 @@ const DirectCallModal = ({
               const s = Number(state);
               if (s === 2) {
                 setIsReconnecting(false);
-              } else if (s === 3 || s === 4) {
-                setIsReconnecting(true);
-              }
-            });
+                } else if (s === 3 || s === 4) {
+                  setIsReconnecting(true);
+                }
+              });
           } catch {}
-          await joinWithFallback(engine, false, call.callType);
+          let joined = false;
+          let lastErr: any = null;
+          for (const token of tokenCandidates) {
+            for (const uid of uidCandidates) {
+              try {
+                await Promise.race([
+                  engine.joinChannel?.(token, call.channelName, uid),
+                  new Promise<never>((_, reject) => {
+                    setTimeout(() => reject(new Error('join-timeout')), 4500);
+                  }),
+                ]);
+                joined = true;
+                break;
+              } catch (err) {
+                lastErr = err;
+              }
+            }
+            if (joined) break;
+          }
+          if (!joined) throw lastErr || new Error('joinChannel failed');
         }
       } catch (err) {
         console.warn('Direct call Agora init failed', err);
@@ -21987,6 +22356,9 @@ const DirectCallModal = ({
       setShowJoinRecovery(false);
       autoRetryJoinCountRef.current = 0;
       if (engineRef.current) {
+        try {
+          engineRef.current.stopPreview?.();
+        } catch {}
         try {
           engineRef.current.leaveChannel?.();
         } catch {}
@@ -22134,6 +22506,20 @@ const DirectCallModal = ({
     try {
       engineRef.current?.enableLocalVideo?.(!next);
     } catch {}
+    if (!next) {
+      try {
+        engineRef.current?.enableVideo?.();
+      } catch {}
+      try {
+        engineRef.current?.startPreview?.();
+      } catch {}
+    }
+  };
+
+  const switchCamera = () => {
+    try {
+      engineRef.current?.switchCamera?.();
+    } catch {}
   };
 
   const toggleSpeaker = () => {
@@ -22177,52 +22563,12 @@ const DirectCallModal = ({
   }, [isJoined, speakerEnabled, visible]);
 
   const retryVideoJoin = async () => {
-    if (!call || call.callType !== 'video' || !engineRef.current) return;
+    if (!call || call.callType !== 'video') return;
     setShowVideoJoinWatchdog(false);
     setIsReconnecting(true);
     setRemoteUid(null);
     setIsJoined(false);
-    const engine = engineRef.current;
-    const joinToken = call.agoraToken || staticToken || null;
-    try {
-      try {
-        engine.enableVideo?.();
-      } catch {}
-      try {
-        engine.enableLocalVideo?.(true);
-      } catch {}
-      try {
-        engine.muteLocalVideoStream?.(false);
-      } catch {}
-      try {
-        engine.startPreview?.();
-      } catch {}
-      try {
-        engine.updateChannelMediaOptions?.({
-          publishMicrophoneTrack: true,
-          publishCameraTrack: true,
-          autoSubscribeAudio: true,
-          autoSubscribeVideo: true,
-        });
-      } catch {}
-      try {
-        await engine.leaveChannel?.();
-      } catch {}
-      if (engineIsV4Ref.current) {
-        await engine.joinChannel?.(joinToken, call.channelName, Number(rtcUid) || 1, {
-          clientRoleType: Agora?.ClientRoleType?.ClientRoleBroadcaster ?? 1,
-          publishMicrophoneTrack: true,
-          publishCameraTrack: true,
-          autoSubscribeAudio: true,
-          autoSubscribeVideo: true,
-        });
-      } else {
-        await engine.joinChannel?.(joinToken, call.channelName, Number(rtcUid) || 1);
-      }
-    } catch (err) {
-      console.warn('Retry video join failed', err);
-      setIsReconnecting(false);
-    }
+    setJoinAttemptNonce(prev => prev + 1);
   };
 
   const switchToAudioFallback = () => {
@@ -22313,6 +22659,49 @@ const DirectCallModal = ({
       ? String(call.calleeName || 'User')
       : String(call.callerName || 'User');
   const callerRingingConfirmed = role === 'caller' && !!(call as any)?.calleeNotifiedAt;
+  const renderDirectCallLocalPreview = () => {
+    if (cameraMuted) return null;
+    if (AVView) {
+      return (
+        <AVView
+          style={StyleSheet.absoluteFill}
+          showLocalVideo={true}
+          videoSourceType={
+            (VideoSourceType &&
+              (VideoSourceType.VideoSourceCameraPrimary ??
+                VideoSourceType.VideoSourceCamera)) ||
+            0
+          }
+          renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
+        />
+      );
+    }
+    if (RtcSurfaceView) {
+      return React.createElement(RtcSurfaceView, {
+        style: StyleSheet.absoluteFill,
+        canvas: {
+          uid: localCanvasUid,
+          renderMode: VideoRenderMode?.Fit ?? 2,
+        },
+      });
+    }
+    if (RtcTextureView) {
+      return React.createElement(RtcTextureView, {
+        style: StyleSheet.absoluteFill,
+        canvas: {
+          uid: localCanvasUid,
+          renderMode: VideoRenderMode?.Fit ?? 2,
+        },
+      });
+    }
+    if (RtcLocalView?.SurfaceView) {
+      return React.createElement(RtcLocalView.SurfaceView, {
+        style: StyleSheet.absoluteFill,
+        renderMode: VideoRenderMode?.Fit ?? 2,
+      });
+    }
+    return null;
+  };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onEnd}>
@@ -22385,46 +22774,16 @@ const DirectCallModal = ({
               )
             ) : (
               <View style={{ flex: 1 }}>
-                {RtcSurfaceView ? (
-                  React.createElement(RtcSurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: localCanvasUid,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcTextureView ? (
-                  React.createElement(RtcTextureView, {
-                    style: StyleSheet.absoluteFill,
-                    canvas: {
-                      uid: localCanvasUid,
-                      renderMode: VideoRenderMode?.Fit ?? 2,
-                    },
-                  })
-                ) : RtcLocalView?.SurfaceView ? (
-                  React.createElement(RtcLocalView.SurfaceView, {
-                    style: StyleSheet.absoluteFill,
-                    renderMode: VideoRenderMode?.Fit ?? 2,
-                  })
-                ) : null}
-                <View
-                  style={{
-                    ...StyleSheet.absoluteFillObject,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ color: 'white' }}>Connecting video...</Text>
-                </View>
+                {renderDirectCallLocalPreview()}
               </View>
             )}
 
-            {!cameraMuted && (
+            {!!remoteUid && !cameraMuted && (
               <View
                 style={{
                   position: 'absolute',
                   right: 12,
-                  bottom: callBottomSpacing(insets.bottom, 'localPreviewPip'),
+                  bottom: callBottomSpacing(insets.bottom, 'callerPreviewLabel'),
                   width: 120,
                   height: 170,
                   borderRadius: 12,
@@ -22471,6 +22830,7 @@ const DirectCallModal = ({
                 ) : null}
               </View>
             )}
+
             {showVideoJoinWatchdog && !remoteUid && (
               <View
                 style={{
@@ -22797,6 +23157,7 @@ const LiveStreamModal = ({
   const [endBarHeight, setEndBarHeight] = useState<number>(44);
   const [showCommentInput, setShowCommentInput] = useState(false);
   const [commentText, setCommentText] = useState('');
+  const [driftCommentsSeenAtMs, setDriftCommentsSeenAtMs] = useState<number>(0);
   const [commentNowMs, setCommentNowMs] = useState(Date.now());
   const lastCommentSentAtRef = useRef<number>(0);
   const [liveComments, setLiveComments] = useState<
@@ -22820,6 +23181,9 @@ const LiveStreamModal = ({
   const [hostName, setHostName] = useState<string>('');
   const [hostPhoto, setHostPhoto] = useState<string | null>(null);
   const [sendingLiveComment, setSendingLiveComment] = useState(false);
+  const [liveStoryCards, setLiveStoryCards] = useState<LiveStoryCard[]>([]);
+  const [liveReactionEvents, setLiveReactionEvents] = useState<LiveReactionEvent[]>([]);
+  const [liveReactionCounts, setLiveReactionCounts] = useState<Record<string, number>>({});
   const [flyingComments, setFlyingComments] = useState<
     Array<{ id: string; text: string; from?: string; anim: Animated.Value }>
   >([]);
@@ -22859,13 +23223,28 @@ const LiveStreamModal = ({
       setCommentText(mention ? `@${mention} ` : '');
     }
   };
-  const addLiveMoment = useCallback((text: string) => {
+  const addLiveMoment = useCallback(async (text: string) => {
     const msg = String(text || '').trim();
     if (!msg) return;
     const at = Date.now();
     const id = `${at}_${Math.random().toString(36).slice(2, 8)}`;
     setLiveMoments(prev => [...prev, { id, text: msg, at }].slice(-12));
-  }, []);
+    if (!liveCommentRoomId) return;
+    try {
+      const firestoreMod = require('@react-native-firebase/firestore').default;
+      if (!firestoreMod) return;
+      await firestoreMod()
+        .collection(`live/${liveCommentRoomId}/moments`)
+        .doc(id)
+        .set({
+          text: msg,
+          createdAtMs: at,
+          createdAt: firestoreMod.FieldValue?.serverTimestamp
+            ? firestoreMod.FieldValue.serverTimestamp()
+            : new Date(),
+        });
+    } catch {}
+  }, [liveCommentRoomId]);
                     
   // --- Enhanced Live Controls state (safe stubs) ---
   const [isRecording, setIsRecording] = useState(false);
@@ -22916,6 +23295,7 @@ const LiveStreamModal = ({
   >([]);
   const [recentlyHereNames, setRecentlyHereNames] = useState<string[]>([]);
   const [showOnlineInvitePanel, setShowOnlineInvitePanel] = useState(false);
+  const [showLiveActivityPanel, setShowLiveActivityPanel] = useState(false);
   const [showConferenceToolsPanel, setShowConferenceToolsPanel] = useState(false);
   const [showConferenceRosterPanel, setShowConferenceRosterPanel] = useState(false);
   const [showConferenceChatPanel, setShowConferenceChatPanel] = useState(false);
@@ -23083,6 +23463,47 @@ const LiveStreamModal = ({
     () => new Set(joinedParticipants.map(p => String(p.uid || ''))),
     [joinedParticipants],
   );
+  const liveViewerCount = Math.max(1, joinedParticipants.length + 1);
+  const liveReactionTotal = useMemo(
+    () =>
+      Object.values(liveReactionCounts || {}).reduce(
+        (sum, count) => sum + Number(count || 0),
+        0,
+      ),
+    [liveReactionCounts],
+  );
+  const recentLiveMoments = useMemo(
+    () => [...liveMoments].slice(-4).reverse(),
+    [liveMoments],
+  );
+  const recentLiveComments = useMemo(
+    () => [...(liveComments || [])].slice(-10).reverse(),
+    [liveComments],
+  );
+  const stageStatusLabel = useMemo(() => {
+    if (isFilePresentationActive) return 'Presenting';
+    if (isConferenceMode) return 'Conference';
+    return 'Live audio';
+  }, [isConferenceMode, isFilePresentationActive]);
+  const headerSpeakerLabel = useMemo(
+    () => String(activeSpeakerName || currentLiveName || hostName || 'Host').trim(),
+    [activeSpeakerName, currentLiveName, hostName],
+  );
+  const headerAccentLabel = useMemo(() => {
+    if (pinnedLiveComment?.text) return `Pinned: ${pinnedLiveComment.text}`;
+    if (recentLiveMoments[0]?.text) return recentLiveMoments[0].text;
+    if (liveGoal?.label) return `${liveGoal.label}: ${liveGoal.current}/${liveGoal.target}`;
+    if (livePoll?.question) return livePoll.question;
+    return isConferenceMode ? 'Meeting in progress' : 'Audience is live';
+  }, [
+    isConferenceMode,
+    liveGoal?.current,
+    liveGoal?.label,
+    liveGoal?.target,
+    livePoll?.question,
+    pinnedLiveComment?.text,
+    recentLiveMoments,
+  ]);
   const liveAgoraChannelProfile =
     isConferenceMode
       ? Agora?.ChannelProfileType?.ChannelProfileLiveBroadcasting ??
@@ -23173,6 +23594,46 @@ const LiveStreamModal = ({
     if (!displayedLiveComments.length) return null;
     return displayedLiveComments[displayedLiveComments.length - 1];
   }, [displayedLiveComments]);
+  const driftUnreadCommentCount = useMemo(() => {
+    if (isConferenceMode || showCommentInput) return 0;
+    return (liveComments || []).reduce((count: number, item: any) => {
+      const at = getCommentCreatedAtMs(item);
+      if (at > Number(driftCommentsSeenAtMs || 0)) return count + 1;
+      return count;
+    }, 0);
+  }, [
+    driftCommentsSeenAtMs,
+    getCommentCreatedAtMs,
+    isConferenceMode,
+    liveComments,
+    showCommentInput,
+  ]);
+  const currentStoryCard = useMemo(
+    () => (liveStoryCards.length > 0 ? liveStoryCards[0] : null),
+    [liveStoryCards],
+  );
+  const activeSpeakerName = useMemo(() => {
+    if (activeSpeakerRtcUid) {
+      if (
+        activeSpeakerRtcUid === Number(liveUid || 0) ||
+        activeSpeakerRtcUid === toAgoraUidFromAppUid(String(currentLiveUid || ''))
+      ) {
+        return currentLiveName || hostName || 'Host';
+      }
+      const row = joinedParticipantsWithRtc.find(
+        p => Number(p.rtcUid || 0) === Number(activeSpeakerRtcUid),
+      );
+      if (row?.name) return row.name;
+    }
+    return currentLiveName || hostName || 'Host';
+  }, [
+    activeSpeakerRtcUid,
+    currentLiveName,
+    currentLiveUid,
+    hostName,
+    joinedParticipantsWithRtc,
+    liveUid,
+  ]);
   const MAX_HERE_NOW_SCAN = 200;
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
@@ -23183,6 +23644,7 @@ const LiveStreamModal = ({
   useEffect(() => {
     if (visible && isLiveStarted) return;
     setShowLiveControls(false);
+    setShowLiveActivityPanel(false);
   }, [isLiveStarted, visible]);
   useEffect(() => {
     if (visible) return;
@@ -23190,6 +23652,7 @@ const LiveStreamModal = ({
     setMicMuted(false);
     setCameraHidden(false);
     setShowCommentInput(false);
+    setDriftCommentsSeenAtMs(0);
     setShowUserPanel(false);
     setShowConferenceRosterPanel(false);
     setShowConferenceChatPanel(false);
@@ -23202,6 +23665,7 @@ const LiveStreamModal = ({
     setJoinedParticipants([]);
     setLiveSharedFiles([]);
     setLocalPresentedAsset(null);
+    setShowLiveActivityPanel(false);
     setPinnedLiveComment(null);
     setLiveMoments([]);
     setShowConferenceToolsPanel(false);
@@ -23214,14 +23678,19 @@ const LiveStreamModal = ({
     setIsSlideAutoPlay(false);
     setActiveVisualFilter('none');
     setBeautyProfile('Natural');
+    setLiveStoryCards([]);
+    setLiveReactionEvents([]);
+    setLiveReactionCounts({});
   }, [visible]);
 
   useEffect(() => {
     setShowCommentInput(false);
+    setDriftCommentsSeenAtMs(0);
     setShowUserPanel(false);
     setShowConferenceRosterPanel(false);
     setShowConferenceChatPanel(false);
     setShowConferenceToolsPanel(false);
+    setShowLiveActivityPanel(false);
     setReplyingToLiveComment(null);
     setIsSlideAutoPlay(false);
     setLiveSharedFiles([]);
@@ -23240,6 +23709,19 @@ const LiveStreamModal = ({
     isConferenceMode,
     liveComments,
     showConferenceChatPanel,
+  ]);
+  useEffect(() => {
+    if (isConferenceMode || !showCommentInput) return;
+    const latestTs = (liveComments || []).reduce((max: number, item: any) => {
+      const at = getCommentCreatedAtMs(item);
+      return at > max ? at : max;
+    }, Date.now());
+    setDriftCommentsSeenAtMs(latestTs);
+  }, [
+    getCommentCreatedAtMs,
+    isConferenceMode,
+    liveComments,
+    showCommentInput,
   ]);
 
   useEffect(() => {
@@ -23724,6 +24206,115 @@ const LiveStreamModal = ({
   }, [currentLiveUid, isLiveStarted, liveCommentRoomId]);
 
   useEffect(() => {
+    if (!isLiveStarted || !liveCommentRoomId) {
+      setLiveStoryCards([]);
+      return;
+    }
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) return;
+
+    const unsubscribe = firestoreMod()
+      .collection(`live/${liveCommentRoomId}/story_cards`)
+      .orderBy('createdAtMs', 'desc')
+      .limit(12)
+      .onSnapshot(
+        (snap: any) => {
+          const items = (snap?.docs || []).map((doc: any) => {
+            const data = doc.data?.() || {};
+            return {
+              id: String(doc.id || ''),
+              title: String(data.title || ''),
+              body: data.body ? String(data.body) : undefined,
+              tag: data.tag ? String(data.tag) : undefined,
+              author: data.author ? String(data.author) : undefined,
+              createdAtMs: Number(data.createdAtMs || 0),
+            } as LiveStoryCard;
+          });
+          setLiveStoryCards(items);
+        },
+        () => {},
+      );
+    return () => unsubscribe();
+  }, [isLiveStarted, liveCommentRoomId]);
+
+  useEffect(() => {
+    if (!isLiveStarted || !liveCommentRoomId) {
+      setLiveReactionEvents([]);
+      setLiveReactionCounts({});
+      return;
+    }
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) return;
+
+    const unsubscribe = firestoreMod()
+      .collection(`live/${liveCommentRoomId}/reactions`)
+      .orderBy('createdAtMs', 'desc')
+      .limit(80)
+      .onSnapshot(
+        (snap: any) => {
+          const items = (snap?.docs || []).map((doc: any) => {
+            const data = doc.data?.() || {};
+            return {
+              id: String(doc.id || ''),
+              emoji: String(data.emoji || ''),
+              from: data.from ? String(data.from) : undefined,
+              fromUid: data.fromUid ? String(data.fromUid) : undefined,
+              createdAtMs: Number(data.createdAtMs || 0),
+            } as LiveReactionEvent;
+          });
+          const counts = items.reduce((acc: Record<string, number>, item: LiveReactionEvent) => {
+            const key = String(item.emoji || '').trim();
+            if (!key) return acc;
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          }, {});
+          setLiveReactionEvents(items.slice(0, 14));
+          setLiveReactionCounts(counts);
+        },
+        () => {},
+      );
+    return () => unsubscribe();
+  }, [isLiveStarted, liveCommentRoomId]);
+
+  useEffect(() => {
+    if (!isLiveStarted || !liveCommentRoomId) {
+      setLiveMoments([]);
+      return;
+    }
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) return;
+
+    const unsubscribe = firestoreMod()
+      .collection(`live/${liveCommentRoomId}/moments`)
+      .orderBy('createdAtMs', 'desc')
+      .limit(16)
+      .onSnapshot(
+        (snap: any) => {
+          const items = (snap?.docs || []).map((doc: any) => {
+            const data = doc.data?.() || {};
+            return {
+              id: String(doc.id || ''),
+              text: String(data.text || ''),
+              at: Number(data.createdAtMs || Date.now()),
+            };
+          });
+          setLiveMoments(items.reverse().slice(-12));
+        },
+        () => {},
+      );
+    return () => unsubscribe();
+  }, [isLiveStarted, liveCommentRoomId]);
+
+  useEffect(() => {
     if (!visible || !isLiveStarted) {
       setOnlineUsers([]);
       setRecentlyHereNames([]);
@@ -23921,9 +24512,15 @@ const LiveStreamModal = ({
               channelProfile: liveAgoraChannelProfile,
             });
           } catch {}
-          try {
-            engine.enableVideo?.();
-          } catch {}
+          if (isConferenceMode) {
+            try {
+              engine.enableVideo?.();
+            } catch {}
+          } else {
+            try {
+              engine.disableVideo?.();
+            } catch {}
+          }
           try {
             engine.registerEventHandler?.({
               onUserJoined: (_conn: any, uid: number) => {
@@ -23969,17 +24566,19 @@ const LiveStreamModal = ({
             });
           } catch {}
           applyLiveQualityProfile(engine);
-          try {
-            engine.startPreview?.();
-          } catch {}
+          if (isConferenceMode) {
+            try {
+              engine.startPreview?.();
+            } catch {}
+          }
           try {
             engine.updateChannelMediaOptions?.({
               channelProfile: liveAgoraChannelProfile,
               clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
               publishMicrophoneTrack: true,
-              publishCameraTrack: true,
+              publishCameraTrack: isConferenceMode,
               autoSubscribeAudio: true,
-              autoSubscribeVideo: true,
+              autoSubscribeVideo: isConferenceMode,
             });
           } catch {}
           setIsLiveEngineReady(true)
@@ -23989,9 +24588,15 @@ const LiveStreamModal = ({
         ) {
           const engine = await Agora.RtcEngine.create(appId);
           engineRef.current = engine;
-          try {
-            engine.enableVideo();
-          } catch {}
+          if (isConferenceMode) {
+            try {
+              engine.enableVideo();
+            } catch {}
+          } else {
+            try {
+              engine.disableVideo?.();
+            } catch {}
+          }
           try {
             engine.addListener?.('UserJoined', (uid: number) => {
               const n = Number(uid);
@@ -24037,9 +24642,11 @@ const LiveStreamModal = ({
             });
           } catch {}
           applyLiveQualityProfile(engine);
-          try {
-            engine.startPreview?.();
-          } catch {}
+          if (isConferenceMode) {
+            try {
+              engine.startPreview?.();
+            } catch {}
+          }
           try {
             engine.setChannelProfile(liveAgoraChannelProfile);
           } catch {}
@@ -24070,7 +24677,7 @@ const LiveStreamModal = ({
       setActiveSpeakerRtcUid(null);
       setActiveSpeakerAtMs(0);
     };
-  }, [visible, Agora, appId, applyLiveQualityProfile, liveAgoraChannelProfile]);
+  }, [visible, Agora, appId, applyLiveQualityProfile, isConferenceMode, liveAgoraChannelProfile]);
                     
   // Join channel when user taps Start Live (tokenless first when enabled)
   useEffect(() => {
@@ -24151,22 +24758,26 @@ const LiveStreamModal = ({
                 engine.setEnableSpeakerphone?.(true);
               } catch {}
               try {
-                engine.enableVideo?.();
+                if (isConferenceMode) {
+                  engine.enableVideo?.();
+                } else {
+                  engine.disableVideo?.();
+                }
               } catch {}
               try {
-                engine.enableLocalVideo?.(true);
+                engine.enableLocalVideo?.(isConferenceMode);
               } catch {}
               try {
-                engine.muteLocalVideoStream?.(false);
+                engine.muteLocalVideoStream?.(!isConferenceMode);
               } catch {}
               if (isV4) {
                 await engine.joinChannel(tok, chan, uidNum, {
                   channelProfile: liveAgoraChannelProfile,
                   clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
                   publishMicrophoneTrack: true,
-                  publishCameraTrack: true,
+                  publishCameraTrack: isConferenceMode,
                   autoSubscribeAudio: true,
-                  autoSubscribeVideo: true,
+                  autoSubscribeVideo: isConferenceMode,
                 });
               } else {
                 try {
@@ -24225,7 +24836,7 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [Agora, applyLiveQualityProfile, bridge?.audioOnlyFallback, currentLiveName, currentLiveUid, dataSaver?.enabled, hostName, hostPhoto, isLiveStarted, isLiveEngineReady, isWifi, liveAgoraChannelProfile, liveUid, liveToken, resolvedLiveDocId, liveChannel, sessionLabel, startSessionLabel, visible]);
+  }, [Agora, applyLiveQualityProfile, bridge?.audioOnlyFallback, currentLiveName, currentLiveUid, dataSaver?.enabled, hostName, hostPhoto, isConferenceMode, isLiveStarted, isLiveEngineReady, isWifi, liveAgoraChannelProfile, liveUid, liveToken, resolvedLiveDocId, liveChannel, sessionLabel, startSessionLabel, visible]);
                     
   const handleEndDrift = async () => {
     try {
@@ -24464,9 +25075,13 @@ const LiveStreamModal = ({
       }
       // Ensure camera/mic permissions (Android) so inline preview can render
       if (Platform.OS === 'android') {
-        const ok = await ensureCamMicPermissionsAndroid();
+        const ok = isConferenceMode
+          ? await ensureCamMicPermissionsAndroid()
+          : await ensureMicPermissionAndroid();
         if (!ok) {
-          setStartError('Camera/Mic permission required');
+          setStartError(
+            isConferenceMode ? 'Camera/Mic permission required' : 'Microphone permission required',
+          );
           return;
         }
       }
@@ -24578,12 +25193,18 @@ const LiveStreamModal = ({
         } catch {}
       }
       // Ensure inline preview starts in this interface
-      try {
-        engineRef.current?.enableVideo?.();
-      } catch {}
-      try {
-        engineRef.current?.startPreview?.();
-      } catch {}
+      if (isConferenceMode) {
+        try {
+          engineRef.current?.enableVideo?.();
+        } catch {}
+        try {
+          engineRef.current?.startPreview?.();
+        } catch {}
+      } else {
+        try {
+          engineRef.current?.disableVideo?.();
+        } catch {}
+      }
     } catch (e: any) {
       setStartError(String(e && (e.message || e)));
     } finally {
@@ -25091,6 +25712,77 @@ const LiveStreamModal = ({
       ],
     );
   };
+
+  const createStoryCard = () => {
+    if (!liveCommentRoomId) {
+      Alert.alert('Story Cards', 'Start a live session first.');
+      return;
+    }
+    askForText('Story Card', 'Headline', headline => {
+      const title = String(headline || '').trim();
+      if (!title) {
+        Alert.alert('Story Cards', 'Headline cannot be empty.');
+        return;
+      }
+      askForText('Story Card', 'Body or detail', async detail => {
+        const body = String(detail || '').trim();
+        const id = `card_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+        const createdAtMs = Date.now();
+        try {
+          const firestoreMod = require('@react-native-firebase/firestore').default;
+          if (!firestoreMod) throw new Error('Firestore unavailable');
+          await firestoreMod()
+            .collection(`live/${liveCommentRoomId}/story_cards`)
+            .doc(id)
+            .set({
+              title,
+              body: body || '',
+              tag: 'LIVE UPDATE',
+              author: String(currentLiveName || hostName || 'Host').trim(),
+              createdAtMs,
+              createdAt: firestoreMod.FieldValue?.serverTimestamp
+                ? firestoreMod.FieldValue.serverTimestamp()
+                : new Date(),
+            });
+          await addLiveMoment(`Story card: ${title}`);
+        } catch (err) {
+          console.warn('Story card creation failed', err);
+          Alert.alert('Story Cards', 'Unable to save the card right now.');
+        }
+      });
+    });
+  };
+
+  const sendLiveReaction = async (emoji: string) => {
+    const symbol = String(emoji || '').trim();
+    if (!symbol || !liveCommentRoomId) return;
+    try {
+      const firestoreMod = require('@react-native-firebase/firestore').default;
+      const authMod = require('@react-native-firebase/auth').default;
+      if (!firestoreMod || !authMod) throw new Error('Live reaction unavailable');
+      const me = authMod()?.currentUser;
+      const createdAtMs = Date.now();
+      await firestoreMod()
+        .collection(`live/${liveCommentRoomId}/reactions`)
+        .add({
+          emoji: symbol,
+          fromUid: String(me?.uid || ''),
+          from: String(
+            me?.displayName ||
+              (me?.email ? String(me.email).split('@')[0] : '') ||
+              currentLiveName ||
+              hostName ||
+              'Crew',
+          ).trim(),
+          createdAtMs,
+          createdAt: firestoreMod.FieldValue?.serverTimestamp
+            ? firestoreMod.FieldValue.serverTimestamp()
+            : new Date(),
+        });
+    } catch (err) {
+      console.warn('Live reaction failed', err);
+    }
+  };
                     
   const handleSetLiveGoal = () => {
     if (!liveDocId) {
@@ -25580,17 +26272,78 @@ const LiveStreamModal = ({
 
   const showLiveAnalytics = () => {
     const analytics = {
-      viewers: 150,
-      peakViewers: 200,
-      avgWatchTime: '15:30',
-      newFollowers: 23,
-      totalTips: 45.5,
+      viewers: liveViewerCount,
+      joinedCrew: joinedParticipants.length,
+      comments: liveComments.length,
+      reactions: liveReactionTotal,
+      pending: pendingRequests.length,
+      activePollVotes: livePoll
+        ? livePoll.options.reduce(
+            (sum, opt) => sum + Number(livePoll.votes?.[opt.id] || 0),
+            0,
+          )
+        : 0,
     };
     setLiveAnalytics(analytics);
     Alert.alert(
       'Live Analytics',
-      `Viewers: ${analytics.viewers}\nPeak: ${analytics.peakViewers}\nAvg Watch: ${analytics.avgWatchTime}\nNew Followers: ${analytics.newFollowers}\nTips: $${analytics.totalTips}`,
+      `Viewers: ${analytics.viewers}\nCrew: ${analytics.joinedCrew}\nComments: ${analytics.comments}\nReactions: ${analytics.reactions}\nPending: ${analytics.pending}\nPoll votes: ${analytics.activePollVotes}`,
     );
+  };
+
+  const reportCurrentLiveSession = () => {
+    if (!liveDocId) {
+      Alert.alert('Report', 'Start a live session first.');
+      return;
+    }
+    askForText('Report Session', 'What issue should moderation review?', value => {
+      const reason = String(value || '').trim();
+      if (!reason) {
+        Alert.alert('Report', 'Please enter a reason.');
+        return;
+      }
+      (async () => {
+        try {
+          const firestoreMod = require('@react-native-firebase/firestore').default;
+          const authMod = require('@react-native-firebase/auth').default;
+          if (!firestoreMod || !authMod) {
+            throw new Error('Firestore unavailable');
+          }
+          const me = authMod()?.currentUser;
+          const reportId = `report_${Date.now()}_${Math.random()
+            .toString(36)
+            .slice(2, 7)}`;
+          await firestoreMod()
+            .collection('moderation_reports')
+            .doc(reportId)
+            .set({
+              id: reportId,
+              type: 'live_session',
+              liveId: liveDocId,
+              liveTitle: liveTitle || 'Drift Expo',
+              channel: liveChannel || channelInput || null,
+              reportedByUid: String(me?.uid || ''),
+              reportedByName: String(
+                me?.displayName ||
+                  (me?.email ? String(me.email).split('@')[0] : '') ||
+                  currentLiveName ||
+                  'User',
+              ).trim(),
+              reason,
+              createdAtMs: Date.now(),
+              createdAt: firestoreMod.FieldValue?.serverTimestamp
+                ? firestoreMod.FieldValue.serverTimestamp()
+                : new Date(),
+            });
+          Alert.alert('Report', 'Report sent to moderation.');
+        } catch (error: any) {
+          Alert.alert(
+            'Report',
+            String(error?.message || 'Could not send report right now.'),
+          );
+        }
+      })();
+    });
   };
                     
   const soundEffects = useMemo(() => LIVE_SOUND_EFFECTS, []);
@@ -27037,7 +27790,7 @@ const LiveStreamModal = ({
             </View>
           </View>
         )}
-        {isLiveStarted && pinnedLiveComment && (
+        {false && isLiveStarted && pinnedLiveComment && (
           <View
             style={{
               position: 'absolute',
@@ -27061,7 +27814,7 @@ const LiveStreamModal = ({
             </Text>
           </View>
         )}
-        {isLiveStarted && liveMoments.length > 0 && (
+        {false && isLiveStarted && liveMoments.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -27289,6 +28042,23 @@ const LiveStreamModal = ({
                     : 'Preparing document preview for everyone'}
                 </Text>
               </View>
+            ) : !isConferenceMode ? (
+              <VideolessDriftStage
+                title={liveTitle || 'Drift Expo'}
+                hostName={currentLiveName || hostName || 'Host'}
+                activeSpeakerName={activeSpeakerName}
+                listenerCount={Math.max(1, joinedParticipants.length + 1)}
+                micMuted={micMuted}
+                storyCard={currentStoryCard}
+                storyCardCount={liveStoryCards.length}
+                poll={livePoll}
+                goal={liveGoal}
+                moments={liveMoments.slice().reverse()}
+                reactionEvents={liveReactionEvents}
+                reactionCounts={liveReactionCounts}
+                onVotePoll={voteOnLivePoll}
+                onCreateStoryCard={createStoryCard}
+              />
             ) : mainRemoteUid ? (
               RtcSurfaceView ? (
                 React.createElement(RtcSurfaceView, {
@@ -27398,7 +28168,7 @@ const LiveStreamModal = ({
                 ]}
               />
             )}
-            {!isFilePresentationActive && !cameraHidden && (
+            {isConferenceMode && !isFilePresentationActive && !cameraHidden && (
               <View
                 style={{
                   position: 'absolute',
@@ -27420,7 +28190,141 @@ const LiveStreamModal = ({
             )}
           </>
         )}
-        {isLiveStarted && !isConferenceMode && visibleLiveComments.length > 0 && (
+        {isLiveStarted && (
+          <View
+            style={[
+              editorStyles.liveSessionHeader,
+              { top: insets.top + 2 },
+            ]}
+          >
+            <View style={editorStyles.liveSessionHeaderRow}>
+              <View style={editorStyles.liveHeaderPills}>
+                <View style={editorStyles.liveHeaderPrimaryPill}>
+                  <Text style={editorStyles.liveHeaderPrimaryText}>
+                    {`${stageStatusLabel} • ${headerSpeakerLabel} • ${liveViewerCount} live • mic ${
+                      micMuted ? 'off' : 'on'
+                    }`}
+                  </Text>
+                </View>
+              </View>
+              <View style={editorStyles.liveHeaderMetricStack}>
+                <View style={editorStyles.liveHeaderMetricPill}>
+                  <Text style={editorStyles.liveHeaderMetricValue}>
+                    {isConferenceMode ? liveComments.length : driftUnreadCommentCount}
+                  </Text>
+                  <Text style={editorStyles.liveHeaderMetricLabel}>
+                    {isConferenceMode ? 'chat' : 'inbox'}
+                  </Text>
+                </View>
+                <View style={editorStyles.liveHeaderMetricPill}>
+                  <Text style={editorStyles.liveHeaderMetricValue}>{liveReactionTotal}</Text>
+                  <Text style={editorStyles.liveHeaderMetricLabel}>react</Text>
+                </View>
+              </View>
+            </View>
+            <Text numberOfLines={1} style={editorStyles.liveHeaderAccent}>
+              {headerAccentLabel}
+            </Text>
+          </View>
+        )}
+        {isLiveStarted && !isConferenceMode && showLiveActivityPanel && (
+          <View
+            style={[
+              editorStyles.liveActivityPanel,
+              {
+                bottom: insets.bottom + endBarHeight + mediaBarHeight + 78,
+              },
+            ]}
+          >
+            <View style={editorStyles.livePanelHeader}>
+              <Text style={editorStyles.livePanelTitle}>Live activity</Text>
+              <Pressable onPress={() => setShowLiveActivityPanel(false)}>
+                <Text style={editorStyles.livePanelClose}>Close</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ gap: 12, paddingBottom: 4 }}
+            >
+              {!!pinnedLiveComment && (
+                <View style={editorStyles.livePanelCard}>
+                  <Text style={editorStyles.livePanelEyebrow}>Pinned</Text>
+                  <Text style={editorStyles.livePanelBody} numberOfLines={2}>
+                    {safeCommentHandle(pinnedLiveComment.from || 'User')}: {pinnedLiveComment.text}
+                  </Text>
+                </View>
+              )}
+              {pendingRequests.length > 0 && (
+                <View style={editorStyles.livePanelCard}>
+                  <Text style={editorStyles.livePanelEyebrow}>Pending requests</Text>
+                  {pendingRequests.slice(0, 4).map(r => (
+                    <View key={r.uid} style={editorStyles.livePanelListRow}>
+                      <Text style={editorStyles.livePanelRowText}>
+                        {r.name ? `@${r.name}` : r.uid}
+                      </Text>
+                      <Pressable
+                        style={editorStyles.livePanelAction}
+                        onPress={() =>
+                          handleUserAction('acceptDrift', r.uid, r.name || r.uid)
+                        }
+                      >
+                        <Text style={editorStyles.livePanelActionText}>Accept</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              )}
+              {recentLiveMoments.length > 0 && (
+                <View style={editorStyles.livePanelCard}>
+                  <Text style={editorStyles.livePanelEyebrow}>Moments</Text>
+                  {recentLiveMoments.map(moment => (
+                    <Text
+                      key={moment.id}
+                      numberOfLines={1}
+                      style={editorStyles.livePanelBody}
+                    >
+                      • {moment.text}
+                    </Text>
+                  ))}
+                </View>
+              )}
+              {topSupporters.length > 0 && (
+                <View style={editorStyles.livePanelCard}>
+                  <Text style={editorStyles.livePanelEyebrow}>Featured supporters</Text>
+                  <Text style={editorStyles.livePanelBody} numberOfLines={2}>
+                    {topSupporters.map(s => `@${s.username}`).join('  •  ')}
+                  </Text>
+                </View>
+              )}
+              {recentLiveComments.length > 0 && (
+                <View style={editorStyles.livePanelCard}>
+                  <Text style={editorStyles.livePanelEyebrow}>Recent chat</Text>
+                  {recentLiveComments.slice(0, 5).map((c: any, idx: number) => (
+                    <Pressable
+                      key={String(c?.id || `recent_live_comment_${idx}`)}
+                      style={editorStyles.livePanelCommentRow}
+                      onPress={() =>
+                        onEchoBack({
+                          id: String(c?.id || ''),
+                          from: String(c?.from || ''),
+                          text: String(c?.text || ''),
+                        })
+                      }
+                    >
+                      <Text style={editorStyles.livePanelCommentAuthor}>
+                        {safeCommentHandle(String(c?.from || 'User'))}
+                      </Text>
+                      <Text numberOfLines={2} style={editorStyles.livePanelBody}>
+                        {String(c?.text || '')}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        )}
+        {false && isLiveStarted && !isConferenceMode && visibleLiveComments.length > 0 && (
           <View
             pointerEvents="box-none"
             style={[
@@ -27490,7 +28394,7 @@ const LiveStreamModal = ({
             </Text>
           </View>
         )}
-        {isLiveStarted && !isConferenceMode && flyingComments.length > 0 && (
+        {false && isLiveStarted && !isConferenceMode && flyingComments.length > 0 && (
           <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             {flyingComments.map(fc => {
               const translateY = fc.anim.interpolate({
@@ -27543,7 +28447,7 @@ const LiveStreamModal = ({
             })}
           </View>
         )}
-        {isLiveStarted && topSupporters.length > 0 && (
+        {false && isLiveStarted && topSupporters.length > 0 && (
           <View
             style={{
               position: 'absolute',
@@ -27572,7 +28476,7 @@ const LiveStreamModal = ({
             </View>
           </View>
         )}
-        {isLiveStarted && pendingRequests.length > 0 && (
+        {false && isLiveStarted && pendingRequests.length > 0 && (
           <View
             style={{
               position: 'absolute',
@@ -27621,7 +28525,7 @@ const LiveStreamModal = ({
             ))}
           </View>
         )}
-        {isLiveStarted && !isConferenceMode && showOnlineInvitePanel && (
+        {false && isLiveStarted && !isConferenceMode && showOnlineInvitePanel && (
           <View
             style={{
               position: 'absolute',
@@ -27894,7 +28798,7 @@ const LiveStreamModal = ({
             </ScrollView>
           </View>
         )}
-        {false && isLiveStarted && effectiveRemoteParticipantUids.length > 0 && (
+        {isConferenceMode && isLiveStarted && effectiveRemoteParticipantUids.length > 0 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -28136,7 +29040,7 @@ const LiveStreamModal = ({
         )}
         {/* --- BEGIN LiveStreamModal tail replacement --- */}
         {/* Right-side action stack (host controls) */}
-        {isLiveStarted && !showCommentInput && showLiveControls && (
+        {false && isLiveStarted && !showCommentInput && showLiveControls && (
           <ScrollView
             style={[
               editorStyles.liveRightControls,
@@ -28281,36 +29185,38 @@ const LiveStreamModal = ({
               </Pressable>
             )}
                     
-            {/* Virtual Background */}
-            <Pressable
-              style={[
-                editorStyles.liveRightButton,
-                virtualBackground
-                  ? {
-                      backgroundColor: 'rgba(0, 194, 255, 0.2)',
-                      borderRadius: 8,
-                      padding: 4,
-                      borderWidth: 1,
-                      borderColor: '#00C2FF',
-                    }
-                  : null,
-              ]}
-              onPress={toggleVirtualBackground}
-            >
-              <Text style={editorStyles.liveRightIcon}>🧩</Text>
-              <Text style={editorStyles.liveRightLabel}>Background</Text>
-            </Pressable>
+            {isConferenceMode && (
+              <Pressable
+                style={[
+                  editorStyles.liveRightButton,
+                  virtualBackground
+                    ? {
+                        backgroundColor: 'rgba(0, 194, 255, 0.2)',
+                        borderRadius: 8,
+                        padding: 4,
+                        borderWidth: 1,
+                        borderColor: '#00C2FF',
+                      }
+                    : null,
+                ]}
+                onPress={toggleVirtualBackground}
+              >
+                <Text style={editorStyles.liveRightIcon}>🧩</Text>
+                <Text style={editorStyles.liveRightLabel}>Background</Text>
+              </Pressable>
+            )}
                     
-            {/* Beauty Filter */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={toggleBeautyFilter}
-            >
-              <Text style={editorStyles.liveRightIcon}>✨</Text>
-              <Text style={editorStyles.liveRightLabel}>
-                {beautyFilterEnabled ? `Beauty ${beautyProfile}` : 'Beauty'}
-              </Text>
-            </Pressable>
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={toggleBeautyFilter}
+              >
+                <Text style={editorStyles.liveRightIcon}>✨</Text>
+                <Text style={editorStyles.liveRightLabel}>
+                  {beautyFilterEnabled ? `Beauty ${beautyProfile}` : 'Beauty'}
+                </Text>
+              </Pressable>
+            )}
                     
             {/* Recording Control */}
             <Pressable
@@ -28322,6 +29228,16 @@ const LiveStreamModal = ({
                 {isRecording ? 'Stop Rec' : 'Record'}
               </Text>
             </Pressable>
+                    
+            {!isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={createStoryCard}
+              >
+                <Text style={editorStyles.liveRightIcon}>🧾</Text>
+                <Text style={editorStyles.liveRightLabel}>Story</Text>
+              </Pressable>
+            )}
                     
             {!isConferenceMode && (
               <Pressable
@@ -28403,34 +29319,36 @@ const LiveStreamModal = ({
               </Text>
             </Pressable>
                     
-            {/* Hide/Show camera */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={() => {
-                try {
-                  const newState = !cameraHidden;
-                  setCameraHidden(newState);
-                  engineRef.current?.muteLocalVideoStream?.(newState);
-                  engineRef.current?.enableLocalVideo?.(!newState);
-                } catch {}
-              }}
-            >
-              <Text style={editorStyles.liveRightIcon}>{cameraHidden ? '📷' : '🎥'}</Text>
-              <Text style={editorStyles.liveRightLabel}>{cameraHidden ? 'Show' : 'Hide'}</Text>
-            </Pressable>
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => {
+                  try {
+                    const newState = !cameraHidden;
+                    setCameraHidden(newState);
+                    engineRef.current?.muteLocalVideoStream?.(newState);
+                    engineRef.current?.enableLocalVideo?.(!newState);
+                  } catch {}
+                }}
+              >
+                <Text style={editorStyles.liveRightIcon}>{cameraHidden ? '📷' : '🎥'}</Text>
+                <Text style={editorStyles.liveRightLabel}>{cameraHidden ? 'Show' : 'Hide'}</Text>
+              </Pressable>
+            )}
                     
-            {/* Flip camera */}
-            <Pressable
-              style={editorStyles.liveRightButton}
-              onPress={() => {
-                try {
-                  engineRef.current?.switchCamera?.();
-                } catch {}
-              }}
-            >
-              <Text style={editorStyles.liveRightIcon}>🔄</Text>
-              <Text style={editorStyles.liveRightLabel}>Flip</Text>
-            </Pressable>
+            {isConferenceMode && (
+              <Pressable
+                style={editorStyles.liveRightButton}
+                onPress={() => {
+                  try {
+                    engineRef.current?.switchCamera?.();
+                  } catch {}
+                }}
+              >
+                <Text style={editorStyles.liveRightIcon}>🔄</Text>
+                <Text style={editorStyles.liveRightLabel}>Flip</Text>
+              </Pressable>
+            )}
                     
             {!isConferenceMode && (
               <Pressable
@@ -28460,7 +29378,7 @@ const LiveStreamModal = ({
             style={{
               position: 'absolute',
               left: 10,
-              right: showLiveControls ? 108 : 10,
+              right: 10,
               bottom: insets.bottom + endBarHeight + 82,
               zIndex: 16,
               borderRadius: 12,
@@ -28539,7 +29457,7 @@ const LiveStreamModal = ({
             style={{
               position: 'absolute',
               left: 10,
-              right: showLiveControls ? 108 : 10,
+              right: 10,
               bottom: insets.bottom + endBarHeight + mediaBarHeight + 8,
               zIndex: 17,
               borderRadius: 12,
@@ -28936,7 +29854,7 @@ const LiveStreamModal = ({
         </Modal>
                     
         {/* Comment Splash Animation */}
-        {splashedComment && (
+        {false && splashedComment && (
           <View
             style={editorStyles.commentSplashContainer}
             pointerEvents="none"
@@ -28967,183 +29885,238 @@ const LiveStreamModal = ({
           </View>
         )}
                     
-        {/* Media editor strip (above End Vibe) */}
+        {/* Primary live dock */}
         {isLiveStarted && (
           <View
             style={[
-              editorStyles.liveMediaBar,
+              editorStyles.liveProfessionalDock,
               { bottom: endBarHeight + insets.bottom + 8 },
             ]}
             onLayout={e => setMediaBarHeight(e.nativeEvent.layout.height)}
           >
-            {/* Host avatar + name on right above media bar */}
-            <View
-              style={{
-                position: 'absolute',
-                right: 16,
-                bottom: mediaBarHeight + 4,
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: 'rgba(0,0,0,0.35)',
-                borderRadius: 20,
-                paddingVertical: 6,
-                paddingHorizontal: 10,
-              }}
-            >
-              {hostPhoto ? (
-                <Image
-                  source={{ uri: hostPhoto }}
-                  style={{ width: 28, height: 28, borderRadius: 14 }}
-                />
-              ) : (
-                <View
-                  style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 14,
-                    backgroundColor: '#2b3a4a',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+            {!isConferenceMode ? (
+              <>
+                <Pressable
+                  style={editorStyles.liveDockButton}
+                  onPress={() => {
+                    setShowLiveActivityPanel(false);
+                    setShowCommentInput(false);
+                    setShowLiveControls(false);
+                    void inviteCoHost();
                   }}
                 >
-                  <Text style={{ color: 'white', fontWeight: '700' }}>
-                    {(hostName || 'Y').charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-              )}
-              <View style={{ marginLeft: 8 }}>
-                <Text style={{ color: 'white', fontWeight: '700' }}>
-                  @{String(hostName || 'you').replace(/^[@/]+/, '')}
-                </Text>
-                <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>
-                  {isLiveHost
-                    ? isConferenceMode
-                      ? 'Conference Host'
-                      : 'Drift Captain'
-                    : isConferenceMode
-                    ? 'Participant'
-                    : 'Crew'}
-                </Text>
-              </View>
-            </View>
-            <View
-              style={[
-                editorStyles.liveBottomScroll,
-                {
-                  width: '100%',
-                  justifyContent: 'space-evenly',
-                  alignItems: 'center',
-                  gap: 0,
-                },
-              ]}
-            >
-              {/* Non-button items */}
-              {!isConferenceMode && (
-                <Pressable
-                  style={[editorStyles.liveBottomItem, { flex: 1 }]}
-                  onPress={showSoundBoard}
-                >
-                  <Text style={editorStyles.liveBottomIcon}>🎵</Text>
-                  <Text style={editorStyles.liveBottomLabel}>Music</Text>
+                  <Text style={editorStyles.liveDockButtonIcon}>➕</Text>
+                  <Text style={editorStyles.liveDockButtonLabel}>Invite</Text>
                 </Pressable>
-              )}
-              {!isConferenceMode && (
                 <Pressable
-                  style={[editorStyles.liveBottomItem, { flex: 1 }]}
-                  onPress={openVisualFiltersMenu}
-                >
-                  <Text style={editorStyles.liveBottomIcon}>🎛️</Text>
-                  <Text style={editorStyles.liveBottomLabel}>Filters</Text>
-                </Pressable>
-              )}
-              <Pressable
-                style={[editorStyles.liveBottomItem, { flex: 1 }]}
-                onPress={() => {
-                  if (isConferenceMode) {
-                    setShowConferenceChatPanel(p => !p);
-                    setShowConferenceRosterPanel(false);
+                  style={[
+                    editorStyles.liveDockButton,
+                    showLiveActivityPanel && editorStyles.liveDockButtonActive,
+                  ]}
+                  onPress={() => {
                     setShowCommentInput(false);
-                    return;
-                  }
-                  setShowCommentInput(p => !p);
-                }}
-              >
-                <View>
-                  <Text style={editorStyles.liveBottomIcon}>💬</Text>
-                  {isConferenceMode && conferenceUnreadChatCount > 0 ? (
-                    <View
-                      style={{
-                        position: 'absolute',
-                        right: -8,
-                        top: -6,
-                        minWidth: 16,
-                        height: 16,
-                        borderRadius: 8,
-                        backgroundColor: '#FFD400',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        paddingHorizontal: 3,
-                      }}
-                    >
-                      <Text style={{ color: '#111', fontSize: 10, fontWeight: '900' }}>
-                        {conferenceUnreadChatCount > 99 ? '99+' : conferenceUnreadChatCount}
+                    setShowLiveControls(false);
+                    setShowLiveActivityPanel(v => !v);
+                  }}
+                >
+                  <Text style={editorStyles.liveDockButtonIcon}>☰</Text>
+                  <Text style={editorStyles.liveDockButtonLabel}>Activity</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    editorStyles.liveDockButton,
+                    showCommentInput && editorStyles.liveDockButtonActive,
+                  ]}
+                  onPress={() => {
+                    setShowLiveActivityPanel(false);
+                    setShowLiveControls(false);
+                    setShowCommentInput(p => !p);
+                  }}
+                >
+                  <Text style={editorStyles.liveDockButtonIcon}>💬</Text>
+                  {driftUnreadCommentCount > 0 ? (
+                    <View style={editorStyles.liveDockUnreadBadge}>
+                      <Text style={editorStyles.liveDockUnreadText}>
+                        {driftUnreadCommentCount > 99 ? '99+' : driftUnreadCommentCount}
                       </Text>
                     </View>
                   ) : null}
-                </View>
-                <Text style={editorStyles.liveBottomLabel}>
-                  {isConferenceMode ? 'Chat' : 'Comment'}
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[editorStyles.liveBottomItem, { flex: 1 }]}
-                onPress={() => setShowLiveControls(v => !v)}
-              >
-                <Text style={editorStyles.liveBottomIcon}>🕹️</Text>
-                <Text
+                  <Text style={editorStyles.liveDockButtonLabel}>Inbox</Text>
+                </Pressable>
+                <Pressable
                   style={[
-                    editorStyles.liveBottomLabel,
-                    { color: '#FF3B30', fontWeight: '900' },
+                    editorStyles.liveDockButton,
+                    showLiveControls && editorStyles.liveDockButtonActive,
                   ]}
+                  onPress={() => {
+                    setShowLiveActivityPanel(false);
+                    setShowCommentInput(false);
+                    setShowLiveControls(v => !v);
+                  }}
                 >
-                  CONTROLS
-                </Text>
-              </Pressable>
-            </View>
+                  <Text style={editorStyles.liveDockButtonIcon}>⋯</Text>
+                  <Text style={editorStyles.liveDockButtonLabel}>Controls</Text>
+                </Pressable>
+              </>
+            ) : (
+              <>
+                <Pressable
+                  style={editorStyles.liveDockButton}
+                  onPress={() => {
+                    setShowConferenceChatPanel(false);
+                    setShowConferenceRosterPanel(false);
+                    setShowLiveControls(false);
+                    openConferenceInviteOptions();
+                  }}
+                >
+                  <Text style={editorStyles.liveDockButtonIcon}>🔗</Text>
+                  <Text style={editorStyles.liveDockButtonLabel}>Invite</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    editorStyles.liveDockButton,
+                    showConferenceRosterPanel && editorStyles.liveDockButtonActive,
+                  ]}
+                  onPress={() => {
+                    setShowConferenceChatPanel(false);
+                    setShowLiveControls(false);
+                    setUserPanelMode('join');
+                    setShowConferenceRosterPanel(v => !v);
+                  }}
+                >
+                  <Text style={editorStyles.liveDockButtonIcon}>👥</Text>
+                  <Text style={editorStyles.liveDockButtonLabel}>Roster</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    editorStyles.liveDockButton,
+                    showConferenceChatPanel && editorStyles.liveDockButtonActive,
+                  ]}
+                  onPress={() => {
+                    setShowConferenceRosterPanel(false);
+                    setShowLiveControls(false);
+                    setShowCommentInput(false);
+                    setShowConferenceChatPanel(p => !p);
+                  }}
+                >
+                  <View>
+                    <Text style={editorStyles.liveDockButtonIcon}>💬</Text>
+                    {conferenceUnreadChatCount > 0 ? (
+                      <View style={editorStyles.liveDockUnreadBadge}>
+                        <Text style={editorStyles.liveDockUnreadText}>
+                          {conferenceUnreadChatCount > 99 ? '99+' : conferenceUnreadChatCount}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={editorStyles.liveDockButtonLabel}>Chat</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    editorStyles.liveDockButton,
+                    showLiveControls && editorStyles.liveDockButtonActive,
+                  ]}
+                  onPress={() => {
+                    setShowConferenceChatPanel(false);
+                    setShowConferenceRosterPanel(false);
+                    setShowLiveControls(v => !v);
+                  }}
+                >
+                  <Text style={editorStyles.liveDockButtonIcon}>⋯</Text>
+                  <Text style={editorStyles.liveDockButtonLabel}>Controls</Text>
+                </Pressable>
+              </>
+            )}
           </View>
         )}
                     
+        {isLiveStarted && !isConferenceMode && (
+          <View
+            style={{
+              position: 'absolute',
+              left: 18,
+              right: 18,
+              bottom: insets.bottom + endBarHeight + mediaBarHeight + (showCommentInput ? 212 : 12),
+              zIndex: 16,
+              flexDirection: 'row',
+              justifyContent: 'center',
+              gap: 10,
+            }}
+          >
+            {['🔥', '💨', '🏁', '⚡', '🎯'].map(emoji => (
+              <Pressable
+                key={emoji}
+                style={{
+                  minWidth: 58,
+                  borderRadius: 18,
+                  paddingVertical: 10,
+                  paddingHorizontal: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'rgba(6,12,20,0.94)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(157,230,255,0.14)',
+                }}
+                onPress={() => {
+                  void sendLiveReaction(emoji);
+                }}
+              >
+                <Text style={{ fontSize: 18 }}>{emoji}</Text>
+                <Text style={{ color: 'white', fontSize: 10, fontWeight: '800', marginTop: 2 }}>
+                  {liveReactionCounts[emoji] || 0}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
         {/* Comment input bar (toggles from media editor) */}
         {isLiveStarted && !isConferenceMode && showCommentInput && (
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={[
-              editorStyles.liveCommentInputBar,
-              replyingToLiveComment
-                ? {
-                    top: SCREEN_HEIGHT * 0.43,
-                    left: 16,
-                    right: SCREEN_WIDTH * 0.22,
-                    opacity: 0.98,
-                  }
-                : {
-                    bottom: insets.bottom + endBarHeight + mediaBarHeight + 8,
-                    opacity: 1,
-                  },
+              editorStyles.liveCommentComposerPanel,
+              {
+                bottom: insets.bottom + endBarHeight + mediaBarHeight + 8,
+              },
             ]}
           >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: 'rgba(6,12,20,0.96)',
-                borderRadius: 16,
-                paddingHorizontal: 10,
-                paddingVertical: 8,
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.08)',
-              }}
+            <View style={editorStyles.livePanelHeader}>
+              <Text style={editorStyles.livePanelTitle}>Inbox</Text>
+              <Pressable onPress={() => setShowCommentInput(false)}>
+                <Text style={editorStyles.livePanelClose}>Close</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              style={{ maxHeight: 126, marginBottom: 10 }}
+              contentContainerStyle={{ gap: 8, paddingBottom: 4 }}
+              showsVerticalScrollIndicator={false}
             >
+              {recentLiveComments.length === 0 ? (
+                <Text style={editorStyles.livePanelEmptyText}>No comments yet.</Text>
+              ) : (
+                recentLiveComments.slice(0, 4).map((c: any, idx: number) => (
+                  <Pressable
+                    key={String(c?.id || `comment_preview_${idx}`)}
+                    style={editorStyles.liveComposerCommentRow}
+                    onPress={() =>
+                      onEchoBack({
+                        id: String(c?.id || ''),
+                        from: String(c?.from || ''),
+                        text: String(c?.text || ''),
+                      })
+                    }
+                  >
+                    <Text style={editorStyles.livePanelCommentAuthor}>
+                      {safeCommentHandle((c as any)?.from || 'User')}
+                    </Text>
+                    <Text style={editorStyles.livePanelBody} numberOfLines={2}>
+                      {String((c as any)?.text || '')}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+            <View style={editorStyles.liveComposerInputShell}>
               {!!replyingToLiveComment && (
                 <View style={{ marginRight: 8, maxWidth: 120 }}>
                   <Text
@@ -29205,15 +30178,7 @@ const LiveStreamModal = ({
                 }}
               >
                 <Pressable
-                  style={{
-                    height: 34,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: '#00B6FF',
-                    opacity: sendingLiveComment ? 0.7 : 1,
-                  }}
+                  style={editorStyles.liveComposerSendButton}
                   disabled={sendingLiveComment}
                   onPress={sendLiveComment}
                 >
@@ -29225,6 +30190,279 @@ const LiveStreamModal = ({
             </View>
           </KeyboardAvoidingView>
         )}
+        <Modal
+          visible={isLiveStarted && showLiveControls}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowLiveControls(false)}
+        >
+          <View style={editorStyles.liveSheetBackdrop}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setShowLiveControls(false)}
+            />
+            <View style={editorStyles.liveControlSheet}>
+              <View style={editorStyles.livePanelHeader}>
+                <View>
+                  <Text style={editorStyles.livePanelTitle}>Session controls</Text>
+                  <Text style={editorStyles.livePanelSubtitle}>
+                    Only backend-backed or device-supported actions are surfaced here.
+                  </Text>
+                </View>
+                <Pressable onPress={() => setShowLiveControls(false)}>
+                  <Text style={editorStyles.livePanelClose}>Close</Text>
+                </Pressable>
+              </View>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={{ gap: 12, paddingBottom: 12 }}
+              >
+                <View style={editorStyles.liveSheetGrid}>
+                  <Pressable
+                    style={editorStyles.liveSheetAction}
+                    onPress={() => {
+                      setShowLiveControls(false);
+                      if (isConferenceMode) {
+                        openConferenceInviteOptions();
+                      } else {
+                        void inviteCoHost();
+                      }
+                    }}
+                  >
+                    <Text style={editorStyles.liveSheetActionIcon}>📨</Text>
+                    <Text style={editorStyles.liveSheetActionLabel}>Invite</Text>
+                  </Pressable>
+                  <Pressable
+                    style={editorStyles.liveSheetAction}
+                    onPress={() => {
+                      setShowLiveControls(false);
+                      void handleShareDriftLink();
+                    }}
+                  >
+                    <Text style={editorStyles.liveSheetActionIcon}>🔗</Text>
+                    <Text style={editorStyles.liveSheetActionLabel}>Share Link</Text>
+                  </Pressable>
+                  <Pressable
+                    style={editorStyles.liveSheetAction}
+                    onPress={() => {
+                      setShowLiveControls(false);
+                      void handleScreenShare();
+                    }}
+                  >
+                    <Text style={editorStyles.liveSheetActionIcon}>🖥️</Text>
+                    <Text style={editorStyles.liveSheetActionLabel}>
+                      {isScreenSharing ? 'Stop Share' : 'Screen Share'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={editorStyles.liveSheetAction}
+                    onPress={() => {
+                      setShowLiveControls(false);
+                      void toggleRecording();
+                    }}
+                  >
+                    <Text style={editorStyles.liveSheetActionIcon}>⏺️</Text>
+                    <Text style={editorStyles.liveSheetActionLabel}>
+                      {isRecording ? 'Stop Recording' : 'Record'}
+                    </Text>
+                  </Pressable>
+                  {!isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        createStoryCard();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🧾</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Story Card</Text>
+                    </Pressable>
+                  )}
+                  {!isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        createLivePoll();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>📊</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Poll</Text>
+                    </Pressable>
+                  )}
+                  {!isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        handleSetLiveGoal();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🎯</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Goal</Text>
+                    </Pressable>
+                  )}
+                  {!isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        showSoundBoard();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🔊</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Soundboard</Text>
+                    </Pressable>
+                  )}
+                  {!isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        openVisualFiltersMenu();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🎛️</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Filters</Text>
+                    </Pressable>
+                  )}
+                  {!isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        showLiveAnalytics();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>📈</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Analytics</Text>
+                    </Pressable>
+                  )}
+                  {!isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        reportCurrentLiveSession();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🚩</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Report</Text>
+                    </Pressable>
+                  )}
+                  {isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        void beginConferencePresentation();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>📽️</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>
+                        {isConferencePresentingBusy ? 'Preparing' : 'Present'}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        setShowConferenceToolsPanel(v => !v);
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🗂️</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Tools</Text>
+                    </Pressable>
+                  )}
+                  {isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        toggleVirtualBackground();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🧩</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Background</Text>
+                    </Pressable>
+                  )}
+                  {isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        setShowLiveControls(false);
+                        toggleBeautyFilter();
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>✨</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Beauty</Text>
+                    </Pressable>
+                  )}
+                  <Pressable
+                    style={editorStyles.liveSheetAction}
+                    onPress={() => {
+                      try {
+                        const next = !micMuted;
+                        setMicMuted(next);
+                        engineRef.current?.enableLocalAudio?.(!next);
+                        engineRef.current?.muteLocalAudioStream?.(next);
+                      } catch {}
+                      setShowLiveControls(false);
+                    }}
+                  >
+                    <Text style={editorStyles.liveSheetActionIcon}>{micMuted ? '🔇' : '🎤'}</Text>
+                    <Text style={editorStyles.liveSheetActionLabel}>
+                      {micMuted ? 'Unmute' : 'Mute'}
+                    </Text>
+                  </Pressable>
+                  {isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        try {
+                          const next = !cameraHidden;
+                          setCameraHidden(next);
+                          engineRef.current?.muteLocalVideoStream?.(next);
+                          engineRef.current?.enableLocalVideo?.(!next);
+                        } catch {}
+                        setShowLiveControls(false);
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>
+                        {cameraHidden ? '📷' : '🎥'}
+                      </Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>
+                        {cameraHidden ? 'Show Camera' : 'Hide Camera'}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {isConferenceMode && (
+                    <Pressable
+                      style={editorStyles.liveSheetAction}
+                      onPress={() => {
+                        try {
+                          engineRef.current?.switchCamera?.();
+                        } catch {}
+                        setShowLiveControls(false);
+                      }}
+                    >
+                      <Text style={editorStyles.liveSheetActionIcon}>🔄</Text>
+                      <Text style={editorStyles.liveSheetActionLabel}>Flip Camera</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <View style={editorStyles.livePanelCard}>
+                  <Text style={editorStyles.livePanelEyebrow}>Live snapshot</Text>
+                  <Text style={editorStyles.livePanelBody}>
+                    {liveViewerCount} live • {joinedParticipants.length} crew • {liveComments.length} comments • {liveReactionTotal} reactions
+                  </Text>
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
         {/* Cross-platform text prompt */}
         {promptVisible && (
           <View
@@ -29311,42 +30549,17 @@ const LiveStreamModal = ({
             <View
               style={{
                 flexDirection: 'row',
-                justifyContent: 'center',
+                justifyContent: 'flex-end',
                 alignItems: 'center',
                 gap: 10,
               }}
             >
               <Pressable
-                style={[
-                  styles.closeBtn,
-                  {
-                    marginVertical: 0,
-                    alignSelf: 'center',
-                    backgroundColor: 'red',
-                  },
-                ]}
+                style={editorStyles.liveBottomCloseButton}
                 onPress={handleEndDrift}
               >
-                <Text style={styles.closeText}>
-                  {isConferenceMode ? 'End Conference' : 'End Vibe'}
-                </Text>
+                <Text style={editorStyles.liveBottomCloseText}>X</Text>
               </Pressable>
-              {!isConferenceMode && (
-                <View
-                  style={{
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.24)',
-                    paddingHorizontal: 10,
-                    paddingVertical: 8,
-                    backgroundColor: 'rgba(0,0,0,0.35)',
-                  }}
-                >
-                  <Text style={{ color: 'white', fontWeight: '800', fontSize: 12 }}>
-                    {livePrivacy.toUpperCase()}
-                  </Text>
-                </View>
-              )}
             </View>
           ) : null}
         </View>
@@ -31073,6 +32286,7 @@ const authStyles = StyleSheet.create({
 });
                     
                     
+
 
 
 

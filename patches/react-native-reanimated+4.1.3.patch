@@ -1,0 +1,18 @@
+diff --git a/node_modules/react-native-reanimated/android/build.gradle b/node_modules/react-native-reanimated/android/build.gradle
+index 56787bd..afecfa0 100644
+--- a/node_modules/react-native-reanimated/android/build.gradle
++++ b/node_modules/react-native-reanimated/android/build.gradle
+@@ -361,5 +361,11 @@ if (project != rootProject) {
+     afterEvaluate {
+         tasks.matching { it.name.startsWith("configureCMakeDebug") }.configureEach {
+             dependsOn(findProject(":react-native-worklets").tasks.getByName("prefabDebugPackage"))
+         }
+         tasks.matching { it.name.startsWith("configureCMakeRelWithDebInfo") }.configureEach {
+             dependsOn(findProject(":react-native-worklets").tasks.getByName("prefabReleasePackage"))
+         }
+         tasks.getByName("externalNativeBuildDebug").dependsOn(findProject(":react-native-worklets").tasks.getByName("externalNativeBuildDebug"))
+         tasks.getByName("externalNativeBuildRelease").dependsOn(findProject(":react-native-worklets").tasks.getByName("externalNativeBuildRelease"))
++        tasks.getByName("externalNativeBuildDebug").dependsOn(findProject(":react-native-worklets").tasks.getByName("prefabDebugPackage"))
++        tasks.getByName("externalNativeBuildRelease").dependsOn(findProject(":react-native-worklets").tasks.getByName("prefabReleasePackage"))
+     }
+ }

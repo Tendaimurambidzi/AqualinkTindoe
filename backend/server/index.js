@@ -833,6 +833,9 @@ app.post('/invites/accept', (req, res) => {
 const liveRoomSse = new Map(); // liveId -> [res]
 const driftRooms = new Map(); // liveId -> { id, participants:Set<uid>, requests:Array<{uid,name}> }
 const meetingFilesByLive = new Map(); // liveId -> Array<meetingFile>
+const liveStoryCards = new Map(); // liveId -> story cards
+const liveReactionEvents = new Map(); // liveId -> reactions
+const liveMomentItems = new Map(); // liveId -> moments
 
 function roomBroadcast(liveId, payload) {
   const list = liveRoomSse.get(liveId) || [];
@@ -976,6 +979,102 @@ app.get('/drift/state', (req, res) => {
     participants: Array.from(room.participants || []),
     requests: room.requests || [],
   });
+});
+
+app.get('/live/experience-state', async (req, res) => {
+  const liveId = String(req.query?.liveId || '').trim();
+  if (!liveId) return bad(res, 'Missing liveId');
+  return res.json({
+    liveId,
+    storyCards: liveStoryCards.get(liveId) || [],
+    reactions: liveReactionEvents.get(liveId) || [],
+    moments: liveMomentItems.get(liveId) || [],
+  });
+});
+
+app.post('/live/story-card', async (req, res) => {
+  const liveId = String(req.body?.liveId || '').trim();
+  const title = String(req.body?.title || '').trim();
+  const body = String(req.body?.body || '').trim();
+  const author = String(req.body?.author || 'Host').trim();
+  const tag = String(req.body?.tag || 'LIVE UPDATE').trim();
+  if (!liveId || !title) return bad(res, 'Missing liveId or title');
+
+  const item = {
+    id: `card_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    title,
+    body,
+    author,
+    tag,
+    createdAtMs: Date.now(),
+  };
+  const existing = liveStoryCards.get(liveId) || [];
+  liveStoryCards.set(liveId, [item, ...existing].slice(0, 20));
+
+  if (adminReady) {
+    try {
+      await admin.firestore().collection('live').doc(liveId).collection('story_cards').doc(item.id).set(item);
+    } catch (e) {
+      console.warn('Failed to mirror story card to Firestore:', e?.message || e);
+    }
+  }
+
+  roomBroadcast(liveId, { type: 'story_card', item });
+  return res.json({ ok: true, item });
+});
+
+app.post('/live/reaction', async (req, res) => {
+  const liveId = String(req.body?.liveId || '').trim();
+  const emoji = String(req.body?.emoji || '').trim();
+  const from = String(req.body?.from || 'Crew').trim();
+  const fromUid = String(req.body?.fromUid || '').trim();
+  if (!liveId || !emoji) return bad(res, 'Missing liveId or emoji');
+
+  const item = {
+    id: `reaction_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    emoji,
+    from,
+    fromUid,
+    createdAtMs: Date.now(),
+  };
+  const existing = liveReactionEvents.get(liveId) || [];
+  liveReactionEvents.set(liveId, [item, ...existing].slice(0, 120));
+
+  if (adminReady) {
+    try {
+      await admin.firestore().collection('live').doc(liveId).collection('reactions').doc(item.id).set(item);
+    } catch (e) {
+      console.warn('Failed to mirror reaction to Firestore:', e?.message || e);
+    }
+  }
+
+  roomBroadcast(liveId, { type: 'reaction', item });
+  return res.json({ ok: true, item });
+});
+
+app.post('/live/moment', async (req, res) => {
+  const liveId = String(req.body?.liveId || '').trim();
+  const text = String(req.body?.text || '').trim();
+  if (!liveId || !text) return bad(res, 'Missing liveId or text');
+
+  const item = {
+    id: `moment_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    text,
+    createdAtMs: Date.now(),
+  };
+  const existing = liveMomentItems.get(liveId) || [];
+  liveMomentItems.set(liveId, [...existing, item].slice(-40));
+
+  if (adminReady) {
+    try {
+      await admin.firestore().collection('live').doc(liveId).collection('moments').doc(item.id).set(item);
+    } catch (e) {
+      console.warn('Failed to mirror moment to Firestore:', e?.message || e);
+    }
+  }
+
+  roomBroadcast(liveId, { type: 'moment', item });
+  return res.json({ ok: true, item });
 });
 
 // -------------------- Real user management implementation --------------------
