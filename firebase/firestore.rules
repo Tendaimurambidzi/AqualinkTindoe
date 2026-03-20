@@ -189,6 +189,10 @@ service cloud.firestore {
         allow read, create, update, delete: if isAuthed();
       }
 
+      match /reactions/{reactionId} {
+        allow read, create, update, delete: if isAuthed();
+      }
+
       match /participants/{uid} {
         allow read, create, update, delete: if isAuthed();
       }

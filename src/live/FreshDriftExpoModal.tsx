@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
+  Animated,
+  Dimensions,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -17,6 +19,8 @@ import {
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
 type InviteJoinPreset = {
   liveId?: string | null;
@@ -54,6 +58,15 @@ type SearchResultItem = {
   photo?: string | null;
   username?: string | null;
   secondary?: string | null;
+};
+
+type RecentDriftItem = {
+  id: string;
+  title: string;
+  hostName: string;
+  playbackUrl?: string | null;
+  status?: string | null;
+  updatedAtMs: number;
 };
 
 type Props = {
@@ -151,6 +164,13 @@ const FreshDriftExpoModal = ({
       return null;
     }
   }, []);
+  const RNVideo = useMemo(() => {
+    try {
+      return require('react-native-video').default;
+    } catch {
+      return null;
+    }
+  }, []);
   const appId = String(cfg?.AGORA_APP_ID || '').trim();
   const defaultChannel = String(cfg?.AGORA_CHANNEL_NAME || 'SplashlineDrift').trim();
   const engineRef = useRef<any>(null);
@@ -179,6 +199,17 @@ const FreshDriftExpoModal = ({
   const [onlineInvitees, setOnlineInvitees] = useState<SearchResultItem[]>([]);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteBusyUid, setInviteBusyUid] = useState<string | null>(null);
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [recentDrifts, setRecentDrifts] = useState<RecentDriftItem[]>([]);
+  const [replayItem, setReplayItem] = useState<RecentDriftItem | null>(null);
+  const [floatingComments, setFloatingComments] = useState<
+    Array<{ id: string; text: string; fromName: string; anim: Animated.Value }>
+  >([]);
+  const [floatingReactions, setFloatingReactions] = useState<
+    Array<{ id: string; emoji: string; anim: Animated.Value; lane: number }>
+  >([]);
+  const seenCommentIdsRef = useRef<Set<string>>(new Set());
+  const seenReactionIdsRef = useRef<Set<string>>(new Set());
 
   const me = auth().currentUser;
   const meUid = me?.uid || '';
@@ -215,6 +246,13 @@ const FreshDriftExpoModal = ({
     setOnlineInvitees([]);
     setInviteLoading(false);
     setInviteBusyUid(null);
+    setShowReactionPicker(false);
+    setRecentDrifts([]);
+    setReplayItem(null);
+    setFloatingComments([]);
+    setFloatingReactions([]);
+    seenCommentIdsRef.current = new Set();
+    seenReactionIdsRef.current = new Set();
     joinedChannelRef.current = null;
   }, []);
 
@@ -375,6 +413,36 @@ const FreshDriftExpoModal = ({
       Alert.alert('Could not open invite', String(error?.message || 'This room is unavailable.'));
     });
   }, [hydrateRoom, inviteJoinPreset?.liveId, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await firestore()
+          .collection('live')
+          .orderBy('updatedAt', 'desc')
+          .limit(12)
+          .get();
+        if (cancelled) return;
+        const rows = (snap?.docs || []).map(doc => {
+          const data = doc.data() || {};
+          return {
+            id: doc.id,
+            title: String(data.title || data.liveTitle || 'Drift Expo'),
+            hostName: String(data.hostName || 'Host'),
+            playbackUrl: String(data.playbackUrl || data.recordingUrl || '').trim() || null,
+            status: String(data.status || ''),
+            updatedAtMs: toMillis(data.updatedAt) || toMillis(data.endedAt) || toMillis(data.createdAt),
+          } as RecentDriftItem;
+        });
+        setRecentDrifts(rows);
+      } catch {}
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
 
   useEffect(() => {
     if (!visible || !showInvitePanel) return;
@@ -582,6 +650,29 @@ const FreshDriftExpoModal = ({
         });
         setComments(rows);
       });
+    const unsubReactions = firestore()
+      .collection(`live/${roomId}/reactions`)
+      .orderBy('createdAt', 'asc')
+      .limit(120)
+      .onSnapshot(snap => {
+        (snap?.docs || []).forEach((doc, index) => {
+          if (seenReactionIdsRef.current.has(doc.id)) return;
+          seenReactionIdsRef.current.add(doc.id);
+          const data = doc.data() || {};
+          const emoji = String(data.emoji || '').trim();
+          if (!emoji) return;
+          const anim = new Animated.Value(0);
+          const lane = index % 3;
+          setFloatingReactions(prev => [...prev, { id: doc.id, emoji, anim, lane }].slice(-18));
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 2400,
+            useNativeDriver: true,
+          }).start(() => {
+            setFloatingReactions(prev => prev.filter(item => item.id !== doc.id));
+          });
+        });
+      });
     return () => {
       try {
         unsubRoom();
@@ -591,6 +682,9 @@ const FreshDriftExpoModal = ({
       } catch {}
       try {
         unsubComments();
+      } catch {}
+      try {
+        unsubReactions();
       } catch {}
     };
   }, [meUid, roomHostUid, roomId, visible]);
@@ -616,6 +710,40 @@ const FreshDriftExpoModal = ({
       Alert.alert('Comment failed', String(error?.message || 'Try again.'));
     }
   }, [commentText, meName, mePhoto, meUid, replyTarget, roomId]);
+
+  useEffect(() => {
+    comments.forEach(comment => {
+      if (seenCommentIdsRef.current.has(comment.id)) return;
+      seenCommentIdsRef.current.add(comment.id);
+      const anim = new Animated.Value(0);
+      setFloatingComments(prev =>
+        [...prev, { id: comment.id, text: comment.text, fromName: comment.fromName, anim }].slice(-8),
+      );
+      Animated.timing(anim, {
+        toValue: 1,
+        duration: 4200,
+        useNativeDriver: true,
+      }).start(() => {
+        setFloatingComments(prev => prev.filter(item => item.id !== comment.id));
+      });
+    });
+  }, [comments]);
+
+  const sendReaction = useCallback(
+    async (emoji: string) => {
+      if (!roomId || !meUid) return;
+      setShowReactionPicker(false);
+      try {
+        await firestore().collection(`live/${roomId}/reactions`).add({
+          emoji,
+          fromUid: meUid,
+          fromName: meName,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
+      } catch {}
+    },
+    [meName, meUid, roomId],
+  );
 
   const searchInviteTargets = useCallback(async () => {
     const query = inviteQuery.trim();
@@ -864,6 +992,9 @@ const FreshDriftExpoModal = ({
                 <Pressable style={styles.railButton} onPress={() => setShowInvitePanel(true)}>
                   <Text style={styles.railIcon}>Invite</Text>
                 </Pressable>
+                <Pressable style={styles.railButton} onPress={() => setShowReactionPicker(v => !v)}>
+                  <Text style={styles.railIcon}>React</Text>
+                </Pressable>
                 <Pressable style={styles.railButton} onPress={() => setShowComments(v => !v)}>
                   <Text style={styles.railIcon}>Chat</Text>
                 </Pressable>
@@ -903,50 +1034,89 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.railIcon}>Flip</Text>
                 </Pressable>
               </View>
-              {showComments ? (
-                <View style={[styles.commentsSheet, { bottom: insets.bottom + 88 }]}>
-                  <Text style={styles.commentsHeader}>Room chat</Text>
-                  <ScrollView
-                    style={styles.commentsScroll}
-                    contentContainerStyle={{ paddingBottom: 8 }}
-                    showsVerticalScrollIndicator={false}
-                  >
-                    {comments.length === 0 ? (
-                      <Text style={styles.emptyComments}>No comments yet.</Text>
-                    ) : (
-                      comments.map(comment => (
-                        <Pressable
-                          key={comment.id}
-                          onPress={() => setReplyTarget(comment)}
-                          style={styles.commentCard}
-                        >
-                          <View style={styles.commentAvatarWrap}>
-                            {comment.fromPhoto ? (
-                              <Image source={{ uri: comment.fromPhoto }} style={styles.commentAvatar} />
-                            ) : (
-                              <View style={[styles.commentAvatar, styles.commentAvatarFallback]}>
-                                <Text style={styles.commentAvatarFallbackText}>
-                                  {comment.fromName.charAt(0).toUpperCase()}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.commentName}>{comment.fromName}</Text>
-                            {comment.replyToText ? (
-                              <Text style={styles.replySnippet}>
-                                replying to {comment.replyToName || 'message'}: {comment.replyToText}
-                              </Text>
-                            ) : null}
-                            <Text style={styles.commentText}>{comment.text}</Text>
-                            <Text style={styles.commentTime}>{formatTimestamp(comment.createdAtMs)}</Text>
-                          </View>
-                        </Pressable>
-                      ))
-                    )}
-                  </ScrollView>
+              {showReactionPicker ? (
+                <View style={styles.reactionTray}>
+                  {['❤️', '🔥', '👏', '😂', '💯', '😍'].map(emoji => (
+                    <Pressable
+                      key={emoji}
+                      style={styles.reactionChip}
+                      onPress={() => sendReaction(emoji)}
+                    >
+                      <Text style={styles.reactionChipText}>{emoji}</Text>
+                    </Pressable>
+                  ))}
                 </View>
               ) : null}
+              {showComments ? (
+                <View pointerEvents="box-none" style={styles.commentLane}>
+                  <View style={styles.commentGuide} />
+                  {floatingComments.map((comment, idx) => (
+                    <Animated.View
+                      key={comment.id}
+                      style={[
+                        styles.floatingCommentWrap,
+                        {
+                          bottom: 150 + idx * 42,
+                          opacity: comment.anim.interpolate({
+                            inputRange: [0, 0.15, 0.7, 1],
+                            outputRange: [0, 1, 1, 0],
+                          }),
+                          transform: [
+                            {
+                              translateY: comment.anim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [0, -(SCREEN_HEIGHT * 0.34)],
+                              }),
+                            },
+                          ],
+                        },
+                      ]}
+                    >
+                      <Pressable onPress={() => {
+                        const full = comments.find(item => item.id === comment.id);
+                        if (full) setReplyTarget(full);
+                      }}>
+                        <Text style={styles.floatingCommentAuthor}>{comment.fromName}</Text>
+                        <Text style={styles.floatingCommentText} numberOfLines={2}>
+                          {comment.text}
+                        </Text>
+                      </Pressable>
+                    </Animated.View>
+                  ))}
+                </View>
+              ) : null}
+              {floatingReactions.map(item => (
+                <Animated.Text
+                  key={item.id}
+                  style={[
+                    styles.floatingReaction,
+                    {
+                      right: 18 + item.lane * 26,
+                      bottom: 140,
+                      opacity: item.anim.interpolate({
+                        inputRange: [0, 0.15, 0.8, 1],
+                        outputRange: [0, 1, 1, 0],
+                      }),
+                      transform: [
+                        {
+                          translateY: item.anim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, -(SCREEN_HEIGHT * 0.42)],
+                          }),
+                        },
+                        {
+                          scale: item.anim.interpolate({
+                            inputRange: [0, 0.2, 1],
+                            outputRange: [0.7, 1.08, 0.92],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  {item.emoji}
+                </Animated.Text>
+              ))}
               <View style={[styles.bottomComposer, { paddingBottom: insets.bottom + 14 }]}>
                 {replyTarget ? (
                   <View style={styles.replyPill}>
@@ -1113,11 +1283,67 @@ const FreshDriftExpoModal = ({
                 <Text style={styles.secondaryStartButtonText}>Join invite</Text>
               </Pressable>
             ) : null}
+            {recentDrifts.length > 0 ? (
+              <View style={styles.recentSection}>
+                <Text style={styles.recentSectionTitle}>Recent Drift Expos</Text>
+                <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                  {recentDrifts.map(item => (
+                    <Pressable
+                      key={item.id}
+                      style={styles.recentCard}
+                      onPress={() => {
+                        if (item.playbackUrl && RNVideo) {
+                          setReplayItem(item);
+                        }
+                      }}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.recentCardTitle}>
+                          {item.hostName} was live
+                        </Text>
+                        <Text style={styles.recentCardMeta}>
+                          {item.title}
+                        </Text>
+                      </View>
+                      <Text style={styles.recentCardAction}>
+                        {item.playbackUrl && RNVideo ? 'Play' : 'No replay'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            ) : null}
             <Pressable style={styles.secondaryStartButton} onPress={handleClose}>
               <Text style={styles.secondaryStartButtonText}>Close</Text>
             </Pressable>
           </View>
         )}
+        <Modal
+          visible={!!replayItem}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setReplayItem(null)}
+        >
+          <View style={styles.replayBackdrop}>
+            <View style={styles.replayCard}>
+              <Text style={styles.replayTitle}>{replayItem?.hostName || 'Drift replay'}</Text>
+              {replayItem?.playbackUrl && RNVideo ? (
+                <RNVideo
+                  source={{ uri: replayItem.playbackUrl }}
+                  style={styles.replayVideo}
+                  resizeMode="contain"
+                  controls
+                  paused={false}
+                />
+              ) : (
+                <Text style={styles.replayEmpty}>No replay file is available for this Drift Expo.</Text>
+              )}
+              <Pressable style={styles.inviteCloseButton} onPress={() => setReplayItem(null)}>
+                <Text style={styles.inviteCloseButtonText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -1219,31 +1445,62 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: '800',
   },
-  commentsSheet: {
+  reactionTray: {
     position: 'absolute',
-    left: 12,
-    right: 86,
-    maxHeight: '46%',
-    backgroundColor: 'rgba(5,10,16,0.84)',
+    right: 82,
+    bottom: 250,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: 160,
+    gap: 8,
+    backgroundColor: 'rgba(10,16,24,0.82)',
     borderRadius: 18,
-    padding: 12,
+    padding: 10,
   },
-  commentsHeader: {
+  reactionChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reactionChipText: {
+    fontSize: 22,
+  },
+  commentLane: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 220,
+  },
+  commentGuide: {
+    position: 'absolute',
+    left: 8,
+    bottom: 130,
+    width: 2,
+    height: SCREEN_HEIGHT * 0.38,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+  },
+  floatingCommentWrap: {
+    position: 'absolute',
+    left: 16,
+    maxWidth: 180,
+  },
+  floatingCommentAuthor: {
     color: '#9de8ff',
     fontWeight: '800',
-    marginBottom: 10,
+    marginBottom: 2,
   },
-  commentsScroll: {
-    maxHeight: '100%',
+  floatingCommentText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '700',
   },
-  emptyComments: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
-  },
-  commentCard: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
+  floatingReaction: {
+    position: 'absolute',
+    fontSize: 28,
   },
   commentAvatarWrap: {
     paddingTop: 2,
@@ -1534,6 +1791,69 @@ const styles = StyleSheet.create({
   secondaryStartButtonText: {
     color: 'white',
     fontWeight: '800',
+  },
+  recentSection: {
+    marginBottom: 12,
+  },
+  recentSectionTitle: {
+    color: '#9de8ff',
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  recentCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#0d1825',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+  recentCardTitle: {
+    color: 'white',
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  recentCardMeta: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 12,
+  },
+  recentCardAction: {
+    color: '#10c9ff',
+    fontWeight: '800',
+  },
+  replayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  replayCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#091019',
+    borderRadius: 24,
+    padding: 18,
+  },
+  replayTitle: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 12,
+  },
+  replayVideo: {
+    width: '100%',
+    height: 320,
+    backgroundColor: '#000',
+    borderRadius: 16,
+    marginBottom: 14,
+  },
+  replayEmpty: {
+    color: 'rgba(255,255,255,0.72)',
+    marginBottom: 14,
   },
   cameraOffStage: {
     alignItems: 'center',

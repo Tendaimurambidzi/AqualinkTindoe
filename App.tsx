@@ -7872,12 +7872,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const reversedData = data.reverse().map((w: any) => {
               const hasOwner =
                 typeof w.ownerUid !== 'undefined' && w.ownerUid !== null;
-              if (hasOwner) return w;
-              const n = String(
-                (w.authorName || '').replace(/^[@/]+/, ''),
-              ).toLowerCase();
-              return {
+              const next = {
                 ...w,
+                mediaItems: Array.isArray(w.mediaItems)
+                  ? w.mediaItems.filter((item: any) => !!item?.uri)
+                  : null,
+              };
+              if (hasOwner) return next;
+              const n = String((w.authorName || '').replace(/^[@/]+/, '')).toLowerCase();
+              return {
+                ...next,
                 ownerUid:
                   myUid && n && n === myNameNorm ? myUid : w.ownerUid || null,
               };
@@ -7922,13 +7926,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             type: w.media?.type,
             fileName: w.media?.fileName,
           },
+          mediaItems: Array.isArray(w.mediaItems)
+            ? w.mediaItems.map(item => ({
+                uri: item?.uri,
+                type: item?.type,
+                fileName: item?.fileName,
+              }))
+            : null,
           audio: w.audio,
           captionText: w.captionText,
+          postType: w.postType ?? null,
+          link: (w as any).link ?? null,
+          mediaEdits: w.mediaEdits ?? null,
           playbackUrl: w.playbackUrl ?? null,
           muxStatus: w.muxStatus ?? null,
           authorName:
             w.authorName ?? (profileName || accountCreationHandle || null),
           ownerUid: w.ownerUid ?? myUidForPersist,
+          counts: w.counts ?? { splashes: 0, echoes: 0 },
         }));
         const payload = JSON.stringify(compact);
         if (AS && typeof AS.setItem === 'function') {
