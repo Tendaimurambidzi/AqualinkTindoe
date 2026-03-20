@@ -179,6 +179,7 @@ service cloud.firestore {
 
     match /live/{liveId} {
       allow read: if isAuthed();
+      allow create, update, delete: if isAuthed();
 
       match /invite_status/{uid} {
         allow read, create, update, delete: if isAuthed();

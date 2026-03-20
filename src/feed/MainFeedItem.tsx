@@ -1090,6 +1090,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                           onPress={() => openMediaViewer(mediaIndex)}
                           style={{
                             width: '50%',
+                            flexBasis: '50%',
+                            maxWidth: '50%',
                             padding: 2,
                           }}
                         >

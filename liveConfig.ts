@@ -4,17 +4,17 @@
 import { Platform } from 'react-native';
 
 // Provided App ID
-export const AGORA_APP_ID = '02c4691ff2124a5997025c736f9d6ccf';
+export const AGORA_APP_ID = '7381413158e74dfbaae26cbc727b4d18';
 
 // Provided, pre-generated token for a local test channel (publisher role).
 // Tokens expire; for production use a token server.
-export const AGORA_STATIC_TOKEN = '007eJxTYLjA8HTaraUnPPf+XKEe/+KGbpfaigOdZdG9FpPzm/4f3r5LgcHAKNnEzNIwLc3I0Mgk0dTS0tzAyDTZ3NgszTLFLDk57de/vxkNgYwM7dfvMzMyQCCIz8YQkpmXkp/KwAAAs6Mk9Q==';
+export const AGORA_STATIC_TOKEN = '';
 
 // Default shared live channel used by the current invite-badge flow.
-export const AGORA_CHANNEL_NAME = 'AqualinkSharedLive';
+export const AGORA_CHANNEL_NAME = 'SplashlineDrift';
 
 // Optional: App Certificate (never embed in production apps; used server-side for token generation)
-export const AGORA_APP_CERTIFICATE = '1a85bc3d65704dc7b49d259c40d0c58f';
+export const AGORA_APP_CERTIFICATE = '';
 
 // Runtime backend host depends on the emulator/simulator
 const BACKEND_HOST = Platform.select({

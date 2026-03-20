@@ -207,6 +207,7 @@ service cloud.firestore {
     // Host writes pending status; invitee updates accepted/missed.
     match /live/{liveId} {
       allow read: if isAuthed();
+      allow create, update, delete: if isAuthed();
 
       match /invite_status/{uid} {
         allow read: if isAuthed();

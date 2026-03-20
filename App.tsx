@@ -88,6 +88,7 @@ import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestio
 import { registerNoticeBoard } from './src/services/schoolService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import MainFeedItem from './src/feed/MainFeedItem';
+import FreshDriftExpoModal from './src/live/FreshDriftExpoModal';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
 import { appTokens } from './src/theme/tokens';
 import SectionHeaderRow from './src/components/SectionHeaderRow';
@@ -6441,8 +6442,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     const unsubInbox = firestore()
       .collection(`users/${activeUid}/live_invites`)
-      .orderBy('createdAt', 'desc')
-      .limit(50)
+      .limit(100)
       .onSnapshot(
         snap => {
           inboxLoaded = true;
@@ -6467,8 +6467,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               .slice()
               .sort(
                 (a: any, b: any) =>
-                  toJSDate((b.data() || {}).createdAt).getTime() -
-                  toJSDate((a.data() || {}).createdAt).getTime(),
+                  Math.max(
+                    Number((b.data() || {}).createdAtMs || 0),
+                    toJSDate((b.data() || {}).createdAt).getTime(),
+                  ) -
+                  Math.max(
+                    Number((a.data() || {}).createdAtMs || 0),
+                    toJSDate((a.data() || {}).createdAt).getTime(),
+                  ),
               )[0] || null;
           if (!doc) {
             inboxInvite = null;
@@ -12049,38 +12055,56 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // SD Card Media Picker - All file types (images, videos, audio)
   const handleSDCardPicker = async () => {
     try {
-      const result = await AudioPicker.pickAudio();
-      
-      if (!result || !result.uri) {
+      const result = AudioPicker.pickFiles
+        ? await AudioPicker.pickFiles()
+        : [await AudioPicker.pickAudio()];
+      const pickedItems = Array.isArray(result) ? result : result ? [result] : [];
+
+      if (pickedItems.length === 0) {
         console.log('No file selected from SD card');
         return;
       }
-
-      const uri = result.uri;
-      const fileName = result.name || uri.split('/').pop() || '';
-      const mimeType = result.type || '';
-      
-      const isAudio = mimeType.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
-      const isVideo = mimeType.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|3gp)$/i.test(fileName);
-      const isImage = mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(fileName);
-      
-      if (isAudio) {
-        setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
+      const mediaAssets: Asset[] = [];
+      let attachedAudio = false;
+      pickedItems.forEach((entry: any) => {
+        const uri = String(entry?.uri || '').trim();
+        if (!uri) return;
+        const fileName = entry?.name || uri.split('/').pop() || '';
+        const mimeType = entry?.type || '';
+        const isAudio =
+          mimeType.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(fileName);
+        const isVideo =
+          mimeType.startsWith('video/') || /\.(mp4|mov|avi|mkv|webm|3gp)$/i.test(fileName);
+        const isImage =
+          mimeType.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(fileName);
+        if (isAudio && !attachedAudio && pickedItems.length === 1) {
+          setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
+          attachedAudio = true;
+          return;
+        }
+        mediaAssets.push({
+          uri,
+          type:
+            mimeType ||
+            (isVideo
+              ? 'video/mp4'
+              : isImage
+              ? 'image/jpeg'
+              : isAudio
+              ? 'audio/mpeg'
+              : 'application/octet-stream'),
+          fileName,
+        } as Asset);
+      });
+      if (mediaAssets.length > 0) {
+        appendUnifiedPostMediaAssets(mediaAssets);
+        notifySuccess(
+          mediaAssets.length > 1
+            ? `${mediaAssets.length} files selected from SD card`
+            : 'Media selected from SD card',
+        );
+      } else if (attachedAudio) {
         notifySuccess('Audio attached from SD card');
-      } else if (isVideo || isImage) {
-        appendUnifiedPostMediaAssets([{
-          uri,
-          type: mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
-          fileName,
-        } as Asset]);
-        notifySuccess('Media selected from SD card');
-      } else {
-        appendUnifiedPostMediaAssets([{
-          uri,
-          type: mimeType || 'application/octet-stream',
-          fileName,
-        } as Asset]);
-        notifySuccess('File selected from SD card');
       }
     } catch (err: any) {
       if (err?.code === 'CANCELLED') {
@@ -21219,23 +21243,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       />
 
       {/* GO DRIFT (LIVE) */}
-      <LiveStreamModal
-        // Pass required styles down to the modal to fix scope issue
-        styles={{
-          input: styles.input,
-          primaryBtn: styles.primaryBtn,
-          primaryBtnText: styles.primaryBtnText,
-          closeBtn: styles.closeBtn,
-          closeText: styles.closeText,
-          secondaryBtn: styles.secondaryBtn,
-          secondaryBtnText: styles.secondaryBtnText,
-        }}
+      <FreshDriftExpoModal
         visible={showLive}
         isChartered={isCharteredDrift}
         searchOceanEntities={searchOceanEntities}
-        bridge={bridge}
-        dataSaver={dataSaver}
-        isWifi={isWifi}
         inviteJoinPreset={liveInviteJoinPreset}
         onClose={() => {
           setShowLive(false);
