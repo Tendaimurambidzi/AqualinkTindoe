@@ -890,25 +890,26 @@ app.post('/drift/request', (req, res) => {
 app.post('/drift/accept', (req, res) => {
   try {
     const liveId = String(req.body?.liveId || '').trim();
-    const requesterUid = Number(req.body?.requesterUid || 0);
+    const requesterUidRaw = String(req.body?.requesterUid || '').trim();
     const channel = String(req.body?.channel || '').trim();
     const hostUid = String(req.body?.hostUid || '').trim();
-    if (!liveId || !requesterUid) return bad(res, 'Missing liveId/requesterUid');
+    if (!liveId || !requesterUidRaw) return bad(res, 'Missing liveId/requesterUid');
     
     // Check if users have blocked each other
     if (hostUid) {
-      const hostBlocked = blockedUsers.get(hostUid)?.has(String(requesterUid)) || false;
-      const requesterBlocked = blockedUsers.get(String(requesterUid))?.has(hostUid) || false;
+      const hostBlocked = blockedUsers.get(hostUid)?.has(requesterUidRaw) || false;
+      const requesterBlocked = blockedUsers.get(requesterUidRaw)?.has(hostUid) || false;
       if (hostBlocked || requesterBlocked) {
-        console.log(`Drift accept blocked: ${hostUid} <-> ${requesterUid}`);
+        console.log(`Drift accept blocked: ${hostUid} <-> ${requesterUidRaw}`);
         return bad(res, 'User is blocked', 403);
       }
     }
     
     const room = driftRooms.get(liveId) || { id: liveId, participants: new Set(), requests: [] };
     driftRooms.set(liveId, room);
-    room.requests = room.requests.filter((r) => r.uid !== String(requesterUid));
-    room.participants.add(String(requesterUid));
+    room.requests = room.requests.filter((r) => String(r.uid) !== requesterUidRaw);
+    room.participants.add(requesterUidRaw);
+    const requesterRtcUid = toAgoraUidFromAppUid(requesterUidRaw);
     let token = null;
     if (AGORA_APP_ID && AGORA_APP_CERTIFICATE && channel) {
       const currentTs = Math.floor(Date.now() / 1000);
@@ -917,13 +918,13 @@ app.post('/drift/accept', (req, res) => {
         AGORA_APP_ID,
         AGORA_APP_CERTIFICATE,
         channel,
-        requesterUid,
-        RtcRole.SUBSCRIBER,
+        requesterRtcUid,
+        RtcRole.PUBLISHER,
         privilegeExpireTs
       );
     }
-    roomBroadcast(liveId, { type: 'accepted', uid: String(requesterUid) });
-    return res.json({ ok: true, token });
+    roomBroadcast(liveId, { type: 'accepted', uid: requesterUidRaw, rtcUid: requesterRtcUid });
+    return res.json({ ok: true, token, rtcUid: requesterRtcUid, requesterUid: requesterUidRaw });
   } catch (e) {
     console.error('drift/accept error', e);
     return bad(res, 'Failed to accept', 500);

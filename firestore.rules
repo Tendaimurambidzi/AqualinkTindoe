@@ -109,13 +109,22 @@ service cloud.firestore {
                       && request.resource.data.text.size() <= 2000;
 
         // Update only by the author; only text can change
-        allow update: if isAuthed()
-                      && (
-                        (resource.data.userUid == request.auth.uid) ||
-                        (resource.data.authorId == request.auth.uid)
+        allow update: if isAuthed() && (
+                      (
+                        (
+                          (resource.data.userUid == request.auth.uid) ||
+                          (resource.data.authorId == request.auth.uid)
+                        )
+                        && request.resource.data.diff(resource.data)
+                             .changedKeys().hasOnly(["text", "updatedAt"])
+                      ) ||
+                      (
+                        request.resource.data.diff(resource.data)
+                          .changedKeys().hasOnly(["hugs", "huggedBy"])
+                        && (!('hugs' in request.resource.data) || request.resource.data.hugs is number)
+                        && (!('huggedBy' in request.resource.data) || request.resource.data.huggedBy is map)
                       )
-                      && request.resource.data.diff(resource.data)
-                           .changedKeys().hasOnly(["text"]);
+                    );
 
         allow delete: if isAuthed()
                       && (
@@ -202,6 +211,14 @@ service cloud.firestore {
       match /invite_status/{uid} {
         allow read: if isAuthed();
         allow create, update, delete: if isAuthed();
+      }
+
+      match /comments/{commentId} {
+        allow read, create, update, delete: if isAuthed();
+      }
+
+      match /participants/{uid} {
+        allow read, create, update, delete: if isAuthed();
       }
     }
   }

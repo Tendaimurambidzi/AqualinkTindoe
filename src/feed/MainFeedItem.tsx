@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput, StyleSheet, Modal } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
@@ -63,6 +63,7 @@ const isImageAsset = (asset: Asset | null | undefined): boolean => {
 type Vibe = {
   id: string;
   media?: Asset | null;
+  mediaItems?: Asset[] | null;
   audio?: { uri: string; name?: string } | null;
   postType?: string | null;
   mediaEdits?: {
@@ -158,6 +159,7 @@ interface MainFeedItemProps {
   setEchoesPageSize: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   videoStyleFor: (id: string) => any;
   isVideoAsset: (asset: Asset | null | undefined) => boolean;
+  onReplyToEcho: (waveId: string, echo: any) => void;
 }
 
 const MainFeedItem = memo<MainFeedItemProps>(({
@@ -219,6 +221,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   setEchoesPageSize,
   videoStyleFor,
   isVideoAsset,
+  onReplyToEcho,
 }) => {
   const [status, setStatus] = useState<string>('');
   const [isHereNow, setIsHereNow] = useState<boolean>(false);
@@ -232,6 +235,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [audioControlsVisible, setAudioControlsVisible] = useState(false);
   const [overlayAudioLoaded, setOverlayAudioLoaded] = useState(false);
   const [overlayAudioStarted, setOverlayAudioStarted] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
   const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
   const [preferFallbackVideoSource, setPreferFallbackVideoSource] = useState(false);
@@ -384,6 +389,15 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
   const mediaUri = String(item.media?.uri || '').trim();
   const mediaType = String(item.media?.type || '').toLowerCase();
+  const galleryMediaItems = useMemo(() => {
+    if (Array.isArray(item.mediaItems) && item.mediaItems.length > 0) {
+      return item.mediaItems.filter(asset => !!asset?.uri);
+    }
+    return item.media?.uri ? [item.media] : [];
+  }, [item.media, item.mediaItems]);
+  const hasMultiMediaGrid = galleryMediaItems.length > 1;
+  const previewGridItems = galleryMediaItems.slice(0, 4);
+  const hiddenGridCount = Math.max(0, galleryMediaItems.length - 4);
   const explicitPostType = String(item.postType || '').toLowerCase();
   const isExplicitVideo = explicitPostType === 'video';
   const isExplicitImage = explicitPostType === 'image';
@@ -544,6 +558,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       });
     }
   }, [hasImageMedia, item.id, revealedImages, setRevealedImages, recordImageReach]);
+  const openMediaViewer = useCallback((startIndex: number) => {
+    setViewerIndex(Math.max(0, Math.min(startIndex, galleryMediaItems.length - 1)));
+    setViewerVisible(true);
+  }, [galleryMediaItems.length]);
 
   const handleTextPostPress = useCallback(() => {
     setPreservedScrollPosition(currentIndex);
@@ -722,14 +740,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   }, [getEchoHugState, item.id, myUid]);
 
   const handleEchoReply = useCallback((echo: any) => {
-    // Open the main echo modal, but pass context that this is a reply
-    // The modal will handle saving to the replies subcollection
-    setEchoWaveId(item.id);
-    setCurrentIndex(index);
-    // Store the echo ID we're replying to in a way the modal can access
-    // For now, we'll use the same modal but the logic will be in App.tsx
-    setShowEchoes(true);
-  }, [item.id, index, setEchoWaveId, setCurrentIndex, setShowEchoes]);
+    onReplyToEcho(item.id, echo);
+  }, [item.id, onReplyToEcho]);
 
   // Fetch replies for a specific echo
   const fetchRepliesForEcho = useCallback(async (echoId: string) => {
@@ -782,9 +794,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     const { hugs, hugged } = getEchoHugState(echo);
     const showActions = activeEchoActionId === echo.id;
     const replies = echoReplies[echo.id] || [];
-    const replyPreview = replyPreviews[echo.id];
     const hasReplies = (echo.replyCount || 0) > 0;
     const isExpanded = expandedReplies[echo.id];
+    const replyCountLabel = `Reply(${echo.replyCount || 0})`;
+    const hugCountLabel = `Hug(${hugs})`;
     
     return (
       <View
@@ -797,9 +810,21 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         }}
       >
         <Pressable
-          onPress={() =>
-            setActiveEchoActionId(prev => (prev === echo.id ? null : echo.id))
-          }
+          onPress={() => {
+            const nextIsActive = activeEchoActionId !== echo.id;
+            setActiveEchoActionId(prev => (prev === echo.id ? null : echo.id));
+            if (hasReplies && nextIsActive) {
+              setExpandedReplies(prev => {
+                const isExpanding = !prev[echo.id];
+                if (isExpanding && !echoReplies[echo.id]) {
+                  fetchRepliesForEcho(echo.id);
+                }
+                return { ...prev, [echo.id]: isExpanding };
+              });
+            } else if (hasReplies && !nextIsActive) {
+              setExpandedReplies(prev => ({ ...prev, [echo.id]: false }));
+            }
+          }}
         >
           <Text style={{ color: 'black', fontSize: 12, fontWeight: '600', marginBottom: 2 }}>
             {displayHandle(echo.uid, echo.userName || echo.uid)}
@@ -812,36 +837,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           </Text>
         </Pressable>
 
-        {/* Reply Preview - Show most recent reply if exists and not expanded */}
-        {hasReplies && !isExpanded && replyPreview && (
-          <View style={{ marginTop: 8, marginLeft: 16, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: '#1e88e5' }}>
-            <Text style={{ color: '#555', fontSize: 11, fontWeight: '600' }}>
-              {displayHandle(replyPreview.uid, replyPreview.userName || replyPreview.uid)}
-            </Text>
-            <Text style={{ color: '#666', fontSize: 12 }}>
-              {replyPreview.text}
-            </Text>
-            <Text style={{ color: 'gray', fontSize: 9 }}>
-              {replyPreview.createdAt ? formatDefiniteTime(replyPreview.createdAt) : 'just now'}
-            </Text>
-          </View>
-        )}
-
-        {/* View More Replies Button */}
-        {hasReplies && !isExpanded && (echo.replyCount || 0) > 1 && (
-          <Pressable
-            onPress={() => toggleReplies(echo.id)}
-            style={{ marginTop: 6, marginLeft: 16 }}
-          >
-            <Text style={{ color: '#1e88e5', fontSize: 11, fontWeight: '600' }}>
-              View {(echo.replyCount || 0) - 1} more {(echo.replyCount || 0) - 1 === 1 ? 'reply' : 'replies'}
-            </Text>
-          </Pressable>
-        )}
-
         {/* Expanded Replies */}
         {isExpanded && replies.length > 0 && (
-          <View style={{ marginTop: 8, marginLeft: 16 }}>
+          <View style={{ marginTop: 8, marginLeft: 16, backgroundColor: 'rgba(255,255,255,0.35)', borderRadius: 10, paddingVertical: 8, paddingRight: 10 }}>
             {replies.map((reply, replyIdx) => (
               <View
                 key={reply.id || replyIdx}
@@ -866,18 +864,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           </View>
         )}
 
-        {/* Collapse Replies Button */}
-        {isExpanded && hasReplies && (
-          <Pressable
-            onPress={() => toggleReplies(echo.id)}
-            style={{ marginTop: 6, marginLeft: 16 }}
-          >
-            <Text style={{ color: '#1e88e5', fontSize: 11, fontWeight: '600' }}>
-              Hide replies
-            </Text>
-          </Pressable>
-        )}
-
         {showActions && (
           <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
             <Pressable
@@ -890,7 +876,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               }}
             >
               <Text style={{ fontSize: 12, fontWeight: '700', color: hugged ? '#1e88e5' : '#d32f2f' }}>
-                {hugged ? `Hugged (${hugs})` : `Hug (${hugs})`}
+                {hugCountLabel}
               </Text>
             </Pressable>
             <Pressable
@@ -903,14 +889,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               }}
             >
               <Text style={{ fontSize: 12, fontWeight: '700', color: '#1e88e5' }}>
-                Echo ({echo.replyCount || 0})
+                {replyCountLabel}
               </Text>
             </Pressable>
           </View>
         )}
       </View>
     );
-  }, [activeEchoActionId, getEchoHugState, handleEchoReply, toggleEchoHug, formatDefiniteTime, displayHandle, echoReplies, replyPreviews, expandedReplies, toggleReplies]);
+  }, [activeEchoActionId, echoReplies, expandedReplies, fetchRepliesForEcho, getEchoHugState, handleEchoReply, toggleEchoHug, formatDefiniteTime, displayHandle]);
 
   return (
     <Pressable>
@@ -1090,7 +1076,61 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               )}
 
               {/* Post Media */}
-              {hasVideoMedia ? (
+              {hasMultiMediaGrid ? (
+                <View style={{ marginHorizontal: 0, width: SCREEN_WIDTH, backgroundColor: '#000', padding: 4 }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                    {previewGridItems.map((mediaItem, mediaIndex) => {
+                      const tileSize = (SCREEN_WIDTH - 12) / 2;
+                      const isImage = isImageAsset(mediaItem);
+                      const isVideo = isVideoAsset(mediaItem);
+                      const isLastVisibleTile = mediaIndex === 3 && hiddenGridCount > 0;
+                      return (
+                        <Pressable
+                          key={`${mediaItem.uri || 'media'}_${mediaIndex}`}
+                          onPress={() => openMediaViewer(mediaIndex)}
+                          style={{
+                            width: tileSize,
+                            height: tileSize,
+                            margin: 2,
+                            backgroundColor: '#111',
+                            borderRadius: 10,
+                            overflow: 'hidden',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          {isImage ? (
+                            <Image
+                              source={{ uri: String(mediaItem.uri) }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+                              <Text style={{ fontSize: 32 }}>{isVideo ? 'Video' : 'File'}</Text>
+                              <Text style={{ color: '#fff', fontSize: 11, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
+                                {mediaItem.fileName || `Item ${mediaIndex + 1}`}
+                              </Text>
+                            </View>
+                          )}
+                          {isLastVisibleTile ? (
+                            <View
+                              style={{
+                                ...StyleSheet.absoluteFillObject,
+                                backgroundColor: 'rgba(0,0,0,0.56)',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Text style={{ color: '#fff', fontSize: 28, fontWeight: '800' }}>+{hiddenGridCount}</Text>
+                            </View>
+                          ) : null}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              ) : hasVideoMedia ? (
                 <View style={{ marginHorizontal: 0, position: 'relative', backgroundColor: '#000' }}>
                   {videoSourceUri ? (
                     <VideoWithTapControls
@@ -1262,7 +1302,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   <Text style={{ fontSize: 40 }}>📄</Text>
                 </View>
               ) : (
-                <Pressable onPress={handleImageReveal}>
+                <Pressable
+                  onPress={() => {
+                    handleImageReveal();
+                    openMediaViewer(0);
+                  }}
+                >
                   <View
                     style={{
                       position: 'relative',
@@ -1428,6 +1473,144 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             onRetrySplash={handleRetrySplashSync}
           />
         </View>
+
+        <Modal
+          visible={viewerVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setViewerVisible(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' }}>
+            <Pressable
+              onPress={() => setViewerVisible(false)}
+              style={{
+                position: 'absolute',
+                top: 48,
+                right: 20,
+                zIndex: 20,
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                backgroundColor: 'rgba(255,255,255,0.14)',
+                borderRadius: 18,
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
+            </Pressable>
+            {galleryMediaItems[viewerIndex] ? (
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingBottom: 146 }}>
+                {isImageAsset(galleryMediaItems[viewerIndex]) ? (
+                  <ScrollView
+                    maximumZoomScale={4}
+                    minimumZoomScale={1}
+                    centerContent
+                    contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: '100%' }}
+                  >
+                    <Image
+                      source={{ uri: String(galleryMediaItems[viewerIndex].uri) }}
+                      style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.72 }}
+                      resizeMode="contain"
+                    />
+                  </ScrollView>
+                ) : isVideoAsset(galleryMediaItems[viewerIndex]) && RNVideo ? (
+                  <RNVideo
+                    source={{ uri: String(galleryMediaItems[viewerIndex].uri) }}
+                    style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.72 }}
+                    resizeMode="contain"
+                    controls
+                    paused={false}
+                  />
+                ) : (
+                  <View style={{ alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+                    <Text style={{ fontSize: 42, marginBottom: 12 }}>File</Text>
+                    <Text style={{ color: '#fff', fontSize: 14, textAlign: 'center' }}>
+                      {galleryMediaItems[viewerIndex].fileName || 'Attachment'}
+                    </Text>
+                  </View>
+                )}
+                <Text style={{ color: 'rgba(255,255,255,0.82)', marginTop: 12 }}>
+                  {viewerIndex + 1} / {galleryMediaItems.length}
+                </Text>
+              </View>
+            ) : null}
+            {galleryMediaItems.length > 1 ? (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ position: 'absolute', left: 0, right: 0, bottom: 92, paddingHorizontal: 12 }}
+                contentContainerStyle={{ gap: 8, paddingRight: 12 }}
+              >
+                {galleryMediaItems.map((mediaItem, idx) => (
+                  <Pressable
+                    key={`${mediaItem.uri || 'thumb'}_${idx}`}
+                    onPress={() => setViewerIndex(idx)}
+                    style={{
+                      width: 68,
+                      height: 68,
+                      borderRadius: 10,
+                      overflow: 'hidden',
+                      borderWidth: viewerIndex === idx ? 2 : 1,
+                      borderColor: viewerIndex === idx ? '#00C2FF' : 'rgba(255,255,255,0.18)',
+                      backgroundColor: '#111',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {isImageAsset(mediaItem) ? (
+                      <Image
+                        source={{ uri: String(mediaItem.uri) }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Text style={{ color: '#fff', fontSize: 11, textAlign: 'center', paddingHorizontal: 6 }}>
+                        {isVideoAsset(mediaItem) ? 'Video' : 'File'}
+                      </Text>
+                    )}
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : null}
+            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 18 }}>
+              <PosterActionBar
+                waveId={item.id}
+                currentUserId={myUid || ''}
+                splashesCount={item.counts?.splashes || 0}
+                echoesCount={item.counts?.echoes || 0}
+                pearlsCount={0}
+                isAnchored={false}
+                isCasted={false}
+                creatorUserId={item.ownerUid!}
+                onAdd={handleAddSplash}
+                onRemove={handleRemoveSplash}
+                onEcho={handleEcho}
+                onPearl={handlePearl}
+                onAnchor={handleAnchor}
+                onCast={handleCast}
+                splashSyncStatus={splashSyncStatus}
+                onRetrySplash={handleRetrySplashSync}
+              />
+            </View>
+            {galleryMediaItems.length > 1 ? (
+              <View style={{ position: 'absolute', left: 0, right: 0, bottom: 132, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20 }}>
+                <Pressable
+                  onPress={() => setViewerIndex(prev => Math.max(0, prev - 1))}
+                  disabled={viewerIndex <= 0}
+                  style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: viewerIndex <= 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Prev</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setViewerIndex(prev => Math.min(galleryMediaItems.length - 1, prev + 1))}
+                  disabled={viewerIndex >= galleryMediaItems.length - 1}
+                  style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: viewerIndex >= galleryMediaItems.length - 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Next</Text>
+                </Pressable>
+              </View>
+            ) : null}
+          </View>
+        </Modal>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsRow}>
           <Pressable

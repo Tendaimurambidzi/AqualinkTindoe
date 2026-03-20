@@ -193,6 +193,7 @@ const STUDY_QUICK_TOPICS = ['mathematics', 'science', 'history', 'english gramma
 type Vibe = {
   id: string;
   media?: Asset | null;
+  mediaItems?: Asset[] | null;
   audio?: { uri: string; name?: string } | null;
   mediaEdits?: MediaEdits | null;
   captionText: string;
@@ -485,14 +486,18 @@ type LiveInviteNotice = {
   fromPhoto?: string | null;
   liveTitle?: string | null;
   liveChannel?: string | null;
+  liveToken?: string | null;
   directCallId?: string | null;
   directCallChannel?: string | null;
   callType?: DirectCallMode | null;
+  createdAtMs?: number;
+  expiresAtMs?: number;
 };
 
 type LiveInviteJoinPreset = {
   liveId?: string | null;
   channel?: string | null;
+  token?: string | null;
   title?: string | null;
   fromName?: string | null;
   requireApproval?: boolean;
@@ -617,6 +622,65 @@ const DEFAULT_APP_TONE_SETTINGS: Record<AppToneAction, string> = {
   live_invite: 'none',
   call_missed: 'old_ring',
   general: 'default_notification',
+};
+
+const buildLiveInviteNotice = (
+  docId: string,
+  data: Record<string, any>,
+  source: 'inbox' | 'mention' | 'ping',
+): LiveInviteNotice | null => {
+  if (!data?.fromUid) return null;
+  return {
+    id: docId,
+    source,
+    liveId: String(data.liveId || ''),
+    fromUid: String(data.fromUid || ''),
+    fromName: String(data.fromName || 'Skipper'),
+    fromPhoto: data.fromPhoto || null,
+    liveTitle: data.liveTitle || null,
+    liveChannel: data.liveChannel ? String(data.liveChannel) : null,
+    liveToken: data.liveToken ? String(data.liveToken) : null,
+    directCallId: data.directCallId ? String(data.directCallId) : null,
+    directCallChannel: data.directCallChannel
+      ? String(data.directCallChannel)
+      : null,
+    callType: data.callType === 'audio' ? 'audio' : 'video',
+    createdAtMs: toJSDate(data.createdAt).getTime() || 0,
+    expiresAtMs: Number(data.expiresAtMs || 0) || 0,
+  };
+};
+
+const buildWaveMediaItems = (data: any): Asset[] => {
+  const out: Asset[] = [];
+  const rawItems = Array.isArray(data?.mediaItems) ? data.mediaItems : [];
+  rawItems.forEach((entry: any) => {
+    const uri = String(entry?.uri || entry?.mediaUrl || '').trim();
+    if (!uri) return;
+    out.push({
+      uri,
+      type: entry?.type || entry?.mediaType || undefined,
+      fileName: entry?.fileName || entry?.name || undefined,
+    } as Asset);
+  });
+  if (out.length > 0) return out;
+  const fallbackUri = String(data?.playbackUrl || data?.mediaUrl || '').trim();
+  if (!fallbackUri) return [];
+  const mediaType = data?.mediaType || undefined;
+  return [{ uri: fallbackUri, type: mediaType }] as Asset[];
+};
+
+const pickLatestLiveInvite = (
+  invites: Array<LiveInviteNotice | null | undefined>,
+): LiveInviteNotice | null => {
+  return (
+    invites
+      .filter(Boolean)
+      .sort(
+        (a, b) =>
+          Number((b as LiveInviteNotice).createdAtMs || 0) -
+          Number((a as LiveInviteNotice).createdAtMs || 0),
+      )[0] || null
+  ) as LiveInviteNotice | null;
 };
 const DEFAULT_HARBOR_SETTINGS: HarborSettingsState = {
   privateWakeMode: false,
@@ -2430,6 +2494,42 @@ export const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
     return false;
   }
 };
+
+const mapRtcUidFromUserId = (value: string | null | undefined): number => {
+  const seed = String(value || '').trim() || '0';
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  return (hash % 2147483646) + 1;
+};
+
+const buildBackendUrlCandidates = (rawUrl: string): string[] => {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  const push = (value: string) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    urls.push(trimmed);
+  };
+
+  push(rawUrl);
+  try {
+    const parsed = new URL(rawUrl);
+    const hosts =
+      Platform.OS === 'android'
+        ? [parsed.hostname, '10.0.2.2', '127.0.0.1', 'localhost']
+        : [parsed.hostname, '127.0.0.1', 'localhost'];
+    hosts.forEach(host => {
+      const next = new URL(parsed.toString());
+      next.hostname = host;
+      push(next.toString());
+    });
+  } catch {}
+
+  return urls;
+};
                     
 /* ---------------------- Reusable UI bits ----------------------- */
 function Field({
@@ -2834,7 +2934,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
 
     return unsubscribe;
-  }, [user?.uid]);
+  }, [auth?.()?.currentUser?.uid, user?.uid]);
 
   const insets = useSafeAreaInsets();
   // Development safeguard (disabled): if you need to skip uploads in debug Android,
@@ -3867,6 +3967,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               !isAudioPost && mediaUri
                 ? ({ uri: mediaUri, type: mediaType || undefined } as any)
                 : null,
+            mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
             audio: data.audioUrl
               ? { uri: data.audioUrl }
               : isAudioPost && mediaUri
@@ -5868,7 +5969,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Unified posting modal state
   const [showUnifiedPostModal, setShowUnifiedPostModal] = useState<boolean>(false);
   const [unifiedPostText, setUnifiedPostText] = useState<string>('');
-  const [unifiedPostMedia, setUnifiedPostMedia] = useState<Asset | null>(null);
+  const [unifiedPostMediaItems, setUnifiedPostMediaItems] = useState<Asset[]>([]);
   const [unifiedPostAudio, setUnifiedPostAudio] = useState<{
     uri: string;
     name?: string;
@@ -5876,6 +5977,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isUnifiedPosting, setIsUnifiedPosting] = useState<boolean>(false);
   const [unifiedPostProgress, setUnifiedPostProgress] = useState<number | null>(null);
   const [unifiedPostError, setUnifiedPostError] = useState<string | null>(null);
+  const unifiedPostMedia = unifiedPostMediaItems[0] || null;
                     
   // DM subscription - adds messages to pings automatically
   useEffect(() => {
@@ -6215,22 +6317,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   // Direct live invites pushed to the invited user's inbox.
   useEffect(() => {
-    const me = auth?.()?.currentUser;
-    if (!me?.uid) {
+    const activeUid = String(auth?.()?.currentUser?.uid || user?.uid || '').trim();
+    if (!activeUid) {
       cachedIncomingInviteRef.current = null;
       setIncomingLiveInvite(null);
       return;
     }
-    const cacheKey = `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${me.uid}`;
+    const cacheKey = `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${activeUid}`;
     let disposed = false;
     let inboxInvite: LiveInviteNotice | null = null;
     let mentionInvite: LiveInviteNotice | null = null;
     let pingInvite: LiveInviteNotice | null = null;
+    let inboxLoaded = false;
+    let mentionLoaded = false;
+    let pingLoaded = false;
     const loadCachedInvite = async () => {
       try {
         const raw = await AsyncStorage.getItem(cacheKey);
         if (!raw || disposed) return;
         const parsed = JSON.parse(raw || '{}') || {};
+        const cachedExpiresAtMs = Number(parsed.expiresAtMs || 0) || 0;
+        const cachedCreatedAtMs = Number(parsed.createdAtMs || 0) || 0;
+        const cachedTooOld =
+          cachedExpiresAtMs > 0
+            ? Date.now() > cachedExpiresAtMs
+            : cachedCreatedAtMs > 0 &&
+              Date.now() - cachedCreatedAtMs > LIVE_INVITE_EXPIRY_MS;
+        if (cachedTooOld) {
+          await AsyncStorage.removeItem(cacheKey).catch(() => {});
+          return;
+        }
         const cached: LiveInviteNotice = {
           id: String(parsed.id || ''),
           source:
@@ -6245,11 +6361,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fromPhoto: parsed.fromPhoto || null,
           liveTitle: parsed.liveTitle || null,
           liveChannel: parsed.liveChannel ? String(parsed.liveChannel) : null,
+          liveToken: parsed.liveToken ? String(parsed.liveToken) : null,
           directCallId: parsed.directCallId ? String(parsed.directCallId) : null,
           directCallChannel: parsed.directCallChannel
             ? String(parsed.directCallChannel)
             : null,
           callType: parsed.callType === 'audio' ? 'audio' : 'video',
+          createdAtMs: cachedCreatedAtMs,
+          expiresAtMs: cachedExpiresAtMs,
         };
         if (!cached.fromUid) return;
         cachedIncomingInviteRef.current = cached;
@@ -6258,19 +6377,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
     loadCachedInvite();
     const syncIncomingInvite = () => {
-      const next =
-        inboxInvite || mentionInvite || pingInvite || cachedIncomingInviteRef.current || null;
+      const sourceInvites = [inboxInvite, mentionInvite, pingInvite];
+      const anySnapshotLoaded = inboxLoaded || mentionLoaded || pingLoaded;
+      const next = pickLatestLiveInvite(
+        anySnapshotLoaded
+          ? sourceInvites
+          : [...sourceInvites, cachedIncomingInviteRef.current],
+      );
       setIncomingLiveInvite(next);
       if (next) {
         cachedIncomingInviteRef.current = next;
         AsyncStorage.setItem(cacheKey, JSON.stringify(next)).catch(() => {});
+      } else {
+        cachedIncomingInviteRef.current = null;
+        AsyncStorage.removeItem(cacheKey).catch(() => {});
       }
     };
     const unsubInbox = firestore()
-      .collection(`users/${me.uid}/live_invites`)
-      .limit(25)
+      .collection(`users/${activeUid}/live_invites`)
+      .orderBy('createdAt', 'desc')
+      .limit(50)
       .onSnapshot(
         snap => {
+          inboxLoaded = true;
           const docs = (snap?.docs || []).filter((doc: any) => {
             const data = doc.data() || {};
             const status = String(data.status || 'pending').toLowerCase();
@@ -6300,22 +6429,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             syncIncomingInvite();
             return;
           }
-          const data = doc.data() || {};
-          inboxInvite = {
-            id: doc.id,
-            source: 'inbox',
-            liveId: String(data.liveId || ''),
-            fromUid: String(data.fromUid),
-            fromName: String(data.fromName || 'Skipper'),
-            fromPhoto: data.fromPhoto || null,
-            liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
-            directCallId: data.directCallId ? String(data.directCallId) : null,
-            directCallChannel: data.directCallChannel
-              ? String(data.directCallChannel)
-              : null,
-            callType: data.callType === 'audio' ? 'audio' : 'video',
-          };
+          inboxInvite = buildLiveInviteNotice(doc.id, doc.data() || {}, 'inbox');
           syncIncomingInvite();
         },
         () => {
@@ -6323,13 +6437,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         },
       );
     const unsubMentions = firestore()
-      .collection(`users/${me.uid}/mentions`)
-      .where('type', '==', 'live_invite')
-      .limit(20)
+      .collection(`users/${activeUid}/mentions`)
+      .limit(100)
       .onSnapshot(
         snap => {
+          mentionLoaded = true;
           const docs = (snap?.docs || []).filter((doc: any) => {
             const data = doc.data() || {};
+            const type = String(data.type || '').toLowerCase();
+            if (type !== 'live_invite') return false;
             const status = String(data.status || 'pending').toLowerCase();
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
@@ -6357,34 +6473,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             syncIncomingInvite();
             return;
           }
-          const data = doc.data() || {};
-          mentionInvite = {
-            id: doc.id,
-            source: 'mention',
-            liveId: String(data.liveId || ''),
-            fromUid: String(data.fromUid || ''),
-            fromName: String(data.fromName || 'Skipper'),
-            fromPhoto: data.fromPhoto || null,
-            liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
-            directCallId: data.directCallId ? String(data.directCallId) : null,
-            directCallChannel: data.directCallChannel
-              ? String(data.directCallChannel)
-              : null,
-            callType: data.callType === 'audio' ? 'audio' : 'video',
-          };
+          mentionInvite = buildLiveInviteNotice(doc.id, doc.data() || {}, 'mention');
           syncIncomingInvite();
         },
         () => {},
       );
     const unsubPings = firestore()
-      .collection(`users/${me.uid}/pings`)
-      .where('type', '==', 'live_invite')
-      .limit(20)
+      .collection(`users/${activeUid}/pings`)
+      .limit(100)
       .onSnapshot(
         snap => {
+          pingLoaded = true;
           const docs = (snap?.docs || []).filter((doc: any) => {
             const data = doc.data() || {};
+            const type = String(data.type || '').toLowerCase();
+            if (type !== 'live_invite') return false;
             const status = String(data.status || 'pending').toLowerCase();
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
@@ -6404,22 +6507,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             syncIncomingInvite();
             return;
           }
-          const data = doc.data() || {};
-          pingInvite = {
-            id: doc.id,
-            source: 'ping',
-            liveId: String(data.liveId || ''),
-            fromUid: String(data.fromUid || ''),
-            fromName: String(data.fromName || 'Skipper'),
-            fromPhoto: data.fromPhoto || null,
-            liveTitle: data.liveTitle || null,
-            liveChannel: data.liveChannel ? String(data.liveChannel) : null,
-            directCallId: data.directCallId ? String(data.directCallId) : null,
-            directCallChannel: data.directCallChannel
-              ? String(data.directCallChannel)
-              : null,
-            callType: data.callType === 'audio' ? 'audio' : 'video',
-          };
+          pingInvite = buildLiveInviteNotice(doc.id, doc.data() || {}, 'ping');
           syncIncomingInvite();
         },
         () => {},
@@ -6436,7 +6524,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         unsubPings && unsubPings();
       } catch {}
     };
-  }, [user?.uid]);
+  }, [user?.uid, auth?.()?.currentUser?.uid]);
   // Request to drift with a live host (viewer-side action)
   const requestToDriftForLiveId = useCallback(
     async (liveId: string, hostName?: string) => {
@@ -6513,12 +6601,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
 
       if (action === 'join') {
+        let cfgLocal: any = null;
+        try {
+          cfgLocal = require('./liveConfig');
+        } catch {}
+        const fallbackChannel = String(
+          cfgLocal?.AGORA_CHANNEL_NAME || 'AqualinkSharedLive',
+        )
+          .trim()
+          .replace(/[^A-Za-z0-9_]/g, '_')
+          .slice(0, 64);
         setLiveInviteJoinPreset({
           liveId: invite.liveId,
           channel:
             invite.liveChannel ||
             invite.directCallChannel ||
+            fallbackChannel ||
             null,
+          token: invite.liveToken || null,
           title: invite.liveTitle || null,
           fromName: invite.fromName,
           nonce: Date.now(),
@@ -6829,14 +6929,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           return;
         }
         
-        const echoes = echoesSnap.docs.map(doc => ({
+        const allEchoes = echoesSnap.docs.map(doc => ({
           id: doc.id,
           uid: doc.data().userUid,
           text: doc.data().text,
           userName: doc.data().userName || null,
           updatedAt: doc.data().createdAt,
           userPhoto: doc.data().userPhoto || null,
+          hugs: Number(doc.data().hugs || 0),
+          huggedBy: doc.data().huggedBy || {},
+          replyCount: Number(doc.data().replyCount || 0),
+          replyToEchoId: doc.data().replyToEchoId || null,
         }));
+        const replyCounts: Record<string, number> = {};
+        allEchoes.forEach(echo => {
+          const parentId = String(echo.replyToEchoId || '').trim();
+          if (!parentId) return;
+          replyCounts[parentId] = (replyCounts[parentId] || 0) + 1;
+        });
+        const echoes = allEchoes
+          .filter(echo => !echo.replyToEchoId)
+          .map(echo => ({
+            ...echo,
+            replyCount: replyCounts[echo.id] || Number(echo.replyCount || 0) || 0,
+          }));
                     
         setEchoList(echoes);
       } catch (error) {
@@ -7898,6 +8014,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 !isAudioPost && finalUri
                   ? ({ uri: finalUri, type: mediaType || undefined } as any)
                   : null,
+              mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
               audio: data?.audioUrl
                 ? { uri: String(data.audioUrl) }
                 : isAudioPost && finalUri
@@ -8155,6 +8272,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               !isAudioPost && finalUri
                 ? ({ uri: finalUri, type: mediaType || undefined } as any)
                 : null,
+            mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
             audio: data?.audioUrl
               ? { uri: String(data.audioUrl) }
               : isAudioPost && finalUri
@@ -9403,8 +9521,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     console.log('[ECHO] Validation passed, proceeding with echo send');
                     
     try {
+      const targetWaveId = echoWaveId;
+      const parentEchoId = replyingToEcho?.id || null;
       // Fetch the wave data
-      const waveDoc = await firestore().collection('waves').doc(echoWaveId).get();
+      const waveDoc = await firestore().collection('waves').doc(targetWaveId).get();
       if (!waveDoc.exists) {
         console.log('[ECHO] Wave not found');
         showOceanDialog('Wave Not Found', 'The wave you are trying to echo no longer exists.');
@@ -9430,10 +9550,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       ]);
                     
       // Use the new sendEcho transaction
-      await sendEcho(echoWaveId, text, replyingToEcho?.id);
+      await sendEcho(targetWaveId, text, parentEchoId || undefined);
+
+      if (parentEchoId) {
+        setEchoList(prev =>
+          prev.map(item =>
+            item.id === parentEchoId
+              ? { ...item, replyCount: Number(item.replyCount || 0) + 1 }
+              : item,
+          ),
+        );
+        setPostEchoLists(prev => ({
+          ...prev,
+          [targetWaveId]: (prev[targetWaveId] || []).map(item =>
+            item.id === parentEchoId
+              ? { ...item, replyCount: Number(item.replyCount || 0) + 1 }
+              : item,
+          ),
+        }));
+      }
       
       // Reload echoes list
-      loadPostEchoes(currentWave.id);
+      loadPostEchoes(targetWaveId);
                     
       // Send ping notification to wave owner (if not self)
       const currentUserUid = auth().currentUser?.uid;
@@ -9527,11 +9665,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .doc(currentWave.id)
         .collection('echoes')
         .where('userUid', '==', user.uid)
-        .orderBy('createdAt', 'desc')
-        .limit(1)
         .get();
-      
-      const docToDelete = query?.docs?.[0];
+
+      const docToDelete = (query?.docs || [])
+        .find((doc: any) => !doc?.data?.()?.replyToEchoId);
       if (docToDelete) {
         const deleteEchoFn = functions().httpsCallable('deleteEcho');
         await deleteEchoFn({
@@ -9573,6 +9710,68 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       Alert.alert('Delete failed', 'Could not delete echo right now.');
     }
   };
+
+  const toggleEchoHugFromModal = useCallback(
+    async (echo: any) => {
+      if (!currentWave?.id) return;
+      const myUid = auth().currentUser?.uid;
+      if (!myUid) {
+        Alert.alert('Not Signed In', 'Please sign in to hug comments.');
+        return;
+      }
+      const hugged = !!(echo?.huggedBy && echo.huggedBy[myUid]);
+      const nextHugs = Math.max(0, Number(echo?.hugs || 0) + (hugged ? -1 : 1));
+      const nextHuggedBy = { ...(echo?.huggedBy || {}) };
+      if (hugged) {
+        delete nextHuggedBy[myUid];
+      } else {
+        nextHuggedBy[myUid] = true;
+      }
+
+      setEchoList(prev =>
+        prev.map(item =>
+          item.id === echo.id
+            ? { ...item, hugs: nextHugs, huggedBy: nextHuggedBy }
+            : item,
+        ),
+      );
+      setPostEchoLists(prev => ({
+        ...prev,
+        [currentWave.id]: (prev[currentWave.id] || []).map(item =>
+          item.id === echo.id
+            ? { ...item, hugs: nextHugs, huggedBy: nextHuggedBy }
+            : item,
+        ),
+      }));
+
+      try {
+        const ref = firestore()
+          .collection('waves')
+          .doc(currentWave.id)
+          .collection('echoes')
+          .doc(echo.id);
+        const FieldValue = (firestore as any).FieldValue;
+        if (hugged) {
+          await ref.update({
+            hugs: FieldValue.increment(-1),
+            [`huggedBy.${myUid}`]: FieldValue.delete(),
+          });
+        } else {
+          await ref.set(
+            {
+              hugs: FieldValue.increment(1),
+              huggedBy: { [myUid]: true },
+            },
+            { merge: true },
+          );
+        }
+      } catch (error) {
+        console.warn('Toggle echo hug failed', error);
+        loadPostEchoes(currentWave.id);
+      }
+    },
+    [currentWave?.id],
+  );
                     
   // Keep hasSplashed and counters in sync when the current wave changes
   useEffect(() => {
@@ -9691,8 +9890,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .doc(currentWave.id)
           .collection('echoes')
           .where('userUid', '==', uid)
-          .orderBy('createdAt', 'desc')
-          .limit(1);
+          .limit(10);
                     
         let altSubscribed = false;
         // Temporarily disabled real-time echo listeners for testing
@@ -9735,9 +9933,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             .doc(currentWave.id)
             .collection('echoes')
             .where('userUid', '==', uid)
-            .limit(1)
+            .limit(10)
             .get();
-          handleMyEchoSnapshot(myEchoSnap);
+          handleMyEchoSnapshot({
+            ...myEchoSnap,
+            empty: !(myEchoSnap?.docs || []).some((doc: any) => !doc?.data?.()?.replyToEchoId),
+            docs: (myEchoSnap?.docs || []).filter((doc: any) => !doc?.data?.()?.replyToEchoId),
+          });
         } catch (error) {
           console.warn('myEcho get error:', error);
           setMyEcho(null);
@@ -9785,18 +9987,34 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .limit(20)
           .get();
           
-        const echoes: any[] = [];
+        const allEchoes: any[] = [];
         echoListSnap.forEach((doc: any) => {
           const data = doc.data();
-          echoes.push({
+          allEchoes.push({
             id: doc.id,
             uid: data?.userUid,
             text: data?.text,
             userName: data?.userName,
             userPhoto: data?.userPhoto,
             createdAt: data?.createdAt,
+            hugs: Number(data?.hugs || 0),
+            huggedBy: data?.huggedBy || {},
+            replyCount: Number(data?.replyCount || 0),
+            replyToEchoId: data?.replyToEchoId || null,
           });
         });
+        const replyCounts: Record<string, number> = {};
+        allEchoes.forEach(echo => {
+          const parentId = String(echo.replyToEchoId || '').trim();
+          if (!parentId) return;
+          replyCounts[parentId] = (replyCounts[parentId] || 0) + 1;
+        });
+        const echoes = allEchoes
+          .filter(echo => !echo.replyToEchoId)
+          .map(echo => ({
+            ...echo,
+            replyCount: replyCounts[echo.id] || Number(echo.replyCount || 0) || 0,
+          }));
         setEchoList(echoes);
       } catch {
         setEchoList([]);
@@ -10140,10 +10358,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .doc(waveId)
         .collection('echoes')
         .orderBy('createdAt', 'desc')
-        .limit(10)
+        .limit(50)
         .get();
-                    
-      const echoes = echoesSnap.docs.map(doc => ({
+
+      const replyCounts: Record<string, number> = {};
+      const allRows = echoesSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
         uid: doc.data().userUid,
@@ -10152,12 +10371,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         userPhoto: doc.data().userPhoto,
         createdAt: doc.data().createdAt,
       }));
+      allRows.forEach(echo => {
+        const parentId = String(echo.replyToEchoId || '').trim();
+        if (!parentId) return;
+        replyCounts[parentId] = (replyCounts[parentId] || 0) + 1;
+      });
+      const echoes = allRows
+        .filter(echo => !echo.replyToEchoId)
+        .map(echo => ({
+          ...echo,
+          replyCount: replyCounts[echo.id] || Number(echo.replyCount || 0) || 0,
+        }))
+        .slice(0, 10);
                     
       setPostEchoLists(prev => ({ ...prev, [waveId]: echoes }));
     } catch (e) {
       console.warn('Load post echoes failed', e);
     }
   };
+
+  const openReplyToPostEcho = useCallback(
+    (waveId: string, echo: any) => {
+      setEchoWaveId(waveId);
+      setReplyingToEcho({
+        id: String(echo?.id || ''),
+        text: String(echo?.text || ''),
+        userName: echo?.userName || echo?.from || 'user',
+        uid: String(echo?.uid || echo?.userUid || ''),
+      });
+      updateEchoText(
+        echo?.userName || echo?.from ? `@${echo.userName || echo.from} ` : '',
+      );
+      setShowEchoes(true);
+    },
+    [updateEchoText],
+  );
 
   const loadReachCounts = async (waveIds: string[]) => {
     try {
@@ -11615,6 +11863,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   };
   
   // Unified posting functions
+  const appendUnifiedPostMediaAssets = useCallback((assets: Array<Asset | null | undefined>) => {
+    const cleanAssets = assets
+      .filter((asset): asset is Asset => !!asset?.uri)
+      .map(asset => ({
+        ...asset,
+        uri: String(asset.uri || ''),
+      }));
+    if (cleanAssets.length === 0) return;
+    setUnifiedPostMediaItems(prev => {
+      const seen = new Set(prev.map(item => String(item.uri || '')));
+      const merged = [...prev];
+      cleanAssets.forEach(asset => {
+        const key = String(asset.uri || '');
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+        merged.push(asset);
+      });
+      return merged;
+    });
+  }, []);
+  const removeUnifiedPostMediaAt = useCallback((index: number) => {
+    setUnifiedPostMediaItems(prev => prev.filter((_, idx) => idx !== index));
+  }, []);
+
   const handleUnifiedCameraCapture = () => {
     Alert.alert(
       'Capture Media',
@@ -11625,8 +11897,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           onPress: () =>
             launchCamera({ mediaType: 'photo', quality: 0.8 }, response => {
               if (response.assets && response.assets.length > 0) {
-                setUnifiedPostMedia(response.assets[0]);
-                setUnifiedPostAudio(null);
+                appendUnifiedPostMediaAssets(response.assets);
               }
             }),
         },
@@ -11635,8 +11906,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           onPress: () =>
             launchCamera({ mediaType: 'video', videoQuality: 'high' }, response => {
               if (response.assets && response.assets.length > 0) {
-                setUnifiedPostMedia(response.assets[0]);
-                setUnifiedPostAudio(null);
+                appendUnifiedPostMediaAssets(response.assets);
               }
             }),
         },
@@ -11714,12 +11984,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       mediaType: 'mixed', 
       quality: 0.8,
       presentationStyle: 'fullScreen',
+      selectionLimit: 10,
     }, response => {
       console.log('[SD Card Access] Response:', JSON.stringify(response, null, 2));
       if (response.assets && response.assets.length > 0) {
-        console.log('[SD Card Access] Media selected:', response.assets[0].uri);
-        setUnifiedPostMedia(response.assets[0]);
-        setUnifiedPostAudio(null);
+        console.log('[SD Card Access] Media selected count:', response.assets.length);
+        appendUnifiedPostMediaAssets(response.assets);
       } else if (response.didCancel) {
         console.log('[SD Card Access] User cancelled');
       } else if (response.errorCode) {
@@ -11752,19 +12022,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
         notifySuccess('Audio attached from SD card');
       } else if (isVideo || isImage) {
-        setUnifiedPostMedia({
+        appendUnifiedPostMediaAssets([{
           uri,
           type: mimeType || (isVideo ? 'video/mp4' : 'image/jpeg'),
           fileName,
-        });
-        setUnifiedPostAudio(null);
+        } as Asset]);
         notifySuccess('Media selected from SD card');
       } else {
-        setUnifiedPostMedia({
+        appendUnifiedPostMediaAssets([{
           uri,
           type: mimeType || 'application/octet-stream',
           fileName,
-        });
+        } as Asset]);
         notifySuccess('File selected from SD card');
       }
     } catch (err: any) {
@@ -11823,11 +12092,79 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, []);
 
+  const uploadUnifiedPostAsset = useCallback(
+    async (
+      asset: Asset,
+      storageMod: any,
+      trackUploadTask: (task: any, startPercent?: number, endPercent?: number) => Promise<void>,
+      startPercent: number,
+      endPercent: number,
+      uid: string,
+    ) => {
+      const mimeType = String(asset.type || 'application/octet-stream');
+      const nameGuessRaw =
+        asset.fileName || String(asset.uri || '').split('/').pop() || 'file';
+      const sanitizedBase = String(nameGuessRaw)
+        .replace(/[^A-Za-z0-9._-]/g, '_')
+        .replace(/_{2,}/g, '_');
+      const ext =
+        (sanitizedBase.includes('.') &&
+          sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)) ||
+        (mimeType.startsWith('video/')
+          ? 'mp4'
+          : mimeType.startsWith('image/')
+          ? 'jpg'
+          : mimeType.startsWith('audio/')
+          ? 'm4a'
+          : 'dat');
+      const baseNoExt = sanitizedBase.includes('.')
+        ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+        : sanitizedBase;
+      const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+      let localPath = String(asset.uri || '');
+      try {
+        localPath = decodeURI(localPath);
+      } catch {}
+      if (/^content:/.test(String(localPath))) {
+        const copyDest = `${RNFS.CachesDirectoryPath}/post_media_${Date.now()}_${baseNoExt}.${ext}`;
+        await RNFS.copyFile(String(localPath), copyDest);
+        localPath = copyDest;
+      }
+      if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+        localPath = localPath.replace('file://', '');
+      }
+      if (!localPath) {
+        throw new Error('Could not access one of the selected files.');
+      }
+      const fileRef = storageMod().ref(filePath);
+      await trackUploadTask(
+        fileRef.putFile(localPath, { contentType: mimeType }),
+        startPercent,
+        endPercent,
+      );
+      const fileDownloadUrl = await fileRef.getDownloadURL();
+      return {
+        uri: fileDownloadUrl,
+        type: mimeType,
+        fileName: sanitizedBase,
+        mediaPath: filePath,
+        postType: mimeType.startsWith('video/')
+          ? 'video'
+          : mimeType.startsWith('image/')
+          ? 'image'
+          : mimeType.startsWith('audio/')
+          ? 'audio'
+          : 'document',
+      };
+    },
+    [],
+  );
+
   const handleUnifiedPost = async () => {
     const trimmedText = unifiedPostText.trim();
     
     // If no text, media, or audio, show error
-    if (!trimmedText && !unifiedPostMedia && !unifiedPostAudio) {
+    if (!trimmedText && unifiedPostMediaItems.length === 0 && !unifiedPostAudio) {
       Alert.alert('Create a Post', 'Please add some text or select media to post.');
       return;
     }
@@ -11836,7 +12173,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setUnifiedPostProgress(null);
     setIsUnifiedPosting(true);
     try {
-      const trackUploadTask = async (task: any) => {
+      const trackUploadTask = async (
+        task: any,
+        startPercent: number = 0,
+        endPercent: number = 100,
+      ) => {
         if (!task) return;
         let unsubscribe: any = null;
         try {
@@ -11846,17 +12187,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const total = Number(snapshot?.totalBytes || 0);
                 const transferred = Number(snapshot?.bytesTransferred || 0);
                 if (total > 0) {
-                  const percent = Math.max(
-                    1,
-                    Math.min(100, Math.round((transferred / total) * 100)),
-                  );
+                  const rawPercent = startPercent + ((transferred / total) * (endPercent - startPercent));
+                  const percent = Math.max(1, Math.min(100, Math.round(rawPercent)));
                   setUnifiedPostProgress(percent);
                 }
               } catch {}
             });
           }
           await task;
-          setUnifiedPostProgress(100);
+          setUnifiedPostProgress(Math.max(1, Math.min(100, Math.round(endPercent))));
         } finally {
           try {
             if (typeof unsubscribe === 'function') unsubscribe();
@@ -11864,10 +12203,104 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
       };
 
-      if (unifiedPostMedia) {
-        const mediaIsVideo = isVideoAsset(unifiedPostMedia);
-        const mediaIsImage = isImageAsset(unifiedPostMedia);
-        const mediaIsAudio = isAudioAsset(unifiedPostMedia);
+      if (unifiedPostMediaItems.length > 0) {
+        if (unifiedPostMediaItems.length > 1) {
+          if (unifiedPostAudio?.uri) {
+            Alert.alert('Unsupported Mix', 'Audio overlay is only supported for a single image or video post.');
+            return;
+          }
+          let storageMod: any = null;
+          let firestoreMod: any = null;
+          let authMod: any = null;
+          try {
+            storageMod = require('@react-native-firebase/storage').default;
+          } catch {}
+          try {
+            firestoreMod = require('@react-native-firebase/firestore').default;
+          } catch {}
+          try {
+            authMod = require('@react-native-firebase/auth').default;
+          } catch {}
+          if (!storageMod || !firestoreMod || !authMod) {
+            Alert.alert('Backend not ready', 'Multi-media posting is unavailable right now.');
+            return;
+          }
+          const a = authMod();
+          const uid = a.currentUser?.uid;
+          if (!uid) {
+            Alert.alert('Sign in required', 'Please sign in to post media.');
+            return;
+          }
+          const uploadedItems = [];
+          for (let i = 0; i < unifiedPostMediaItems.length; i += 1) {
+            const start = (i / unifiedPostMediaItems.length) * 100;
+            const end = ((i + 1) / unifiedPostMediaItems.length) * 100;
+            const uploaded = await uploadUnifiedPostAsset(
+              unifiedPostMediaItems[i],
+              storageMod,
+              trackUploadTask,
+              start,
+              end,
+              uid,
+            );
+            uploadedItems.push(uploaded);
+          }
+          const primaryItem = uploadedItems[0];
+          const hasAnyVideo = uploadedItems.some(item => item.postType === 'video');
+          const docRef = await firestoreMod()
+            .collection('waves')
+            .add({
+              authorId: uid,
+              ownerUid: uid,
+              authorName:
+                profileName ||
+                accountCreationHandle ||
+                a.currentUser?.displayName ||
+                null,
+              mediaItems: uploadedItems,
+              mediaPath: primaryItem?.mediaPath || null,
+              mediaType: primaryItem?.type || null,
+              postType: hasAnyVideo ? 'gallery' : 'image',
+              text: trimmedText,
+              captionText: trimmedText,
+              createdAt: firestoreMod.FieldValue?.serverTimestamp
+                ? firestoreMod.FieldValue.serverTimestamp()
+                : new Date(),
+              audioUrl: null,
+              muxStatus: 'ready',
+              playbackUrl: null,
+              mediaUrl: primaryItem?.uri || null,
+              isPublic: true,
+            });
+
+          handlePostPublished({
+            id: docRef?.id || new Date().toISOString(),
+            media: primaryItem ? ({ uri: primaryItem.uri, type: primaryItem.type, fileName: primaryItem.fileName } as any) : null,
+            mediaItems: uploadedItems.map(item => ({ uri: item.uri, type: item.type, fileName: item.fileName } as any)),
+            audio: null,
+            captionText: trimmedText,
+            playbackUrl: null,
+            muxStatus: 'ready',
+            authorName:
+              profileName ||
+              accountCreationHandle ||
+              a.currentUser?.displayName ||
+              null,
+            ownerUid: uid,
+            postType: hasAnyVideo ? 'gallery' : 'image',
+          });
+
+          setUnifiedPostText('');
+          setUnifiedPostMediaItems([]);
+          setUnifiedPostAudio(null);
+          setShowUnifiedPostModal(false);
+          return;
+        }
+
+        const singleMedia = unifiedPostMediaItems[0];
+        const mediaIsVideo = isVideoAsset(singleMedia);
+        const mediaIsImage = isImageAsset(singleMedia);
+        const mediaIsAudio = isAudioAsset(singleMedia);
         const mediaIsVisual = mediaIsVideo || mediaIsImage;
 
         if (unifiedPostAudio?.uri && !mediaIsVisual) {
@@ -11904,10 +12337,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
 
           const mimeType =
-            unifiedPostMedia.type || 'application/octet-stream';
+            singleMedia.type || 'application/octet-stream';
           const nameGuessRaw =
-            unifiedPostMedia.fileName ||
-            String(unifiedPostMedia.uri || '').split('/').pop() ||
+            singleMedia.fileName ||
+            String(singleMedia.uri || '').split('/').pop() ||
             'file';
           const sanitizedBase = String(nameGuessRaw)
             .replace(/[^A-Za-z0-9._-]/g, '_')
@@ -11921,7 +12354,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             : sanitizedBase;
           const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
 
-          let localPath = String(unifiedPostMedia.uri || '');
+          let localPath = String(singleMedia.uri || '');
           try {
             localPath = decodeURI(localPath);
           } catch {}
@@ -11977,6 +12410,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           handlePostPublished({
             id: docRef?.id || new Date().toISOString(),
             media: { uri: fileDownloadUrl, type: mimeType } as any,
+            mediaItems: [{ uri: fileDownloadUrl, type: mimeType } as any],
             audio: null,
             captionText: trimmedText,
             playbackUrl: null,
@@ -11990,14 +12424,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           });
 
           setUnifiedPostText('');
-          setUnifiedPostMedia(null);
+          setUnifiedPostMediaItems([]);
           setUnifiedPostAudio(null);
           setShowUnifiedPostModal(false);
           return;
         }
 
         // Handle media post with optional caption
-        const preparedMedia = await normalizeAssetForEditor(unifiedPostMedia);
+        const preparedMedia = await normalizeAssetForEditor(singleMedia);
         setCapturedMedia(preparedMedia);
         setCapturedMediaEdits(defaultMediaEdits);
         setWaveCaption(trimmedText);
@@ -12010,7 +12444,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setShowUnifiedPostModal(false);
         setShowMakeWaves(false); // Close the Make Waves modal, media editor opens directly
         setUnifiedPostText('');
-        setUnifiedPostMedia(null);
+        setUnifiedPostMediaItems([]);
         setUnifiedPostAudio(null);
       } else if (unifiedPostAudio?.uri) {
         // Handle audio-only post
@@ -12121,6 +12555,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         handlePostPublished({
           id: docRef?.id || new Date().toISOString(),
           media: null,
+          mediaItems: null,
           audio: { uri: audioDownloadUrl, name: unifiedPostAudio.name },
           captionText: trimmedText,
           playbackUrl: null,
@@ -12134,7 +12569,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         });
 
         setUnifiedPostText('');
-        setUnifiedPostMedia(null);
+        setUnifiedPostMediaItems([]);
         setUnifiedPostAudio(null);
         setShowUnifiedPostModal(false);
       } else {
@@ -12149,6 +12584,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         handlePostPublished({
           id: result.id,
           media: null,
+          mediaItems: null,
           audio: null,
           captionText: trimmedText,
           playbackUrl: null,
@@ -12159,7 +12595,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         
         // Reset and close
         setUnifiedPostText('');
-        setUnifiedPostMedia(null);
+        setUnifiedPostMediaItems([]);
         setUnifiedPostAudio(null);
         setShowUnifiedPostModal(false);
       }
@@ -12208,7 +12644,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const closeUnifiedPostModal = () => {
     setShowUnifiedPostModal(false);
     setUnifiedPostText('');
-    setUnifiedPostMedia(null);
+    setUnifiedPostMediaItems([]);
     setUnifiedPostAudio(null);
     setUnifiedPostError(null);
     setUnifiedPostProgress(null);
@@ -14538,6 +14974,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setEchoesPageSize={setEchoesPageSize}
                         videoStyleFor={videoStyleFor}
                         isVideoAsset={isVideoAsset}
+                        onReplyToEcho={openReplyToPostEcho}
                       />
                     );
                   } catch (error) {
@@ -16966,40 +17403,57 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Text style={styles.logbookTitle}>Create Post</Text>
               
               {/* Media Preview */}
-              {unifiedPostMedia && (
-                <View style={{ marginBottom: 16, alignItems: 'center' }}>
-                  {unifiedPostMedia.type?.startsWith('image/') ? (
-                    <Image
-                      source={{ uri: unifiedPostMedia.uri }}
-                      style={{ width: 200, height: 200, borderRadius: 8 }}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <View style={{ 
-                      width: 200, 
-                      height: 120, 
-                      backgroundColor: '#1a1a1a', 
-                      borderRadius: 8,
-                      justifyContent: 'center',
-                      alignItems: 'center'
-                    }}>
-                      <Text style={{ color: '#00C2FF', fontSize: 16 }}>🎥 Video</Text>
-                      <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
-                        {unifiedPostMedia.fileName || 'Selected Video'}
-                      </Text>
-                    </View>
-                  )}
-                  <Pressable
-                    onPress={() => setUnifiedPostMedia(null)}
-                    style={{ 
-                      marginTop: 8, 
-                      padding: 4, 
-                      backgroundColor: '#ff4444', 
-                      borderRadius: 4 
-                    }}
-                  >
-                    <Text style={{ color: 'white', fontSize: 12 }}>Remove Media</Text>
-                  </Pressable>
+              {unifiedPostMediaItems.length > 0 && (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={{ color: '#CFF6FF', fontSize: 12, marginBottom: 8 }}>
+                    {unifiedPostMediaItems.length} item{unifiedPostMediaItems.length === 1 ? '' : 's'} selected
+                  </Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {unifiedPostMediaItems.map((mediaItem, mediaIndex) => (
+                      <View
+                        key={`${mediaItem.uri || 'media'}_${mediaIndex}`}
+                        style={{
+                          width: '31%',
+                          aspectRatio: 1,
+                          borderRadius: 8,
+                          overflow: 'hidden',
+                          backgroundColor: '#111827',
+                          position: 'relative',
+                        }}
+                      >
+                        {isImageAsset(mediaItem) ? (
+                          <Image
+                            source={{ uri: mediaItem.uri }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+                            <Text style={{ color: '#00C2FF', fontSize: 20 }}>
+                              {isVideoAsset(mediaItem) ? '🎥' : isAudioAsset(mediaItem) ? '🎵' : '📄'}
+                            </Text>
+                            <Text style={{ color: '#ddd', fontSize: 10, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
+                              {mediaItem.fileName || `Item ${mediaIndex + 1}`}
+                            </Text>
+                          </View>
+                        )}
+                        <Pressable
+                          onPress={() => removeUnifiedPostMediaAt(mediaIndex)}
+                          style={{
+                            position: 'absolute',
+                            top: 6,
+                            right: 6,
+                            backgroundColor: 'rgba(255,68,68,0.92)',
+                            borderRadius: 12,
+                            paddingHorizontal: 6,
+                            paddingVertical: 3,
+                          }}
+                        >
+                          <Text style={{ color: 'white', fontSize: 10, fontWeight: '700' }}>Remove</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
                 </View>
               )}
 
@@ -17062,10 +17516,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }}
                 >
                   <Text style={{ color: '#CFF6FF', fontSize: 12, fontWeight: '700' }}>
-                    {unifiedPostMedia || unifiedPostAudio ? 'Uploading...' : 'Posting story...'}
+                    {unifiedPostMediaItems.length > 0 || unifiedPostAudio ? 'Uploading...' : 'Posting story...'}
                     {typeof unifiedPostProgress === 'number'
                       ? ` ${unifiedPostProgress}%`
-                      : unifiedPostMedia || unifiedPostAudio
+                      : unifiedPostMediaItems.length > 0 || unifiedPostAudio
                       ? ' preparing files'
                       : ' publishing'}
                   </Text>
@@ -17193,7 +17647,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <ActivityIndicator color="white" />
                   ) : (
                     <Text style={styles.textComposerButtonText}>
-                      {unifiedPostMedia
+                      {unifiedPostMediaItems.length > 1
+                        ? 'Post Grid'
+                        : unifiedPostMedia
                         ? 'Post with Media'
                         : unifiedPostAudio
                         ? 'Post Audio'
@@ -19553,6 +20009,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         onRequestClose={() => {
           setShowEchoes(false);
           setEditingEcho(null);
+          setReplyingToEcho(null);
           updateEchoText('');
         }}
       >
@@ -19662,6 +20119,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           if (e.uid === myUid) {
                             Alert.alert('My Echo', `"${e.text}"`, [
                               {
+                                text: `${e.huggedBy?.[myUid] ? 'Unhug' : 'Hug'} (${Number(e.hugs || 0)})`,
+                                onPress: () => toggleEchoHugFromModal(e as any),
+                              },
+                              {
                                 text: 'Splash',
                                 onPress: () =>
                                   Alert.alert('Splash', 'Feature coming soon!'),
@@ -19678,8 +20139,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               { text: 'Cancel', style: 'cancel' },
                             ]);
                           } else {
-                            // Reply to other users' echoes
                             Alert.alert('Echo Reply', `"${e.text}"`, [
+                              {
+                                text: `${e.huggedBy?.[myUid] ? 'Unhug' : 'Hug'} (${Number(e.hugs || 0)})`,
+                                onPress: () => toggleEchoHugFromModal(e as any),
+                              },
                               {
                                 text: 'Reply',
                                 onPress: () => {
@@ -19699,6 +20163,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             </Text>
                             <Text> </Text>
                             <Text>{e.text}</Text>
+                          </Text>
+                          {!!e.replyCount && (
+                            <Text style={{ color: 'rgba(157,230,255,0.85)', fontSize: 12, marginTop: 2 }}>
+                              {e.replyCount} {e.replyCount === 1 ? 'reply' : 'replies'}
+                            </Text>
+                          )}
+                          <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 12, marginTop: 2 }}>
+                            {Number(e.hugs || 0)} hugs
                           </Text>
                           {e.createdAt && (
                             <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
@@ -19735,6 +20207,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             onPress={() => {
               setShowEchoes(false);
               setEditingEcho(null);
+              setReplyingToEcho(null);
               updateEchoText('');
             }}
           >
@@ -22120,7 +22593,82 @@ const LiveStreamModal = ({
   const [joinedParticipants, setJoinedParticipants] = useState<
     Array<{ uid: string; name: string; photo: string | null }>
   >([]);
+  const [registeredParticipantRtcUids, setRegisteredParticipantRtcUids] =
+    useState<number[]>([]);
   const MAX_HERE_NOW_SCAN = 200;
+  const fetchJsonFromCandidateUrls = useCallback(
+    async (
+      rawUrl: string,
+      init?: RequestInit,
+    ): Promise<{ json: any; url: string } | null> => {
+      const candidates = buildBackendUrlCandidates(rawUrl);
+      let lastErr: any = null;
+      for (const candidate of candidates) {
+        try {
+          const resp = await fetch(candidate, init);
+          if (!resp.ok) {
+            lastErr = new Error(`HTTP ${resp.status} from ${candidate}`);
+            continue;
+          }
+          const json = await resp.json();
+          return { json, url: candidate };
+        } catch (error) {
+          lastErr = error;
+        }
+      }
+      if (lastErr) {
+        console.warn('Backend candidate fetch failed', lastErr);
+      }
+      return null;
+    },
+    [],
+  );
+  const upsertLiveParticipantPresence = useCallback(
+    async (rtcUidOverride?: number | null) => {
+      const me = auth?.()?.currentUser;
+      if (!liveDocId || !me?.uid) return;
+      const rtcUid = Number.isFinite(Number(rtcUidOverride))
+        ? Number(rtcUidOverride)
+        : Number.isFinite(Number(liveUid))
+        ? Number(liveUid)
+        : mapRtcUidFromUserId(me.uid);
+      try {
+        await firestore()
+          .collection(`live/${liveDocId}/participants`)
+          .doc(me.uid)
+          .set(
+            {
+              uid: me.uid,
+              rtcUid,
+              name: String(
+                me.displayName ||
+                  (me.email ? String(me.email).split('@')[0] : '') ||
+                  'Viber',
+              ),
+              photo: me.photoURL || null,
+              isHost: !!isChartered,
+              joinedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+              liveChannel: liveChannel || channelInput || null,
+            },
+            { merge: true },
+          );
+      } catch (error) {
+        console.warn('Failed to register live participant', error);
+      }
+    },
+    [channelInput, isChartered, liveChannel, liveDocId, liveUid],
+  );
+  const clearLiveParticipantPresence = useCallback(async () => {
+    const me = auth?.()?.currentUser;
+    if (!liveDocId || !me?.uid) return;
+    try {
+      await firestore()
+        .collection(`live/${liveDocId}/participants`)
+        .doc(me.uid)
+        .delete();
+    } catch {}
+  }, [liveDocId]);
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
   }, []);
@@ -22138,43 +22686,70 @@ const LiveStreamModal = ({
 
   useEffect(() => {
     if (!visible || !inviteJoinPreset || isLiveStarted) return;
-    if (inviteJoinPreset.requireApproval && inviteJoinPreset.liveId) {
-      setLiveDocId(String(inviteJoinPreset.liveId));
-      setLiveTitle(
-        String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
+    let cancelled = false;
+    (async () => {
+      let resolvedLiveDocId = inviteJoinPreset.liveId
+        ? String(inviteJoinPreset.liveId)
+        : null;
+      let resolvedChannel = String(
+        inviteJoinPreset.channel || channelInput || defaultChannel || '',
+      )
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
+      let resolvedTitle = String(
+        inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo',
       );
-      setAwaitingCaptainApproval(true);
-      setJoinApprovalLabel(
-        `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
-      );
+      let resolvedToken = String(inviteJoinPreset.token || '').trim() || null;
+
+      if (resolvedLiveDocId) {
+        try {
+          const snap = await firestore().collection('live').doc(resolvedLiveDocId).get();
+          const data = snap?.data?.() || {};
+          const liveDocChannel = String(
+            data.channel || data.liveChannel || resolvedChannel || '',
+          )
+            .trim()
+            .replace(/[^A-Za-z0-9_]/g, '_')
+            .slice(0, 64);
+          if (liveDocChannel) resolvedChannel = liveDocChannel;
+          if (!resolvedTitle) {
+            resolvedTitle = String(
+              data.title || data.liveTitle || inviteJoinPreset.fromName || 'Drift Expo',
+            );
+          }
+        } catch {}
+      }
+
+      if (cancelled) return;
+
+      if (inviteJoinPreset.requireApproval && resolvedLiveDocId) {
+        setLiveDocId(resolvedLiveDocId);
+        setLiveTitle(resolvedTitle);
+        setAwaitingCaptainApproval(true);
+        setJoinApprovalLabel(
+          `Join request sent to ${inviteJoinPreset.fromName || 'captain'}.`,
+        );
+        setStartError(null);
+        return;
+      }
+
+      if (!resolvedChannel) return;
+      const mappedUid = mapRtcUidFromUserId(auth?.()?.currentUser?.uid);
+      setLiveDocId(resolvedLiveDocId);
+      setLiveTitle(resolvedTitle);
+      setChannelInput(resolvedChannel);
+      setLiveChannel(resolvedChannel);
+      setLiveUid(mappedUid);
+      setLiveToken(resolvedToken);
       setStartError(null);
-      return;
-    }
-    const suggestedChannel = String(
-      inviteJoinPreset.channel || channelInput || defaultChannel || '',
-    )
-      .trim()
-      .replace(/[^A-Za-z0-9_]/g, '_')
-      .slice(0, 64);
-    if (!suggestedChannel) return;
-    const uidSrc = String(auth?.()?.currentUser?.uid || '0');
-    let uidHash = 0;
-    for (let i = 0; i < uidSrc.length; i += 1) {
-      uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
-    }
-    const mappedUid = (uidHash % 2147483646) + 1;
-    setLiveDocId(inviteJoinPreset.liveId ? String(inviteJoinPreset.liveId) : null);
-    setLiveTitle(
-      String(inviteJoinPreset.title || inviteJoinPreset.fromName || 'Drift Expo'),
-    );
-    setChannelInput(suggestedChannel);
-    setLiveChannel(suggestedChannel);
-    setLiveUid(mappedUid);
-    setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
-    setStartError(null);
-    setAwaitingCaptainApproval(false);
-    setJoinApprovalLabel('');
-    setIsLiveStarted(true);
+      setAwaitingCaptainApproval(false);
+      setJoinApprovalLabel('');
+      setIsLiveStarted(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [
     defaultChannel,
     inviteJoinPreset,
@@ -22210,16 +22785,16 @@ const LiveStreamModal = ({
               .replace(/[^A-Za-z0-9_]/g, '_')
               .slice(0, 64);
             if (!suggestedChannel) return;
-            const uidSrc = String(auth?.()?.currentUser?.uid || '0');
-            let uidHash = 0;
-            for (let i = 0; i < uidSrc.length; i += 1) {
-              uidHash = (uidHash * 31 + uidSrc.charCodeAt(i)) >>> 0;
-            }
-            const mappedUid = (uidHash % 2147483646) + 1;
+            const mappedUid = mapRtcUidFromUserId(auth?.()?.currentUser?.uid);
             setChannelInput(suggestedChannel);
             setLiveChannel(suggestedChannel);
-            setLiveUid(mappedUid);
-            setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : staticToken || null);
+            setLiveUid(
+              Number.isFinite(Number(data.rtcUid))
+                ? Number(data.rtcUid)
+                : mappedUid,
+            );
+            const acceptedToken = String(data.token || '').trim();
+            setLiveToken(acceptedToken || null);
             setAwaitingCaptainApproval(false);
             setJoinApprovalLabel('');
             setIsLiveStarted(true);
@@ -22521,7 +23096,6 @@ const LiveStreamModal = ({
   useEffect(() => {
     if (!isLiveStarted || !liveDocId) {
       setInviteStatusByUid({});
-      setJoinedParticipants([]);
       return;
     }
     const unsub = firestore()
@@ -22542,33 +23116,50 @@ const LiveStreamModal = ({
             };
           });
           setInviteStatusByUid(next);
+        },
+        () => {},
+      );
+    return () => {
+      try {
+        unsub && unsub();
+      } catch {}
+    };
+  }, [isLiveStarted, liveDocId]);
 
-          const acceptedUids = (snap?.docs || [])
-            .filter((doc: any) => String(doc?.data?.()?.status || '').toLowerCase() === 'accepted')
-            .map((doc: any) => String(doc.id || ''))
-            .filter(Boolean)
-            .slice(0, 30);
-          if (acceptedUids.length === 0) {
-            setJoinedParticipants([]);
-          } else {
-            Promise.all(
-              acceptedUids.map(async uid => {
-                try {
-                  const userSnap = await firestore().collection('users').doc(uid).get();
-                  const d = userSnap?.data?.() || {};
-                  return {
-                    uid,
-                    name: String(d.displayName || d.name || d.username || uid),
-                    photo: d.photoURL || d.avatar || null,
-                  };
-                } catch {
-                  return { uid, name: uid, photo: null };
-                }
-              }),
-            )
-              .then(rows => setJoinedParticipants(rows))
-              .catch(() => {});
-          }
+  useEffect(() => {
+    if (!isLiveStarted || !liveDocId) {
+      setJoinedParticipants([]);
+      setRegisteredParticipantRtcUids([]);
+      return;
+    }
+    const unsub = firestore()
+      .collection(`live/${liveDocId}/participants`)
+      .onSnapshot(
+        snap => {
+          const docs = snap?.docs || [];
+          const rows = docs
+            .map(doc => {
+              const data = doc.data() || {};
+              return {
+                uid: String(doc.id || ''),
+                name: String(data.name || data.displayName || doc.id || 'Viber'),
+                photo: data.photo ? String(data.photo) : null,
+                rtcUid: Number(data.rtcUid || 0),
+              };
+            })
+            .filter(row => row.uid);
+          setJoinedParticipants(
+            rows.map(row => ({
+              uid: row.uid,
+              name: row.name,
+              photo: row.photo,
+            })),
+          );
+          setRegisteredParticipantRtcUids(
+            rows
+              .map(row => Number(row.rtcUid))
+              .filter((uid, idx, arr) => Number.isFinite(uid) && uid > 0 && arr.indexOf(uid) === idx),
+          );
         },
         () => {},
       );
@@ -22601,9 +23192,29 @@ const LiveStreamModal = ({
           } catch {}
           try {
             engine.registerEventHandler?.({
+              onJoinChannelSuccess: (_conn: any, elapsed: number) => {
+                console.log(
+                  '[DRIFT DEBUG] Join success',
+                  JSON.stringify({
+                    liveId: liveDocId,
+                    channel: liveChannel || channelInput || defaultChannel || '',
+                    uid: liveUid,
+                    elapsed,
+                  }),
+                );
+              },
               onUserJoined: (_conn: any, uid: number) => {
                 const n = Number(uid);
                 if (!Number.isFinite(n) || n <= 0) return;
+                console.log(
+                  '[DRIFT DEBUG] Remote user joined',
+                  JSON.stringify({
+                    liveId: liveDocId,
+                    channel: liveChannel || channelInput || defaultChannel || '',
+                    myUid: liveUid,
+                    remoteUid: n,
+                  }),
+                );
                 setRemoteParticipantUids(prev =>
                   prev.includes(n) ? prev : [...prev, n],
                 );
@@ -22611,10 +23222,27 @@ const LiveStreamModal = ({
               },
               onUserOffline: (_conn: any, uid: number) => {
                 const n = Number(uid);
+                console.log(
+                  '[DRIFT DEBUG] Remote user offline',
+                  JSON.stringify({
+                    liveId: liveDocId,
+                    channel: liveChannel || channelInput || defaultChannel || '',
+                    myUid: liveUid,
+                    remoteUid: n,
+                  }),
+                );
                 setRemoteParticipantUids(prev => prev.filter(x => x !== n));
                 setPinnedRemoteUid(prev => (prev === n ? null : prev));
               },
               onLeaveChannel: () => {
+                console.log(
+                  '[DRIFT DEBUG] Leave channel',
+                  JSON.stringify({
+                    liveId: liveDocId,
+                    channel: liveChannel || channelInput || defaultChannel || '',
+                    myUid: liveUid,
+                  }),
+                );
                 setRemoteParticipantUids([]);
                 setPinnedRemoteUid(null);
               },
@@ -22639,9 +23267,31 @@ const LiveStreamModal = ({
             engine.enableVideo();
           } catch {}
           try {
+            engine.addListener?.('JoinChannelSuccess', (channel: string, uid: number, elapsed: number) => {
+              console.log(
+                '[DRIFT DEBUG] Join success',
+                JSON.stringify({
+                  liveId: liveDocId,
+                  channel,
+                  uid,
+                  elapsed,
+                }),
+              );
+            });
+          } catch {}
+          try {
             engine.addListener?.('UserJoined', (uid: number) => {
               const n = Number(uid);
               if (!Number.isFinite(n) || n <= 0) return;
+              console.log(
+                '[DRIFT DEBUG] Remote user joined',
+                JSON.stringify({
+                  liveId: liveDocId,
+                  channel: liveChannel || channelInput || defaultChannel || '',
+                  myUid: liveUid,
+                  remoteUid: n,
+                }),
+              );
               setRemoteParticipantUids(prev =>
                 prev.includes(n) ? prev : [...prev, n],
               );
@@ -22651,6 +23301,15 @@ const LiveStreamModal = ({
           try {
             engine.addListener?.('UserOffline', (uid: number) => {
               const n = Number(uid);
+              console.log(
+                '[DRIFT DEBUG] Remote user offline',
+                JSON.stringify({
+                  liveId: liveDocId,
+                  channel: liveChannel || channelInput || defaultChannel || '',
+                  myUid: liveUid,
+                  remoteUid: n,
+                }),
+              );
               setRemoteParticipantUids(prev => prev.filter(x => x !== n));
               setPinnedRemoteUid(prev => (prev === n ? null : prev));
             });
@@ -22675,6 +23334,7 @@ const LiveStreamModal = ({
       }
     })();
     return () => {
+      clearLiveParticipantPresence().catch(() => {});
       if (engineRef.current) {
         try {
           engineRef.current.leaveChannel?.();
@@ -22687,7 +23347,7 @@ const LiveStreamModal = ({
       setRemoteParticipantUids([]);
       setPinnedRemoteUid(null);
     };
-  }, [visible, Agora, appId, applyLiveQualityProfile]);
+  }, [visible, Agora, appId, applyLiveQualityProfile, clearLiveParticipantPresence]);
                     
   // Join channel when user taps Start Live (tokenless first when enabled)
   useEffect(() => {
@@ -22705,19 +23365,16 @@ const LiveStreamModal = ({
           ? Number(liveUid as any)
           : 0;
         const uidCandidates = Array.from(new Set([uidBase, 0]));
-        const tokenCandidates: Array<string | null> = ALLOW_TOKENLESS_DRIFT
-          ? [null]
-          : [];
+        const tokenCandidates: Array<string | null> = [];
         const addToken = (value: any) => {
           const t = String(value || '').trim();
-          if (!t) {
-            if (!tokenCandidates.includes(null)) tokenCandidates.push(null);
-            return;
-          }
+          if (!t) return;
           if (!tokenCandidates.includes(t)) tokenCandidates.push(t);
         };
         addToken(liveToken);
-        addToken(staticToken);
+        if (ALLOW_TOKENLESS_DRIFT && !tokenCandidates.includes(null)) {
+          tokenCandidates.push(null);
+        }
         // Optional fallback: only attempt token endpoint when tokenless mode is off.
         if (!ALLOW_TOKENLESS_DRIFT) {
           try {
@@ -22736,13 +23393,14 @@ const LiveStreamModal = ({
               )}&role=publisher&uid=${encodeURIComponent(
                 String(uidBase || 0),
               )}`;
-              const resp = await fetch(`${tokenEndpoint}${q}`);
-              if (resp.ok) {
-                const json = await resp.json();
-                addToken(json?.token);
-              }
+              const tokenResult = await fetchJsonFromCandidateUrls(`${tokenEndpoint}${q}`);
+              addToken(tokenResult?.json?.token);
             }
           } catch {}
+        }
+        if (tokenCandidates.length === 0) {
+          setStartError('No valid Agora token is available for this Drift Expo join.');
+          return;
         }
         let joined = false;
         let lastErr: any = null;
@@ -22762,6 +23420,7 @@ const LiveStreamModal = ({
               }
               joined = true;
               setStartError(null);
+              await upsertLiveParticipantPresence(uidNum);
               break;
             } catch (err) {
               lastErr = err;
@@ -22780,7 +23439,7 @@ const LiveStreamModal = ({
         setStartError(String((e as any)?.message || 'Join failed'));
       }
     })();
-  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, isLiveStarted, isWifi, liveUid, liveToken, liveChannel]);
+  }, [applyLiveQualityProfile, bridge?.audioOnlyFallback, dataSaver?.enabled, fetchJsonFromCandidateUrls, isLiveStarted, isWifi, liveUid, liveToken, liveChannel, upsertLiveParticipantPresence]);
                     
   const handleEndDrift = async () => {
     try {
@@ -22793,6 +23452,9 @@ const LiveStreamModal = ({
           body: JSON.stringify({ liveId: liveDocId }),
         });
       }
+    } catch {}
+    try {
+      await clearLiveParticipantPresence();
     } catch {}
     try {
       engineRef.current?.leaveChannel?.();
@@ -22921,15 +23583,17 @@ const LiveStreamModal = ({
       }
       // Use user-provided values (fallback to config)
       const enteredChan = String(channelInput || '').trim();
+      const forcedChan = String(cfg?.AGORA_CHANNEL_NAME || '').trim();
       const baseChan =
+        forcedChan ||
         enteredChan ||
         String(defaultChannel || '').trim() ||
         `drift_${currentUserUid.slice(0, 8)}_${Date.now()}`;
-      const chan = baseChan.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
-      const initialTok = (tokenInput || '').trim() || staticToken || null;
-      let uidNum = parseInt(uidInput || '0', 10);
-      if (!Number.isFinite(uidNum) || uidNum < 0) {
-        uidNum = 0;
+      let chan = baseChan.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
+      const initialTok = (tokenInput || '').trim() || null;
+      let uidNum = parseInt(uidInput || '', 10);
+      if (!Number.isFinite(uidNum) || uidNum <= 0) {
+        uidNum = mapRtcUidFromUserId(currentUserUid);
       }
       if (uidNum === 0) {
         let hash = 0;
@@ -22942,6 +23606,8 @@ const LiveStreamModal = ({
       // Optional: notify backend we're starting and fetch a fresh token/liveId
       try {
         const startUrl = (cfg && cfg.START_LIVE_ENDPOINT) || '';
+        const tokenUrl = String(cfg?.AGORA_TOKEN_ENDPOINT || '').trim();
+        let sessionJson: any = null;
         if (startUrl) {
           const payload: any = {
             channel: chan,
@@ -22953,29 +23619,99 @@ const LiveStreamModal = ({
             hostName,
             hostPhoto,
           };
-          const resp = await fetch(startUrl, {
+          const started = await fetchJsonFromCandidateUrls(startUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
           });
-          if (resp.ok) {
-            const json = await resp.json();
-            if (!ALLOW_TOKENLESS_DRIFT && json && json.token) {
+          if (started?.json) {
+            sessionJson = started.json;
+          }
+        }
+
+        if (!sessionJson && tokenUrl) {
+          const q = `?channel=${encodeURIComponent(
+            chan,
+          )}&role=publisher&uid=${encodeURIComponent(String(uidNum))}`;
+          const tokenResult = await fetchJsonFromCandidateUrls(`${tokenUrl}${q}`);
+          if (tokenResult?.json?.token) {
+            sessionJson = {
+              token: tokenResult.json.token,
+              channel: chan,
+            };
+          }
+        }
+
+        if (sessionJson) {
+            const json = sessionJson;
+            if (json && json.token) {
               setLiveToken(String(json.token));
             } else {
-              setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
+              setLiveToken(initialTok || null);
             }
             if (json && (json.liveId || json.id)) {
               setLiveDocId(String(json.liveId || json.id));
+            } else {
+              const localLiveRef = firestore().collection('live').doc();
+              await localLiveRef.set(
+                {
+                  channel: chan,
+                  hostUid: currentUserUid,
+                  hostName,
+                  hostPhoto,
+                  title: liveTitle || 'Drift Expo',
+                  privacy: livePrivacy,
+                  startedAt: firestore.FieldValue.serverTimestamp(),
+                  updatedAt: firestore.FieldValue.serverTimestamp(),
+                  status: 'live',
+                },
+                { merge: true },
+              );
+              setLiveDocId(localLiveRef.id);
             }
-          } else {
-            setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
-          }
+            if (json && json.channel) {
+              chan = String(json.channel).trim() || chan;
+            }
         } else {
-          setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
+          const localLiveRef = firestore().collection('live').doc();
+          await localLiveRef.set(
+            {
+              channel: chan,
+              hostUid: currentUserUid,
+              hostName,
+              hostPhoto,
+              title: liveTitle || 'Drift Expo',
+              privacy: livePrivacy,
+              startedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+              status: 'live',
+            },
+            { merge: true },
+          );
+          setLiveDocId(localLiveRef.id);
+          setLiveToken(initialTok || null);
         }
-      } catch {
-        setLiveToken(ALLOW_TOKENLESS_DRIFT ? null : initialTok || null);
+      } catch (error) {
+        console.warn('startLiveNow backend token error', error);
+        try {
+          const localLiveRef = firestore().collection('live').doc();
+          await localLiveRef.set(
+            {
+              channel: chan,
+              hostUid: currentUserUid,
+              hostName,
+              hostPhoto,
+              title: liveTitle || 'Drift Expo',
+              privacy: livePrivacy,
+              startedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+              status: 'live',
+            },
+            { merge: true },
+          );
+          setLiveDocId(localLiveRef.id);
+          setLiveToken(initialTok || null);
+        } catch {}
       }
       setChannelInput(chan);
       setLiveChannel(chan);
@@ -23411,6 +24147,19 @@ const LiveStreamModal = ({
           'Skipper',
       ).trim();
       const senderPhoto = me.photoURL || null;
+      let cfgLocal: any = null;
+      try {
+        cfgLocal = require('./liveConfig');
+      } catch {}
+      const fixedLiveChannel = String(
+        liveChannel || cfgLocal?.AGORA_CHANNEL_NAME || 'AqualinkSharedLive',
+      )
+        .trim()
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 64);
+      const fixedLiveToken = String(
+        liveToken || '',
+      ).trim();
       let inboxInviteWritten = false;
       let callableInviteSent = false;
       let inviteStatusWritten = false;
@@ -23446,7 +24195,8 @@ const LiveStreamModal = ({
 
         const invitePayload = {
           liveId: liveDocId || null,
-          liveChannel: liveChannel || null,
+          liveChannel: fixedLiveChannel || null,
+          liveToken: fixedLiveToken || null,
           liveTitle: liveTitle || 'Live Session',
           fromUid: me.uid,
           fromName: callerName,
@@ -23483,57 +24233,57 @@ const LiveStreamModal = ({
         console.warn('[INVITE DEBUG] callable sendCrewInvitation failed', err);
       });
 
-      if (!inboxInviteWritten) {
-        try {
-          await firestore()
-            .collection(`users/${toUid}/mentions`)
-            .add({
-              type: 'live_invite',
-              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-              fromUid: me.uid,
-              fromName: callerName,
-              fromPhoto: senderPhoto,
-              route: 'Pings',
-              liveId: liveDocId || '',
-              liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: liveChannel || null,
-              directCallId: directCallId || null,
-              directCallChannel: directCallChannel || null,
-              callType: directCallType,
-              status: 'pending',
-              expiresAtMs: computedExpiry,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-          fallbackMentionWritten = true;
-        } catch (err) {
-          console.warn('[INVITE DEBUG] mention fallback write failed', err);
-          lastErr = err;
-        }
-        try {
-          await firestore()
-            .collection(`users/${toUid}/pings`)
-            .add({
-              type: 'live_invite',
-              text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
-              fromUid: me.uid,
-              fromName: callerName,
-              fromPhoto: senderPhoto,
-              liveId: liveDocId || '',
-              liveTitle: liveTitle || 'Drift Expo',
-              liveChannel: liveChannel || null,
-              directCallId: directCallId || null,
-              directCallChannel: directCallChannel || null,
-              callType: directCallType,
-              status: 'pending',
-              read: false,
-              expiresAtMs: computedExpiry,
-              createdAt: firestore.FieldValue.serverTimestamp(),
-            });
-          fallbackPingWritten = true;
-        } catch (err) {
-          console.warn('[INVITE DEBUG] ping fallback write failed', err);
-          lastErr = err;
-        }
+      try {
+        await firestore()
+          .collection(`users/${toUid}/mentions`)
+          .add({
+            type: 'live_invite',
+            text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+            fromUid: me.uid,
+            fromName: callerName,
+            fromPhoto: senderPhoto,
+            route: 'Pings',
+            liveId: liveDocId || '',
+            liveTitle: liveTitle || 'Drift Expo',
+            liveChannel: fixedLiveChannel || null,
+            liveToken: fixedLiveToken || null,
+            directCallId: directCallId || null,
+            directCallChannel: directCallChannel || null,
+            callType: directCallType,
+            status: 'pending',
+            expiresAtMs: computedExpiry,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          });
+        fallbackMentionWritten = true;
+      } catch (err) {
+        console.warn('[INVITE DEBUG] mention fallback write failed', err);
+        lastErr = err;
+      }
+      try {
+        await firestore()
+          .collection(`users/${toUid}/pings`)
+          .add({
+            type: 'live_invite',
+            text: `${callerName} invited you to join ${liveTitle || 'Drift Expo'}`,
+            fromUid: me.uid,
+            fromName: callerName,
+            fromPhoto: senderPhoto,
+            liveId: liveDocId || '',
+            liveTitle: liveTitle || 'Drift Expo',
+            liveChannel: fixedLiveChannel || null,
+            liveToken: fixedLiveToken || null,
+            directCallId: directCallId || null,
+            directCallChannel: directCallChannel || null,
+            callType: directCallType,
+            status: 'pending',
+            read: false,
+            expiresAtMs: computedExpiry,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          });
+        fallbackPingWritten = true;
+      } catch (err) {
+        console.warn('[INVITE DEBUG] ping fallback write failed', err);
+        lastErr = err;
       }
 
       if (liveDocId && inviteDocId) {
@@ -23551,6 +24301,8 @@ const LiveStreamModal = ({
               inviteId: inviteDocId,
               fromUid: me.uid,
               liveId: liveDocId,
+              liveChannel: fixedLiveChannel || null,
+              token: fixedLiveToken || null,
               directCallId: directCallId || null,
               callType: directCallType,
               directCallChannel: directCallChannel || null,
@@ -23633,7 +24385,7 @@ const LiveStreamModal = ({
     if (!target?.uid) return false;
     return await sendInviteTo(
       { uid: target.uid, name: target.name || target.uid },
-      { silent: options?.silent, requireFeedPanel: false },
+      { silent: options?.silent, requireFeedPanel: true },
     );
   };
 
@@ -24367,6 +25119,7 @@ const LiveStreamModal = ({
               }),
             });
             if (!resp.ok) throw new Error('accept failed');
+            const json = await resp.json().catch(() => ({}));
             try {
               await firestore()
                 .collection(`live/${liveDocId}/invite_status`)
@@ -24379,6 +25132,10 @@ const LiveStreamModal = ({
                     liveId: liveDocId,
                     channel: chan,
                     liveChannel: chan,
+                    token: json?.token ? String(json.token) : null,
+                    rtcUid: Number.isFinite(Number(json?.rtcUid))
+                      ? Number(json.rtcUid)
+                      : null,
                     updatedAt: firestore.FieldValue.serverTimestamp(),
                   },
                   { merge: true },
@@ -24843,11 +25600,27 @@ const LiveStreamModal = ({
   const RtcRemoteView = Agora?.RtcRemoteView;
   const VideoRenderMode = Agora?.VideoRenderMode;
   const VideoSourceType = Agora?.VideoSourceType;
+  const remoteRenderUids = Array.from(
+    new Set(
+      [...registeredParticipantRtcUids, ...remoteParticipantUids].filter(uid => {
+        const n = Number(uid);
+        return Number.isFinite(n) && n > 0 && n !== Number(liveUid || 0);
+      }),
+    ),
+  );
   const mainRemoteUid =
     (pinnedRemoteUid &&
-    remoteParticipantUids.includes(pinnedRemoteUid)
+    remoteRenderUids.includes(pinnedRemoteUid)
       ? pinnedRemoteUid
-      : remoteParticipantUids[0]) || null;
+      : remoteRenderUids[0]) || null;
+  const driftDebugLines = [
+    `liveId: ${liveDocId || '-'}`,
+    `channel: ${liveChannel || channelInput || defaultChannel || '-'}`,
+    `myUid: ${Number.isFinite(Number(liveUid)) ? Number(liveUid) : '-'}`,
+    `remote: ${remoteRenderUids.length ? remoteRenderUids.join(', ') : '-'}`,
+    `participants: ${joinedParticipants.length}`,
+    `token: ${liveToken ? 'yes' : 'no'}`,
+  ];
                     
   return (
     <Modal
@@ -24892,6 +25665,33 @@ const LiveStreamModal = ({
           >
             {livePrivacy.toUpperCase()}
           </Text>
+        )}
+        {isLiveStarted && (
+          <View
+            style={{
+              position: 'absolute',
+              top: insets.top + 42,
+              left: 12,
+              right: 12,
+              zIndex: 10,
+              backgroundColor: 'rgba(4,10,18,0.78)',
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: 'rgba(0,194,255,0.4)',
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+            }}
+          >
+            {driftDebugLines.map(line => (
+              <Text
+                key={line}
+                style={{ color: '#BEEFFF', fontSize: 11, fontWeight: '600' }}
+                numberOfLines={1}
+              >
+                {line}
+              </Text>
+            ))}
+          </View>
         )}
         {isLiveStarted && !cameraHidden && (
           <>
@@ -25464,7 +26264,7 @@ const LiveStreamModal = ({
             </ScrollView>
           </View>
         )}
-        {isLiveStarted && remoteParticipantUids.length > 1 && (
+        {isLiveStarted && remoteRenderUids.length > 1 && (
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -25477,7 +26277,7 @@ const LiveStreamModal = ({
             }}
             contentContainerStyle={{ gap: 8, alignItems: 'center' }}
           >
-            {remoteParticipantUids.map(uid => (
+            {remoteRenderUids.map(uid => (
               <Pressable
                 key={`remote-pill-${uid}`}
                 onPress={() => setPinnedRemoteUid(uid)}

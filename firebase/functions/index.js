@@ -326,6 +326,7 @@ exports.onSplashDelete = onDocumentDeleted('waves/{waveId}/splashes/{uid}', asyn
 exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async (event) => {
   const snap = event.data;
   const waveId = event.params.waveId;
+  const echoId = event.params.echoId;
   const echo = snap.data() || {};
   
   // --- COUNT --- //
@@ -337,6 +338,16 @@ exports.onEchoCreate = onDocumentCreated('waves/{waveId}/echoes/{echoId}', async
       if (!waveSnap.exists) return;
       tx.set(waveRef, { counts: { echoes: admin.firestore.FieldValue.increment(1) } }, { merge: true });
     });
+  } else {
+    const parentEchoRef = db.doc(`waves/${waveId}/echoes/${echo.replyToEchoId}`);
+    await parentEchoRef.set(
+      {
+        replyCount: admin.firestore.FieldValue.increment(1),
+        lastReplyAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastReplyId: echoId,
+      },
+      { merge: true },
+    );
   }
   // --- PING --- //
   const waveSnap = await db.collection('waves').doc(waveId).get();
@@ -426,6 +437,18 @@ exports.onEchoDelete = onDocumentDeleted('waves/{waveId}/echoes/{echoId}', async
       if (counts.echoes > 0) {
         tx.update(waveRef, { 'counts.echoes': admin.firestore.FieldValue.increment(-1) });
       }
+    });
+  } else if (echoData.replyToEchoId) {
+    const parentEchoRef = db.doc(`waves/${waveId}/echoes/${echoData.replyToEchoId}`);
+    await db.runTransaction(async (tx) => {
+      const parentSnap = await tx.get(parentEchoRef);
+      if (!parentSnap.exists) return;
+      const currentReplyCount = Math.max(0, Number(parentSnap.get('replyCount') || 0));
+      tx.set(
+        parentEchoRef,
+        { replyCount: Math.max(0, currentReplyCount - 1) },
+        { merge: true },
+      );
     });
   }
 });

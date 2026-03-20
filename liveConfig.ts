@@ -10,8 +10,8 @@ export const AGORA_APP_ID = '02c4691ff2124a5997025c736f9d6ccf';
 // Tokens expire; for production use a token server.
 export const AGORA_STATIC_TOKEN = '007eJxTYLjA8HTaraUnPPf+XKEe/+KGbpfaigOdZdG9FpPzm/4f3r5LgcHAKNnEzNIwLc3I0Mgk0dTS0tzAyDTZ3NgszTLFLDk57de/vxkNgYwM7dfvMzMyQCCIz8YQkpmXkp/KwAAAs6Mk9Q==';
 
-// Default channel name to join when going live (empty so hosts must pick their own)
-export const AGORA_CHANNEL_NAME = '';
+// Default shared live channel used by the current invite-badge flow.
+export const AGORA_CHANNEL_NAME = 'AqualinkSharedLive';
 
 // Optional: App Certificate (never embed in production apps; used server-side for token generation)
 export const AGORA_APP_CERTIFICATE = '1a85bc3d65704dc7b49d259c40d0c58f';
