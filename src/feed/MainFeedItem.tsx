@@ -396,8 +396,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     return item.media?.uri ? [item.media] : [];
   }, [item.media, item.mediaItems]);
   const hasMultiMediaGrid = galleryMediaItems.length > 1;
-  const previewGridItems = galleryMediaItems.slice(0, 4);
-  const hiddenGridCount = Math.max(0, galleryMediaItems.length - 4);
+  const previewGridItems = galleryMediaItems.slice(0, 6);
+  const hiddenGridCount = Math.max(0, galleryMediaItems.length - 6);
   const explicitPostType = String(item.postType || '').toLowerCase();
   const isExplicitVideo = explicitPostType === 'video';
   const isExplicitImage = explicitPostType === 'image';
@@ -1077,54 +1077,77 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
               {/* Post Media */}
               {hasMultiMediaGrid ? (
-                <View style={{ marginHorizontal: 0, width: SCREEN_WIDTH, backgroundColor: '#000', padding: 4 }}>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                <View style={{ marginHorizontal: 0, width: SCREEN_WIDTH, backgroundColor: '#000', paddingHorizontal: 4, paddingVertical: 4 }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' }}>
                     {previewGridItems.map((mediaItem, mediaIndex) => {
-                      const tileSize = (SCREEN_WIDTH - 12) / 2;
                       const isImage = isImageAsset(mediaItem);
                       const isVideo = isVideoAsset(mediaItem);
-                      const isLastVisibleTile = mediaIndex === 3 && hiddenGridCount > 0;
+                      const isLastVisibleTile =
+                        mediaIndex === previewGridItems.length - 1 && hiddenGridCount > 0;
                       return (
                         <Pressable
                           key={`${mediaItem.uri || 'media'}_${mediaIndex}`}
                           onPress={() => openMediaViewer(mediaIndex)}
                           style={{
-                            width: tileSize,
-                            height: tileSize,
-                            margin: 2,
-                            backgroundColor: '#111',
-                            borderRadius: 10,
-                            overflow: 'hidden',
-                            alignItems: 'center',
-                            justifyContent: 'center',
+                            width: '50%',
+                            padding: 2,
                           }}
                         >
-                          {isImage ? (
-                            <Image
-                              source={{ uri: String(mediaItem.uri) }}
-                              style={{ width: '100%', height: '100%' }}
-                              resizeMode="cover"
-                            />
-                          ) : (
-                            <View style={{ alignItems: 'center', justifyContent: 'center', padding: 10 }}>
-                              <Text style={{ fontSize: 32 }}>{isVideo ? 'Video' : 'File'}</Text>
-                              <Text style={{ color: '#fff', fontSize: 11, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
-                                {mediaItem.fileName || `Item ${mediaIndex + 1}`}
-                              </Text>
-                            </View>
-                          )}
-                          {isLastVisibleTile ? (
-                            <View
-                              style={{
-                                ...StyleSheet.absoluteFillObject,
-                                backgroundColor: 'rgba(0,0,0,0.56)',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                              }}
-                            >
-                              <Text style={{ color: '#fff', fontSize: 28, fontWeight: '800' }}>+{hiddenGridCount}</Text>
-                            </View>
-                          ) : null}
+                          <View
+                            style={{
+                              width: '100%',
+                              aspectRatio: 1,
+                              backgroundColor: '#111',
+                              borderRadius: 10,
+                              overflow: 'hidden',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            {isImage ? (
+                              <Image
+                                source={{ uri: String(mediaItem.uri) }}
+                                style={{ width: '100%', height: '100%' }}
+                                resizeMode="cover"
+                              />
+                            ) : (
+                              <View style={{ alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+                                <Text style={{ fontSize: 28, color: '#fff' }}>{isVideo ? 'Video' : 'File'}</Text>
+                                <Text style={{ color: '#fff', fontSize: 11, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
+                                  {mediaItem.fileName || `Item ${mediaIndex + 1}`}
+                                </Text>
+                              </View>
+                            )}
+                            {isLastVisibleTile ? (
+                              <View
+                                style={{
+                                  ...StyleSheet.absoluteFillObject,
+                                  backgroundColor: 'rgba(0,0,0,0.56)',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
+                              >
+                                <Text style={{ color: '#fff', fontSize: 28, fontWeight: '800' }}>+{hiddenGridCount}</Text>
+                              </View>
+                            ) : null}
+                            {mediaIndex === 0 && galleryMediaItems.length > 1 ? (
+                              <View
+                                style={{
+                                  position: 'absolute',
+                                  left: 8,
+                                  bottom: 8,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 4,
+                                  borderRadius: 999,
+                                  backgroundColor: 'rgba(0,0,0,0.52)',
+                                }}
+                              >
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
+                                  {galleryMediaItems.length} media
+                                </Text>
+                              </View>
+                            ) : null}
+                          </View>
                         </Pressable>
                       );
                     })}

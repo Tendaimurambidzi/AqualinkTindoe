@@ -2888,6 +2888,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         }
 
+        const latestUnreadLiveInvite = notificationsData
+          .filter(item => !item.read && String(item.type || '').toLowerCase() === 'live_invite')
+          .sort(
+            (a, b) =>
+              toJSDate(b.createdAt).getTime() - toJSDate(a.createdAt).getTime(),
+          )[0];
+        if (latestUnreadLiveInvite) {
+          const nextInvite: LiveInviteNotice = {
+            id: String(latestUnreadLiveInvite.id || ''),
+            source: 'ping',
+            liveId: String(latestUnreadLiveInvite.liveId || ''),
+            fromUid: String(latestUnreadLiveInvite.fromUid || ''),
+            fromName: String(
+              latestUnreadLiveInvite.fromName ||
+                userData[latestUnreadLiveInvite.fromUid || '']?.name ||
+                'Skipper',
+            ),
+            fromPhoto: latestUnreadLiveInvite.fromPhoto || null,
+            liveTitle: latestUnreadLiveInvite.liveTitle || null,
+            liveChannel: latestUnreadLiveInvite.liveChannel
+              ? String(latestUnreadLiveInvite.liveChannel)
+              : null,
+            liveToken: latestUnreadLiveInvite.liveToken
+              ? String(latestUnreadLiveInvite.liveToken)
+              : null,
+            directCallId: latestUnreadLiveInvite.directCallId
+              ? String(latestUnreadLiveInvite.directCallId)
+              : null,
+            directCallChannel: latestUnreadLiveInvite.directCallChannel
+              ? String(latestUnreadLiveInvite.directCallChannel)
+              : null,
+            callType:
+              latestUnreadLiveInvite.callType === 'audio' ? 'audio' : 'video',
+            createdAtMs: toJSDate(latestUnreadLiveInvite.createdAt).getTime() || 0,
+            expiresAtMs: Number(latestUnreadLiveInvite.expiresAtMs || 0) || 0,
+          };
+          if (
+            nextInvite.fromUid &&
+            (!incomingLiveInvite ||
+              nextInvite.createdAtMs! >= Number(incomingLiveInvite.createdAtMs || 0))
+          ) {
+            setIncomingLiveInvite(nextInvite);
+            cachedIncomingInviteRef.current = nextInvite;
+          }
+        }
+
         // Play tone only for newly added realtime notifications.
         if (newRealtimeNotifications.length > 0) {
           const latestNewNotification = newRealtimeNotifications
