@@ -52,6 +52,8 @@ type SearchResultItem = {
   uid: string;
   name: string;
   photo?: string | null;
+  username?: string | null;
+  secondary?: string | null;
 };
 
 type Props = {
@@ -94,18 +96,37 @@ const formatTimestamp = (value: number): string => {
 };
 
 const normalizeSearchResult = (entry: any): SearchResultItem | null => {
-  const uid = String(entry?.uid || entry?.id || entry?.userId || '').trim();
+  const kind = String(entry?.kind || '').trim().toLowerCase();
+  if (kind && kind !== 'user') return null;
+  const source = entry?.extra && typeof entry.extra === 'object' ? entry.extra : entry;
+  const uid = String(
+    source?.uid || entry?.uid || source?.id || entry?.id || source?.userId || entry?.userId || '',
+  ).trim();
   if (!uid) return null;
+  const displayName = String(
+    source?.displayName ||
+      source?.name ||
+      source?.userName ||
+      entry?.label ||
+      source?.username ||
+      source?.handle ||
+      'User',
+  ).trim();
+  const username = String(source?.username || source?.handle || source?.userName || '').trim();
   return {
     uid,
-    name: String(
-      entry?.name ||
-        entry?.displayName ||
-        entry?.username ||
-        entry?.handle ||
-        'User',
-    ),
-    photo: entry?.photo || entry?.photoURL || entry?.avatar || null,
+    name: displayName || 'User',
+    username: username || null,
+    secondary:
+      username && username !== displayName
+        ? `@${username.replace(/^[@/]+/, '')}`
+        : null,
+    photo:
+      source?.photo ||
+      source?.photoURL ||
+      source?.avatar ||
+      source?.userPhoto ||
+      null,
   };
 };
 
@@ -155,6 +176,7 @@ const FreshDriftExpoModal = ({
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteQuery, setInviteQuery] = useState('');
   const [inviteResults, setInviteResults] = useState<SearchResultItem[]>([]);
+  const [onlineInvitees, setOnlineInvitees] = useState<SearchResultItem[]>([]);
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteBusyUid, setInviteBusyUid] = useState<string | null>(null);
 
@@ -190,6 +212,7 @@ const FreshDriftExpoModal = ({
     setShowInvitePanel(false);
     setInviteQuery('');
     setInviteResults([]);
+    setOnlineInvitees([]);
     setInviteLoading(false);
     setInviteBusyUid(null);
     joinedChannelRef.current = null;
@@ -352,6 +375,45 @@ const FreshDriftExpoModal = ({
       Alert.alert('Could not open invite', String(error?.message || 'This room is unavailable.'));
     });
   }, [hydrateRoom, inviteJoinPreset?.liveId, visible]);
+
+  useEffect(() => {
+    if (!visible || !showInvitePanel) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await firestore()
+          .collection('users')
+          .orderBy('lastActiveAt', 'desc')
+          .limit(24)
+          .get();
+        if (cancelled) return;
+        const rows = (snap?.docs || [])
+          .map(doc => {
+            const data = doc.data() || {};
+            if (doc.id === meUid) return null;
+            if (data?.online !== true) return null;
+            return normalizeSearchResult({
+              kind: 'user',
+              id: doc.id,
+              label: data.displayName || data.name || data.username || 'User',
+              extra: {
+                uid: doc.id,
+                displayName: data.displayName || data.name || null,
+                username: data.username || data.userName || null,
+                photoURL: data.userPhoto || data.photoURL || null,
+              },
+            });
+          })
+          .filter(Boolean) as SearchResultItem[];
+        setOnlineInvitees(rows);
+      } catch {
+        if (!cancelled) setOnlineInvitees([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [meUid, showInvitePanel, visible]);
 
   useEffect(() => {
     if (!visible || !Agora || !appId || engineRef.current) return;
@@ -564,10 +626,47 @@ const FreshDriftExpoModal = ({
     setInviteLoading(true);
     try {
       const raw = await searchOceanEntities(query);
-      const next = (raw || [])
+      let next = (raw || [])
+        .filter((entry: any) => String(entry?.kind || 'user').toLowerCase() === 'user')
         .map(normalizeSearchResult)
         .filter(Boolean)
         .filter((entry: any) => entry.uid !== meUid) as SearchResultItem[];
+      if (next.length === 0) {
+        const lower = query.toLowerCase();
+        const fallbackSnap = await firestore()
+          .collection('users')
+          .orderBy('lastActiveAt', 'desc')
+          .limit(60)
+          .get();
+        next = (fallbackSnap?.docs || [])
+          .map(doc => {
+            const data = doc.data() || {};
+            const haystack = [
+              data.displayName,
+              data.name,
+              data.username,
+              data.userName,
+              doc.id,
+            ]
+              .filter(Boolean)
+              .join(' ')
+              .toLowerCase();
+            if (!haystack.includes(lower)) return null;
+            return normalizeSearchResult({
+              kind: 'user',
+              id: doc.id,
+              label: data.displayName || data.name || data.username || 'User',
+              extra: {
+                uid: doc.id,
+                displayName: data.displayName || data.name || null,
+                username: data.username || data.userName || null,
+                photoURL: data.userPhoto || data.photoURL || null,
+              },
+            });
+          })
+          .filter(Boolean)
+          .filter((entry: any) => entry.uid !== meUid) as SearchResultItem[];
+      }
       setInviteResults(next);
     } catch {
       setInviteResults([]);
@@ -914,13 +1013,48 @@ const FreshDriftExpoModal = ({
                       <Text style={styles.inviteSearchButtonText}>Find</Text>
                     </Pressable>
                   </View>
+                  {onlineInvitees.length > 0 ? (
+                    <View style={styles.onlineSection}>
+                      <Text style={styles.onlineSectionTitle}>Online now</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        <View style={styles.onlineInviteRow}>
+                          {onlineInvitees.map(item => (
+                            <Pressable
+                              key={`online-${item.uid}`}
+                              style={styles.onlineInviteChip}
+                              onPress={() => sendInvite(item)}
+                              disabled={inviteBusyUid === item.uid}
+                            >
+                              {item.photo ? (
+                                <Image source={{ uri: item.photo }} style={styles.onlineInviteAvatar} />
+                              ) : (
+                                <View style={[styles.onlineInviteAvatar, styles.commentAvatarFallback]}>
+                                  <Text style={styles.commentAvatarFallbackText}>
+                                    {item.name.charAt(0).toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+                              <Text style={styles.onlineInviteName} numberOfLines={1}>
+                                {item.name}
+                              </Text>
+                              <Text style={styles.onlineInviteHandle} numberOfLines={1}>
+                                {inviteBusyUid === item.uid ? '...' : item.secondary || 'Invite'}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    </View>
+                  ) : null}
                   {inviteLoading ? <ActivityIndicator color="#10c9ff" style={{ marginVertical: 12 }} /> : null}
                   <ScrollView style={{ maxHeight: 320 }}>
                     {inviteResults.map(item => (
                       <View key={item.uid} style={styles.inviteRow}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.inviteResultName}>{item.name}</Text>
-                          <Text style={styles.inviteResultUid}>{item.uid}</Text>
+                          <Text style={styles.inviteResultUid}>
+                            {item.secondary || item.uid}
+                          </Text>
                         </View>
                         <Pressable
                           style={styles.inviteResultButton}
@@ -1257,6 +1391,45 @@ const styles = StyleSheet.create({
   inviteSearchButtonText: {
     color: '#03131e',
     fontWeight: '900',
+  },
+  onlineSection: {
+    marginBottom: 12,
+  },
+  onlineSectionTitle: {
+    color: '#8fdcff',
+    fontWeight: '800',
+    marginBottom: 8,
+  },
+  onlineInviteRow: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingRight: 8,
+  },
+  onlineInviteChip: {
+    width: 96,
+    borderRadius: 16,
+    backgroundColor: '#101b28',
+    paddingHorizontal: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  onlineInviteAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginBottom: 8,
+  },
+  onlineInviteName: {
+    color: 'white',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  onlineInviteHandle: {
+    color: '#7ab9d2',
+    fontSize: 10,
+    marginTop: 4,
+    textAlign: 'center',
   },
   inviteRow: {
     flexDirection: 'row',

@@ -5610,8 +5610,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
                     
     try {
+      console.log('Searching Firestore users by displayName...');
+      const userSnap = await usersRef
+        .where('displayName', '>=', normalized)
+        .where('displayName', '<=', normalized + '\uf8ff')
+        .limit(20)
+        .get();
+      console.log('DisplayName search results:', userSnap.size);
+      userSnap.forEach(addUserDoc);
+
       console.log('Searching Firestore users by username_lc...');
-      // Search by username_lc first since that's more likely to match
       const lcSnap = await usersRef
         .where('username_lc', '>=', lowerTerm)
         .where('username_lc', '<=', lowerTerm + '\uf8ff')
@@ -5619,18 +5627,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .get();
       console.log('Username_lc search results:', lcSnap.size);
       lcSnap.forEach(addUserDoc);
-                    
-      // Also try displayName if we don't have many results
-      if (results.length < 5) {
-        console.log('Searching by displayName...');
-        const userSnap = await usersRef
-          .where('displayName', '>=', normalized)
-          .where('displayName', '<=', normalized + '\uf8ff')
-          .limit(20)
-          .get();
-        console.log('DisplayName search results:', userSnap.size);
-        userSnap.forEach(addUserDoc);
-      }
+
       console.log('Total Firestore results:', results.length);
     } catch (err) {
       console.log('Firestore search error:', err);
@@ -5724,7 +5721,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             results.push({
               kind: 'user',
               id: uid,
-              label: String(user.displayName || user.userName || user.username || '@splashliner'),
+              label: String(user.displayName || user.name || user.userName || user.username || '@splashliner'),
               extra: { ...user },
             });
           });
