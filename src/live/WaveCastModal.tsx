@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   FlatList,
   Image,
   Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -54,6 +56,21 @@ type CommentRow = {
   fromName: string;
   text: string;
   createdAtMs: number;
+};
+
+type FloatingComment = {
+  id: string;
+  fromName: string;
+  text: string;
+  anim: Animated.Value;
+  lane: number;
+};
+
+type FloatingReaction = {
+  id: string;
+  emoji: string;
+  anim: Animated.Value;
+  lane: number;
 };
 
 const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
@@ -143,6 +160,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
   const [isHost, setIsHost] = useState(false);
   const [isJoined, setIsJoined] = useState(false);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const [remoteVideoUid, setRemoteVideoUid] = useState<number | null>(null);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraMuted, setCameraMuted] = useState(false);
   const [speakerEnabled, setSpeakerEnabled] = useState(true);
@@ -154,18 +172,28 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
   const [searchResults, setSearchResults] = useState<UserRow[]>([]);
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [commentText, setCommentText] = useState('');
+  const [replyingTo, setReplyingTo] = useState<CommentRow | null>(null);
+  const [showReactionTray, setShowReactionTray] = useState(false);
+  const [floatingComments, setFloatingComments] = useState<FloatingComment[]>([]);
+  const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
+  const remoteVideoWatchdogRef = useRef<any>(null);
+  const seenCommentIdsRef = useRef<Set<string>>(new Set());
+  const seenReactionIdsRef = useRef<Set<string>>(new Set());
+  const reactionOptions = ['❤️', '🔥', '👏', '😂', '😍', '🎉'];
 
-  const AVView = Agora?.AgoraVideoView;
-  const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
   const RtcTextureView = (Agora as any)?.RtcTextureView;
-  const RtcLocalView = Agora?.RtcLocalView;
-  const RtcRemoteView = Agora?.RtcRemoteView;
+  const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
   const VideoRenderMode = Agora?.VideoRenderMode;
-  const VideoSourceType = Agora?.VideoSourceType;
 
   const cleanupEngine = useCallback(() => {
     const engine = engineRef.current;
     if (!engine) return;
+    try {
+      if (remoteVideoWatchdogRef.current) {
+        clearTimeout(remoteVideoWatchdogRef.current);
+        remoteVideoWatchdogRef.current = null;
+      }
+    } catch {}
     try { engine.leaveChannel?.(); } catch {}
     try { engine.stopPreview?.(); } catch {}
     try { (engine.destroy ?? engine.release)?.(); } catch {}
@@ -208,6 +236,58 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     } catch {}
   }, [Agora?.ClientRoleType, cameraMuted, micMuted, speakerEnabled]);
 
+  const forceRemoteVideoRecovery = useCallback((uid: number | null) => {
+    const engine = engineRef.current;
+    const targetUid = Number(uid || 0);
+    if (!engine || !targetUid) return;
+    try { engine.enableVideo?.(); } catch {}
+    try { engine.enableAudio?.(); } catch {}
+    try {
+      engine.updateChannelMediaOptions?.({
+        clientRoleType: Agora?.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+        publishMicrophoneTrack: !micMuted,
+        publishCameraTrack: !cameraMuted,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: true,
+      });
+    } catch {}
+    try { engine.muteRemoteVideoStream?.(targetUid, false); } catch {}
+    try { engine.muteRemoteAudioStream?.(targetUid, false); } catch {}
+    try { engine.setRemoteVideoStreamType?.(targetUid, 0); } catch {}
+    setStatusText(`Fetching guest video ${targetUid}...`);
+  }, [Agora?.ClientRoleType, cameraMuted, micMuted]);
+
+  const pushFloatingComment = useCallback((comment: CommentRow) => {
+    const anim = new Animated.Value(0);
+    const item: FloatingComment = {
+      id: comment.id,
+      fromName: comment.fromName,
+      text: comment.text,
+      anim,
+      lane: 0,
+    };
+    setFloatingComments(prev => [item, ...prev.filter(entry => entry.id !== comment.id)].slice(0, 6));
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 280,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const pushFloatingReaction = useCallback((id: string, emoji: string) => {
+    const anim = new Animated.Value(0);
+    const lane = Math.abs(id.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 5;
+    const item: FloatingReaction = { id, emoji, anim, lane };
+    setFloatingReactions(prev => [...prev.slice(-18), item]);
+    Animated.timing(anim, {
+      toValue: 1,
+      duration: 3200,
+      useNativeDriver: true,
+    }).start(() => {
+      setFloatingReactions(prev => prev.filter(entry => entry.id !== id));
+    });
+  }, []);
+
   const joinWaveCast = useCallback(async ({
     nextRoomId,
     nextChannel,
@@ -227,34 +307,39 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
       setErrorText('Camera and microphone permissions are required.');
       return;
     }
-    cleanupEngine();
     setRoomId(nextRoomId);
     setRoomChannel(nextChannel);
     setRoomTitle(nextTitle || 'WaveCast');
     setIsHost(hostMode);
     setRemoteUid(null);
+    setRemoteVideoUid(null);
     setErrorText(null);
     setStatusText(hostMode ? 'Starting WaveCast...' : 'Joining WaveCast...');
     const safeToken = String(token || staticToken || '').trim() || null;
     try {
       if (typeof Agora?.createAgoraRtcEngine === 'function') {
-        const engine = Agora.createAgoraRtcEngine();
-        engineRef.current = engine;
-        engine.initialize?.({
-          appId,
-          channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
-        });
+        const engine =
+          engineRef.current ||
+          (() => {
+            const created = Agora.createAgoraRtcEngine();
+            created.initialize?.({
+              appId,
+              channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
+            });
+            engineRef.current = created;
+            return created;
+          })();
         ensurePublishedMedia(engine);
         engine.registerEventHandler?.({
           onJoinChannelSuccess: () => {
             setIsJoined(true);
-            setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+            setStatusText(hostMode ? 'Waiting for Crew...' : 'Connected to Wave Captain');
             ensurePublishedMedia(engine);
             writeParticipant(nextRoomId);
           },
           onRejoinChannelSuccess: () => {
             setIsJoined(true);
-            setStatusText(remoteUid ? `Guest live ${remoteUid}` : 'Connected');
+            setStatusText(remoteUid ? `Crew live ${remoteUid}` : hostMode ? 'Waiting for Crew...' : 'Connected to Wave Captain');
             ensurePublishedMedia(engine);
             writeParticipant(nextRoomId);
           },
@@ -262,21 +347,66 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
             const parsed = Number(uid);
             if (!Number.isFinite(parsed) || parsed <= 0) return;
             setRemoteUid(parsed);
-            setStatusText(`Guest live ${parsed}`);
+            setRemoteVideoUid(parsed);
+            setStatusText(`Fetching Crew video ${parsed}...`);
             try { engine.muteRemoteVideoStream?.(parsed, false); } catch {}
             try { engine.muteRemoteAudioStream?.(parsed, false); } catch {}
+            forceRemoteVideoRecovery(parsed);
           },
           onUserOffline: (_conn: any, uid: number) => {
             const parsed = Number(uid);
             setRemoteUid(prev => (prev === parsed ? null : prev));
-            setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+            setRemoteVideoUid(prev => (prev === parsed ? null : prev));
+            setStatusText(hostMode ? 'Waiting for Crew...' : 'Connected to Wave Captain');
+          },
+          onFirstRemoteVideoDecoded: (_conn: any, uid: number) => {
+            const parsed = Number(uid);
+            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            setRemoteUid(parsed);
+            setRemoteVideoUid(parsed);
+            setStatusText(`Crew video live ${parsed}`);
+          },
+          onFirstRemoteVideoFrame: (_conn: any, uid: number) => {
+            const parsed = Number(uid);
+            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            setRemoteUid(parsed);
+            setRemoteVideoUid(parsed);
+            setStatusText(`Crew video live ${parsed}`);
+          },
+          onRemoteVideoStateChanged: (_conn: any, uid: number, state: number, reason: number) => {
+            const parsed = Number(uid);
+            const nextState = Number(state);
+            const nextReason = Number(reason);
+            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            if (nextState >= 2) {
+              setRemoteUid(parsed);
+              setRemoteVideoUid(parsed);
+              setStatusText(`Crew video live ${parsed}`);
+            } else {
+              setStatusText(`Crew video ${parsed} ${nextState}:${nextReason}`);
+            }
+          },
+          onRemoteAudioStateChanged: (_conn: any, uid: number, state: number, reason: number) => {
+            const parsed = Number(uid);
+            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            if (Number(state) >= 2 && !remoteVideoUid) {
+              setStatusText(`Crew audio live ${parsed}`);
+            }
           },
           onConnectionStateChanged: (_conn: any, state: number, reason: number) => {
             const s = Number(state);
             const r = Number(reason);
             if (s === 3 || s === 4) setStatusText(`Reconnecting ${s}:${r}`);
           },
-          onError: (err: number) => setErrorText(`Agora error ${err}`),
+          onError: (err: number) => {
+            const code = Number(err);
+            if (code === 1052 && remoteUid) {
+              setStatusText(`Recovering video ${remoteUid}...`);
+              forceRemoteVideoRecovery(remoteUid);
+              return;
+            }
+            setErrorText(`Agora error ${code}`);
+          },
         });
         await engine.joinChannel(safeToken, nextChannel, myRtcUid, {
           clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
@@ -288,18 +418,18 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
         return;
       }
       if (Agora?.RtcEngine?.create) {
-        const engine = await Agora.RtcEngine.create(appId);
+        const engine = engineRef.current || (await Agora.RtcEngine.create(appId));
         engineRef.current = engine;
         ensurePublishedMedia(engine);
         engine.addListener?.('JoinChannelSuccess', () => {
           setIsJoined(true);
-          setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+          setStatusText(hostMode ? 'Waiting for Crew...' : 'Connected to Wave Captain');
           ensurePublishedMedia(engine);
           writeParticipant(nextRoomId);
         });
         engine.addListener?.('RejoinChannelSuccess', () => {
           setIsJoined(true);
-          setStatusText(remoteUid ? `Guest live ${remoteUid}` : 'Connected');
+          setStatusText(remoteUid ? `Crew live ${remoteUid}` : hostMode ? 'Waiting for Crew...' : 'Connected to Wave Captain');
           ensurePublishedMedia(engine);
           writeParticipant(nextRoomId);
         });
@@ -307,21 +437,66 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
           const parsed = Number(uid);
           if (!Number.isFinite(parsed) || parsed <= 0) return;
           setRemoteUid(parsed);
-          setStatusText(`Guest live ${parsed}`);
+          setRemoteVideoUid(parsed);
+          setStatusText(`Fetching Crew video ${parsed}...`);
           try { engine.muteRemoteVideoStream?.(parsed, false); } catch {}
           try { engine.muteRemoteAudioStream?.(parsed, false); } catch {}
+          forceRemoteVideoRecovery(parsed);
         });
         engine.addListener?.('UserOffline', (uid: number) => {
           const parsed = Number(uid);
           setRemoteUid(prev => (prev === parsed ? null : prev));
-          setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+          setRemoteVideoUid(prev => (prev === parsed ? null : prev));
+          setStatusText(hostMode ? 'Waiting for Crew...' : 'Connected to Wave Captain');
+        });
+        engine.addListener?.('FirstRemoteVideoDecoded', (uid: number) => {
+          const parsed = Number(uid);
+          if (!Number.isFinite(parsed) || parsed <= 0) return;
+          setRemoteUid(parsed);
+          setRemoteVideoUid(parsed);
+          setStatusText(`Crew video live ${parsed}`);
+        });
+        engine.addListener?.('FirstRemoteVideoFrame', (uid: number) => {
+          const parsed = Number(uid);
+          if (!Number.isFinite(parsed) || parsed <= 0) return;
+          setRemoteUid(parsed);
+          setRemoteVideoUid(parsed);
+          setStatusText(`Crew video live ${parsed}`);
+        });
+        engine.addListener?.('RemoteVideoStateChanged', (uid: number, state: number, reason: number) => {
+          const parsed = Number(uid);
+          const nextState = Number(state);
+          const nextReason = Number(reason);
+          if (!Number.isFinite(parsed) || parsed <= 0) return;
+          if (nextState >= 2) {
+            setRemoteUid(parsed);
+            setRemoteVideoUid(parsed);
+            setStatusText(`Crew video live ${parsed}`);
+          } else {
+            setStatusText(`Crew video ${parsed} ${nextState}:${nextReason}`);
+          }
+        });
+        engine.addListener?.('RemoteAudioStateChanged', (uid: number, state: number) => {
+          const parsed = Number(uid);
+          if (!Number.isFinite(parsed) || parsed <= 0) return;
+          if (Number(state) >= 2 && !remoteVideoUid) {
+            setStatusText(`Crew audio live ${parsed}`);
+          }
         });
         engine.addListener?.('ConnectionStateChanged', (state: number, reason: number) => {
           const s = Number(state);
           const r = Number(reason);
           if (s === 3 || s === 4) setStatusText(`Reconnecting ${s}:${r}`);
         });
-        engine.addListener?.('Error', (err: number) => setErrorText(`Agora error ${err}`));
+        engine.addListener?.('Error', (err: number) => {
+          const code = Number(err);
+          if (code === 1052 && remoteUid) {
+            setStatusText(`Recovering video ${remoteUid}...`);
+            forceRemoteVideoRecovery(remoteUid);
+            return;
+          }
+          setErrorText(`Agora error ${code}`);
+        });
         await engine.joinChannel(safeToken, nextChannel, myRtcUid);
         return;
       }
@@ -336,9 +511,11 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     cameraMuted,
     cleanupEngine,
     ensurePublishedMedia,
+    forceRemoteVideoRecovery,
     micMuted,
     myRtcUid,
     remoteUid,
+    remoteVideoUid,
     staticToken,
     visible,
     writeParticipant,
@@ -353,6 +530,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
       setIsHost(false);
       setIsJoined(false);
       setRemoteUid(null);
+      setRemoteVideoUid(null);
       setMicMuted(false);
       setCameraMuted(false);
       setSpeakerEnabled(true);
@@ -454,6 +632,25 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
           } as CommentRow;
         });
         setComments(next);
+        next.forEach(comment => {
+          if (seenCommentIdsRef.current.has(comment.id)) return;
+          seenCommentIdsRef.current.add(comment.id);
+          pushFloatingComment(comment);
+        });
+      });
+    const unsubReactions = firestore()
+      .collection(`wavecasts/${roomId}/reactions`)
+      .orderBy('createdAt', 'asc')
+      .limitToLast(40)
+      .onSnapshot(snap => {
+        (snap?.docs || []).forEach(doc => {
+          const data = doc.data() || {};
+          const reactionId = doc.id;
+          if (seenReactionIdsRef.current.has(reactionId)) return;
+          seenReactionIdsRef.current.add(reactionId);
+          const emoji = String(data.emoji || '❤️').trim() || '❤️';
+          pushFloatingReaction(reactionId, emoji);
+        });
       });
     const unsubParticipants = firestore()
       .collection(`wavecasts/${roomId}/participants`)
@@ -462,16 +659,38 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
           .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
           .filter((row: any) => String(row.uid || row.id) !== myUid);
         if (!others.length && !remoteUid) {
-          setStatusText(isHost ? 'Waiting for guest...' : 'Connected');
+          setStatusText(isHost ? 'Waiting for Crew...' : 'Connected to Wave Captain');
         } else if (others.length && !remoteUid) {
-          setStatusText(`Guest present ${others[0]?.rtcUid || others[0]?.uid || ''}`);
+          setStatusText(`Crew present ${others[0]?.rtcUid || others[0]?.uid || ''}`);
         }
       });
     return () => {
       try { unsubComments(); } catch {}
+      try { unsubReactions(); } catch {}
       try { unsubParticipants(); } catch {}
     };
-  }, [isHost, myUid, remoteUid, roomId, visible]);
+  }, [isHost, myUid, pushFloatingComment, pushFloatingReaction, remoteUid, roomId, visible]);
+
+  useEffect(() => {
+    try {
+      if (remoteVideoWatchdogRef.current) {
+        clearTimeout(remoteVideoWatchdogRef.current);
+        remoteVideoWatchdogRef.current = null;
+      }
+    } catch {}
+    if (!visible || !isJoined || !remoteUid || !!remoteVideoUid) return;
+    remoteVideoWatchdogRef.current = setTimeout(() => {
+      forceRemoteVideoRecovery(remoteUid);
+    }, 2500);
+    return () => {
+      try {
+        if (remoteVideoWatchdogRef.current) {
+          clearTimeout(remoteVideoWatchdogRef.current);
+          remoteVideoWatchdogRef.current = null;
+        }
+      } catch {}
+    };
+  }, [forceRemoteVideoRecovery, isJoined, remoteUid, remoteVideoUid, visible]);
 
   useEffect(() => {
     if (!visible || !roomId || !isJoined) return;
@@ -587,6 +806,14 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     const text = String(commentText || '').trim();
     if (!text || !roomId || !myUid) return;
     setCommentText('');
+    const replyMeta = replyingTo
+      ? {
+          replyToId: replyingTo.id,
+          replyToFrom: replyingTo.fromName,
+          replyToText: replyingTo.text,
+        }
+      : {};
+    setReplyingTo(null);
     try {
       await firestore().collection(`wavecasts/${roomId}/comments`).add({
         text,
@@ -594,9 +821,24 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
         fromName: myName,
         createdAt: firestore.FieldValue.serverTimestamp(),
         createdAtMs: Date.now(),
+        ...replyMeta,
       });
     } catch {}
-  }, [commentText, myName, myUid, roomId]);
+  }, [commentText, myName, myUid, replyingTo, roomId]);
+
+  const sendReaction = useCallback(async (emoji: string) => {
+    if (!roomId || !myUid) return;
+    setShowReactionTray(false);
+    try {
+      await firestore().collection(`wavecasts/${roomId}/reactions`).add({
+        emoji,
+        fromUid: myUid,
+        fromName: myName,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAtMs: Date.now(),
+      });
+    } catch {}
+  }, [myName, myUid, roomId]);
 
   const leaveWaveCast = useCallback(async () => {
     const activeRoomId = roomId;
@@ -642,69 +884,34 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     try { engineRef.current?.setDefaultAudioRouteToSpeakerphone?.(next); } catch {}
   }, [speakerEnabled]);
 
+  const VideoViewImpl = RtcTextureView || RtcSurfaceView;
+
   if (!visible) return null;
 
   const renderMainVideo = () => {
-    if (remoteUid) {
-      if (RtcSurfaceView) {
-        return React.createElement(RtcSurfaceView, {
-          style: StyleSheet.absoluteFill,
-          canvas: { uid: remoteUid, renderMode: VideoRenderMode?.Fit ?? 2 },
-        });
-      }
-      if (RtcTextureView) {
-        return React.createElement(RtcTextureView, {
-          style: StyleSheet.absoluteFill,
-          canvas: { uid: remoteUid, renderMode: VideoRenderMode?.Fit ?? 2 },
-        });
-      }
-      if (RtcRemoteView?.SurfaceView) {
-        return React.createElement(RtcRemoteView.SurfaceView, {
-          style: StyleSheet.absoluteFill,
-          uid: remoteUid,
-          channelId: roomChannel,
-          renderMode: VideoRenderMode?.Fit ?? 2,
-        });
-      }
+    if (remoteVideoUid && VideoViewImpl) {
+      return React.createElement(VideoViewImpl, {
+        style: StyleSheet.absoluteFill,
+        canvas: { uid: remoteVideoUid, renderMode: VideoRenderMode?.Fit ?? 2 },
+      });
     }
-    if (!cameraMuted) {
-      if (AVView) {
-        return (
-          <AVView
-            style={StyleSheet.absoluteFill}
-            showLocalVideo={true}
-            videoSourceType={
-              (VideoSourceType &&
-                (VideoSourceType.VideoSourceCameraPrimary ??
-                  VideoSourceType.VideoSourceCamera)) ||
-              0
-            }
-            renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
-          />
-        );
-      }
-      if (RtcSurfaceView) {
-        return React.createElement(RtcSurfaceView, {
-          style: StyleSheet.absoluteFill,
-          canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
-        });
-      }
-      if (RtcTextureView) {
-        return React.createElement(RtcTextureView, {
-          style: StyleSheet.absoluteFill,
-          canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
-        });
-      }
-      if (RtcLocalView?.SurfaceView) {
-        return React.createElement(RtcLocalView.SurfaceView, {
-          style: StyleSheet.absoluteFill,
-          renderMode: VideoRenderMode?.Fit ?? 2,
-        });
-      }
+    if (!roomId && !cameraMuted && VideoViewImpl) {
+      return React.createElement(VideoViewImpl, {
+        style: StyleSheet.absoluteFill,
+        canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
+      });
     }
     return (
       <View style={styles.centerState}>
-        <Text style={styles.centerStateText}>{remoteUid ? 'Remote video connected' : 'Opening camera...'}</Text>
+        <Text style={styles.centerStateText}>
+          {remoteUid
+            ? `Fetching Crew video ${remoteUid}...`
+            : roomId
+            ? isHost
+              ? 'Waiting for Crew to join...'
+              : 'Joining Wave Captain...'
+            : 'Opening camera...'}
+        </Text>
       </View>
     );
   };
@@ -716,19 +923,20 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
         <View style={[styles.topBar, { top: insets.top + 10 }]}>
           <View style={styles.topMeta}>
             <Text style={styles.topLabel}>WAVECAST</Text>
-            <Text style={styles.topTitle}>{roomTitle}</Text>
             <Text style={styles.topStatus}>{errorText || statusText}</Text>
           </View>
-          <Pressable style={styles.closeBtn} onPress={leaveWaveCast}>
-            <Text style={styles.closeBtnText}>Close</Text>
-          </Pressable>
+          {!!roomId && (
+            <Pressable style={styles.closeBtn} onPress={leaveWaveCast}>
+              <Text style={styles.closeBtnText}>Close</Text>
+            </Pressable>
+          )}
         </View>
 
         {!inviteJoinPreset?.autoJoin && !roomId && (
           <View style={[styles.startCard, { top: insets.top + 90 }]}>
-            <Text style={styles.startCardTitle}>Ready to go live</Text>
+            <Text style={styles.startCardTitle}>Ready to Cast your wave!</Text>
             <Text style={styles.startCardText}>
-              Your camera is open. Start WaveCast, then invite someone to join.
+              Your camera is open. Start WaveCast and bring your Crew on screen.
             </Text>
             <Pressable style={styles.primaryBtn} onPress={startWaveCast}>
               <Text style={styles.primaryBtnText}>Start WaveCast</Text>
@@ -736,87 +944,146 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
           </View>
         )}
 
-        {roomId && (
-          <Pressable style={[styles.inviteBtn, { top: insets.top + 90 }]} onPress={() => setShowInviteSheet(true)}>
-            <Text style={styles.inviteBtnText}>Invite</Text>
-          </Pressable>
-        )}
-
-        {remoteUid && !cameraMuted && (
+        {!!roomId && !cameraMuted && VideoViewImpl && (
           <View style={[styles.localPip, { bottom: Math.max(insets.bottom + 110, 130) }]}>
-            {AVView ? (
-              <AVView
-                style={StyleSheet.absoluteFill}
-                showLocalVideo={true}
-                videoSourceType={
-                  (VideoSourceType &&
-                    (VideoSourceType.VideoSourceCameraPrimary ??
-                      VideoSourceType.VideoSourceCamera)) ||
-                  0
-                }
-                renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
-              />
-            ) : RtcSurfaceView ? (
-              React.createElement(RtcSurfaceView, {
-                style: StyleSheet.absoluteFill,
-                canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
-                zOrderMediaOverlay: true,
-              })
-            ) : RtcTextureView ? (
-              React.createElement(RtcTextureView, {
-                style: StyleSheet.absoluteFill,
-                canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
-              })
-            ) : RtcLocalView?.SurfaceView ? (
-              React.createElement(RtcLocalView.SurfaceView, {
-                style: StyleSheet.absoluteFill,
-                renderMode: VideoRenderMode?.Fit ?? 2,
-              })
-            ) : null}
+            {React.createElement(VideoViewImpl, {
+              style: StyleSheet.absoluteFill,
+              canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
+              zOrderMediaOverlay: true,
+            })}
           </View>
         )}
 
-        <View style={[styles.commentsRail, { left: 12, bottom: insets.bottom + 110 }]}>
-          <FlatList
-            data={comments.slice(-8)}
-            keyExtractor={item => item.id}
-            renderItem={({ item }) => (
-              <View style={styles.commentBubble}>
-                <Text style={styles.commentAuthor}>{item.fromName}</Text>
-                <Text style={styles.commentText}>{item.text}</Text>
-                <Text style={styles.commentTime}>{fmt(item.createdAtMs)}</Text>
+        <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
+          {floatingComments.map((item, index) => {
+            const opacity = item.anim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0.35, 1],
+            });
+            return (
+              <Pressable
+                key={item.id}
+                onPress={() => {
+                  const original = comments.find(comment => comment.id === item.id) || null;
+                  if (original) {
+                    setReplyingTo(original);
+                    setCommentText(prev => (prev.trim() ? prev : `@${original.fromName} `));
+                  }
+                }}
+                style={{ position: 'absolute', left: 10, bottom: insets.bottom + 126 + index * 28 }}
+              >
+                <Animated.View style={{ opacity }}>
+                  <Text style={styles.floatingCommentText}>
+                    <Text style={styles.floatingCommentAuthor}>{item.fromName}: </Text>
+                    {item.text}
+                  </Text>
+                </Animated.View>
+              </Pressable>
+            );
+          })}
+          {floatingReactions.map(item => {
+            const translateY = item.anim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, -280],
+            });
+            const translateX = item.anim.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, (item.lane - 2) * 22],
+            });
+            const opacity = item.anim.interpolate({
+              inputRange: [0, 0.08, 0.9, 1],
+              outputRange: [0, 1, 1, 0],
+            });
+            const scale = item.anim.interpolate({
+              inputRange: [0, 0.2, 1],
+              outputRange: [0.7, 1.15, 0.9],
+            });
+            return (
+              <Animated.View
+                key={item.id}
+                pointerEvents="none"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  bottom: insets.bottom + 120,
+                  transform: [{ translateX }, { translateY }, { scale }],
+                  opacity,
+                  marginLeft: -14,
+                }}
+              >
+                <Text style={styles.floatingReactionText}>{item.emoji}</Text>
+              </Animated.View>
+            );
+          })}
+        </View>
+
+        {!!roomId && (
+          <View style={[styles.bottomDock, { bottom: Math.max(insets.bottom + 14, 24) }]}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.controlRow}
+            >
+              <Pressable style={[styles.controlBtn, styles.controlBtnMic, micMuted && styles.controlBtnMuted]} onPress={toggleMic}>
+                <Text style={styles.controlBtnText}>{micMuted ? 'Mic Off' : 'Mic On'}</Text>
+              </Pressable>
+              <Pressable style={[styles.controlBtn, styles.controlBtnVideo, cameraMuted && styles.controlBtnMuted]} onPress={toggleCamera}>
+                <Text style={styles.controlBtnText}>{cameraMuted ? 'Video Off' : 'Video On'}</Text>
+              </Pressable>
+              <Pressable style={[styles.controlBtn, styles.controlBtnSpeaker, !speakerEnabled && styles.controlBtnMuted]} onPress={toggleSpeaker}>
+                <Text style={styles.controlBtnText}>{speakerEnabled ? 'Speaker' : 'Earpiece'}</Text>
+              </Pressable>
+              {isHost && (
+                <Pressable style={[styles.controlBtn, styles.controlBtnInvite]} onPress={() => setShowInviteSheet(true)}>
+                  <Text style={styles.controlBtnText}>Invite Crew</Text>
+                </Pressable>
+              )}
+              <Pressable
+                style={[styles.controlBtn, styles.controlBtnReact, showReactionTray && styles.controlBtnMuted]}
+                onPress={() => setShowReactionTray(prev => !prev)}
+              >
+                <Text style={styles.controlBtnText}>React</Text>
+              </Pressable>
+            </ScrollView>
+            {showReactionTray && (
+              <View style={styles.reactionTray}>
+                {['\u2764\uFE0F', '\uD83D\uDD25', '\uD83D\uDC4F', '\uD83D\uDE02', '\uD83D\uDE0D', '\uD83C\uDF89', '\uD83D\uDCAF', '\uD83D\uDE4C', '\uD83E\uDD73', '\uD83E\uDD29', '\uD83D\uDCA5', '\uD83D\uDC99'].map(emoji => (
+                  <Pressable
+                    key={emoji}
+                    style={styles.reactionChip}
+                    onPress={() => sendReaction(emoji)}
+                  >
+                    <Text style={styles.reactionChipText}>{emoji}</Text>
+                  </Pressable>
+                ))}
               </View>
             )}
-          />
-        </View>
-
-        <View style={[styles.bottomDock, { bottom: Math.max(insets.bottom + 14, 24) }]}>
-          <View style={styles.controlRow}>
-            <Pressable style={[styles.controlBtn, micMuted && styles.controlBtnMuted]} onPress={toggleMic}>
-              <Text style={styles.controlBtnText}>{micMuted ? 'Mic Off' : 'Mic On'}</Text>
-            </Pressable>
-            <Pressable style={[styles.controlBtn, cameraMuted && styles.controlBtnMuted]} onPress={toggleCamera}>
-              <Text style={styles.controlBtnText}>{cameraMuted ? 'Video Off' : 'Video On'}</Text>
-            </Pressable>
-            <Pressable style={[styles.controlBtn, !speakerEnabled && styles.controlBtnMuted]} onPress={toggleSpeaker}>
-              <Text style={styles.controlBtnText}>{speakerEnabled ? 'Speaker' : 'Earpiece'}</Text>
-            </Pressable>
-          </View>
-          {roomId && (
             <View style={styles.commentComposer}>
-              <TextInput
-                style={styles.commentInput}
-                value={commentText}
-                onChangeText={setCommentText}
-                placeholder="Comment"
-                placeholderTextColor="rgba(255,255,255,0.55)"
-              />
-              <Pressable style={styles.sendBtn} onPress={sendComment}>
-                <Text style={styles.sendBtnText}>Send</Text>
-              </Pressable>
+              {!!replyingTo && (
+                <View style={styles.replyPill}>
+                  <Text numberOfLines={1} style={styles.replyPillText}>
+                    Replying to {replyingTo.fromName}
+                  </Text>
+                  <Pressable onPress={() => setReplyingTo(null)}>
+                    <Text style={styles.replyPillClose}>x</Text>
+                  </Pressable>
+                </View>
+              )}
+              <View style={styles.commentComposerRow}>
+                <TextInput
+                  style={styles.commentInput}
+                  value={commentText}
+                  onChangeText={setCommentText}
+                  placeholder={replyingTo ? `Reply to ${replyingTo.fromName}` : 'Comment'}
+                  placeholderTextColor="rgba(255,255,255,0.55)"
+                />
+                <Pressable style={styles.sendBtn} onPress={sendComment}>
+                  <Text style={styles.sendBtnText}>Send</Text>
+                </Pressable>
+              </View>
             </View>
-          )}
-        </View>
+          </View>
+        )}
 
         {showInviteSheet && (
           <View style={styles.sheetBackdrop}>
@@ -876,33 +1143,38 @@ const styles = StyleSheet.create({
   stage: { ...StyleSheet.absoluteFillObject, backgroundColor: '#02060F' },
   topBar: { position: 'absolute', left: 12, right: 12, zIndex: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   topMeta: { flex: 1, paddingRight: 12 },
-  topLabel: { color: '#9DE6FF', fontSize: 11, fontWeight: '800', letterSpacing: 0.9 },
+  topLabel: { color: '#62D7FF', fontSize: 13, fontWeight: '900', letterSpacing: 1.2 },
   topTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 2 },
   topStatus: { color: 'rgba(255,255,255,0.78)', fontSize: 12, marginTop: 2 },
-  closeBtn: { backgroundColor: 'rgba(10,17,28,0.82)', borderColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  closeBtn: { backgroundColor: '#D94141', borderColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
   closeBtnText: { color: '#fff', fontWeight: '700' },
   startCard: { position: 'absolute', left: 14, right: 14, zIndex: 11, borderRadius: 22, backgroundColor: 'rgba(6,12,20,0.9)', borderWidth: 1, borderColor: 'rgba(157,230,255,0.25)', padding: 16 },
   startCardTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
   startCardText: { color: 'rgba(255,255,255,0.78)', marginTop: 6, marginBottom: 14 },
-  primaryBtn: { backgroundColor: '#00C2FF', borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
-  primaryBtnText: { color: '#04111C', fontWeight: '800' },
-  inviteBtn: { position: 'absolute', right: 14, zIndex: 12, backgroundColor: 'rgba(0,194,255,0.92)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
-  inviteBtnText: { color: '#04111C', fontWeight: '800' },
+  primaryBtn: { backgroundColor: '#E34949', borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
+  primaryBtnText: { color: '#fff', fontWeight: '800' },
   localPip: { position: 'absolute', right: 12, width: 120, height: 170, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.42)', backgroundColor: '#02060F' },
-  commentsRail: { position: 'absolute', width: '68%', maxHeight: 230 },
-  commentBubble: { marginBottom: 8, backgroundColor: 'rgba(7,12,19,0.55)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8 },
-  commentAuthor: { color: '#9DE6FF', fontWeight: '700', fontSize: 12 },
-  commentText: { color: '#fff', marginTop: 2 },
-  commentTime: { color: 'rgba(255,255,255,0.48)', fontSize: 10, marginTop: 3 },
   bottomDock: { position: 'absolute', left: 12, right: 12, zIndex: 12 },
-  controlRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  controlBtn: { flex: 1, borderRadius: 999, backgroundColor: 'rgba(8,14,24,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, alignItems: 'center' },
+  controlRow: { gap: 8, paddingRight: 10 },
+  controlBtn: { minWidth: 92, borderRadius: 999, backgroundColor: 'rgba(8,14,24,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center' },
   controlBtnMuted: { backgroundColor: 'rgba(81,19,19,0.92)' },
+  controlBtnMic: { backgroundColor: '#1D6F56' },
+  controlBtnVideo: { backgroundColor: '#2E5AAC' },
+  controlBtnSpeaker: { backgroundColor: '#6C4FB0' },
+  controlBtnInvite: { backgroundColor: '#1899C6' },
+  controlBtnReact: { backgroundColor: '#A44F8D' },
   controlBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
-  commentComposer: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  reactionTray: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 2 },
+  reactionChip: { width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(8,14,24,0.92)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+  reactionChipText: { fontSize: 24 },
+  commentComposer: { marginTop: 10 },
+  commentComposerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   commentInput: { flex: 1, borderRadius: 999, backgroundColor: 'rgba(8,14,24,0.92)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', color: '#fff', paddingHorizontal: 14, paddingVertical: 11 },
   sendBtn: { borderRadius: 999, backgroundColor: '#00C2FF', paddingHorizontal: 16, paddingVertical: 11 },
   sendBtnText: { color: '#04111C', fontWeight: '800' },
+  replyPill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 999, backgroundColor: 'rgba(8,14,24,0.92)', borderWidth: 1, borderColor: 'rgba(157,230,255,0.2)', paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
+  replyPillText: { flex: 1, color: '#9DE6FF', fontSize: 12, fontWeight: '700', marginRight: 10 },
+  replyPillClose: { color: '#fff', fontWeight: '800' },
   sheetBackdrop: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 30 },
   sheet: { backgroundColor: '#09121C', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 16, paddingHorizontal: 16, maxHeight: '70%' },
   sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 10 },
@@ -920,6 +1192,9 @@ const styles = StyleSheet.create({
   emptyResults: { color: 'rgba(255,255,255,0.68)', textAlign: 'center', paddingVertical: 16 },
   centerState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   centerStateText: { color: '#fff', fontSize: 15 },
+  floatingCommentText: { color: '#fff', fontSize: 14, fontWeight: '600', maxWidth: 240 },
+  floatingCommentAuthor: { color: '#9DE6FF', fontWeight: '800' },
+  floatingReactionText: { fontSize: 30 },
 });
 
 export default WaveCastModal;
