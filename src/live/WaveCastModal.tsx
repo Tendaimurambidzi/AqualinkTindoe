@@ -69,6 +69,7 @@ type FloatingComment = {
 type FloatingReaction = {
   id: string;
   emoji: string;
+  fromName: string;
   anim: Animated.Value;
   lane: number;
 };
@@ -254,7 +255,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     try { engine.muteRemoteVideoStream?.(targetUid, false); } catch {}
     try { engine.muteRemoteAudioStream?.(targetUid, false); } catch {}
     try { engine.setRemoteVideoStreamType?.(targetUid, 0); } catch {}
-    setStatusText(`Fetching guest video ${targetUid}...`);
+    setStatusText(`Fetching Crew video ${targetUid}...`);
   }, [Agora?.ClientRoleType, cameraMuted, micMuted]);
 
   const pushFloatingComment = useCallback((comment: CommentRow) => {
@@ -274,10 +275,10 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     }).start();
   }, []);
 
-  const pushFloatingReaction = useCallback((id: string, emoji: string) => {
+  const pushFloatingReaction = useCallback((id: string, emoji: string, fromName: string) => {
     const anim = new Animated.Value(0);
     const lane = Math.abs(id.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % 5;
-    const item: FloatingReaction = { id, emoji, anim, lane };
+    const item: FloatingReaction = { id, emoji, fromName, anim, lane };
     setFloatingReactions(prev => [...prev.slice(-18), item]);
     Animated.timing(anim, {
       toValue: 1,
@@ -649,7 +650,8 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
           if (seenReactionIdsRef.current.has(reactionId)) return;
           seenReactionIdsRef.current.add(reactionId);
           const emoji = String(data.emoji || '❤️').trim() || '❤️';
-          pushFloatingReaction(reactionId, emoji);
+          const fromName = String(data.fromName || data.displayName || 'Someone').trim() || 'Someone';
+          pushFloatingReaction(reactionId, emoji, fromName);
         });
       });
     const unsubParticipants = firestore()
@@ -681,7 +683,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     if (!visible || !isJoined || !remoteUid || !!remoteVideoUid) return;
     remoteVideoWatchdogRef.current = setTimeout(() => {
       forceRemoteVideoRecovery(remoteUid);
-    }, 2500);
+    }, 700);
     return () => {
       try {
         if (remoteVideoWatchdogRef.current) {
@@ -829,8 +831,12 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
   const sendReaction = useCallback(async (emoji: string) => {
     if (!roomId || !myUid) return;
     setShowReactionTray(false);
+    const reactionRef = firestore().collection(`wavecasts/${roomId}/reactions`).doc();
+    const reactionId = reactionRef.id;
+    seenReactionIdsRef.current.add(reactionId);
+    pushFloatingReaction(reactionId, emoji, myName);
     try {
-      await firestore().collection(`wavecasts/${roomId}/reactions`).add({
+      await reactionRef.set({
         emoji,
         fromUid: myUid,
         fromName: myName,
@@ -838,7 +844,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
         createdAtMs: Date.now(),
       });
     } catch {}
-  }, [myName, myUid, roomId]);
+  }, [myName, myUid, pushFloatingReaction, roomId]);
 
   const leaveWaveCast = useCallback(async () => {
     const activeRoomId = roomId;
@@ -1012,6 +1018,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
                 }}
               >
                 <Text style={styles.floatingReactionText}>{item.emoji}</Text>
+                <Text style={styles.floatingReactionName}>{item.fromName}</Text>
               </Animated.View>
             );
           })}
@@ -1195,6 +1202,7 @@ const styles = StyleSheet.create({
   floatingCommentText: { color: '#fff', fontSize: 14, fontWeight: '600', maxWidth: 240 },
   floatingCommentAuthor: { color: '#9DE6FF', fontWeight: '800' },
   floatingReactionText: { fontSize: 30 },
+  floatingReactionName: { color: '#DDF6FF', fontSize: 10, fontWeight: '700', textAlign: 'center', marginTop: 2 },
 });
 
 export default WaveCastModal;
