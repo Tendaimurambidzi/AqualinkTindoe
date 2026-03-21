@@ -88,7 +88,7 @@ import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestio
 import { registerNoticeBoard } from './src/services/schoolService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import MainFeedItem from './src/feed/MainFeedItem';
-import FreshDriftExpoModal from './src/live/FreshDriftExpoModal';
+import WaveCastModal from './src/live/WaveCastModal';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
 import { appTokens } from './src/theme/tokens';
 import SectionHeaderRow from './src/components/SectionHeaderRow';
@@ -501,6 +501,8 @@ type LiveInviteJoinPreset = {
   token?: string | null;
   title?: string | null;
   fromName?: string | null;
+  hostUid?: string | null;
+  autoJoin?: boolean;
   requireApproval?: boolean;
   nonce?: number;
 };
@@ -631,6 +633,10 @@ const buildLiveInviteNotice = (
   source: 'inbox' | 'mention' | 'ping',
 ): LiveInviteNotice | null => {
   if (!data?.fromUid) return null;
+  const createdAtMs = Math.max(
+    Number(data.createdAtMs || 0) || 0,
+    toJSDate(data.createdAt).getTime() || 0,
+  );
   return {
     id: docId,
     source,
@@ -646,7 +652,7 @@ const buildLiveInviteNotice = (
       ? String(data.directCallChannel)
       : null,
     callType: data.callType === 'audio' ? 'audio' : 'video',
-    createdAtMs: toJSDate(data.createdAt).getTime() || 0,
+    createdAtMs,
     expiresAtMs: Number(data.expiresAtMs || 0) || 0,
   };
 };
@@ -2905,7 +2911,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
 
         const latestUnreadLiveInvite = notificationsData
-          .filter(item => !item.read && String(item.type || '').toLowerCase() === 'live_invite')
+          .filter(item => !item.read && String(item.type || '').toLowerCase() === 'wavecast_invite')
           .sort(
             (a, b) =>
               toJSDate(b.createdAt).getTime() - toJSDate(a.createdAt).getTime(),
@@ -6384,27 +6390,54 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     const cacheKey = `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${activeUid}`;
     const unsubInbox = firestore()
-      .collection(`users/${activeUid}/live_invites`)
+      .collection(`users/${activeUid}/wavecast_invites`)
       .limit(100)
       .onSnapshot(
         snap => {
           inboxLoaded = true;
+          const now = Date.now();
+          const staleDocs: any[] = [];
           const docs = (snap?.docs || []).filter((doc: any) => {
             const data = doc.data() || {};
             const status = String(data.status || 'pending').toLowerCase();
             if (status !== 'pending') return false;
             const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
-            if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            const createdAtMs = toJSDate(data.createdAt).getTime();
+            const createdAtMs = Math.max(
+              Number(data.createdAtMs || 0) || 0,
+              toJSDate(data.createdAt).getTime() || 0,
+            );
+            if (expiresAtMs > 0 && now > expiresAtMs) {
+              staleDocs.push(doc);
+              return false;
+            }
             if (
               !expiresAtMs &&
               createdAtMs > 0 &&
-              Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS
+              now - createdAtMs > LIVE_INVITE_EXPIRY_MS
             ) {
+              staleDocs.push(doc);
+              return false;
+            }
+            if (createdAtMs <= 0) {
+              staleDocs.push(doc);
               return false;
             }
             return !!data?.fromUid;
           });
+          if (staleDocs.length) {
+            Promise.all(
+              staleDocs.map((doc: any) =>
+                doc.ref.set(
+                  {
+                    status: 'expired',
+                    expiredAt: firestore.FieldValue.serverTimestamp(),
+                    read: true,
+                  },
+                  { merge: true },
+                ).catch(() => {}),
+              ),
+            ).catch(() => {});
+          }
           const doc =
             docs
               .slice()
@@ -6489,7 +6522,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       await requestToDriftForLiveId(liveId, hostName);
       setLiveInviteJoinPreset({
         liveId,
-        title: liveTitle || 'Drift Expo',
+        title: liveTitle || 'WaveCast',
         fromName: hostName || 'Skipper',
         requireApproval: true,
         nonce: Date.now(),
@@ -6521,21 +6554,45 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           cfgLocal = require('./liveConfig');
         } catch {}
         const fallbackChannel = String(
-          cfgLocal?.AGORA_CHANNEL_NAME || 'AqualinkSharedLive',
+          cfgLocal?.AGORA_CHANNEL_NAME || 'WaveCast',
         )
           .trim()
           .replace(/[^A-Za-z0-9_]/g, '_')
           .slice(0, 64);
+        let resolvedChannel =
+          invite.liveChannel ||
+          invite.directCallChannel ||
+          fallbackChannel ||
+          null;
+        let resolvedTitle = invite.liveTitle || 'WaveCast';
+        let resolvedHostUid = invite.fromUid || null;
+        if (invite.liveId) {
+          try {
+            const roomSnap = await firestore()
+              .collection('wavecasts')
+              .doc(String(invite.liveId))
+              .get();
+            const roomData = roomSnap.data() || {};
+            const roomChannel = String(roomData.channel || '').trim();
+            if (roomChannel) {
+              resolvedChannel = roomChannel
+                .replace(/[^A-Za-z0-9_]/g, '_')
+                .slice(0, 64);
+            }
+            const roomTitle = String(roomData.title || '').trim();
+            if (roomTitle) resolvedTitle = roomTitle;
+            const hostUid = String(roomData.hostUid || '').trim();
+            if (hostUid) resolvedHostUid = hostUid;
+          } catch {}
+        }
         setLiveInviteJoinPreset({
           liveId: invite.liveId,
-          channel:
-            invite.liveChannel ||
-            invite.directCallChannel ||
-            fallbackChannel ||
-            null,
+          channel: resolvedChannel,
           token: invite.liveToken || null,
-          title: invite.liveTitle || null,
+          title: resolvedTitle,
           fromName: invite.fromName,
+          hostUid: resolvedHostUid,
+          autoJoin: true,
           nonce: Date.now(),
         });
         setShowLive(true);
@@ -6546,7 +6603,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
           await firestore()
-            .collection(`users/${me.uid}/live_invites`)
+            .collection(`users/${me.uid}/wavecast_invites`)
             .doc(invite.id)
             .set(
               {
@@ -6585,11 +6642,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             } catch {}
           };
           await Promise.all([
-            pruneMatchingInviteDocs(`users/${me.uid}/live_invites`),
+            pruneMatchingInviteDocs(`users/${me.uid}/wavecast_invites`),
           ]);
           if (invite.liveId) {
             await firestore()
-              .collection(`live/${invite.liveId}/invite_status`)
+              .collection(`wavecasts/${invite.liveId}/invite_status`)
               .doc(me.uid)
               .set(
                 {
@@ -14714,20 +14771,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     )}
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.inviteBadgeTitle}>
-                      Join Drift Expo
-                    </Text>
+                    <Text style={styles.inviteBadgeTitle}>WaveCast Invite</Text>
                     <Text style={styles.inviteBadgeText}>
-                      {incomingLiveInvite.fromName} is inviting you into{' '}
-                      {incomingLiveInvite.liveTitle || 'Drift Expo'}.
+                      {incomingLiveInvite.fromName} invited you to{' '}
+                      {incomingLiveInvite.liveTitle || 'WaveCast'}.
                     </Text>
-                    <Text
-                      style={[
-                        styles.inviteBadgeText,
-                        { marginTop: 4, fontSize: 11 },
-                      ]}
-                    >
-                      Accept to enter the shared room with live video, audio, chat, and reactions.
+                    <Text style={[styles.inviteBadgeText, { marginTop: 4, fontSize: 11 }]}>
+                      Fresh invites only. Swipe away or join now.
                     </Text>
                   </View>
                 </View>
@@ -14740,7 +14790,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     onPress={() => respondToLiveInvite('miss')}
                     android_ripple={{ color: 'rgba(255,255,255,0.22)' }}
                   >
-                    <Text style={styles.inviteBadgeDismissText}>Ignore</Text>
+                    <Text style={styles.inviteBadgeDismissText}>Dismiss</Text>
                   </Pressable>
                   <Pressable
                     style={[
@@ -21122,10 +21172,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         isWifi={isWifi}
       />
 
-      {/* GO DRIFT (LIVE) */}
-      <FreshDriftExpoModal
+      <WaveCastModal
         visible={showLive}
-        isChartered={isCharteredDrift}
         searchOceanEntities={searchOceanEntities}
         inviteJoinPreset={liveInviteJoinPreset}
         onClose={() => {

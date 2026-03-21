@@ -136,6 +136,17 @@ service cloud.firestore {
         );
       }
 
+      match /wavecast_invites/{inviteId} {
+        allow read, create, update: if isAuthed();
+        allow delete: if isAuthed() && (
+          isOwner(uid) ||
+          (
+            resource.data.fromUid is string &&
+            resource.data.fromUid == request.auth.uid
+          )
+        );
+      }
+
       // Direct calls: both participants can read/write their mirrored call docs.
       // Caller writes to both users/{callerUid}/direct_calls/{callId}
       // and users/{calleeUid}/direct_calls/{callId}.
@@ -178,6 +189,27 @@ service cloud.firestore {
     }
 
     match /live/{liveId} {
+      allow read: if isAuthed();
+      allow create, update, delete: if isAuthed();
+
+      match /invite_status/{uid} {
+        allow read, create, update, delete: if isAuthed();
+      }
+
+      match /comments/{commentId} {
+        allow read, create, update, delete: if isAuthed();
+      }
+
+      match /reactions/{reactionId} {
+        allow read, create, update, delete: if isAuthed();
+      }
+
+      match /participants/{uid} {
+        allow read, create, update, delete: if isAuthed();
+      }
+    }
+
+    match /wavecasts/{waveCastId} {
       allow read: if isAuthed();
       allow create, update, delete: if isAuthed();
 
