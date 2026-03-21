@@ -125,6 +125,9 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
   const [myRtcUid, setMyRtcUid] = useState(0);
   const [joined, setJoined] = useState(false);
   const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const [remoteCandidateUid, setRemoteCandidateUid] = useState<number | null>(null);
+  const [remoteVideoReady, setRemoteVideoReady] = useState(false);
+  const [remoteAudioReady, setRemoteAudioReady] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [inviteQuery, setInviteQuery] = useState('');
@@ -179,6 +182,9 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
     setMyRtcUid(0);
     setJoined(false);
     setRemoteUid(null);
+    setRemoteCandidateUid(null);
+    setRemoteVideoReady(false);
+    setRemoteAudioReady(false);
     setCommentText('');
     setComments([]);
     setInviteQuery('');
@@ -316,13 +322,63 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
           },
           onUserJoined: (_c: any, uid: number) => {
             if (!cancelled) {
-              setRemoteUid(Number(uid));
-              setStatusText('Guest connected');
+              const nextUid = Number(uid);
+              setRemoteCandidateUid(nextUid);
+              setRemoteVideoReady(false);
+              setRemoteAudioReady(false);
+              setStatusText(`Guest joined ${nextUid}`);
             }
             try { engine.muteRemoteAudioStream?.(uid, false); } catch {}
             try { engine.muteRemoteVideoStream?.(uid, false); } catch {}
           },
-          onUserOffline: (_c: any, uid: number) => { if (!cancelled) setRemoteUid(prev => (prev === Number(uid) ? null : prev)); },
+          onUserOffline: (_c: any, uid: number) => {
+            if (!cancelled) {
+              const nextUid = Number(uid);
+              setRemoteUid(prev => (prev === nextUid ? null : prev));
+              setRemoteCandidateUid(prev => (prev === nextUid ? null : prev));
+              setRemoteVideoReady(false);
+              setRemoteAudioReady(false);
+            }
+          },
+          onRemoteVideoStateChanged: (_c: any, uid: number, state: number, reason: number) => {
+            if (cancelled) return;
+            const nextUid = Number(uid);
+            const active = [2, 3].includes(Number(state)) || [6, 7].includes(Number(reason));
+            if (active) {
+              setRemoteCandidateUid(nextUid);
+              setRemoteUid(nextUid);
+              setRemoteVideoReady(true);
+              setStatusText(`Guest video live ${nextUid}`);
+            } else if (remoteUid === nextUid && [0, 1].includes(Number(state))) {
+              setRemoteVideoReady(false);
+              setStatusText(`Guest video pending ${nextUid}`);
+            }
+          },
+          onRemoteAudioStateChanged: (_c: any, uid: number, state: number, reason: number, _elapsed?: number) => {
+            if (cancelled) return;
+            const nextUid = Number(uid);
+            const active = [2, 3].includes(Number(state)) || [5, 6].includes(Number(reason));
+            if (active) {
+              setRemoteCandidateUid(nextUid);
+              setRemoteAudioReady(true);
+              setStatusText(prev => (prev.startsWith('Guest video') ? prev : `Guest audio live ${nextUid}`));
+            }
+          },
+          onConnectionStateChanged: (_c: any, state: number, reason: number) => {
+            if (!cancelled && Number(state) >= 3) {
+              setStatusText(`Conn ${state}:${reason}`);
+            }
+          },
+          onLocalVideoStateChanged: (_source: any, state: number, error: number) => {
+            if (!cancelled && Number(state) <= 1 && Number(error) > 0) {
+              setStatusText(`Local video ${state}:${error}`);
+            }
+          },
+          onLocalAudioStateChanged: (state: number, error: number) => {
+            if (!cancelled && Number(state) <= 1 && Number(error) > 0) {
+              setStatusText(`Local audio ${state}:${error}`);
+            }
+          },
           onError: (err: number) => { if (!cancelled) setStatusText(`Agora error ${err}`); },
         });
         engine.addListener?.('JoinChannelSuccess', (channelOrConnection: any, uidOrElapsed?: any) => {
@@ -337,13 +393,48 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
         });
         engine.addListener?.('UserJoined', (uid: number) => {
           if (!cancelled) {
-            setRemoteUid(Number(uid));
-            setStatusText('Guest connected');
+            const nextUid = Number(uid);
+            setRemoteCandidateUid(nextUid);
+            setRemoteVideoReady(false);
+            setRemoteAudioReady(false);
+            setStatusText(`Guest joined ${nextUid}`);
           }
           try { engine.muteRemoteAudioStream?.(uid, false); } catch {}
           try { engine.muteRemoteVideoStream?.(uid, false); } catch {}
         });
-        engine.addListener?.('UserOffline', (uid: number) => { if (!cancelled) setRemoteUid(prev => (prev === Number(uid) ? null : prev)); });
+        engine.addListener?.('UserOffline', (uid: number) => {
+          if (!cancelled) {
+            const nextUid = Number(uid);
+            setRemoteUid(prev => (prev === nextUid ? null : prev));
+            setRemoteCandidateUid(prev => (prev === nextUid ? null : prev));
+            setRemoteVideoReady(false);
+            setRemoteAudioReady(false);
+          }
+        });
+        engine.addListener?.('RemoteVideoStateChanged', (uid: number, state: number, reason: number) => {
+          if (cancelled) return;
+          const nextUid = Number(uid);
+          const active = [2, 3].includes(Number(state)) || [6, 7].includes(Number(reason));
+          if (active) {
+            setRemoteCandidateUid(nextUid);
+            setRemoteUid(nextUid);
+            setRemoteVideoReady(true);
+            setStatusText(`Guest video live ${nextUid}`);
+          } else if (remoteUid === nextUid && [0, 1].includes(Number(state))) {
+            setRemoteVideoReady(false);
+            setStatusText(`Guest video pending ${nextUid}`);
+          }
+        });
+        engine.addListener?.('RemoteAudioStateChanged', (uid: number, state: number, reason: number) => {
+          if (cancelled) return;
+          const nextUid = Number(uid);
+          const active = [2, 3].includes(Number(state)) || [5, 6].includes(Number(reason));
+          if (active) {
+            setRemoteCandidateUid(nextUid);
+            setRemoteAudioReady(true);
+            setStatusText(prev => (prev.startsWith('Guest video') ? prev : `Guest audio live ${nextUid}`));
+          }
+        });
         engineRef.current = engine;
         if (!cancelled) setEngineReady(true);
       } catch (error: any) {
@@ -351,7 +442,7 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
       }
     })();
     return () => { cancelled = true; };
-  }, [Agora, appId, ensurePermissions, ensurePublishedMedia, myRtcUid, visible, writeParticipant]);
+  }, [Agora, appId, ensurePermissions, ensurePublishedMedia, myRtcUid, remoteUid, visible, writeParticipant]);
 
   const hydrateRoom = useCallback(async (waveCastId: string) => {
     const snap = await firestore().collection('wavecasts').doc(waveCastId).get();
@@ -458,8 +549,8 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
         .filter((row: any) => row.rtcUid > 0)
         .sort((a: any, b: any) => b.updatedAtMs - a.updatedAtMs)[0];
       if (activeOther?.rtcUid) {
-        setRemoteUid(prev => (prev && prev === activeOther.rtcUid ? prev : activeOther.rtcUid));
-        setStatusText('Guest connected');
+        setRemoteCandidateUid(prev => (prev && prev === activeOther.rtcUid ? prev : activeOther.rtcUid));
+        setStatusText(prev => (remoteVideoReady || remoteAudioReady ? prev : `Guest present ${activeOther.rtcUid}`));
       }
     });
     const unsubComments = firestore().collection(`wavecasts/${roomId}/comments`).orderBy('createdAt', 'asc').limit(120).onSnapshot(snap => {
@@ -484,7 +575,7 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
       try { unsubComments(); } catch {}
       try { unsubReactions(); } catch {}
     };
-  }, [meUid, roomId, visible]);
+  }, [meUid, remoteAudioReady, remoteVideoReady, roomId, visible]);
 
   const runInviteSearch = useCallback(async () => {
     const term = inviteQuery.trim();
@@ -594,16 +685,16 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
         ) : (
           <>
             <View style={styles.stage}>
-              {remoteUid ? renderRemoteView() : renderLocalView()}
+              {remoteVideoReady && remoteUid ? renderRemoteView() : renderLocalView()}
               <View style={styles.topBar}>
-                <View><Text style={styles.live}>LIVE</Text><Text style={styles.room}>{roomTitle}</Text><Text style={styles.meta}>{remoteUid ? 'Guest connected' : 'Waiting for guest'}</Text></View>
+                <View><Text style={styles.live}>LIVE</Text><Text style={styles.room}>{roomTitle}</Text><Text style={styles.meta}>{remoteVideoReady ? 'Guest video live' : remoteAudioReady ? 'Guest audio live' : remoteCandidateUid ? `Guest present ${remoteCandidateUid}` : 'Waiting for guest'}</Text></View>
                 <View style={styles.row}>
                   <Pressable style={styles.chip} onPress={() => setShowInvitePanel(true)}><Text style={styles.chipText}>Invite</Text></Pressable>
                   <Pressable style={styles.chip} onPress={() => setShowReactions(v => !v)}><Text style={styles.chipText}>React</Text></Pressable>
                   <Pressable style={styles.chip} onPress={onClose}><Text style={styles.chipText}>Close</Text></Pressable>
                 </View>
               </View>
-              {remoteUid ? <View style={styles.inset}>{renderLocalView()}</View> : null}
+              {remoteVideoReady && remoteUid ? <View style={styles.inset}>{renderLocalView()}</View> : null}
               {!roomId && !inviteJoinPreset?.autoJoin ? (
                 <View style={styles.preJoinCard}>
                   <Text style={styles.preJoinTitle}>WaveCast</Text>
