@@ -893,11 +893,7 @@ const FreshDriftExpoModal = ({
             await Promise.all(matches.map((doc: any) => doc.ref.delete().catch(() => {})));
           } catch {}
         };
-        await Promise.all([
-          prunePendingFromMe(`users/${target.uid}/live_invites`),
-          prunePendingFromMe(`users/${target.uid}/pings`),
-          prunePendingFromMe(`users/${target.uid}/mentions`),
-        ]);
+        await prunePendingFromMe(`users/${target.uid}/live_invites`);
         const payload = {
           liveId: roomId,
           liveChannel: roomChannel,
@@ -905,27 +901,13 @@ const FreshDriftExpoModal = ({
           fromUid: meUid,
           fromName: meName,
           fromPhoto: mePhoto,
+          badgeVariant: 'drift_room',
           status: 'pending',
           createdAt: firestore.FieldValue.serverTimestamp(),
           createdAtMs: Date.now(),
           expiresAtMs: Date.now() + LIVE_INVITE_WINDOW_MS,
         };
         await liveInvitesRef.add(payload);
-        await firestore().collection(`users/${target.uid}/pings`).add({
-          type: 'live_invite',
-          text: `${meName} invited you to join ${roomTitle}`,
-          fromUid: meUid,
-          fromName: meName,
-          fromPhoto: mePhoto,
-          liveId: roomId,
-          liveChannel: roomChannel,
-          liveTitle: roomTitle,
-          status: 'pending',
-          read: false,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          createdAtMs: Date.now(),
-          expiresAtMs: Date.now() + LIVE_INVITE_WINDOW_MS,
-        });
         Alert.alert('Invite sent', `${target.name} will get the drift badge.`);
       } catch (error: any) {
         Alert.alert('Invite failed', String(error?.message || 'Try again.'));
@@ -1341,19 +1323,29 @@ const FreshDriftExpoModal = ({
           </>
         ) : (
           <View style={[styles.lobby, { paddingTop: insets.top + 36, paddingBottom: insets.bottom + 24 }]}>
-            <Text style={styles.lobbyEyebrow}>Fresh Drift Expo</Text>
-            <Text style={styles.lobbyTitle}>TikTok-style live room</Text>
-            <Text style={styles.lobbyBody}>
-              One Firestore room. One Agora channel. Everyone in the room sees the same chat and the same participant list.
-            </Text>
-            <View style={styles.lobbyCard}>
-              <Text style={styles.lobbyMetaLabel}>Agora App ID</Text>
-              <Text style={styles.lobbyMetaValue}>{appId || 'Missing App ID'}</Text>
-              <Text style={styles.lobbyMetaLabel}>Channel source</Text>
-              <Text style={styles.lobbyMetaValue}>{inviteJoinPreset?.liveId ? 'Invite room channel' : defaultChannel}</Text>
-              <Text style={styles.lobbyMetaLabel}>Status</Text>
-              <Text style={styles.lobbyMetaValue}>{statusText}</Text>
+            <View
+              style={{
+                width: '100%',
+                minHeight: 220,
+                borderRadius: 28,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.12)',
+                backgroundColor: 'rgba(8,18,32,0.72)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 22,
+                overflow: 'hidden',
+              }}
+            >
+              <Text style={{ fontSize: 58, letterSpacing: 6 }}>🧑🏾‍💼 👩🏽‍💼 👨🏿‍💼</Text>
+              <Text style={{ fontSize: 52, marginTop: 10, letterSpacing: 8 }}>💬 🎥 💬</Text>
+              <Text style={{ fontSize: 58, marginTop: 10, letterSpacing: 6 }}>👩🏻‍💼 👨🏾‍💼 🧑🏼‍💼</Text>
             </View>
+            {!!statusText && statusText !== 'Ready' ? (
+              <Text style={[styles.lobbyBody, { marginBottom: 14 }]}>
+                {statusText}
+              </Text>
+            ) : null}
             {isBusy ? <ActivityIndicator color="#10c9ff" style={{ marginTop: 20 }} /> : null}
             <Pressable
               style={styles.primaryStartButton}

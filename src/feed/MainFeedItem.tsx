@@ -1511,26 +1511,28 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           }}
         >
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' }}>
-            <Pressable
-              onPress={() => {
-                setViewerZoom(1);
-                setViewerVisible(false);
-              }}
-              style={{
-                position: 'absolute',
-                top: 48,
-                right: 20,
-                zIndex: 20,
-                paddingHorizontal: 12,
-                paddingVertical: 8,
-                backgroundColor: 'rgba(255,255,255,0.14)',
-                borderRadius: 18,
-              }}
-            >
-              <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
-            </Pressable>
             {galleryMediaItems[viewerIndex] ? (
-              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingBottom: 146 }}>
+              <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 72, paddingBottom: 172 }}>
+                <Pressable
+                  onPress={() => {
+                    setViewerZoom(1);
+                    setViewerVisible(false);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    top: 10,
+                    right: 14,
+                    zIndex: 20,
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    backgroundColor: 'rgba(8,16,28,0.66)',
+                    borderRadius: 18,
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.12)',
+                  }}
+                >
+                  <Text style={{ color: '#fff', fontWeight: '700' }}>Close</Text>
+                </Pressable>
                 {isImageAsset(galleryMediaItems[viewerIndex]) ? (
                   <ScrollView
                     maximumZoomScale={4}
@@ -1567,8 +1569,20 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 <Text style={{ color: 'rgba(255,255,255,0.82)', marginTop: 12 }}>
                   {viewerIndex + 1} / {galleryMediaItems.length}
                 </Text>
-                {isImageAsset(galleryMediaItems[viewerIndex]) ? (
-                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                  {galleryMediaItems.length > 1 ? (
+                    <Pressable
+                      onPress={() => {
+                        setViewerZoom(1);
+                        setViewerIndex(prev => Math.max(0, prev - 1));
+                      }}
+                      disabled={viewerIndex <= 0}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: viewerIndex <= 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>Prev</Text>
+                    </Pressable>
+                  ) : null}
+                  {isImageAsset(galleryMediaItems[viewerIndex]) ? (
                     <Pressable
                       onPress={() => setViewerZoom(prev => Math.max(1, Number((prev - 0.5).toFixed(1))))}
                       disabled={viewerZoom <= 1}
@@ -1576,6 +1590,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     >
                       <Text style={{ color: '#fff', fontWeight: '700' }}>Zoom -</Text>
                     </Pressable>
+                  ) : null}
+                  {isImageAsset(galleryMediaItems[viewerIndex]) ? (
                     <Pressable
                       onPress={() => setViewerZoom(prev => Math.min(4, Number((prev + 0.5).toFixed(1))))}
                       disabled={viewerZoom >= 4}
@@ -1583,15 +1599,27 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     >
                       <Text style={{ color: '#fff', fontWeight: '700' }}>Zoom +</Text>
                     </Pressable>
-                  </View>
-                ) : null}
+                  ) : null}
+                  {galleryMediaItems.length > 1 ? (
+                    <Pressable
+                      onPress={() => {
+                        setViewerZoom(1);
+                        setViewerIndex(prev => Math.min(galleryMediaItems.length - 1, prev + 1));
+                      }}
+                      disabled={viewerIndex >= galleryMediaItems.length - 1}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: viewerIndex >= galleryMediaItems.length - 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>Next</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </View>
             ) : null}
             {galleryMediaItems.length > 1 ? (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                style={{ position: 'absolute', left: 0, right: 0, bottom: 92, paddingHorizontal: 12 }}
+                style={{ position: 'absolute', left: 0, right: 0, bottom: 76, paddingHorizontal: 12 }}
                 contentContainerStyle={{ gap: 8, paddingRight: 12 }}
               >
                 {galleryMediaItems.map((mediaItem, idx) => (
@@ -1648,30 +1676,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 onRetrySplash={handleRetrySplashSync}
               />
             </View>
-            {galleryMediaItems.length > 1 ? (
-              <View style={{ position: 'absolute', left: 0, right: 0, bottom: 132, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20 }}>
-                <Pressable
-                  onPress={() => {
-                    setViewerZoom(1);
-                    setViewerIndex(prev => Math.max(0, prev - 1));
-                  }}
-                  disabled={viewerIndex <= 0}
-                  style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: viewerIndex <= 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '700' }}>Prev</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => {
-                    setViewerZoom(1);
-                    setViewerIndex(prev => Math.min(galleryMediaItems.length - 1, prev + 1));
-                  }}
-                  disabled={viewerIndex >= galleryMediaItems.length - 1}
-                  style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: viewerIndex >= galleryMediaItems.length - 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
-                >
-                  <Text style={{ color: '#fff', fontWeight: '700' }}>Next</Text>
-                </Pressable>
-              </View>
-            ) : null}
           </View>
         </Modal>
 

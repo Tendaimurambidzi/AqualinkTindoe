@@ -6383,25 +6383,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       return;
     }
     const cacheKey = `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${activeUid}`;
-    let disposed = false;
-    let inboxInvite: LiveInviteNotice | null = null;
-    let mentionInvite: LiveInviteNotice | null = null;
-    let pingInvite: LiveInviteNotice | null = null;
-    let inboxLoaded = false;
-    let mentionLoaded = false;
-    let pingLoaded = false;
-    const syncIncomingInvite = () => {
-      const sourceInvites = [inboxInvite, mentionInvite, pingInvite];
-      const next = pickLatestLiveInvite(sourceInvites);
-      setIncomingLiveInvite(next);
-      if (next) {
-        cachedIncomingInviteRef.current = next;
-        AsyncStorage.removeItem(cacheKey).catch(() => {});
-      } else {
-        cachedIncomingInviteRef.current = null;
-        AsyncStorage.removeItem(cacheKey).catch(() => {});
-      }
-    };
     const unsubInbox = firestore()
       .collection(`users/${activeUid}/live_invites`)
       .limit(100)
@@ -6439,103 +6420,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   ),
               )[0] || null;
           if (!doc) {
-            inboxInvite = null;
-            syncIncomingInvite();
+            setIncomingLiveInvite(null);
+            cachedIncomingInviteRef.current = null;
+            AsyncStorage.removeItem(cacheKey).catch(() => {});
             return;
           }
-          inboxInvite = buildLiveInviteNotice(doc.id, doc.data() || {}, 'inbox');
-          syncIncomingInvite();
+          const next = buildLiveInviteNotice(doc.id, doc.data() || {}, 'inbox');
+          setIncomingLiveInvite(next);
+          cachedIncomingInviteRef.current = next;
+          AsyncStorage.removeItem(cacheKey).catch(() => {});
         },
         () => {
           // keep silent if listener fails; app still works without invites stream
         },
       );
-    const unsubMentions = firestore()
-      .collection(`users/${activeUid}/mentions`)
-      .limit(100)
-      .onSnapshot(
-        snap => {
-          mentionLoaded = true;
-          const docs = (snap?.docs || []).filter((doc: any) => {
-            const data = doc.data() || {};
-            const type = String(data.type || '').toLowerCase();
-            if (type !== 'live_invite') return false;
-            const status = String(data.status || 'pending').toLowerCase();
-            if (status !== 'pending') return false;
-            const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
-            if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            const createdAtMs = toJSDate(data.createdAt).getTime();
-            if (
-              !expiresAtMs &&
-              createdAtMs > 0 &&
-              Date.now() - createdAtMs > LIVE_INVITE_EXPIRY_MS
-            ) {
-              return false;
-            }
-            return !!data?.fromUid;
-          });
-          const doc =
-            docs
-              .slice()
-              .sort(
-                (a: any, b: any) =>
-                  toJSDate((b.data() || {}).createdAt).getTime() -
-                  toJSDate((a.data() || {}).createdAt).getTime(),
-              )[0] || null;
-          if (!doc) {
-            mentionInvite = null;
-            syncIncomingInvite();
-            return;
-          }
-          mentionInvite = buildLiveInviteNotice(doc.id, doc.data() || {}, 'mention');
-          syncIncomingInvite();
-        },
-        () => {},
-      );
-    const unsubPings = firestore()
-      .collection(`users/${activeUid}/pings`)
-      .limit(100)
-      .onSnapshot(
-        snap => {
-          pingLoaded = true;
-          const docs = (snap?.docs || []).filter((doc: any) => {
-            const data = doc.data() || {};
-            const type = String(data.type || '').toLowerCase();
-            if (type !== 'live_invite') return false;
-            const status = String(data.status || 'pending').toLowerCase();
-            if (status !== 'pending') return false;
-            const expiresAtMs = Number(data.expiresAtMs || 0) || 0;
-            if (expiresAtMs > 0 && Date.now() > expiresAtMs) return false;
-            return !!data?.fromUid;
-          });
-          const doc =
-            docs
-              .slice()
-              .sort(
-                (a: any, b: any) =>
-                  toJSDate((b.data() || {}).createdAt).getTime() -
-                  toJSDate((a.data() || {}).createdAt).getTime(),
-              )[0] || null;
-          if (!doc) {
-            pingInvite = null;
-            syncIncomingInvite();
-            return;
-          }
-          pingInvite = buildLiveInviteNotice(doc.id, doc.data() || {}, 'ping');
-          syncIncomingInvite();
-        },
-        () => {},
-      );
     return () => {
-      disposed = true;
       try {
         unsubInbox && unsubInbox();
-      } catch {}
-      try {
-        unsubMentions && unsubMentions();
-      } catch {}
-      try {
-        unsubPings && unsubPings();
       } catch {}
     };
   }, [user?.uid, auth?.()?.currentUser?.uid]);
@@ -6644,41 +6545,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         const me = auth?.()?.currentUser;
         if (me?.uid) {
-          if (invite.source === 'mention') {
-            await firestore()
-              .collection(`users/${me.uid}/mentions`)
-              .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          } else if (invite.source === 'ping') {
-            await firestore()
-              .collection(`users/${me.uid}/pings`)
-              .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  read: true,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          } else {
-            await firestore()
-              .collection(`users/${me.uid}/live_invites`)
-              .doc(invite.id)
-              .set(
-                {
-                  status: nextStatus,
-                  respondedAt: firestore.FieldValue.serverTimestamp(),
-                },
-                { merge: true },
-              );
-          }
+          await firestore()
+            .collection(`users/${me.uid}/live_invites`)
+            .doc(invite.id)
+            .set(
+              {
+                status: nextStatus,
+                respondedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
           const pruneMatchingInviteDocs = async (
             path: string,
             extraMatcher?: (data: any) => boolean,
@@ -6710,8 +6586,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           };
           await Promise.all([
             pruneMatchingInviteDocs(`users/${me.uid}/live_invites`),
-            pruneMatchingInviteDocs(`users/${me.uid}/mentions`),
-            pruneMatchingInviteDocs(`users/${me.uid}/pings`),
           ]);
           if (invite.liveId) {
             await firestore()
@@ -14841,27 +14715,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.inviteBadgeTitle}>
-                      Drift Invite
+                      Join Drift Expo
                     </Text>
                     <Text style={styles.inviteBadgeText}>
-                      {incomingLiveInvite.fromName} invited you to{' '}
-                      {incomingLiveInvite.liveTitle || 'Drift Expo'}
+                      {incomingLiveInvite.fromName} is inviting you into{' '}
+                      {incomingLiveInvite.liveTitle || 'Drift Expo'}.
                     </Text>
-                    <Animated.Text
+                    <Text
                       style={[
                         styles.inviteBadgeText,
-                        {
-                          marginTop: 4,
-                          fontSize: 11,
-                          opacity: flickerAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0.5, 1],
-                          }),
-                        },
+                        { marginTop: 4, fontSize: 11 },
                       ]}
                     >
-                      Swipe left or right to dismiss.
-                    </Animated.Text>
+                      Accept to enter the shared room with live video, audio, chat, and reactions.
+                    </Text>
                   </View>
                 </View>
                 <View style={styles.inviteBadgeActions}>
@@ -14873,7 +14740,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     onPress={() => respondToLiveInvite('miss')}
                     android_ripple={{ color: 'rgba(255,255,255,0.22)' }}
                   >
-                    <Text style={styles.inviteBadgeDismissText}>Miss</Text>
+                    <Text style={styles.inviteBadgeDismissText}>Ignore</Text>
                   </Pressable>
                   <Pressable
                     style={[
@@ -14883,7 +14750,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     onPress={() => respondToLiveInvite('join')}
                     android_ripple={{ color: 'rgba(255,255,255,0.28)' }}
                   >
-                    <Text style={styles.inviteBadgeJoinText}>Join</Text>
+                    <Text style={styles.inviteBadgeJoinText}>Accept</Text>
                   </Pressable>
                 </View>
               </Animated.View>
