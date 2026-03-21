@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  Animated,
   FlatList,
-  KeyboardAvoidingView,
+  Image,
   Modal,
   PermissionsAndroid,
   Platform,
@@ -13,33 +12,65 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import auth from '@react-native-firebase/auth';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-type InviteJoinPreset = {
+type SearchResult = {
+  kind: 'user' | 'vibe';
+  id: string;
+  label: string;
+  extra?: Record<string, any>;
+};
+
+type LiveInviteJoinPreset = {
   liveId?: string | null;
   channel?: string | null;
+  token?: string | null;
   title?: string | null;
   fromName?: string | null;
   hostUid?: string | null;
   autoJoin?: boolean;
+  requireApproval?: boolean;
   nonce?: number;
 };
-
-type SearchResultItem = { uid: string; name: string; secondary?: string | null };
-type CommentRow = { id: string; text: string; fromName: string };
-type FloatingReaction = { id: string; emoji: string; lane: number; anim: Animated.Value };
 
 type Props = {
   visible: boolean;
   onClose: () => void;
-  inviteJoinPreset?: InviteJoinPreset | null;
-  searchOceanEntities: (term: string) => Promise<any[]>;
+  searchOceanEntities: (term: string) => Promise<SearchResult[]>;
+  inviteJoinPreset?: LiveInviteJoinPreset | null;
 };
 
-const INVITE_WINDOW_MS = 3 * 60 * 1000;
-const REACTIONS = ['❤️', '🔥', '👏', '😍', '🎉'];
+type UserRow = {
+  uid: string;
+  displayName: string;
+  username?: string;
+  photoURL?: string | null;
+};
+
+type CommentRow = {
+  id: string;
+  fromName: string;
+  text: string;
+  createdAtMs: number;
+};
+
+const ensureCamMicPermissionsAndroid = async (): Promise<boolean> => {
+  if (Platform.OS !== 'android') return true;
+  try {
+    const result = await PermissionsAndroid.requestMultiple([
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+    ]);
+    return (
+      result[PermissionsAndroid.PERMISSIONS.CAMERA] === PermissionsAndroid.RESULTS.GRANTED &&
+      result[PermissionsAndroid.PERMISSIONS.RECORD_AUDIO] === PermissionsAndroid.RESULTS.GRANTED
+    );
+  } catch {
+    return false;
+  }
+};
 
 const mapRtcUidFromUserId = (value: string | null | undefined): number => {
   const seed = String(value || '').trim() || '0';
@@ -48,697 +79,792 @@ const mapRtcUidFromUserId = (value: string | null | undefined): number => {
   return (hash % 2147483646) + 1;
 };
 
-const normalizeSearchResult = (entry: any): SearchResultItem | null => {
-  const source = entry?.extra && typeof entry.extra === 'object' ? entry.extra : entry;
-  const uid = String(source?.uid || entry?.uid || source?.id || '').trim();
-  if (!uid) return null;
-  const name = String(source?.displayName || source?.name || source?.username || entry?.label || 'User').trim();
-  const username = String(source?.username || source?.handle || '').trim();
-  return { uid, name: name || 'User', secondary: username && username !== name ? `@${username.replace(/^[@/]+/, '')}` : null };
-};
+const sanitizeChannel = (value: string, fallback = 'WaveCast'): string =>
+  String(value || fallback)
+    .trim()
+    .replace(/[^A-Za-z0-9_]/g, '_')
+    .slice(0, 64) || fallback;
 
-const scoreSearchText = (term: string, ...values: Array<string | null | undefined>): number => {
-  const normalizedTerm = term.trim().toLowerCase();
-  if (!normalizedTerm) return 0;
-  const parts = normalizedTerm.split(/\s+/).filter(Boolean);
-  let score = 0;
-  values.forEach(value => {
-    const text = String(value || '').trim().toLowerCase();
-    if (!text) return;
-    if (text === normalizedTerm) score += 120;
-    else if (text.startsWith(normalizedTerm)) score += 80;
-    else if (text.includes(normalizedTerm)) score += 50;
-    parts.forEach(part => {
-      if (!part) return;
-      if (text === part) score += 35;
-      else if (text.startsWith(part)) score += 20;
-      else if (text.includes(part)) score += 10;
-    });
-  });
-  return score;
-};
-
-const extractRtcUid = (value: any, fallback = 0): number => {
-  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  const candidate =
-    value?.localUid ??
-    value?.uid ??
-    value?.rtcUid ??
-    value?.connection?.localUid ??
-    value?.connection?.uid ??
-    0;
-  if (typeof candidate === 'number' && Number.isFinite(candidate) && candidate > 0) {
-    return candidate;
-  }
-  if (typeof candidate === 'string') {
-    const parsed = Number(candidate);
-    if (Number.isFinite(parsed) && parsed > 0) return parsed;
-  }
-  return fallback;
-};
-
-const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities }: Props) => {
-  const insets = useSafeAreaInsets();
-  const Agora = useMemo(() => { try { return require('react-native-agora'); } catch { return null; } }, []);
-  const cfg = useMemo(() => { try { return require('../../liveConfig'); } catch { return null; } }, []);
-  const appId = String(cfg?.AGORA_APP_ID || '').trim();
-  const staticToken = String(cfg?.AGORA_STATIC_TOKEN || '').trim() || null;
-  const me = auth().currentUser;
-  const meUid = me?.uid || '';
-  const meName = String(me?.displayName || (me?.email ? me.email.split('@')[0] : '') || 'User');
-  const engineRef = useRef<any>(null);
-  const joinedChannelRef = useRef<string | null>(null);
-  const seenReactionIdsRef = useRef<Set<string>>(new Set());
-
-  const [engineReady, setEngineReady] = useState(false);
-  const [statusText, setStatusText] = useState('Ready');
-  const [roomId, setRoomId] = useState<string | null>(null);
-  const [roomChannel, setRoomChannel] = useState('');
-  const [roomTitle, setRoomTitle] = useState('WaveCast');
-  const [hostUid, setHostUid] = useState<string | null>(null);
-  const [myRtcUid, setMyRtcUid] = useState(0);
-  const [joined, setJoined] = useState(false);
-  const [remoteUid, setRemoteUid] = useState<number | null>(null);
-  const [remoteCandidateUid, setRemoteCandidateUid] = useState<number | null>(null);
-  const [remoteVideoReady, setRemoteVideoReady] = useState(false);
-  const [remoteAudioReady, setRemoteAudioReady] = useState(false);
-  const [commentText, setCommentText] = useState('');
-  const [comments, setComments] = useState<CommentRow[]>([]);
-  const [inviteQuery, setInviteQuery] = useState('');
-  const [inviteResults, setInviteResults] = useState<SearchResultItem[]>([]);
-  const [showInvitePanel, setShowInvitePanel] = useState(false);
-  const [inviteLoading, setInviteLoading] = useState(false);
-  const [showReactions, setShowReactions] = useState(false);
-  const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
-  const [preJoinBusy, setPreJoinBusy] = useState(false);
-
-  const writeParticipant = useCallback(async (rtcUidOverride?: number) => {
-    if (!roomId || !meUid) return;
-    const nextRtcUid = extractRtcUid(rtcUidOverride, extractRtcUid(myRtcUid, 0));
-    await firestore().collection(`wavecasts/${roomId}/participants`).doc(meUid).set({
-      uid: meUid,
-      name: meName,
-      rtcUid: nextRtcUid > 0 ? nextRtcUid : null,
-      role: hostUid === meUid ? 'host' : 'guest',
-      hostUid: hostUid || meUid,
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-      updatedAtMs: Date.now(),
-    }, { merge: true });
-  }, [hostUid, meName, meUid, myRtcUid, roomId]);
-
-  const ensurePermissions = useCallback(async () => {
-    if (Platform.OS !== 'android') return true;
-    const perms = [PermissionsAndroid.PERMISSIONS.CAMERA, PermissionsAndroid.PERMISSIONS.RECORD_AUDIO];
-    for (const permission of perms) {
-      const granted = await PermissionsAndroid.request(permission);
-      if (granted !== PermissionsAndroid.RESULTS.GRANTED) return false;
+const toMillis = (value: any): number => {
+  try {
+    if (!value) return 0;
+    if (typeof value === 'number') return value;
+    if (typeof value?.toMillis === 'function') return Number(value.toMillis()) || 0;
+    if (typeof value?.seconds === 'number') {
+      return Math.floor(value.seconds * 1000 + (Number(value.nanoseconds || 0) / 1e6 || 0));
     }
-    return true;
-  }, []);
+    const ms = new Date(value).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  } catch {
+    return 0;
+  }
+};
 
-  const cleanupEngine = useCallback(async () => {
-    try { engineRef.current?.leaveChannel?.(); } catch {}
-    try { engineRef.current?.stopPreview?.(); } catch {}
-    try { (engineRef.current?.release ?? engineRef.current?.destroy)?.(); } catch {}
+const fmt = (ms: number) => {
+  if (!ms) return '';
+  try {
+    return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+};
+
+const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset }: Props) => {
+  const insets = useSafeAreaInsets();
+  const Agora = useMemo(() => {
+    try {
+      return require('react-native-agora');
+    } catch {
+      return null;
+    }
+  }, []);
+  const cfg = (() => {
+    try {
+      return require('../../liveConfig');
+    } catch {
+      return null;
+    }
+  })();
+  const appId: string = String(cfg?.AGORA_APP_ID || '').trim();
+  const staticToken: string | null = String(cfg?.AGORA_STATIC_TOKEN || '').trim() || null;
+  const defaultChannel = sanitizeChannel(String(cfg?.AGORA_CHANNEL_NAME || 'WaveCast'));
+
+  const me = auth().currentUser;
+  const myUid = String(me?.uid || '').trim();
+  const myName = String(
+    me?.displayName || (me?.email ? String(me.email).split('@')[0] : '') || 'You',
+  ).trim();
+  const myRtcUid = useMemo(() => mapRtcUidFromUserId(myUid), [myUid]);
+
+  const engineRef = useRef<any>(null);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [roomChannel, setRoomChannel] = useState(defaultChannel);
+  const [roomTitle, setRoomTitle] = useState('WaveCast');
+  const [isHost, setIsHost] = useState(false);
+  const [isJoined, setIsJoined] = useState(false);
+  const [remoteUid, setRemoteUid] = useState<number | null>(null);
+  const [micMuted, setMicMuted] = useState(false);
+  const [cameraMuted, setCameraMuted] = useState(false);
+  const [speakerEnabled, setSpeakerEnabled] = useState(true);
+  const [statusText, setStatusText] = useState('Opening camera...');
+  const [errorText, setErrorText] = useState<string | null>(null);
+  const [showInviteSheet, setShowInviteSheet] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchResults, setSearchResults] = useState<UserRow[]>([]);
+  const [comments, setComments] = useState<CommentRow[]>([]);
+  const [commentText, setCommentText] = useState('');
+
+  const AVView = Agora?.AgoraVideoView;
+  const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
+  const RtcTextureView = (Agora as any)?.RtcTextureView;
+  const RtcLocalView = Agora?.RtcLocalView;
+  const RtcRemoteView = Agora?.RtcRemoteView;
+  const VideoRenderMode = Agora?.VideoRenderMode;
+  const VideoSourceType = Agora?.VideoSourceType;
+
+  const cleanupEngine = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    try { engine.leaveChannel?.(); } catch {}
+    try { engine.stopPreview?.(); } catch {}
+    try { (engine.destroy ?? engine.release)?.(); } catch {}
     engineRef.current = null;
-    joinedChannelRef.current = null;
   }, []);
 
-  useEffect(() => {
-    if (visible) return;
-    cleanupEngine().catch(() => {});
-    setEngineReady(false);
-    setStatusText('Ready');
-    setRoomId(null);
-    setRoomChannel('');
-    setRoomTitle('WaveCast');
-    setHostUid(null);
-    setMyRtcUid(0);
-    setJoined(false);
-    setRemoteUid(null);
-    setRemoteCandidateUid(null);
-    setRemoteVideoReady(false);
-    setRemoteAudioReady(false);
-    setCommentText('');
-    setComments([]);
-    setInviteQuery('');
-    setInviteResults([]);
-    setShowInvitePanel(false);
-    setInviteLoading(false);
-    setShowReactions(false);
-    setFloatingReactions([]);
-    setPreJoinBusy(false);
-    seenReactionIdsRef.current = new Set();
-  }, [cleanupEngine, visible]);
+  const writeParticipant = useCallback(async (id: string) => {
+    if (!id || !myUid) return;
+    try {
+      await firestore().collection(`wavecasts/${id}/participants`).doc(myUid).set({
+        uid: myUid,
+        rtcUid: myRtcUid,
+        displayName: myName,
+        photoURL: me?.photoURL || null,
+        cameraMuted,
+        micMuted,
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+    } catch {}
+  }, [cameraMuted, me?.photoURL, micMuted, myName, myRtcUid, myUid]);
 
   const ensurePublishedMedia = useCallback((engine: any) => {
     try { engine.enableAudio?.(); } catch {}
-    try { engine.enableLocalAudio?.(true); } catch {}
-    try { engine.muteLocalAudioStream?.(false); } catch {}
-    try { engine.setEnableSpeakerphone?.(true); } catch {}
+    try { engine.enableLocalAudio?.(!micMuted); } catch {}
+    try { engine.muteLocalAudioStream?.(!!micMuted); } catch {}
+    try { engine.setEnableSpeakerphone?.(speakerEnabled); } catch {}
     try { engine.enableVideo?.(); } catch {}
-    try { engine.enableLocalVideo?.(true); } catch {}
-    try { engine.muteLocalVideoStream?.(false); } catch {}
+    try { engine.enableLocalVideo?.(!cameraMuted); } catch {}
+    try { engine.muteLocalVideoStream?.(!!cameraMuted); } catch {}
     try { engine.startPreview?.(); } catch {}
     try {
       engine.updateChannelMediaOptions?.({
         clientRoleType: Agora?.ClientRoleType?.ClientRoleBroadcaster ?? 1,
-        publishMicrophoneTrack: true,
-        publishCameraTrack: true,
+        publishMicrophoneTrack: !micMuted,
+        publishCameraTrack: !cameraMuted,
         autoSubscribeAudio: true,
         autoSubscribeVideo: true,
       });
     } catch {}
-    try {
-      engine.setClientRole?.(
-        Agora?.ClientRoleType?.ClientRoleBroadcaster ??
-          Agora?.ClientRole?.Broadcaster ??
-          1,
-      );
-    } catch {}
-  }, [Agora]);
+  }, [Agora?.ClientRoleType, cameraMuted, micMuted, speakerEnabled]);
 
-  const searchInviteUsers = useCallback(async (term: string): Promise<SearchResultItem[]> => {
-    const normalized = term.trim().replace(/^[@/]+/, '');
-    if (!normalized) return [];
-    const lowerTerm = normalized.toLowerCase();
-    const usersRef = firestore().collection('users');
-    const byUid = new Map<string, SearchResultItem>();
-    const putRow = (row: SearchResultItem | null) => {
-      if (!row?.uid || row.uid === meUid) return;
-      byUid.set(row.uid, row);
-    };
-    const pushDoc = (doc: any) => {
-      const data = doc.data() || {};
-      const uid = String(doc.id || data.uid || '').trim();
-      if (!uid || uid === meUid) return;
-      const displayName = String(data.displayName || data.name || data.username || 'User').trim();
-      const username = String(data.username || data.userName || '').trim();
-      putRow({ uid, name: displayName || 'User', secondary: username && username !== displayName ? `@${username.replace(/^[@/]+/, '')}` : null });
-    };
+  const joinWaveCast = useCallback(async ({
+    nextRoomId,
+    nextChannel,
+    nextTitle,
+    hostMode,
+    token,
+  }: {
+    nextRoomId: string;
+    nextChannel: string;
+    nextTitle?: string;
+    hostMode: boolean;
+    token?: string | null;
+  }) => {
+    if (!visible || !Agora || !appId) return;
+    const ok = await ensureCamMicPermissionsAndroid();
+    if (!ok) {
+      setErrorText('Camera and microphone permissions are required.');
+      return;
+    }
+    cleanupEngine();
+    setRoomId(nextRoomId);
+    setRoomChannel(nextChannel);
+    setRoomTitle(nextTitle || 'WaveCast');
+    setIsHost(hostMode);
+    setRemoteUid(null);
+    setErrorText(null);
+    setStatusText(hostMode ? 'Starting WaveCast...' : 'Joining WaveCast...');
+    const safeToken = String(token || staticToken || '').trim() || null;
     try {
-      const displaySnap = await usersRef.where('displayName', '>=', normalized).where('displayName', '<=', normalized + '\uf8ff').limit(20).get();
-      displaySnap.forEach(pushDoc);
-    } catch {}
-    try {
-      const usernameSnap = await usersRef.where('username_lc', '>=', lowerTerm).where('username_lc', '<=', lowerTerm + '\uf8ff').limit(20).get();
-      usernameSnap.forEach(pushDoc);
-    } catch {}
-    if (byUid.size < 12) {
-      try {
-        const broadSnap = await usersRef.limit(120).get();
-        broadSnap.forEach((doc: any) => {
-          const data = doc.data() || {};
-          const uid = String(doc.id || data.uid || '').trim();
-          if (!uid || uid === meUid) return;
-          const displayName = String(data.displayName || data.name || '').trim();
-          const username = String(data.username || data.userName || data.username_lc || '').trim();
-          const score = scoreSearchText(lowerTerm, displayName, username, uid);
-          if (score <= 0) return;
-          putRow({
-            uid,
-            name: displayName || username || 'User',
-            secondary: username && username !== displayName ? `@${username.replace(/^[@/]+/, '')}` : null,
-          });
+      if (typeof Agora?.createAgoraRtcEngine === 'function') {
+        const engine = Agora.createAgoraRtcEngine();
+        engineRef.current = engine;
+        engine.initialize?.({
+          appId,
+          channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
         });
-      } catch {}
+        ensurePublishedMedia(engine);
+        engine.registerEventHandler?.({
+          onJoinChannelSuccess: () => {
+            setIsJoined(true);
+            setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+            ensurePublishedMedia(engine);
+            writeParticipant(nextRoomId);
+          },
+          onRejoinChannelSuccess: () => {
+            setIsJoined(true);
+            setStatusText(remoteUid ? `Guest live ${remoteUid}` : 'Connected');
+            ensurePublishedMedia(engine);
+            writeParticipant(nextRoomId);
+          },
+          onUserJoined: (_conn: any, uid: number) => {
+            const parsed = Number(uid);
+            if (!Number.isFinite(parsed) || parsed <= 0) return;
+            setRemoteUid(parsed);
+            setStatusText(`Guest live ${parsed}`);
+            try { engine.muteRemoteVideoStream?.(parsed, false); } catch {}
+            try { engine.muteRemoteAudioStream?.(parsed, false); } catch {}
+          },
+          onUserOffline: (_conn: any, uid: number) => {
+            const parsed = Number(uid);
+            setRemoteUid(prev => (prev === parsed ? null : prev));
+            setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+          },
+          onConnectionStateChanged: (_conn: any, state: number, reason: number) => {
+            const s = Number(state);
+            const r = Number(reason);
+            if (s === 3 || s === 4) setStatusText(`Reconnecting ${s}:${r}`);
+          },
+          onError: (err: number) => setErrorText(`Agora error ${err}`),
+        });
+        await engine.joinChannel(safeToken, nextChannel, myRtcUid, {
+          clientRoleType: Agora.ClientRoleType?.ClientRoleBroadcaster ?? 1,
+          publishMicrophoneTrack: !micMuted,
+          publishCameraTrack: !cameraMuted,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+        });
+        return;
+      }
+      if (Agora?.RtcEngine?.create) {
+        const engine = await Agora.RtcEngine.create(appId);
+        engineRef.current = engine;
+        ensurePublishedMedia(engine);
+        engine.addListener?.('JoinChannelSuccess', () => {
+          setIsJoined(true);
+          setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+          ensurePublishedMedia(engine);
+          writeParticipant(nextRoomId);
+        });
+        engine.addListener?.('RejoinChannelSuccess', () => {
+          setIsJoined(true);
+          setStatusText(remoteUid ? `Guest live ${remoteUid}` : 'Connected');
+          ensurePublishedMedia(engine);
+          writeParticipant(nextRoomId);
+        });
+        engine.addListener?.('UserJoined', (uid: number) => {
+          const parsed = Number(uid);
+          if (!Number.isFinite(parsed) || parsed <= 0) return;
+          setRemoteUid(parsed);
+          setStatusText(`Guest live ${parsed}`);
+          try { engine.muteRemoteVideoStream?.(parsed, false); } catch {}
+          try { engine.muteRemoteAudioStream?.(parsed, false); } catch {}
+        });
+        engine.addListener?.('UserOffline', (uid: number) => {
+          const parsed = Number(uid);
+          setRemoteUid(prev => (prev === parsed ? null : prev));
+          setStatusText(hostMode ? 'Waiting for guest...' : 'Connected');
+        });
+        engine.addListener?.('ConnectionStateChanged', (state: number, reason: number) => {
+          const s = Number(state);
+          const r = Number(reason);
+          if (s === 3 || s === 4) setStatusText(`Reconnecting ${s}:${r}`);
+        });
+        engine.addListener?.('Error', (err: number) => setErrorText(`Agora error ${err}`));
+        await engine.joinChannel(safeToken, nextChannel, myRtcUid);
+        return;
+      }
+      setErrorText('WaveCast unavailable: Agora engine missing.');
+    } catch (error: any) {
+      console.warn('WaveCast join failed', error);
+      setErrorText(String(error?.message || 'Could not join WaveCast.'));
     }
-    try {
-      ((await searchOceanEntities(normalized)).map(normalizeSearchResult).filter(Boolean) as SearchResultItem[])
-        .filter(item => item.uid !== meUid)
-        .forEach(item => putRow(item));
-    } catch {
-      // ignore fallback failure
-    }
-    return Array.from(byUid.values())
-      .map(row => ({
-        row,
-        score: scoreSearchText(lowerTerm, row.name, row.secondary, row.uid),
-      }))
-      .filter(item => item.score > 0)
-      .sort((a, b) => b.score - a.score || a.row.name.localeCompare(b.row.name))
-      .slice(0, 24)
-      .map(item => item.row);
-  }, [meUid, searchOceanEntities]);
+  }, [
+    Agora,
+    appId,
+    cameraMuted,
+    cleanupEngine,
+    ensurePublishedMedia,
+    micMuted,
+    myRtcUid,
+    remoteUid,
+    staticToken,
+    visible,
+    writeParticipant,
+  ]);
 
   useEffect(() => {
-    if (!visible || !Agora || !appId || engineRef.current) return;
-    let cancelled = false;
+    if (!visible) {
+      cleanupEngine();
+      setRoomId(null);
+      setRoomChannel(defaultChannel);
+      setRoomTitle('WaveCast');
+      setIsHost(false);
+      setIsJoined(false);
+      setRemoteUid(null);
+      setMicMuted(false);
+      setCameraMuted(false);
+      setSpeakerEnabled(true);
+      setStatusText('Opening camera...');
+      setErrorText(null);
+      setShowInviteSheet(false);
+      setSearchQuery('');
+      setSearchResults([]);
+      setComments([]);
+      setCommentText('');
+      return;
+    }
+    let mounted = true;
     (async () => {
-      if (!(await ensurePermissions())) {
-        setStatusText('Camera or mic permission denied');
+      const ok = await ensureCamMicPermissionsAndroid();
+      if (!mounted) return;
+      if (!ok) {
+        setErrorText('Camera and microphone permissions are required.');
         return;
       }
       try {
-        const engine = Agora.createAgoraRtcEngine ? Agora.createAgoraRtcEngine() : await Agora.RtcEngine.create(appId);
-        engine.initialize?.({ appId, channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0 });
-        ensurePublishedMedia(engine);
-        engine.registerEventHandler?.({
-          onJoinChannelSuccess: (connection: any, uidOrElapsed?: any) => {
-            const actualRtcUid = extractRtcUid(connection, extractRtcUid(uidOrElapsed, myRtcUid));
-            if (!cancelled) {
-              if (actualRtcUid > 0) setMyRtcUid(actualRtcUid);
-              setJoined(true);
-              setStatusText('On air');
-              ensurePublishedMedia(engine);
-            }
-            writeParticipant(actualRtcUid).catch(() => {});
-          },
-          onRejoinChannelSuccess: (connection: any, uidOrElapsed?: any) => {
-            const actualRtcUid = extractRtcUid(connection, extractRtcUid(uidOrElapsed, myRtcUid));
-            if (!cancelled) {
-              if (actualRtcUid > 0) setMyRtcUid(actualRtcUid);
-              setJoined(true);
-              setStatusText('On air');
-              ensurePublishedMedia(engine);
-            }
-            writeParticipant(actualRtcUid).catch(() => {});
-          },
-          onUserJoined: (_c: any, uid: number) => {
-            if (!cancelled) {
-              const nextUid = Number(uid);
-              setRemoteCandidateUid(nextUid);
-              setRemoteVideoReady(false);
-              setRemoteAudioReady(false);
-              setStatusText(`Guest joined ${nextUid}`);
-            }
-            try { engine.muteRemoteAudioStream?.(uid, false); } catch {}
-            try { engine.muteRemoteVideoStream?.(uid, false); } catch {}
-          },
-          onUserOffline: (_c: any, uid: number) => {
-            if (!cancelled) {
-              const nextUid = Number(uid);
-              setRemoteUid(prev => (prev === nextUid ? null : prev));
-              setRemoteCandidateUid(prev => (prev === nextUid ? null : prev));
-              setRemoteVideoReady(false);
-              setRemoteAudioReady(false);
-            }
-          },
-          onRemoteVideoStateChanged: (_c: any, uid: number, state: number, reason: number) => {
-            if (cancelled) return;
-            const nextUid = Number(uid);
-            const active = [2, 3].includes(Number(state)) || [6, 7].includes(Number(reason));
-            if (active) {
-              setRemoteCandidateUid(nextUid);
-              setRemoteUid(nextUid);
-              setRemoteVideoReady(true);
-              setStatusText(`Guest video live ${nextUid}`);
-            } else if (remoteUid === nextUid && [0, 1].includes(Number(state))) {
-              setRemoteVideoReady(false);
-              setStatusText(`Guest video pending ${nextUid}`);
-            }
-          },
-          onRemoteAudioStateChanged: (_c: any, uid: number, state: number, reason: number, _elapsed?: number) => {
-            if (cancelled) return;
-            const nextUid = Number(uid);
-            const active = [2, 3].includes(Number(state)) || [5, 6].includes(Number(reason));
-            if (active) {
-              setRemoteCandidateUid(nextUid);
-              setRemoteAudioReady(true);
-              setStatusText(prev => (prev.startsWith('Guest video') ? prev : `Guest audio live ${nextUid}`));
-            }
-          },
-          onConnectionStateChanged: (_c: any, state: number, reason: number) => {
-            if (!cancelled && Number(state) >= 3) {
-              setStatusText(`Conn ${state}:${reason}`);
-            }
-          },
-          onLocalVideoStateChanged: (_source: any, state: number, error: number) => {
-            if (!cancelled && Number(state) <= 1 && Number(error) > 0) {
-              setStatusText(`Local video ${state}:${error}`);
-            }
-          },
-          onLocalAudioStateChanged: (state: number, error: number) => {
-            if (!cancelled && Number(state) <= 1 && Number(error) > 0) {
-              setStatusText(`Local audio ${state}:${error}`);
-            }
-          },
-          onError: (err: number) => { if (!cancelled) setStatusText(`Agora error ${err}`); },
-        });
-        engine.addListener?.('JoinChannelSuccess', (channelOrConnection: any, uidOrElapsed?: any) => {
-          const actualRtcUid = extractRtcUid(channelOrConnection, extractRtcUid(uidOrElapsed, myRtcUid));
-          if (!cancelled) {
-            if (actualRtcUid > 0) setMyRtcUid(actualRtcUid);
-            setJoined(true);
-            setStatusText('On air');
+        if (Agora && appId) {
+          if (typeof Agora?.createAgoraRtcEngine === 'function') {
+            const engine = Agora.createAgoraRtcEngine();
+            engineRef.current = engine;
+            engine.initialize?.({
+              appId,
+              channelProfile: Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
+            });
+            ensurePublishedMedia(engine);
+          } else if (Agora?.RtcEngine?.create) {
+            const engine = await Agora.RtcEngine.create(appId);
+            engineRef.current = engine;
             ensurePublishedMedia(engine);
           }
-          writeParticipant(actualRtcUid).catch(() => {});
-        });
-        engine.addListener?.('UserJoined', (uid: number) => {
-          if (!cancelled) {
-            const nextUid = Number(uid);
-            setRemoteCandidateUid(nextUid);
-            setRemoteVideoReady(false);
-            setRemoteAudioReady(false);
-            setStatusText(`Guest joined ${nextUid}`);
-          }
-          try { engine.muteRemoteAudioStream?.(uid, false); } catch {}
-          try { engine.muteRemoteVideoStream?.(uid, false); } catch {}
-        });
-        engine.addListener?.('UserOffline', (uid: number) => {
-          if (!cancelled) {
-            const nextUid = Number(uid);
-            setRemoteUid(prev => (prev === nextUid ? null : prev));
-            setRemoteCandidateUid(prev => (prev === nextUid ? null : prev));
-            setRemoteVideoReady(false);
-            setRemoteAudioReady(false);
-          }
-        });
-        engine.addListener?.('RemoteVideoStateChanged', (uid: number, state: number, reason: number) => {
-          if (cancelled) return;
-          const nextUid = Number(uid);
-          const active = [2, 3].includes(Number(state)) || [6, 7].includes(Number(reason));
-          if (active) {
-            setRemoteCandidateUid(nextUid);
-            setRemoteUid(nextUid);
-            setRemoteVideoReady(true);
-            setStatusText(`Guest video live ${nextUid}`);
-          } else if (remoteUid === nextUid && [0, 1].includes(Number(state))) {
-            setRemoteVideoReady(false);
-            setStatusText(`Guest video pending ${nextUid}`);
-          }
-        });
-        engine.addListener?.('RemoteAudioStateChanged', (uid: number, state: number, reason: number) => {
-          if (cancelled) return;
-          const nextUid = Number(uid);
-          const active = [2, 3].includes(Number(state)) || [5, 6].includes(Number(reason));
-          if (active) {
-            setRemoteCandidateUid(nextUid);
-            setRemoteAudioReady(true);
-            setStatusText(prev => (prev.startsWith('Guest video') ? prev : `Guest audio live ${nextUid}`));
-          }
-        });
-        engineRef.current = engine;
-        if (!cancelled) setEngineReady(true);
+          setStatusText('Camera ready');
+        }
       } catch (error: any) {
-        if (!cancelled) setStatusText(String(error?.message || 'WaveCast init failed'));
+        setErrorText(String(error?.message || 'Could not open camera.'));
       }
     })();
-    return () => { cancelled = true; };
-  }, [Agora, appId, ensurePermissions, ensurePublishedMedia, myRtcUid, remoteUid, visible, writeParticipant]);
-
-  const hydrateRoom = useCallback(async (waveCastId: string) => {
-    const snap = await firestore().collection('wavecasts').doc(waveCastId).get();
-    const data = snap.data() || {};
-    const channel = String(data.channel || inviteJoinPreset?.channel || '').trim().replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
-    if (!channel) throw new Error('Invite has no valid channel.');
-    setRoomId(waveCastId);
-    setRoomChannel(channel);
-    setRoomTitle(String(data.title || inviteJoinPreset?.title || 'WaveCast'));
-    setHostUid(String(data.hostUid || inviteJoinPreset?.hostUid || '').trim() || null);
-    setMyRtcUid(mapRtcUidFromUserId(meUid));
-    setStatusText('Joining WaveCast');
-  }, [inviteJoinPreset?.channel, inviteJoinPreset?.hostUid, inviteJoinPreset?.title, meUid]);
-
-  const startRoom = useCallback(async () => {
-    if (!meUid) throw new Error('Sign in required');
-    const ref = firestore().collection('wavecasts').doc();
-    const channel = `wavecast_${ref.id}`.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
-    await ref.set({
-      title: 'WaveCast',
-      channel,
-      hostUid: meUid,
-      hostName: meName,
-      status: 'live',
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-    });
-    setRoomId(ref.id);
-    setRoomChannel(channel);
-    setRoomTitle('WaveCast');
-    setHostUid(meUid);
-    setMyRtcUid(mapRtcUidFromUserId(meUid));
-    setStatusText('Joining WaveCast');
-  }, [meName, meUid]);
+    return () => {
+      mounted = false;
+    };
+  }, [Agora, appId, cleanupEngine, defaultChannel, ensurePublishedMedia, visible]);
 
   useEffect(() => {
-    if (!visible || !inviteJoinPreset?.liveId) return;
-    hydrateRoom(String(inviteJoinPreset.liveId)).catch(error => {
-      Alert.alert('Could not open WaveCast invite', String(error?.message || 'Try again.'));
-    });
-  }, [hydrateRoom, inviteJoinPreset?.liveId, visible]);
-
-  useEffect(() => {
-    if (!visible || !roomId || !roomChannel || !myRtcUid || !engineRef.current) return;
-    if (joinedChannelRef.current === roomChannel) return;
+    if (!visible || !inviteJoinPreset?.autoJoin || !inviteJoinPreset?.liveId) return;
+    const liveId = String(inviteJoinPreset.liveId || '').trim();
+    if (!liveId) return;
     let cancelled = false;
     (async () => {
-      const engine = engineRef.current;
-      const uidCandidates = Array.from(new Set([Number(myRtcUid) || 0, 0]));
-      const tokenCandidates = Array.from(new Set([null, staticToken].filter(v => v !== undefined))) as Array<string | null>;
-      let lastErr: any = null;
-      const isV4Engine = typeof Agora?.createAgoraRtcEngine === 'function';
-      for (const token of tokenCandidates) {
-        for (const uid of uidCandidates) {
-          try {
-            if (isV4Engine) {
-              await engine.joinChannel?.(token, roomChannel, uid, {
-                clientRoleType: Agora?.ClientRoleType?.ClientRoleBroadcaster ?? 1,
-                publishMicrophoneTrack: true,
-                publishCameraTrack: true,
-                autoSubscribeAudio: true,
-                autoSubscribeVideo: true,
-              });
-            } else {
-              await engine.joinChannel?.(token, roomChannel, uid);
-            }
-            if (cancelled) return;
-            joinedChannelRef.current = roomChannel;
-            ensurePublishedMedia(engine);
-            await writeParticipant(uid);
-            return;
-          } catch (error) {
-            lastErr = error;
-          }
-        }
+      try {
+        const snap = await firestore().collection('wavecasts').doc(liveId).get();
+        const data = snap?.data() || {};
+        if (cancelled) return;
+        await joinWaveCast({
+          nextRoomId: liveId,
+          nextChannel: sanitizeChannel(
+            String(data.channel || inviteJoinPreset.channel || defaultChannel),
+            defaultChannel,
+          ),
+          nextTitle: String(data.title || inviteJoinPreset.title || 'WaveCast'),
+          hostMode: false,
+          token: inviteJoinPreset.token || null,
+        });
+      } catch (error: any) {
+        setErrorText(String(error?.message || 'Could not open invited WaveCast.'));
       }
-      if (!cancelled) setStatusText(String(lastErr?.message || 'Could not join WaveCast'));
     })();
-    return () => { cancelled = true; };
-  }, [Agora, ensurePublishedMedia, myRtcUid, roomChannel, roomId, staticToken, visible, writeParticipant]);
-
-  useEffect(() => {
-    if (!visible || !roomId || !meUid) return;
     return () => {
-      firestore()
-        .collection(`wavecasts/${roomId}/participants`)
-        .doc(meUid)
-        .delete()
-        .catch(() => {});
+      cancelled = true;
     };
-  }, [meUid, roomId, visible]);
+  }, [
+    defaultChannel,
+    inviteJoinPreset?.autoJoin,
+    inviteJoinPreset?.channel,
+    inviteJoinPreset?.liveId,
+    inviteJoinPreset?.title,
+    inviteJoinPreset?.token,
+    joinWaveCast,
+    visible,
+  ]);
 
   useEffect(() => {
     if (!visible || !roomId) return;
-    const unsubParticipants = firestore().collection(`wavecasts/${roomId}/participants`).onSnapshot(snap => {
-      const others = (snap?.docs || [])
-        .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
-        .filter((row: any) => String(row.uid || row.id || '') !== meUid);
-      const activeOther = others
-        .map((row: any) => ({
-          rtcUid: Number(row.rtcUid || 0) || 0,
-          updatedAtMs: Number(row.updatedAtMs || 0) || 0,
-        }))
-        .filter((row: any) => row.rtcUid > 0)
-        .sort((a: any, b: any) => b.updatedAtMs - a.updatedAtMs)[0];
-      if (activeOther?.rtcUid) {
-        setRemoteCandidateUid(prev => (prev && prev === activeOther.rtcUid ? prev : activeOther.rtcUid));
-        setStatusText(prev => (remoteVideoReady || remoteAudioReady ? prev : `Guest present ${activeOther.rtcUid}`));
-      }
-    });
-    const unsubComments = firestore().collection(`wavecasts/${roomId}/comments`).orderBy('createdAt', 'asc').limit(120).onSnapshot(snap => {
-      setComments((snap.docs || []).map(doc => ({ id: doc.id, text: String(doc.data()?.text || ''), fromName: String(doc.data()?.fromName || 'User') })));
-    });
-    const unsubReactions = firestore().collection(`wavecasts/${roomId}/reactions`).orderBy('createdAt', 'asc').limit(80).onSnapshot(snap => {
-      (snap.docs || []).forEach((doc, index) => {
-        if (seenReactionIdsRef.current.has(doc.id)) return;
-        seenReactionIdsRef.current.add(doc.id);
-        const emoji = String(doc.data()?.emoji || '').trim();
-        if (!emoji) return;
-        const anim = new Animated.Value(0);
-        const lane = index % 4;
-        setFloatingReactions(prev => [...prev, { id: doc.id, emoji, lane, anim }].slice(-16));
-        Animated.timing(anim, { toValue: 1, duration: 2200, useNativeDriver: true }).start(() => {
-          setFloatingReactions(prev => prev.filter(item => item.id !== doc.id));
+    const unsubComments = firestore()
+      .collection(`wavecasts/${roomId}/comments`)
+      .orderBy('createdAt', 'asc')
+      .limitToLast(40)
+      .onSnapshot(snap => {
+        const next = (snap?.docs || []).map(doc => {
+          const data = doc.data() || {};
+          return {
+            id: doc.id,
+            fromName: String(data.fromName || data.displayName || 'User'),
+            text: String(data.text || ''),
+            createdAtMs: Math.max(Number(data.createdAtMs || 0), toMillis(data.createdAt)),
+          } as CommentRow;
+        });
+        setComments(next);
+      });
+    const unsubParticipants = firestore()
+      .collection(`wavecasts/${roomId}/participants`)
+      .onSnapshot(snap => {
+        const others = (snap?.docs || [])
+          .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
+          .filter((row: any) => String(row.uid || row.id) !== myUid);
+        if (!others.length && !remoteUid) {
+          setStatusText(isHost ? 'Waiting for guest...' : 'Connected');
+        } else if (others.length && !remoteUid) {
+          setStatusText(`Guest present ${others[0]?.rtcUid || others[0]?.uid || ''}`);
+        }
+      });
+    return () => {
+      try { unsubComments(); } catch {}
+      try { unsubParticipants(); } catch {}
+    };
+  }, [isHost, myUid, remoteUid, roomId, visible]);
+
+  useEffect(() => {
+    if (!visible || !roomId || !isJoined) return;
+    writeParticipant(roomId).catch(() => {});
+  }, [cameraMuted, isJoined, micMuted, roomId, speakerEnabled, visible, writeParticipant]);
+
+  useEffect(() => {
+    if (!visible || !roomChannel || !isJoined) return;
+    ensurePublishedMedia(engineRef.current);
+  }, [cameraMuted, ensurePublishedMedia, isJoined, micMuted, roomChannel, speakerEnabled, visible]);
+
+  const startWaveCast = useCallback(async () => {
+    if (!myUid) {
+      Alert.alert('Sign in required');
+      return;
+    }
+    const ref = firestore().collection('wavecasts').doc();
+    const nextRoomId = ref.id;
+    const nextChannel = sanitizeChannel(`wavecast_${nextRoomId}`, defaultChannel);
+    try {
+      await ref.set(
+        {
+          channel: nextChannel,
+          title: 'WaveCast',
+          hostUid: myUid,
+          hostName: myName,
+          status: 'live',
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      await joinWaveCast({
+        nextRoomId,
+        nextChannel,
+        nextTitle: 'WaveCast',
+        hostMode: true,
+      });
+    } catch (error: any) {
+      setErrorText(String(error?.message || 'Could not start WaveCast.'));
+    }
+  }, [defaultChannel, joinWaveCast, myName, myUid]);
+
+  const searchUsers = useCallback(async () => {
+    const term = String(searchQuery || '').trim().toLowerCase();
+    if (!term) {
+      setSearchResults([]);
+      return;
+    }
+    setSearchBusy(true);
+    try {
+      const rows = new Map<string, UserRow>();
+      const snap = await firestore().collection('users').limit(80).get().catch(() => null);
+      (snap?.docs || []).forEach((doc: any) => {
+        const data = doc.data() || {};
+        const displayName = String(data.displayName || data.name || data.username || doc.id);
+        const username = String(data.username || data.username_lc || '').trim();
+        const hay = `${displayName} ${username}`.toLowerCase();
+        if (!hay.includes(term)) return;
+        rows.set(doc.id, {
+          uid: doc.id,
+          displayName,
+          username: username || undefined,
+          photoURL: data.photoURL || data.avatar || null,
         });
       });
-    });
-    return () => {
-      try { unsubParticipants(); } catch {}
-      try { unsubComments(); } catch {}
-      try { unsubReactions(); } catch {}
-    };
-  }, [meUid, remoteAudioReady, remoteVideoReady, roomId, visible]);
-
-  const runInviteSearch = useCallback(async () => {
-    const term = inviteQuery.trim();
-    if (!term) return setInviteResults([]);
-    setInviteLoading(true);
-    try {
-      setInviteResults(await searchInviteUsers(term));
-    } finally {
-      setInviteLoading(false);
-    }
-  }, [inviteQuery, searchInviteUsers]);
-
-  const sendInvite = useCallback(async (target: SearchResultItem) => {
-    if (!roomId || !roomChannel || !meUid) return;
-    await firestore().collection(`users/${target.uid}/wavecast_invites`).add({
-      liveId: roomId,
-      liveChannel: roomChannel,
-      liveTitle: roomTitle,
-      fromUid: meUid,
-      fromName: meName,
-      status: 'pending',
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      createdAtMs: Date.now(),
-      expiresAtMs: Date.now() + INVITE_WINDOW_MS,
-    });
-    Alert.alert('Invite sent', `${target.name} can join your WaveCast now.`);
-  }, [meName, meUid, roomChannel, roomId, roomTitle]);
-
-  const handlePrimaryAction = useCallback(async () => {
-    if (preJoinBusy) return;
-    setPreJoinBusy(true);
-    try {
-      if (inviteJoinPreset?.liveId) {
-        await hydrateRoom(String(inviteJoinPreset.liveId));
-      } else {
-        await startRoom();
+      if (!rows.size) {
+        const fallback = await searchOceanEntities(term);
+        fallback.filter(item => item.kind === 'user').forEach(item => {
+          rows.set(item.id, { uid: item.id, displayName: String(item.label || item.id) });
+        });
       }
-    } catch (error: any) {
-      Alert.alert(
-        inviteJoinPreset?.liveId ? 'Could not join WaveCast' : 'Could not start WaveCast',
-        String(error?.message || 'Try again.'),
-      );
+      setSearchResults(Array.from(rows.values()).filter(item => item.uid !== myUid));
     } finally {
-      setPreJoinBusy(false);
+      setSearchBusy(false);
     }
-  }, [hydrateRoom, inviteJoinPreset?.liveId, preJoinBusy, startRoom]);
+  }, [myUid, searchOceanEntities, searchQuery]);
+
+  const sendInvite = useCallback(async (target: UserRow) => {
+    if (!roomId || !myUid) return;
+    try {
+      await firestore().collection(`users/${target.uid}/wavecast_invites`).add({
+        fromUid: myUid,
+        fromName: myName,
+        liveId: roomId,
+        liveChannel: roomChannel,
+        liveTitle: roomTitle,
+        status: 'pending',
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAtMs: Date.now(),
+        expiresAtMs: Date.now() + 2 * 60 * 1000,
+      });
+      await firestore()
+        .collection(`wavecasts/${roomId}/invite_status`)
+        .doc(target.uid)
+        .set(
+          {
+            uid: target.uid,
+            status: 'pending',
+            fromUid: myUid,
+            fromName: myName,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      setShowInviteSheet(false);
+    } catch (error: any) {
+      Alert.alert('Invite failed', String(error?.message || 'Could not send invite.'));
+    }
+  }, [myName, myUid, roomChannel, roomId, roomTitle]);
 
   const sendComment = useCallback(async () => {
-    const text = commentText.trim();
-    if (!text || !roomId || !meUid) return;
-    await firestore().collection(`wavecasts/${roomId}/comments`).add({
-      text,
-      fromUid: meUid,
-      fromName: meName,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      createdAtMs: Date.now(),
-    });
+    const text = String(commentText || '').trim();
+    if (!text || !roomId || !myUid) return;
     setCommentText('');
-  }, [commentText, meName, meUid, roomId]);
+    try {
+      await firestore().collection(`wavecasts/${roomId}/comments`).add({
+        text,
+        fromUid: myUid,
+        fromName: myName,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAtMs: Date.now(),
+      });
+    } catch {}
+  }, [commentText, myName, myUid, roomId]);
 
-  const sendReaction = useCallback(async (emoji: string) => {
-    if (!roomId || !meUid) return;
-    await firestore().collection(`wavecasts/${roomId}/reactions`).add({
-      emoji,
-      fromUid: meUid,
-      fromName: meName,
-      createdAt: firestore.FieldValue.serverTimestamp(),
-      createdAtMs: Date.now(),
-    });
-  }, [meName, meUid, roomId]);
+  const leaveWaveCast = useCallback(async () => {
+    const activeRoomId = roomId;
+    cleanupEngine();
+    if (activeRoomId && myUid) {
+      try {
+        await firestore().collection(`wavecasts/${activeRoomId}/participants`).doc(myUid).delete();
+      } catch {}
+      if (isHost) {
+        try {
+          await firestore().collection('wavecasts').doc(activeRoomId).set(
+            {
+              status: 'ended',
+              endedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch {}
+      }
+    }
+    onClose();
+  }, [cleanupEngine, isHost, myUid, onClose, roomId]);
 
-  const renderLocalView = () => {
-    const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
-    const RtcTextureView = (Agora as any)?.RtcTextureView;
-    const RtcLocalView = Agora?.RtcLocalView;
-    const VideoRenderMode = Agora?.VideoRenderMode;
-    if (RtcTextureView) return React.createElement(RtcTextureView, { style: styles.videoFill, canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 } });
-    if (RtcSurfaceView) return React.createElement(RtcSurfaceView, { style: styles.videoFill, canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 } });
-    if (RtcLocalView?.SurfaceView) return React.createElement(RtcLocalView.SurfaceView, { style: styles.videoFill, renderMode: VideoRenderMode?.Fit ?? 2 });
-    return <View style={[styles.videoFill, styles.center]}><Text style={styles.dimText}>Opening camera...</Text></View>;
-  };
+  const toggleMic = useCallback(() => {
+    const next = !micMuted;
+    setMicMuted(next);
+    try { engineRef.current?.muteLocalAudioStream?.(next); } catch {}
+    try { engineRef.current?.enableLocalAudio?.(!next); } catch {}
+  }, [micMuted]);
 
-  const renderRemoteView = () => {
-    const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
-    const RtcTextureView = (Agora as any)?.RtcTextureView;
-    const RtcRemoteView = Agora?.RtcRemoteView;
-    const VideoRenderMode = Agora?.VideoRenderMode;
-    if (!remoteUid) return <View style={[styles.videoFill, styles.center]}><Text style={styles.dimText}>Waiting for guest video...</Text></View>;
-    if (RtcTextureView) return React.createElement(RtcTextureView, { style: styles.videoFill, canvas: { uid: remoteUid, renderMode: VideoRenderMode?.Fit ?? 2 } });
-    if (RtcSurfaceView) return React.createElement(RtcSurfaceView, { style: styles.videoFill, canvas: { uid: remoteUid, renderMode: VideoRenderMode?.Fit ?? 2 } });
-    if (RtcRemoteView?.SurfaceView) return React.createElement(RtcRemoteView.SurfaceView, { style: styles.videoFill, uid: remoteUid, channelId: roomChannel, renderMode: VideoRenderMode?.Fit ?? 2 });
-    return <View style={[styles.videoFill, styles.center]}><Text style={styles.dimText}>Guest video connected</Text></View>;
-  };
+  const toggleCamera = useCallback(() => {
+    const next = !cameraMuted;
+    setCameraMuted(next);
+    try { engineRef.current?.muteLocalVideoStream?.(next); } catch {}
+    try { engineRef.current?.enableLocalVideo?.(!next); } catch {}
+    try { if (!next) engineRef.current?.startPreview?.(); } catch {}
+  }, [cameraMuted]);
+
+  const toggleSpeaker = useCallback(() => {
+    const next = !speakerEnabled;
+    setSpeakerEnabled(next);
+    try { engineRef.current?.setEnableSpeakerphone?.(next); } catch {}
+    try { engineRef.current?.setDefaultAudioRouteToSpeakerphone?.(next); } catch {}
+  }, [speakerEnabled]);
 
   if (!visible) return null;
 
+  const renderMainVideo = () => {
+    if (remoteUid) {
+      if (RtcSurfaceView) {
+        return React.createElement(RtcSurfaceView, {
+          style: StyleSheet.absoluteFill,
+          canvas: { uid: remoteUid, renderMode: VideoRenderMode?.Fit ?? 2 },
+        });
+      }
+      if (RtcTextureView) {
+        return React.createElement(RtcTextureView, {
+          style: StyleSheet.absoluteFill,
+          canvas: { uid: remoteUid, renderMode: VideoRenderMode?.Fit ?? 2 },
+        });
+      }
+      if (RtcRemoteView?.SurfaceView) {
+        return React.createElement(RtcRemoteView.SurfaceView, {
+          style: StyleSheet.absoluteFill,
+          uid: remoteUid,
+          channelId: roomChannel,
+          renderMode: VideoRenderMode?.Fit ?? 2,
+        });
+      }
+    }
+    if (!cameraMuted) {
+      if (AVView) {
+        return (
+          <AVView
+            style={StyleSheet.absoluteFill}
+            showLocalVideo={true}
+            videoSourceType={
+              (VideoSourceType &&
+                (VideoSourceType.VideoSourceCameraPrimary ??
+                  VideoSourceType.VideoSourceCamera)) ||
+              0
+            }
+            renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
+          />
+        );
+      }
+      if (RtcSurfaceView) {
+        return React.createElement(RtcSurfaceView, {
+          style: StyleSheet.absoluteFill,
+          canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
+        });
+      }
+      if (RtcTextureView) {
+        return React.createElement(RtcTextureView, {
+          style: StyleSheet.absoluteFill,
+          canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
+        });
+      }
+      if (RtcLocalView?.SurfaceView) {
+        return React.createElement(RtcLocalView.SurfaceView, {
+          style: StyleSheet.absoluteFill,
+          renderMode: VideoRenderMode?.Fit ?? 2,
+        });
+      }
+    }
+    return (
+      <View style={styles.centerState}>
+        <Text style={styles.centerStateText}>{remoteUid ? 'Remote video connected' : 'Opening camera...'}</Text>
+      </View>
+    );
+  };
+
   return (
-    <Modal visible animationType="slide" onRequestClose={onClose}>
-      <View style={[styles.root, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}>
-        {!engineReady ? (
-          <View style={styles.lobby}>
-            <Text style={styles.title}>WaveCast</Text>
-            <Text style={styles.body}>Preparing camera and audio...</Text>
-            {!!statusText && statusText !== 'Ready' ? <Text style={styles.status}>{statusText}</Text> : null}
-            <Pressable style={styles.secondaryBtn} onPress={onClose}><Text style={styles.secondaryBtnText}>Close</Text></Pressable>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={leaveWaveCast}>
+      <View style={styles.root}>
+        <View style={styles.stage}>{renderMainVideo()}</View>
+        <View style={[styles.topBar, { top: insets.top + 10 }]}>
+          <View style={styles.topMeta}>
+            <Text style={styles.topLabel}>WAVECAST</Text>
+            <Text style={styles.topTitle}>{roomTitle}</Text>
+            <Text style={styles.topStatus}>{errorText || statusText}</Text>
           </View>
-        ) : (
-          <>
-            <View style={styles.stage}>
-              {remoteVideoReady && remoteUid ? renderRemoteView() : renderLocalView()}
-              <View style={styles.topBar}>
-                <View><Text style={styles.live}>LIVE</Text><Text style={styles.room}>{roomTitle}</Text><Text style={styles.meta}>{remoteVideoReady ? 'Guest video live' : remoteAudioReady ? 'Guest audio live' : remoteCandidateUid ? `Guest present ${remoteCandidateUid}` : 'Waiting for guest'}</Text></View>
-                <View style={styles.row}>
-                  <Pressable style={styles.chip} onPress={() => setShowInvitePanel(true)}><Text style={styles.chipText}>Invite</Text></Pressable>
-                  <Pressable style={styles.chip} onPress={() => setShowReactions(v => !v)}><Text style={styles.chipText}>React</Text></Pressable>
-                  <Pressable style={styles.chip} onPress={onClose}><Text style={styles.chipText}>Close</Text></Pressable>
-                </View>
+          <Pressable style={styles.closeBtn} onPress={leaveWaveCast}>
+            <Text style={styles.closeBtnText}>Close</Text>
+          </Pressable>
+        </View>
+
+        {!inviteJoinPreset?.autoJoin && !roomId && (
+          <View style={[styles.startCard, { top: insets.top + 90 }]}>
+            <Text style={styles.startCardTitle}>Ready to go live</Text>
+            <Text style={styles.startCardText}>
+              Your camera is open. Start WaveCast, then invite someone to join.
+            </Text>
+            <Pressable style={styles.primaryBtn} onPress={startWaveCast}>
+              <Text style={styles.primaryBtnText}>Start WaveCast</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {roomId && (
+          <Pressable style={[styles.inviteBtn, { top: insets.top + 90 }]} onPress={() => setShowInviteSheet(true)}>
+            <Text style={styles.inviteBtnText}>Invite</Text>
+          </Pressable>
+        )}
+
+        {remoteUid && !cameraMuted && (
+          <View style={[styles.localPip, { bottom: Math.max(insets.bottom + 110, 130) }]}>
+            {AVView ? (
+              <AVView
+                style={StyleSheet.absoluteFill}
+                showLocalVideo={true}
+                videoSourceType={
+                  (VideoSourceType &&
+                    (VideoSourceType.VideoSourceCameraPrimary ??
+                      VideoSourceType.VideoSourceCamera)) ||
+                  0
+                }
+                renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
+              />
+            ) : RtcSurfaceView ? (
+              React.createElement(RtcSurfaceView, {
+                style: StyleSheet.absoluteFill,
+                canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
+                zOrderMediaOverlay: true,
+              })
+            ) : RtcTextureView ? (
+              React.createElement(RtcTextureView, {
+                style: StyleSheet.absoluteFill,
+                canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
+              })
+            ) : RtcLocalView?.SurfaceView ? (
+              React.createElement(RtcLocalView.SurfaceView, {
+                style: StyleSheet.absoluteFill,
+                renderMode: VideoRenderMode?.Fit ?? 2,
+              })
+            ) : null}
+          </View>
+        )}
+
+        <View style={[styles.commentsRail, { left: 12, bottom: insets.bottom + 110 }]}>
+          <FlatList
+            data={comments.slice(-8)}
+            keyExtractor={item => item.id}
+            renderItem={({ item }) => (
+              <View style={styles.commentBubble}>
+                <Text style={styles.commentAuthor}>{item.fromName}</Text>
+                <Text style={styles.commentText}>{item.text}</Text>
+                <Text style={styles.commentTime}>{fmt(item.createdAtMs)}</Text>
               </View>
-              {remoteVideoReady && remoteUid ? <View style={styles.inset}>{renderLocalView()}</View> : null}
-              {!roomId && !inviteJoinPreset?.autoJoin ? (
-                <View style={styles.preJoinCard}>
-                  <Text style={styles.preJoinTitle}>WaveCast</Text>
-                  <Text style={styles.preJoinBody}>Camera is ready. Start your room or join the invite.</Text>
-                  <Pressable style={styles.primaryBtn} onPress={handlePrimaryAction}>
-                    <Text style={styles.primaryBtnText}>
-                      {preJoinBusy
-                        ? inviteJoinPreset?.liveId
-                          ? 'Joining...'
-                          : 'Starting...'
-                        : inviteJoinPreset?.liveId
-                        ? 'Join WaveCast'
-                        : 'Start WaveCast'}
-                    </Text>
-                  </Pressable>
-                  <Pressable style={styles.secondaryBtn} onPress={onClose}>
-                    <Text style={styles.secondaryBtnText}>Close</Text>
-                  </Pressable>
-                </View>
-              ) : !joined ? (
-                <View style={styles.overlay}><Text style={styles.overlayText}>{statusText}</Text></View>
-              ) : null}
-              {showReactions ? <View style={styles.reactionTray}>{REACTIONS.map(emoji => <Pressable key={emoji} style={styles.reactionBtn} onPress={() => sendReaction(emoji)}><Text style={styles.reactionEmoji}>{emoji}</Text></Pressable>)}</View> : null}
-              {floatingReactions.map(item => (
-                <Animated.View key={item.id} style={[styles.floatReaction, { left: 18 + item.lane * 56, opacity: item.anim.interpolate({ inputRange: [0, 0.1, 1], outputRange: [0, 1, 0] }), transform: [{ translateY: item.anim.interpolate({ inputRange: [0, 1], outputRange: [0, -300] }) }] }]}>
-                  <Text style={{ fontSize: 28 }}>{item.emoji}</Text>
-                </Animated.View>
-              ))}
+            )}
+          />
+        </View>
+
+        <View style={[styles.bottomDock, { bottom: Math.max(insets.bottom + 14, 24) }]}>
+          <View style={styles.controlRow}>
+            <Pressable style={[styles.controlBtn, micMuted && styles.controlBtnMuted]} onPress={toggleMic}>
+              <Text style={styles.controlBtnText}>{micMuted ? 'Mic Off' : 'Mic On'}</Text>
+            </Pressable>
+            <Pressable style={[styles.controlBtn, cameraMuted && styles.controlBtnMuted]} onPress={toggleCamera}>
+              <Text style={styles.controlBtnText}>{cameraMuted ? 'Video Off' : 'Video On'}</Text>
+            </Pressable>
+            <Pressable style={[styles.controlBtn, !speakerEnabled && styles.controlBtnMuted]} onPress={toggleSpeaker}>
+              <Text style={styles.controlBtnText}>{speakerEnabled ? 'Speaker' : 'Earpiece'}</Text>
+            </Pressable>
+          </View>
+          {roomId && (
+            <View style={styles.commentComposer}>
+              <TextInput
+                style={styles.commentInput}
+                value={commentText}
+                onChangeText={setCommentText}
+                placeholder="Comment"
+                placeholderTextColor="rgba(255,255,255,0.55)"
+              />
+              <Pressable style={styles.sendBtn} onPress={sendComment}>
+                <Text style={styles.sendBtnText}>Send</Text>
+              </Pressable>
             </View>
-            <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.chatWrap}>
-              <FlatList data={comments} keyExtractor={item => item.id} style={styles.chatList} contentContainerStyle={{ padding: 12, gap: 8 }} renderItem={({ item }) => <View style={styles.comment}><Text style={styles.commentName}>{item.fromName}</Text><Text style={styles.commentText}>{item.text}</Text></View>} />
-              <View style={styles.compose}><TextInput value={commentText} onChangeText={setCommentText} placeholder="Comment" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.input} /><Pressable style={styles.send} onPress={sendComment}><Text style={styles.sendText}>Send</Text></Pressable></View>
-            </KeyboardAvoidingView>
-            <Modal visible={showInvitePanel} transparent animationType="fade" onRequestClose={() => setShowInvitePanel(false)}>
-              <View style={styles.scrim}>
-                <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowInvitePanel(false)} />
-                <View style={styles.panel}>
-                  <Text style={styles.panelTitle}>Invite to WaveCast</Text>
-                  <View style={styles.searchRow}><TextInput value={inviteQuery} onChangeText={setInviteQuery} placeholder="Search display name" placeholderTextColor="rgba(255,255,255,0.45)" style={styles.searchInput} /><Pressable style={styles.findBtn} onPress={runInviteSearch}><Text style={styles.findBtnText}>{inviteLoading ? 'Finding...' : 'Find'}</Text></Pressable></View>
-                  <FlatList data={inviteResults} keyExtractor={item => item.uid} style={{ maxHeight: 260, marginTop: 12 }} keyboardShouldPersistTaps="always" renderItem={({ item }) => <View style={styles.inviteRow}><View style={{ flex: 1 }}><Text style={styles.inviteName}>{item.name}</Text>{!!item.secondary ? <Text style={styles.inviteSub}>{item.secondary}</Text> : null}</View><Pressable style={styles.inviteBtn} onPress={() => sendInvite(item)}><Text style={styles.inviteBtnText}>Invite</Text></Pressable></View>} ListEmptyComponent={inviteQuery.trim() ? <Text style={styles.emptyText}>{inviteLoading ? 'Searching...' : 'No display names found.'}</Text> : null} />
-                </View>
+          )}
+        </View>
+
+        {showInviteSheet && (
+          <View style={styles.sheetBackdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShowInviteSheet(false)} />
+            <View style={[styles.sheet, { paddingBottom: insets.bottom + 16 }]}>
+              <Text style={styles.sheetTitle}>Invite to WaveCast</Text>
+              <View style={styles.searchRow}>
+                <TextInput
+                  style={styles.searchInput}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  placeholder="Find display name"
+                  placeholderTextColor="rgba(255,255,255,0.48)"
+                />
+                <Pressable style={styles.findBtn} onPress={searchUsers}>
+                  <Text style={styles.findBtnText}>{searchBusy ? 'Finding...' : 'Find'}</Text>
+                </Pressable>
               </View>
-            </Modal>
-          </>
+              <FlatList
+                data={searchResults}
+                keyExtractor={item => item.uid}
+                keyboardShouldPersistTaps="always"
+                renderItem={({ item }) => (
+                  <Pressable style={styles.resultRow} onPress={() => sendInvite(item)}>
+                    {item.photoURL ? (
+                      <Image source={{ uri: item.photoURL }} style={styles.resultAvatar} />
+                    ) : (
+                      <View style={styles.resultAvatarFallback}>
+                        <Text style={styles.resultAvatarFallbackText}>
+                          {item.displayName.charAt(0).toUpperCase()}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.resultName}>{item.displayName}</Text>
+                      {!!item.username && <Text style={styles.resultMeta}>@{item.username}</Text>}
+                    </View>
+                    <Text style={styles.resultAction}>Invite</Text>
+                  </Pressable>
+                )}
+                ListEmptyComponent={
+                  !searchBusy && !!searchQuery.trim() ? (
+                    <Text style={styles.emptyResults}>No display names found.</Text>
+                  ) : null
+                }
+              />
+            </View>
+          </View>
         )}
       </View>
     </Modal>
@@ -746,58 +872,54 @@ const WaveCastModal = ({ visible, onClose, inviteJoinPreset, searchOceanEntities
 };
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#08111b' },
-  center: { alignItems: 'center', justifyContent: 'center' },
-  dimText: { color: 'rgba(255,255,255,0.7)' },
-  lobby: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
-  title: { color: '#fff', fontSize: 32, fontWeight: '800', textAlign: 'center' },
-  body: { color: 'rgba(255,255,255,0.74)', textAlign: 'center', marginTop: 12, lineHeight: 22 },
-  status: { color: '#8de7ff', textAlign: 'center', marginTop: 16 },
-  primaryBtn: { marginTop: 24, backgroundColor: '#13d7b8', borderRadius: 22, paddingVertical: 14, alignItems: 'center' },
-  primaryBtnText: { color: '#052018', fontWeight: '900' },
-  secondaryBtn: { marginTop: 12, borderRadius: 22, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
-  secondaryBtnText: { color: '#fff', fontWeight: '700' },
-  stage: { flex: 1, backgroundColor: '#000' },
-  videoFill: { flex: 1 },
-  topBar: { position: 'absolute', top: 12, left: 12, right: 12, zIndex: 30, elevation: 30, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  live: { color: '#ff6a73', fontSize: 12, fontWeight: '900', letterSpacing: 1 },
-  room: { color: '#fff', fontSize: 19, fontWeight: '800', marginTop: 2 },
-  meta: { color: 'rgba(255,255,255,0.72)', marginTop: 2, fontSize: 12 },
-  row: { flexDirection: 'row', gap: 8 },
-  chip: { backgroundColor: 'rgba(8,18,32,0.8)', borderRadius: 18, paddingHorizontal: 12, paddingVertical: 8 },
-  chipText: { color: '#fff', fontWeight: '700' },
-  inset: { position: 'absolute', right: 14, bottom: 14, width: 120, height: 170, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', zIndex: 20, elevation: 20 },
-  overlay: { position: 'absolute', top: 88, alignSelf: 'center', backgroundColor: 'rgba(8,18,32,0.78)', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 9, zIndex: 25, elevation: 25 },
-  overlayText: { color: '#fff', fontWeight: '700' },
-  preJoinCard: { position: 'absolute', left: 18, right: 18, bottom: 30, backgroundColor: 'rgba(8,18,32,0.82)', borderRadius: 24, padding: 18, zIndex: 25, elevation: 25, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
-  preJoinTitle: { color: '#fff', fontSize: 22, fontWeight: '800', textAlign: 'center' },
-  preJoinBody: { color: 'rgba(255,255,255,0.74)', textAlign: 'center', marginTop: 8, marginBottom: 16, lineHeight: 20 },
-  reactionTray: { position: 'absolute', right: 14, top: 110, zIndex: 30, gap: 8 },
-  reactionBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
-  reactionEmoji: { fontSize: 20 },
-  floatReaction: { position: 'absolute', bottom: 110, zIndex: 18 },
-  chatWrap: { backgroundColor: '#07111f', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)' },
-  chatList: { maxHeight: 180 },
-  comment: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
-  commentName: { color: '#8de7ff', fontWeight: '700', marginBottom: 3 },
-  commentText: { color: '#fff' },
-  compose: { flexDirection: 'row', gap: 8, paddingHorizontal: 12, paddingTop: 8 },
-  input: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 18, paddingHorizontal: 14, paddingVertical: 10 },
-  send: { backgroundColor: '#13d7b8', borderRadius: 18, paddingHorizontal: 16, paddingVertical: 10 },
-  sendText: { color: '#052018', fontWeight: '900' },
-  scrim: { flex: 1, backgroundColor: 'rgba(0,0,0,0.62)', justifyContent: 'center', padding: 18 },
-  panel: { backgroundColor: '#0a1626', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  panelTitle: { color: '#fff', fontWeight: '800', fontSize: 18 },
-  searchRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  searchInput: { flex: 1, backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
-  findBtn: { backgroundColor: '#13d7b8', borderRadius: 16, paddingHorizontal: 16, justifyContent: 'center' },
-  findBtnText: { color: '#052018', fontWeight: '900' },
-  inviteRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: 'rgba(255,255,255,0.1)' },
-  inviteName: { color: '#fff', fontWeight: '700' },
-  inviteSub: { color: 'rgba(255,255,255,0.62)', marginTop: 2, fontSize: 12 },
-  inviteBtn: { backgroundColor: 'rgba(19,215,184,0.18)', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 },
-  inviteBtnText: { color: '#9ff5e8', fontWeight: '900' },
-  emptyText: { color: 'rgba(255,255,255,0.62)', textAlign: 'center', paddingVertical: 16 },
+  root: { flex: 1, backgroundColor: '#000' },
+  stage: { ...StyleSheet.absoluteFillObject, backgroundColor: '#02060F' },
+  topBar: { position: 'absolute', left: 12, right: 12, zIndex: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topMeta: { flex: 1, paddingRight: 12 },
+  topLabel: { color: '#9DE6FF', fontSize: 11, fontWeight: '800', letterSpacing: 0.9 },
+  topTitle: { color: '#fff', fontSize: 20, fontWeight: '800', marginTop: 2 },
+  topStatus: { color: 'rgba(255,255,255,0.78)', fontSize: 12, marginTop: 2 },
+  closeBtn: { backgroundColor: 'rgba(10,17,28,0.82)', borderColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  closeBtnText: { color: '#fff', fontWeight: '700' },
+  startCard: { position: 'absolute', left: 14, right: 14, zIndex: 11, borderRadius: 22, backgroundColor: 'rgba(6,12,20,0.9)', borderWidth: 1, borderColor: 'rgba(157,230,255,0.25)', padding: 16 },
+  startCardTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
+  startCardText: { color: 'rgba(255,255,255,0.78)', marginTop: 6, marginBottom: 14 },
+  primaryBtn: { backgroundColor: '#00C2FF', borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
+  primaryBtnText: { color: '#04111C', fontWeight: '800' },
+  inviteBtn: { position: 'absolute', right: 14, zIndex: 12, backgroundColor: 'rgba(0,194,255,0.92)', borderRadius: 999, paddingHorizontal: 14, paddingVertical: 10 },
+  inviteBtnText: { color: '#04111C', fontWeight: '800' },
+  localPip: { position: 'absolute', right: 12, width: 120, height: 170, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.42)', backgroundColor: '#02060F' },
+  commentsRail: { position: 'absolute', width: '68%', maxHeight: 230 },
+  commentBubble: { marginBottom: 8, backgroundColor: 'rgba(7,12,19,0.55)', borderRadius: 14, paddingHorizontal: 10, paddingVertical: 8 },
+  commentAuthor: { color: '#9DE6FF', fontWeight: '700', fontSize: 12 },
+  commentText: { color: '#fff', marginTop: 2 },
+  commentTime: { color: 'rgba(255,255,255,0.48)', fontSize: 10, marginTop: 3 },
+  bottomDock: { position: 'absolute', left: 12, right: 12, zIndex: 12 },
+  controlRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
+  controlBtn: { flex: 1, borderRadius: 999, backgroundColor: 'rgba(8,14,24,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, alignItems: 'center' },
+  controlBtnMuted: { backgroundColor: 'rgba(81,19,19,0.92)' },
+  controlBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  commentComposer: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  commentInput: { flex: 1, borderRadius: 999, backgroundColor: 'rgba(8,14,24,0.92)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.14)', color: '#fff', paddingHorizontal: 14, paddingVertical: 11 },
+  sendBtn: { borderRadius: 999, backgroundColor: '#00C2FF', paddingHorizontal: 16, paddingVertical: 11 },
+  sendBtnText: { color: '#04111C', fontWeight: '800' },
+  sheetBackdrop: { ...StyleSheet.absoluteFillObject, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.35)', zIndex: 30 },
+  sheet: { backgroundColor: '#09121C', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingTop: 16, paddingHorizontal: 16, maxHeight: '70%' },
+  sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 10 },
+  searchRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  searchInput: { flex: 1, borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.08)', color: '#fff', paddingHorizontal: 14, paddingVertical: 11 },
+  findBtn: { borderRadius: 999, backgroundColor: '#00C2FF', paddingHorizontal: 16, justifyContent: 'center' },
+  findBtnText: { color: '#04111C', fontWeight: '800' },
+  resultRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 16, backgroundColor: 'rgba(255,255,255,0.05)', paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8, gap: 10 },
+  resultAvatar: { width: 42, height: 42, borderRadius: 21 },
+  resultAvatarFallback: { width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(157,230,255,0.16)', alignItems: 'center', justifyContent: 'center' },
+  resultAvatarFallbackText: { color: '#fff', fontWeight: '800' },
+  resultName: { color: '#fff', fontWeight: '700' },
+  resultMeta: { color: 'rgba(255,255,255,0.62)', fontSize: 12, marginTop: 2 },
+  resultAction: { color: '#9DE6FF', fontWeight: '800' },
+  emptyResults: { color: 'rgba(255,255,255,0.68)', textAlign: 'center', paddingVertical: 16 },
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  centerStateText: { color: '#fff', fontSize: 15 },
 });
 
 export default WaveCastModal;

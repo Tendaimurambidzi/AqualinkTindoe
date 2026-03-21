@@ -396,6 +396,29 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
     return item.media?.uri ? [item.media] : [];
   }, [item.media, item.mediaItems]);
+  const getMediaMetric = useCallback((asset: Asset | null | undefined, keys: string[], fallback: number) => {
+    const source = (asset || {}) as any;
+    for (const key of keys) {
+      const value = Number(source?.[key] ?? source?.counts?.[key] ?? 0);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+    return fallback;
+  }, []);
+  const viewerAsset = galleryMediaItems[viewerIndex] || null;
+  const overallSplashesCount = useMemo(() => {
+    const assetTotal = galleryMediaItems.reduce((sum, asset) => sum + getMediaMetric(asset, ['splashes', 'hugs', 'hugCount', 'splashesCount'], 0), 0);
+    return assetTotal > 0 ? assetTotal : Number(item.counts?.splashes || 0) || 0;
+  }, [galleryMediaItems, getMediaMetric, item.counts?.splashes]);
+  const overallEchoesCount = useMemo(() => {
+    const assetTotal = galleryMediaItems.reduce((sum, asset) => sum + getMediaMetric(asset, ['echoes', 'echoCount', 'replies', 'replyCount'], 0), 0);
+    return assetTotal > 0 ? assetTotal : Number(item.counts?.echoes || 0) || 0;
+  }, [galleryMediaItems, getMediaMetric, item.counts?.echoes]);
+  const viewerSplashesCount = viewerVisible
+    ? getMediaMetric(viewerAsset, ['splashes', 'hugs', 'hugCount', 'splashesCount'], 0)
+    : overallSplashesCount;
+  const viewerEchoesCount = viewerVisible
+    ? getMediaMetric(viewerAsset, ['echoes', 'echoCount', 'replies', 'replyCount'], 0)
+    : overallEchoesCount;
   const hasMultiMediaGrid = galleryMediaItems.length > 1;
   const previewGridItems = galleryMediaItems.slice(0, 6);
   const hiddenGridCount = Math.max(0, galleryMediaItems.length - 6);
@@ -1484,8 +1507,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           <PosterActionBar
             waveId={item.id}
             currentUserId={myUid || ''}
-            splashesCount={item.counts?.splashes || 0}
-            echoesCount={item.counts?.echoes || 0}
+            splashesCount={overallSplashesCount}
+            echoesCount={overallEchoesCount}
             pearlsCount={0}
             isAnchored={false}
             isCasted={false}
@@ -1660,8 +1683,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               <PosterActionBar
                 waveId={item.id}
                 currentUserId={myUid || ''}
-                splashesCount={item.counts?.splashes || 0}
-                echoesCount={item.counts?.echoes || 0}
+                splashesCount={viewerSplashesCount}
+                echoesCount={viewerEchoesCount}
                 pearlsCount={0}
                 isAnchored={false}
                 isCasted={false}

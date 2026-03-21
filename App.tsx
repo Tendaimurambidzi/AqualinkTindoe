@@ -667,6 +667,9 @@ const buildWaveMediaItems = (data: any): Asset[] => {
       uri,
       type: entry?.type || entry?.mediaType || undefined,
       fileName: entry?.fileName || entry?.name || undefined,
+      hugs: Number(entry?.hugs || entry?.hugCount || entry?.splashes || entry?.splashesCount || 0) || 0,
+      echoes: Number(entry?.echoes || entry?.echoCount || entry?.replyCount || entry?.replies || 0) || 0,
+      counts: entry?.counts || undefined,
     } as Asset);
   });
   if (out.length > 0) return out;
@@ -2977,28 +2980,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               : latestNewNotification.type === 'live_invite'
               ? 'live_invite'
               : 'messages';
-          showNotificationPopup(
-            formatNotificationMessage(latestNewNotification, userData || {}),
-            displayName,
-            toneType,
-            null,
-          );
-        }
-
-        // Show toast for new unread notifications
-        const newUnreadNotifications = notificationsData.filter(n => !n.read);
-        if (newUnreadNotifications.length > 0) {
-          const latestNotification = newUnreadNotifications[0];
-          // Show toast for social interaction notifications
-          if (['CONNECT_VIBE', 'echo', 'splash', 'octopus_hug', 'follow'].includes(latestNotification.type)) {
-            // Ensure user data is available for the notification sender (async, don't wait)
-            ensureUserData(latestNotification.fromUid);
-            
-            const avatar = userData ? getUserAvatar(latestNotification.fromUid, userData) : null;
-            const formattedMessage = formatNotificationMessage(latestNotification, userData || {});
-            notifySuccess(formattedMessage, avatar);
+          if (
+            latestNewNotification.type === 'call_invite' ||
+            latestNewNotification.type === 'live_invite'
+          ) {
+            showNotificationPopup(
+              formatNotificationMessage(latestNewNotification, userData || {}),
+              displayName,
+              toneType,
+              null,
+            );
           }
         }
+
+        // Social notifications stay in VIBE ALERTS only.
       });
 
     return unsubscribe;
@@ -5832,6 +5827,78 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setShowDeepSearch(false);
     },
     [buildWaveFromSearchResult, setCurrentIndex, setShowDeepSearch, setWaveKey, setVibesFeed, vibesFeed],
+  );
+
+  const openWaveById = useCallback(
+    async (waveId: string, options?: { openEchoes?: boolean }) => {
+      const targetId = String(waveId || '').trim();
+      if (!targetId) return;
+      const existingIndex = displayFeedRef.current.findIndex(w => w.id === targetId);
+      if (existingIndex !== -1) {
+        setCurrentIndex(existingIndex);
+        setWaveKey(Date.now());
+        if (options?.openEchoes) {
+          setEchoWaveId(targetId);
+          setTimeout(() => setShowEchoes(true), 300);
+        }
+        return;
+      }
+      try {
+        const waveDoc = await firestore().collection('waves').doc(targetId).get();
+        if (!waveDoc.exists) return;
+        const data = waveDoc.data() || {};
+        const isAudioPost =
+          data?.postType === 'audio' || /^audio\//i.test(String(data?.mediaType || ''));
+        const nextWave: Vibe = {
+          id: waveDoc.id,
+          media:
+            !isAudioPost && buildWaveMediaItems(data)[0]
+              ? (buildWaveMediaItems(data)[0] as Asset)
+              : null,
+          mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
+          audio: isAudioPost
+            ? {
+                uri:
+                  String(data?.audioUrl || data?.playbackUrl || data?.mediaUrl || '').trim(),
+                name: data?.audioName || 'Audio',
+              }
+            : null,
+          captionText: String(data?.captionText || data?.caption || ''),
+          postType: data?.postType || null,
+          mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
+          playbackUrl: data?.playbackUrl || null,
+          muxStatus: data?.muxStatus || null,
+          authorName: data?.authorName || null,
+          ownerUid: data?.ownerUid || null,
+          user: data?.ownerUid
+            ? {
+                name:
+                  userData?.[String(data.ownerUid)]?.name ||
+                  String(data?.authorName || data?.ownerName || 'User'),
+                avatar: userData?.[String(data.ownerUid)]?.avatar || null,
+                bio: userData?.[String(data.ownerUid)]?.bio || null,
+              }
+            : null,
+          counts: {
+            splashes: Number(data?.counts?.splashes || data?.splashesCount || 0) || 0,
+            echoes: Number(data?.counts?.echoes || data?.echoesCount || 0) || 0,
+          },
+        };
+        setWavesFeed(prev => (prev.some(w => w.id === nextWave.id) ? prev : [nextWave, ...prev]));
+        setVibesFeed(prev => (prev.some(w => w.id === nextWave.id) ? prev : [nextWave, ...prev]));
+        setPublicFeed(prev => (prev.some(w => w.id === nextWave.id) ? prev : [nextWave, ...prev]));
+        setPostFeed(prev => (prev.some(w => w.id === nextWave.id) ? prev : [nextWave, ...prev]));
+        setCurrentIndex(0);
+        setWaveKey(Date.now());
+        if (options?.openEchoes) {
+          setEchoWaveId(targetId);
+          setTimeout(() => setShowEchoes(true), 300);
+        }
+      } catch (error) {
+        console.warn('Failed to open wave from notification', targetId, error);
+      }
+    },
+    [setCurrentIndex, setEchoWaveId, setPostFeed, setPublicFeed, setShowEchoes, setVibesFeed, setWaveKey, setWavesFeed, userData],
   );
   const runDeepSearch = useCallback(async () => {
     const term = deepQuery.trim();
@@ -13672,28 +13739,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return;
       }
       if (data?.waveId) {
-        const waveIndex = displayFeed.findIndex(w => w.id === data.waveId);
-        if (waveIndex !== -1) {
-          setCurrentIndex(waveIndex);
-          setWaveKey(Date.now());
-          
-          // If this is an echo_reply notification, open the echoes modal
-          if (data?.type === 'echo_reply' || data?.type === 'echo') {
-            setEchoWaveId(data.waveId);
-            setTimeout(() => {
-              setShowEchoes(true);
-            }, 300);
-          }
-        }
+        openWaveById(String(data.waveId), {
+          openEchoes: data?.type === 'echo_reply' || data?.type === 'echo' || data?.type === 'comment',
+        }).catch(() => {});
       } else if (data?.type === 'ping' || data?.route === 'Pings') {
         setShowPings(true);
       }
     },
     [
-      displayFeed,
       mapDirectCallDoc,
       myUid,
       hideNativeIncomingCallNotification,
+      openWaveById,
       watchDirectCallDoc,
     ],
   );
@@ -16179,13 +16236,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                             setShowInbox(false);
                                             setInboxFilter('all');
                                             setInboxSearchQuery('');
-                                            const waveIndex = displayFeed.findIndex(
-                                              w => w.id === waveId,
-                                            );
-                                            if (waveIndex !== -1) {
-                                              setCurrentIndex(waveIndex);
-                                              setWaveKey(Date.now());
-                                            }
+                                            openWaveById(waveId, {
+                                              openEchoes:
+                                                notificationType === 'echo_reply' ||
+                                                notificationType === 'echo' ||
+                                                notificationType === 'comment',
+                                            }).catch(() => {});
                                           },
                                         },
                                         { text: 'Dismiss', style: 'cancel' },
