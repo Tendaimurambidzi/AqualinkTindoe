@@ -237,6 +237,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [overlayAudioStarted, setOverlayAudioStarted] = useState(false);
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
+  const [viewerZoom, setViewerZoom] = useState(1);
   const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
   const [preferFallbackVideoSource, setPreferFallbackVideoSource] = useState(false);
@@ -560,6 +561,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   }, [hasImageMedia, item.id, revealedImages, setRevealedImages, recordImageReach]);
   const openMediaViewer = useCallback((startIndex: number) => {
     setViewerIndex(Math.max(0, Math.min(startIndex, galleryMediaItems.length - 1)));
+    setViewerZoom(1);
     setViewerVisible(true);
   }, [galleryMediaItems.length]);
 
@@ -1503,11 +1505,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           visible={viewerVisible}
           transparent
           animationType="fade"
-          onRequestClose={() => setViewerVisible(false)}
+          onRequestClose={() => {
+            setViewerZoom(1);
+            setViewerVisible(false);
+          }}
         >
           <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' }}>
             <Pressable
-              onPress={() => setViewerVisible(false)}
+              onPress={() => {
+                setViewerZoom(1);
+                setViewerVisible(false);
+              }}
               style={{
                 position: 'absolute',
                 top: 48,
@@ -1533,7 +1541,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   >
                     <Image
                       source={{ uri: String(galleryMediaItems[viewerIndex].uri) }}
-                      style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.72 }}
+                      style={{
+                        width: SCREEN_WIDTH * viewerZoom,
+                        height: SCREEN_HEIGHT * 0.72 * viewerZoom,
+                      }}
                       resizeMode="contain"
                     />
                   </ScrollView>
@@ -1556,6 +1567,24 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 <Text style={{ color: 'rgba(255,255,255,0.82)', marginTop: 12 }}>
                   {viewerIndex + 1} / {galleryMediaItems.length}
                 </Text>
+                {isImageAsset(galleryMediaItems[viewerIndex]) ? (
+                  <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                    <Pressable
+                      onPress={() => setViewerZoom(prev => Math.max(1, Number((prev - 0.5).toFixed(1))))}
+                      disabled={viewerZoom <= 1}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: viewerZoom <= 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>Zoom -</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setViewerZoom(prev => Math.min(4, Number((prev + 0.5).toFixed(1))))}
+                      disabled={viewerZoom >= 4}
+                      style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18, backgroundColor: viewerZoom >= 4 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
+                    >
+                      <Text style={{ color: '#fff', fontWeight: '700' }}>Zoom +</Text>
+                    </Pressable>
+                  </View>
+                ) : null}
               </View>
             ) : null}
             {galleryMediaItems.length > 1 ? (
@@ -1568,7 +1597,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 {galleryMediaItems.map((mediaItem, idx) => (
                   <Pressable
                     key={`${mediaItem.uri || 'thumb'}_${idx}`}
-                    onPress={() => setViewerIndex(idx)}
+                    onPress={() => {
+                      setViewerZoom(1);
+                      setViewerIndex(idx);
+                    }}
                     style={{
                       width: 68,
                       height: 68,
@@ -1619,14 +1651,20 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             {galleryMediaItems.length > 1 ? (
               <View style={{ position: 'absolute', left: 0, right: 0, bottom: 132, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20 }}>
                 <Pressable
-                  onPress={() => setViewerIndex(prev => Math.max(0, prev - 1))}
+                  onPress={() => {
+                    setViewerZoom(1);
+                    setViewerIndex(prev => Math.max(0, prev - 1));
+                  }}
                   disabled={viewerIndex <= 0}
                   style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: viewerIndex <= 0 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
                 >
                   <Text style={{ color: '#fff', fontWeight: '700' }}>Prev</Text>
                 </Pressable>
                 <Pressable
-                  onPress={() => setViewerIndex(prev => Math.min(galleryMediaItems.length - 1, prev + 1))}
+                  onPress={() => {
+                    setViewerZoom(1);
+                    setViewerIndex(prev => Math.min(galleryMediaItems.length - 1, prev + 1));
+                  }}
                   disabled={viewerIndex >= galleryMediaItems.length - 1}
                   style={{ paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, backgroundColor: viewerIndex >= galleryMediaItems.length - 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.16)' }}
                 >

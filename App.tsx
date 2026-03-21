@@ -533,7 +533,7 @@ type TonePickerState = {
 };
 
 const PRESENCE_OFFLINE_GRACE_MS = 4 * 60 * 1000;
-const LIVE_INVITE_EXPIRY_MS = 24 * 60 * 60 * 1000;
+const LIVE_INVITE_EXPIRY_MS = 3 * 60 * 1000;
 const RINGING_CALL_TIMEOUT_MS = 120 * 1000;
 const MAX_ACTIVE_CALL_DURATION_MS = 30 * 60 * 1000;
 const STALE_RINGING_CALL_MAX_AGE_MS = RINGING_CALL_TIMEOUT_MS;
@@ -1266,15 +1266,15 @@ const styles = StyleSheet.create({
   createPostActionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
+    marginTop: 12,
     gap: 8,
   },
   createPostActionBtn: {
     flex: 1,
-    minHeight: 52,
-    borderRadius: 24,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
+    minHeight: 42,
+    borderRadius: 999,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     backgroundColor: '#1282A2',
     borderWidth: 1,
     borderColor: '#1282A2',
@@ -1298,14 +1298,29 @@ const styles = StyleSheet.create({
     borderColor: '#8B5CF6',
   },
   createPostActionIcon: {
-    fontSize: 19,
-    marginBottom: 4,
+    fontSize: 15,
+    marginBottom: 2,
   },
   createPostActionLabel: {
     color: '#E8FBFF',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  createPostScrollArea: {
+    flex: 1,
+  },
+  createPostPreviewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  createPostFooter: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(6,16,28,0.88)',
   },
   bridgeSettingButton: {
     padding: 12,
@@ -6375,63 +6390,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let inboxLoaded = false;
     let mentionLoaded = false;
     let pingLoaded = false;
-    const loadCachedInvite = async () => {
-      try {
-        const raw = await AsyncStorage.getItem(cacheKey);
-        if (!raw || disposed) return;
-        const parsed = JSON.parse(raw || '{}') || {};
-        const cachedExpiresAtMs = Number(parsed.expiresAtMs || 0) || 0;
-        const cachedCreatedAtMs = Number(parsed.createdAtMs || 0) || 0;
-        const cachedTooOld =
-          cachedExpiresAtMs > 0
-            ? Date.now() > cachedExpiresAtMs
-            : cachedCreatedAtMs > 0 &&
-              Date.now() - cachedCreatedAtMs > LIVE_INVITE_EXPIRY_MS;
-        if (cachedTooOld) {
-          await AsyncStorage.removeItem(cacheKey).catch(() => {});
-          return;
-        }
-        const cached: LiveInviteNotice = {
-          id: String(parsed.id || ''),
-          source:
-            parsed.source === 'mention'
-              ? 'mention'
-              : parsed.source === 'ping'
-              ? 'ping'
-              : 'inbox',
-          liveId: String(parsed.liveId || ''),
-          fromUid: String(parsed.fromUid || ''),
-          fromName: String(parsed.fromName || 'Skipper'),
-          fromPhoto: parsed.fromPhoto || null,
-          liveTitle: parsed.liveTitle || null,
-          liveChannel: parsed.liveChannel ? String(parsed.liveChannel) : null,
-          liveToken: parsed.liveToken ? String(parsed.liveToken) : null,
-          directCallId: parsed.directCallId ? String(parsed.directCallId) : null,
-          directCallChannel: parsed.directCallChannel
-            ? String(parsed.directCallChannel)
-            : null,
-          callType: parsed.callType === 'audio' ? 'audio' : 'video',
-          createdAtMs: cachedCreatedAtMs,
-          expiresAtMs: cachedExpiresAtMs,
-        };
-        if (!cached.fromUid) return;
-        cachedIncomingInviteRef.current = cached;
-        setIncomingLiveInvite(cached);
-      } catch {}
-    };
-    loadCachedInvite();
     const syncIncomingInvite = () => {
       const sourceInvites = [inboxInvite, mentionInvite, pingInvite];
-      const anySnapshotLoaded = inboxLoaded || mentionLoaded || pingLoaded;
-      const next = pickLatestLiveInvite(
-        anySnapshotLoaded
-          ? sourceInvites
-          : [...sourceInvites, cachedIncomingInviteRef.current],
-      );
+      const next = pickLatestLiveInvite(sourceInvites);
       setIncomingLiveInvite(next);
       if (next) {
         cachedIncomingInviteRef.current = next;
-        AsyncStorage.setItem(cacheKey, JSON.stringify(next)).catch(() => {});
+        AsyncStorage.removeItem(cacheKey).catch(() => {});
       } else {
         cachedIncomingInviteRef.current = null;
         AsyncStorage.removeItem(cacheKey).catch(() => {});
@@ -6673,9 +6638,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           nonce: Date.now(),
         });
         setShowLive(true);
-        if (invite.liveId) {
-          requestToDriftForLiveId(invite.liveId, invite.fromName);
-        }
       }
 
       const nextStatus = action === 'join' ? 'accepted' : 'missed';
@@ -6717,6 +6679,40 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 { merge: true },
               );
           }
+          const pruneMatchingInviteDocs = async (
+            path: string,
+            extraMatcher?: (data: any) => boolean,
+          ) => {
+            try {
+              const snap = await firestore().collection(path).limit(50).get();
+              const matching = (snap?.docs || []).filter((doc: any) => {
+                const data = doc.data() || {};
+                const sameLive = String(data.liveId || '') === String(invite.liveId || '');
+                const sameSender = String(data.fromUid || '') === String(invite.fromUid || '');
+                if (!sameLive || !sameSender) return false;
+                return extraMatcher ? extraMatcher(data) : true;
+              });
+              await Promise.all(
+                matching.map((doc: any) =>
+                  doc.ref.delete().catch(() =>
+                    doc.ref.set(
+                      {
+                        status: nextStatus,
+                        respondedAt: firestore.FieldValue.serverTimestamp(),
+                        read: true,
+                      },
+                      { merge: true },
+                    ),
+                  ),
+                ),
+              );
+            } catch {}
+          };
+          await Promise.all([
+            pruneMatchingInviteDocs(`users/${me.uid}/live_invites`),
+            pruneMatchingInviteDocs(`users/${me.uid}/mentions`),
+            pruneMatchingInviteDocs(`users/${me.uid}/pings`),
+          ]);
           if (invite.liveId) {
             await firestore()
               .collection(`live/${invite.liveId}/invite_status`)
@@ -17468,198 +17464,203 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         onRequestClose={closeUnifiedPostModal}
       >
         <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
-          <View
+          <KeyboardAvoidingView
             style={[
               styles.logbookContainer,
               {
                 maxHeight: SCREEN_HEIGHT * 0.8,
                 borderRadius: 12,
                 overflow: 'hidden',
+                width: '100%',
               },
             ]}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           >
             {paperTexture && (
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Create Post</Text>
-              
-              {/* Media Preview */}
-              {unifiedPostMediaItems.length > 0 && (
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={{ color: '#CFF6FF', fontSize: 12, marginBottom: 8 }}>
-                    {unifiedPostMediaItems.length} item{unifiedPostMediaItems.length === 1 ? '' : 's'} selected
-                  </Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                    {unifiedPostMediaItems.map((mediaItem, mediaIndex) => (
-                      <View
-                        key={`${mediaItem.uri || 'media'}_${mediaIndex}`}
-                        style={{
-                          width: '31%',
-                          aspectRatio: 1,
-                          borderRadius: 8,
-                          overflow: 'hidden',
-                          backgroundColor: '#111827',
-                          position: 'relative',
-                        }}
-                      >
-                        {isImageAsset(mediaItem) ? (
-                          <Image
-                            source={{ uri: mediaItem.uri }}
-                            style={{ width: '100%', height: '100%' }}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8 }}>
-                            <Text style={{ color: '#00C2FF', fontSize: 20 }}>
-                              {isVideoAsset(mediaItem) ? '🎥' : isAudioAsset(mediaItem) ? '🎵' : '📄'}
-                            </Text>
-                            <Text style={{ color: '#ddd', fontSize: 10, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
-                              {mediaItem.fileName || `Item ${mediaIndex + 1}`}
-                            </Text>
-                          </View>
-                        )}
-                        <Pressable
-                          onPress={() => removeUnifiedPostMediaAt(mediaIndex)}
+              <ScrollView
+                style={styles.createPostScrollArea}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {unifiedPostMediaItems.length > 0 && (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ color: '#CFF6FF', fontSize: 12, marginBottom: 8 }}>
+                      {unifiedPostMediaItems.length} item{unifiedPostMediaItems.length === 1 ? '' : 's'} selected
+                    </Text>
+                    <View style={styles.createPostPreviewGrid}>
+                      {unifiedPostMediaItems.map((mediaItem, mediaIndex) => (
+                        <View
+                          key={`${mediaItem.uri || 'media'}_${mediaIndex}`}
                           style={{
-                            position: 'absolute',
-                            top: 6,
-                            right: 6,
-                            backgroundColor: 'rgba(255,68,68,0.92)',
-                            borderRadius: 12,
-                            paddingHorizontal: 6,
-                            paddingVertical: 3,
+                            width: '31%',
+                            aspectRatio: 1,
+                            borderRadius: 8,
+                            overflow: 'hidden',
+                            backgroundColor: '#111827',
+                            position: 'relative',
                           }}
                         >
-                          <Text style={{ color: 'white', fontSize: 10, fontWeight: '700' }}>Remove</Text>
-                        </Pressable>
-                      </View>
-                    ))}
+                          {isImageAsset(mediaItem) ? (
+                            <Image
+                              source={{ uri: mediaItem.uri }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+                              <Text style={{ color: '#00C2FF', fontSize: 20 }}>
+                                {isVideoAsset(mediaItem) ? '🎥' : isAudioAsset(mediaItem) ? '🎵' : '📄'}
+                              </Text>
+                              <Text style={{ color: '#ddd', fontSize: 10, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
+                                {mediaItem.fileName || `Item ${mediaIndex + 1}`}
+                              </Text>
+                            </View>
+                          )}
+                          <Pressable
+                            onPress={() => removeUnifiedPostMediaAt(mediaIndex)}
+                            style={{
+                              position: 'absolute',
+                              top: 6,
+                              right: 6,
+                              backgroundColor: 'rgba(255,68,68,0.92)',
+                              borderRadius: 12,
+                              paddingHorizontal: 6,
+                              paddingVertical: 3,
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 10, fontWeight: '700' }}>Remove</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
 
-              {/* SD Audio Preview */}
-              {unifiedPostAudio && (
-                <View
-                  style={{
-                    marginBottom: 16,
-                    padding: 12,
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                    backgroundColor: 'rgba(0,0,0,0.25)',
-                  }}
-                >
-                  <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '700' }}>
-                    Attached audio
-                  </Text>
-                  <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
-                    {unifiedPostAudio.name || unifiedPostAudio.uri}
-                  </Text>
-                  <Pressable
-                    onPress={() => setUnifiedPostAudio(null)}
-                    style={{
-                      marginTop: 8,
-                      alignSelf: 'flex-start',
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      backgroundColor: '#ff4444',
-                      borderRadius: 4,
-                    }}
-                  >
-                    <Text style={{ color: 'white', fontSize: 12 }}>Remove Audio</Text>
-                  </Pressable>
-                </View>
-              )}
-              
-              {/* Text Input */}
-              <TextInput
-                placeholder="What's the story?"
-                placeholderTextColor="rgba(255,255,255,0.6)"
-                value={unifiedPostText}
-                onChangeText={setUnifiedPostText}
-                style={styles.textComposerInput}
-                multiline
-                numberOfLines={4}
-                textAlignVertical="top"
-              />
-
-              {isUnifiedPosting && (
-                <View
-                  style={{
-                    marginTop: 12,
-                    marginBottom: 4,
-                    padding: 10,
-                    borderRadius: 8,
-                    backgroundColor: 'rgba(0,194,255,0.15)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(0,194,255,0.35)',
-                  }}
-                >
-                  <Text style={{ color: '#CFF6FF', fontSize: 12, fontWeight: '700' }}>
-                    {unifiedPostMediaItems.length > 0 || unifiedPostAudio ? 'Uploading...' : 'Posting story...'}
-                    {typeof unifiedPostProgress === 'number'
-                      ? ` ${unifiedPostProgress}%`
-                      : unifiedPostMediaItems.length > 0 || unifiedPostAudio
-                      ? ' preparing files'
-                      : ' publishing'}
-                  </Text>
+                {unifiedPostAudio && (
                   <View
                     style={{
-                      marginTop: 8,
-                      height: 6,
-                      borderRadius: 4,
-                      backgroundColor: 'rgba(255,255,255,0.2)',
-                      overflow: 'hidden',
+                      marginBottom: 16,
+                      padding: 12,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.2)',
+                      backgroundColor: 'rgba(0,0,0,0.25)',
                     }}
                   >
+                    <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '700' }}>
+                      Attached audio
+                    </Text>
+                    <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
+                      {unifiedPostAudio.name || unifiedPostAudio.uri}
+                    </Text>
+                    <Pressable
+                      onPress={() => setUnifiedPostAudio(null)}
+                      style={{
+                        marginTop: 8,
+                        alignSelf: 'flex-start',
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        backgroundColor: '#ff4444',
+                        borderRadius: 4,
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 12 }}>Remove Audio</Text>
+                    </Pressable>
+                  </View>
+                )}
+
+                <TextInput
+                  placeholder="What's the story?"
+                  placeholderTextColor="rgba(255,255,255,0.6)"
+                  value={unifiedPostText}
+                  onChangeText={setUnifiedPostText}
+                  style={styles.textComposerInput}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+
+                {isUnifiedPosting && (
+                  <View
+                    style={{
+                      marginTop: 12,
+                      marginBottom: 4,
+                      padding: 10,
+                      borderRadius: 8,
+                      backgroundColor: 'rgba(0,194,255,0.15)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(0,194,255,0.35)',
+                    }}
+                  >
+                    <Text style={{ color: '#CFF6FF', fontSize: 12, fontWeight: '700' }}>
+                      {unifiedPostMediaItems.length > 0 || unifiedPostAudio ? 'Uploading...' : 'Posting story...'}
+                      {typeof unifiedPostProgress === 'number'
+                        ? ` ${unifiedPostProgress}%`
+                        : unifiedPostMediaItems.length > 0 || unifiedPostAudio
+                        ? ' preparing files'
+                        : ' publishing'}
+                    </Text>
                     <View
                       style={{
-                        height: '100%',
-                        width: `${Math.max(5, Math.min(100, unifiedPostProgress ?? 5))}%`,
-                        backgroundColor: '#00C2FF',
+                        marginTop: 8,
+                        height: 6,
+                        borderRadius: 4,
+                        backgroundColor: 'rgba(255,255,255,0.2)',
+                        overflow: 'hidden',
                       }}
-                    />
+                    >
+                      <View
+                        style={{
+                          height: '100%',
+                          width: `${Math.max(5, Math.min(100, unifiedPostProgress ?? 5))}%`,
+                          backgroundColor: '#00C2FF',
+                        }}
+                      />
+                    </View>
                   </View>
-                </View>
-              )}
+                )}
 
-              {!!unifiedPostError && !isUnifiedPosting && (
-                <View
-                  style={{
-                    marginTop: 12,
-                    marginBottom: 4,
-                    padding: 10,
-                    borderRadius: 8,
-                    backgroundColor: 'rgba(255,68,68,0.12)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,68,68,0.35)',
-                  }}
-                >
-                  <Text style={{ color: '#FFD9D9', fontSize: 12 }}>
-                    Post failed: {unifiedPostError}
-                  </Text>
-                  <Pressable
-                    onPress={handleUnifiedPost}
+                {!!unifiedPostError && !isUnifiedPosting && (
+                  <View
                     style={{
-                      marginTop: 8,
-                      alignSelf: 'flex-start',
-                      paddingHorizontal: 10,
-                      paddingVertical: 5,
-                      borderRadius: 6,
-                      backgroundColor: '#ff7a00',
+                      marginTop: 12,
+                      marginBottom: 4,
+                      padding: 10,
+                      borderRadius: 8,
+                      backgroundColor: 'rgba(255,68,68,0.12)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,68,68,0.35)',
                     }}
                   >
-                    <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
-                      Retry Post
+                    <Text style={{ color: '#FFD9D9', fontSize: 12 }}>
+                      Post failed: {unifiedPostError}
                     </Text>
-                  </Pressable>
-                </View>
-              )}
-              
-              {/* Action Buttons */}
-              <View style={styles.createPostActionRow}>
+                    <Pressable
+                      onPress={handleUnifiedPost}
+                      style={{
+                        marginTop: 8,
+                        alignSelf: 'flex-start',
+                        paddingHorizontal: 10,
+                        paddingVertical: 5,
+                        borderRadius: 6,
+                        backgroundColor: '#ff7a00',
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                        Retry Post
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
+              </ScrollView>
+
+              <View style={[styles.createPostFooter, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+                <View style={styles.createPostActionRow}>
                 <Pressable
                   onPress={handleUnifiedCameraCapture}
                   disabled={isUnifiedPosting}
@@ -17708,8 +17709,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.createPostActionIcon}>🎵</Text>
                   <Text style={styles.createPostActionLabel}>Music</Text>
                 </Pressable>
-              </View>
-              <View style={styles.textComposerButtonRow}>
+                </View>
+                <View style={styles.textComposerButtonRow}>
                 <Pressable
                   style={[styles.textComposerButton, styles.textComposerCancelBtn]}
                   onPress={closeUnifiedPostModal}
@@ -17740,9 +17741,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   )}
                 </Pressable>
               </View>
-              
+              </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </View>
       </Modal>
       

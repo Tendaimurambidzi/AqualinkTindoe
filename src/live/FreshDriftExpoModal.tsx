@@ -21,6 +21,7 @@ import firestore from '@react-native-firebase/firestore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
+const LIVE_INVITE_WINDOW_MS = 3 * 60 * 1000;
 
 type InviteJoinPreset = {
   liveId?: string | null;
@@ -202,6 +203,7 @@ const FreshDriftExpoModal = ({
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [recentDrifts, setRecentDrifts] = useState<RecentDriftItem[]>([]);
   const [replayItem, setReplayItem] = useState<RecentDriftItem | null>(null);
+  const [engineReady, setEngineReady] = useState(false);
   const [floatingComments, setFloatingComments] = useState<
     Array<{ id: string; text: string; fromName: string; anim: Animated.Value }>
   >([]);
@@ -249,6 +251,7 @@ const FreshDriftExpoModal = ({
     setShowReactionPicker(false);
     setRecentDrifts([]);
     setReplayItem(null);
+    setEngineReady(false);
     setFloatingComments([]);
     setFloatingReactions([]);
     seenCommentIdsRef.current = new Set();
@@ -280,6 +283,18 @@ const FreshDriftExpoModal = ({
     const engine = engineRef.current;
     if (engine) {
       try {
+        if (
+          typeof engine.leaveChannelEx === 'function' &&
+          roomRef.current?.channel &&
+          myRtcUid
+        ) {
+          engine.leaveChannelEx({
+            channelId: roomRef.current.channel,
+            localUid: myRtcUid,
+          });
+        }
+      } catch {}
+      try {
         engine.leaveChannel?.();
       } catch {}
       try {
@@ -288,7 +303,7 @@ const FreshDriftExpoModal = ({
       engineRef.current = null;
     }
     joinedChannelRef.current = null;
-  }, [meUid, roomHostUid]);
+  }, [meUid, myRtcUid, roomHostUid]);
 
   useEffect(() => {
     if (visible) return;
@@ -368,13 +383,8 @@ const FreshDriftExpoModal = ({
       return;
     }
     setIsBusy(true);
-    setStatusText('Creating room');
+    setStatusText(engineReady ? 'Creating room' : 'Preparing camera');
     try {
-      const ok = await ensurePermissions();
-      if (!ok) {
-        Alert.alert('Permissions required', 'Camera and microphone access are required.');
-        return;
-      }
       const ref = firestore().collection('live').doc();
       const channel = `drift_${ref.id}`.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
       const uid = mapRtcUidFromUserId(meUid);
@@ -398,13 +408,13 @@ const FreshDriftExpoModal = ({
       setRoomHostUid(meUid);
       setRoomHostName(meName);
       setMyRtcUid(uid);
-      setStatusText('Starting camera');
+      setStatusText(engineReady ? 'Joining room' : 'Camera warming up');
     } catch (error: any) {
       Alert.alert('Could not start Drift Expo', String(error?.message || 'Try again.'));
     } finally {
       setIsBusy(false);
     }
-  }, [appId, ensurePermissions, meName, mePhoto, meUid]);
+  }, [appId, engineReady, meName, mePhoto, meUid]);
 
   useEffect(() => {
     if (!visible) return;
@@ -494,26 +504,68 @@ const FreshDriftExpoModal = ({
           return;
         }
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
+        const liveProfile =
+          Agora.ChannelProfileType?.ChannelProfileLiveBroadcasting ??
+          Agora.ChannelProfileType?.ChannelProfileCommunication ??
+          1;
+        const broadcasterRole =
+          Agora.ClientRoleType?.ClientRoleBroadcaster ??
+          Agora.ClientRole?.Broadcaster ??
+          1;
+        const cameraSource =
+          Agora.VideoSourceType?.VideoSourceCameraPrimary ??
+          Agora.VideoSourceType?.VideoSourceCamera ??
+          0;
         if (isV4) {
           const engine = Agora.createAgoraRtcEngine();
           engine.initialize?.({
             appId,
-            channelProfile:
-              Agora.ChannelProfileType?.ChannelProfileCommunication ?? 0,
+            channelProfile: liveProfile,
           });
           engine.enableVideo?.();
           engine.enableAudio?.();
+          engine.enableLocalVideo?.(true);
+          engine.setClientRole?.(broadcasterRole);
+          engine.setupLocalVideo?.({
+            uid: 0,
+            sourceType: cameraSource,
+          });
           engine.startPreview?.();
           engine.registerEventHandler?.({
-            onJoinChannelSuccess: () => {
+            onJoinChannelSuccess: (connection: any) => {
               if (!cancelled) {
                 setJoined(true);
                 setStatusText('Live');
+                if (connection?.localUid) {
+                  setMyRtcUid(Number(connection.localUid) || 0);
+                }
               }
             },
-            onUserJoined: (_conn: any, uid: number) => {
+            onUserJoined: (connection: any, uid: number) => {
               const next = Number(uid);
               if (!Number.isFinite(next) || next <= 0) return;
+              const activeChannel =
+                String(connection?.channelId || roomRef.current?.channel || '').trim() || undefined;
+              const localUid = Number(connection?.localUid || myRtcUid || 0) || undefined;
+              if (typeof engine.setupRemoteVideoEx === 'function' && activeChannel && localUid) {
+                engine.setupRemoteVideoEx(
+                  {
+                    uid: next,
+                    channelId: activeChannel,
+                    sourceType: Agora.VideoSourceType?.VideoSourceRemote,
+                  },
+                  {
+                    channelId: activeChannel,
+                    localUid,
+                  },
+                );
+              } else {
+                engine.setupRemoteVideo?.({
+                  uid: next,
+                  channelId: activeChannel,
+                  sourceType: Agora.VideoSourceType?.VideoSourceRemote,
+                });
+              }
               setRemoteUids(prev => (prev.includes(next) ? prev : [...prev, next]));
             },
             onUserOffline: (_conn: any, uid: number) => {
@@ -525,13 +577,17 @@ const FreshDriftExpoModal = ({
             },
           });
           engineRef.current = engine;
+          if (!cancelled) setEngineReady(true);
         } else if (Agora?.RtcEngine && typeof Agora.RtcEngine.create === 'function') {
           const engine = await Agora.RtcEngine.create(appId);
           engine.enableVideo?.();
           engine.enableAudio?.();
+          engine.enableLocalVideo?.(true);
           engine.startPreview?.();
           engine.setChannelProfile?.(
-            Agora.ChannelProfile?.Communication ?? Agora.ChannelProfile,
+            Agora.ChannelProfile?.LiveBroadcasting ??
+              Agora.ChannelProfile?.Communication ??
+              Agora.ChannelProfile,
           );
           engine.setClientRole?.(
             Agora.ClientRole?.Broadcaster ?? Agora.ClientRole,
@@ -552,6 +608,7 @@ const FreshDriftExpoModal = ({
             setRemoteUids(prev => prev.filter(item => item !== next));
           });
           engineRef.current = engine;
+          if (!cancelled) setEngineReady(true);
         }
       } catch (error: any) {
         if (!cancelled) {
@@ -562,7 +619,7 @@ const FreshDriftExpoModal = ({
     return () => {
       cancelled = true;
     };
-  }, [Agora, appId, ensurePermissions, visible]);
+  }, [Agora, appId, ensurePermissions, myRtcUid, visible]);
 
   useEffect(() => {
     if (!visible || !roomId || !roomChannel || !myRtcUid || !engineRef.current) return;
@@ -574,12 +631,26 @@ const FreshDriftExpoModal = ({
         const isHost = roomHostUid === meUid;
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
         if (isV4) {
-          await engine.joinChannel(null, roomChannel, myRtcUid, {
+          const connection = {
+            channelId: roomChannel,
+            localUid: myRtcUid,
+          };
+          const mediaOptions = {
+            clientRoleType:
+              Agora.ClientRoleType?.ClientRoleBroadcaster ??
+              Agora.ClientRole?.Broadcaster ??
+              1,
             publishCameraTrack: true,
             publishMicrophoneTrack: true,
             autoSubscribeAudio: true,
             autoSubscribeVideo: true,
-          });
+          };
+          if (typeof engine.joinChannelEx === 'function') {
+            await engine.joinChannelEx(null, connection, mediaOptions);
+          } else {
+            engine.updateChannelMediaOptions?.(mediaOptions);
+            await engine.joinChannel(null, roomChannel, myRtcUid, mediaOptions);
+          }
         } else {
           await engine.joinChannel(null, roomChannel, myRtcUid);
         }
@@ -809,13 +880,24 @@ const FreshDriftExpoModal = ({
       setInviteBusyUid(target.uid);
       try {
         const liveInvitesRef = firestore().collection(`users/${target.uid}/live_invites`);
-        const existing = await liveInvitesRef
-          .where('status', '==', 'pending')
-          .where('fromUid', '==', meUid)
-          .where('liveId', '==', roomId)
-          .limit(5)
-          .get()
-          .catch(() => null);
+        const prunePendingFromMe = async (path: string) => {
+          try {
+            const snap = await firestore().collection(path).limit(50).get();
+            const matches = (snap?.docs || []).filter((doc: any) => {
+              const data = doc.data() || {};
+              return (
+                String(data.status || 'pending').toLowerCase() === 'pending' &&
+                String(data.fromUid || '') === meUid
+              );
+            });
+            await Promise.all(matches.map((doc: any) => doc.ref.delete().catch(() => {})));
+          } catch {}
+        };
+        await Promise.all([
+          prunePendingFromMe(`users/${target.uid}/live_invites`),
+          prunePendingFromMe(`users/${target.uid}/pings`),
+          prunePendingFromMe(`users/${target.uid}/mentions`),
+        ]);
         const payload = {
           liveId: roomId,
           liveChannel: roomChannel,
@@ -826,13 +908,9 @@ const FreshDriftExpoModal = ({
           status: 'pending',
           createdAt: firestore.FieldValue.serverTimestamp(),
           createdAtMs: Date.now(),
-          expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
+          expiresAtMs: Date.now() + LIVE_INVITE_WINDOW_MS,
         };
-        if (existing && !existing.empty) {
-          await Promise.all(existing.docs.map(doc => doc.ref.set(payload, { merge: true })));
-        } else {
-          await liveInvitesRef.add(payload);
-        }
+        await liveInvitesRef.add(payload);
         await firestore().collection(`users/${target.uid}/pings`).add({
           type: 'live_invite',
           text: `${meName} invited you to join ${roomTitle}`,
@@ -846,7 +924,7 @@ const FreshDriftExpoModal = ({
           read: false,
           createdAt: firestore.FieldValue.serverTimestamp(),
           createdAtMs: Date.now(),
-          expiresAtMs: Date.now() + 24 * 60 * 60 * 1000,
+          expiresAtMs: Date.now() + LIVE_INVITE_WINDOW_MS,
         });
         Alert.alert('Invite sent', `${target.name} will get the drift badge.`);
       } catch (error: any) {
@@ -860,45 +938,47 @@ const FreshDriftExpoModal = ({
 
   const renderLocalView = useCallback(
     (fullScreen: boolean) => {
-      const AVView = Agora?.AgoraVideoView;
       const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
       const RtcTextureView = (Agora as any)?.RtcTextureView;
-      const RtcLocalView = Agora?.RtcLocalView;
       const VideoRenderMode = Agora?.VideoRenderMode;
       const VideoSourceType = Agora?.VideoSourceType;
       const style = fullScreen ? styles.videoFill : styles.pictureInPictureVideo;
-      if (AVView) {
-        return (
-          <AVView
-            style={style}
-            showLocalVideo={true}
-            videoSourceType={
-              (VideoSourceType &&
-                (VideoSourceType.VideoSourceCameraPrimary ??
-                  VideoSourceType.VideoSourceCamera)) ||
-              0
+      const connection =
+        roomChannel && myRtcUid
+          ? {
+              channelId: roomChannel,
+              localUid: myRtcUid,
             }
-            renderMode={(VideoRenderMode && (VideoRenderMode.Fit ?? 2)) || 2}
-          />
-        );
-      }
+          : undefined;
       if (RtcSurfaceView) {
         return React.createElement(RtcSurfaceView, {
           style,
-          canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
+          connection,
+          canvas: {
+            uid: 0,
+            channelId: roomChannel || undefined,
+            sourceType:
+              VideoSourceType?.VideoSourceCameraPrimary ??
+              VideoSourceType?.VideoSourceCamera ??
+              0,
+            renderMode: VideoRenderMode?.Fit ?? 2,
+          },
           zOrderMediaOverlay: true,
         });
       }
       if (RtcTextureView) {
         return React.createElement(RtcTextureView, {
           style,
-          canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
-        });
-      }
-      if (RtcLocalView?.SurfaceView) {
-        return React.createElement(RtcLocalView.SurfaceView, {
-          style,
-          renderMode: VideoRenderMode?.Fit ?? 2,
+          connection,
+          canvas: {
+            uid: 0,
+            channelId: roomChannel || undefined,
+            sourceType:
+              VideoSourceType?.VideoSourceCameraPrimary ??
+              VideoSourceType?.VideoSourceCamera ??
+              0,
+            renderMode: VideoRenderMode?.Fit ?? 2,
+          },
         });
       }
       return (
@@ -907,33 +987,44 @@ const FreshDriftExpoModal = ({
         </View>
       );
     },
-    [Agora],
+    [Agora, myRtcUid, roomChannel],
   );
 
   const renderRemoteView = useCallback(
     (uid: number) => {
       const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
       const RtcTextureView = (Agora as any)?.RtcTextureView;
-      const RtcRemoteView = Agora?.RtcRemoteView;
       const VideoRenderMode = Agora?.VideoRenderMode;
+      const VideoSourceType = Agora?.VideoSourceType;
+      const connection =
+        roomChannel && myRtcUid
+          ? {
+              channelId: roomChannel,
+              localUid: myRtcUid,
+            }
+          : undefined;
       if (RtcSurfaceView) {
         return React.createElement(RtcSurfaceView, {
           style: styles.videoFill,
-          canvas: { uid, renderMode: VideoRenderMode?.Fit ?? 2 },
+          connection,
+          canvas: {
+            uid,
+            channelId: roomChannel || undefined,
+            sourceType: VideoSourceType?.VideoSourceRemote,
+            renderMode: VideoRenderMode?.Fit ?? 2,
+          },
         });
       }
       if (RtcTextureView) {
         return React.createElement(RtcTextureView, {
           style: styles.videoFill,
-          canvas: { uid, renderMode: VideoRenderMode?.Fit ?? 2 },
-        });
-      }
-      if (RtcRemoteView?.SurfaceView) {
-        return React.createElement(RtcRemoteView.SurfaceView, {
-          style: styles.videoFill,
-          uid,
-          channelId: roomChannel,
-          renderMode: VideoRenderMode?.Fit ?? 2,
+          connection,
+          canvas: {
+            uid,
+            channelId: roomChannel || undefined,
+            sourceType: VideoSourceType?.VideoSourceRemote,
+            renderMode: VideoRenderMode?.Fit ?? 2,
+          },
         });
       }
       return (
@@ -942,15 +1033,18 @@ const FreshDriftExpoModal = ({
         </View>
       );
     },
-    [Agora, roomChannel],
+    [Agora, myRtcUid, roomChannel],
   );
 
-  const remoteRenderUids = useMemo(() => {
-    const fromParticipants = participants
-      .map(item => Number(item.rtcUid))
-      .filter(uid => Number.isFinite(uid) && uid > 0 && uid !== myRtcUid);
-    return Array.from(new Set([...fromParticipants, ...remoteUids]));
-  }, [myRtcUid, participants, remoteUids]);
+  const remoteRenderUids = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          remoteUids.filter(uid => Number.isFinite(uid) && uid > 0 && uid !== myRtcUid),
+        ),
+      ),
+    [myRtcUid, remoteUids],
+  );
 
   const handleClose = useCallback(() => {
     onClose();
