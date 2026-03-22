@@ -66,6 +66,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 }) => {
   const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
   const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
+  const [localSplashesCount, setLocalSplashesCount] = useState(Math.max(0, splashesCount));
+  const [localEchoesCount, setLocalEchoesCount] = useState(Math.max(0, echoesCount));
 
   // State for huggers dropdown
   const [showHuggersDropdown, setShowHuggersDropdown] = useState(false);
@@ -116,10 +118,19 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     checkInteractions();
   }, [waveId, currentUserId]);
 
+  useEffect(() => {
+    setLocalSplashesCount(Math.max(0, splashesCount));
+  }, [splashesCount, waveId]);
+
+  useEffect(() => {
+    setLocalEchoesCount(Math.max(0, echoesCount));
+  }, [echoesCount, waveId]);
+
   const handleHug = () => {
     // Immediate visual feedback - no blocking
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
+    setLocalSplashesCount(prev => Math.max(0, prev + (newHasHugged ? 1 : -1)));
 
     // Handle action based on connectivity - fire and forget
     if (isOnline) {
@@ -142,6 +153,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
   const handleEcho = () => {
     // Immediate visual feedback
+    if (!hasEchoed) {
+      setLocalEchoesCount(prev => Math.max(0, prev + 1));
+    }
     setHasEchoed(true);
 
     // Handle action based on connectivity
@@ -231,17 +245,17 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressed && styles.pressedButton
         ]}
         accessibilityRole="button"
-        accessibilityLabel={(hasHugged && Math.max(0, splashesCount) > 0) ? 'Remove hug' : 'Hug this post'}
+        accessibilityLabel={(hasHugged && localSplashesCount > 0) ? 'Remove hug' : 'Hug this post'}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
       >
         <View style={styles.buttonContent}>
-          <Text style={[styles.actionIcon, (hasHugged && Math.max(0, splashesCount) > 0) && styles.hugActive]}>
+          <Text style={[styles.actionIcon, (hasHugged && localSplashesCount > 0) && styles.hugActive]}>
             {'\uD83E\uDEC2'}
           </Text>
-          <Text style={[styles.actionLabel, (hasHugged && Math.max(0, splashesCount) > 0) ? styles.blueCount : styles.whiteCount]}>
-            {(hasHugged && Math.max(0, splashesCount) > 0) ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
+          <Text style={[styles.actionLabel, (hasHugged && localSplashesCount > 0) ? styles.blueCount : styles.whiteCount]}>
+            {(hasHugged && localSplashesCount > 0) ? 'Hugged' : 'Hug'} ({localSplashesCount})
           </Text>
         </View>
       </Pressable>
@@ -284,7 +298,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             {'\uD83D\uDCE3'}
           </Text>
           <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
-            {hasEchoed ? 'Echoed' : 'Echo'} ({Math.max(0, echoesCount)})
+            {hasEchoed ? 'Echoed' : 'Echo'} ({localEchoesCount})
           </Text>
         </View>
       </Pressable>

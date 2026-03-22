@@ -1681,6 +1681,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             ) : null}
             <View style={{ position: 'absolute', left: 0, right: 0, bottom: 18 }}>
               <PosterActionBar
+                key={`viewer-action-${item.id}-${viewerIndex}`}
                 waveId={item.id}
                 currentUserId={myUid || ''}
                 splashesCount={viewerSplashesCount}

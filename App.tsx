@@ -1047,6 +1047,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
+  hereNowFeedActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  hereNowFeedBtn: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  hereNowJoinBtn: {
+    backgroundColor: '#00C2FF',
+    borderColor: 'rgba(0,194,255,0.72)',
+  },
+  hereNowIgnoreBtn: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  hereNowJoinText: {
+    color: '#04111C',
+    fontWeight: '800',
+  },
+  hereNowIgnoreText: {
+    color: '#fff',
+    fontWeight: '800',
+  },
   driftAlertSignal: {
     width: 10,
     height: 10,
@@ -1218,6 +1247,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0,194,255,0.45)',
     backgroundColor: 'rgba(0,194,255,0.12)',
+  },
+  logbookActionPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.97 }],
   },
   logbookActionText: {
     color: 'rgba(220,220,240,0.9)',
@@ -2037,12 +2070,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   makeWavesPrimaryAction: {
-    backgroundColor: 'rgba(0,194,255,0.16)',
-    borderColor: 'rgba(0,194,255,0.9)',
+    backgroundColor: 'rgba(32,146,235,0.2)',
+    borderColor: 'rgba(102,190,255,0.96)',
   },
   makeWavesSecondaryAction: {
     backgroundColor: 'rgba(255,255,255,0.02)',
     borderColor: 'rgba(255,255,255,0.15)',
+  },
+  makeWavesWaveCastAction: {
+    backgroundColor: 'rgba(10,163,122,0.2)',
+    borderColor: 'rgba(51,220,170,0.9)',
+  },
+  makeWavesPremiumAction: {
+    backgroundColor: 'rgba(194,145,24,0.22)',
+    borderColor: 'rgba(255,215,96,0.9)',
   },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
@@ -2644,11 +2685,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     name: string;
     photo: string | null;
   } | null>(null);
+  const hereNowFeedAlertTimerRef = useRef<any>(null);
+  const lastHereNowFeedAlertAtRef = useRef(0);
   
   // Debug logging for myUid changes
   useEffect(() => {
     console.log('UID change:', myUid);
   }, [myUid]);
+
+  useEffect(() => () => {
+    if (hereNowFeedAlertTimerRef.current) {
+      clearTimeout(hereNowFeedAlertTimerRef.current);
+    }
+  }, []);
 
   // Automatic view tracking with 10-second dwell time
   const recordAutomaticReach = async (postId: string) => {
@@ -6430,11 +6479,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           .filter(row => row.uid !== myUid && watchersSet.has(row.uid))
           .filter(row => row.lastMs > 0 && now - row.lastMs <= PRESENCE_OFFLINE_GRACE_MS)
           .sort((a, b) => b.lastMs - a.lastMs)[0];
-        setHereNowFeedAlert(
-          first
-            ? { uid: first.uid, name: first.name, photo: first.photo }
-            : null,
-        );
+        if (!first) {
+          setHereNowFeedAlert(null);
+          return;
+        }
+        if (now - lastHereNowFeedAlertAtRef.current < 25 * 60 * 1000) {
+          return;
+        }
+        const nextAlert = { uid: first.uid, name: first.name, photo: first.photo };
+        lastHereNowFeedAlertAtRef.current = now;
+        setHereNowFeedAlert(nextAlert);
+        if (hereNowFeedAlertTimerRef.current) {
+          clearTimeout(hereNowFeedAlertTimerRef.current);
+        }
+        hereNowFeedAlertTimerRef.current = setTimeout(() => {
+          setHereNowFeedAlert(current => (current?.uid === nextAlert.uid ? null : current));
+        }, 12000);
       } catch {
         if (!cancelled) setHereNowFeedAlert(null);
       }
@@ -14652,7 +14712,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           style={[
             styles.driftAlertContainer,
             {
-              top: (insets.top || 0) + 18,
+              left: 18,
+              right: 18,
+              top: Math.max((insets.top || 0) + 140, SCREEN_HEIGHT * 0.38),
               opacity: flickerAnim.interpolate({
                 inputRange: [0, 1],
                 outputRange: [0.45, 1],
@@ -14661,12 +14723,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ]}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable
-              style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
-              onPress={() =>
-                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
-              }
-            >
+            <View style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}>
               <Animated.View
                 style={[
                   styles.driftAlertSignal,
@@ -14692,18 +14749,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 )}
               </View>
               <Text style={styles.driftAlertText}>
-                Here Now! {hereNowFeedAlert.name}
+                Online now: {hereNowFeedAlert.name}
               </Text>
+            </View>
+          </View>
+          <View style={styles.hereNowFeedActions}>
+            <Pressable
+              style={({ pressed }) => [styles.hereNowFeedBtn, styles.hereNowJoinBtn, pressed && styles.logbookActionPressed]}
+              onPress={() => {
+                setHereNowFeedAlert(null);
+                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name);
+              }}
+            >
+              <Text style={styles.hereNowJoinText}>Join</Text>
             </Pressable>
             <Pressable
-              style={[styles.driftAlertButton, { width: 86, marginLeft: 8 }]}
-              onPress={() =>
-                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
-              }
+              style={({ pressed }) => [styles.hereNowFeedBtn, styles.hereNowIgnoreBtn, pressed && styles.logbookActionPressed]}
+              onPress={() => {
+                lastHereNowFeedAlertAtRef.current = Date.now();
+                setHereNowFeedAlert(null);
+              }}
             >
-              <Text style={[styles.driftAlertText, { fontSize: 14 }]}>
-                Reply
-              </Text>
+              <Text style={styles.hereNowIgnoreText}>Ignore</Text>
             </Pressable>
           </View>
         </Animated.View>
@@ -17351,7 +17418,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>Make Vibes</Text>
               <ScrollView>
-                <Pressable style={[styles.logbookAction, styles.makeWavesPrimaryAction]} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
+                <Pressable style={({ pressed }) => [styles.logbookAction, styles.makeWavesPrimaryAction, pressed && styles.logbookActionPressed]} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   pressRetentionOffset={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   delayPressIn={0}
@@ -17360,7 +17427,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
                   <Text style={styles.logbookActionText}>Say Something</Text>
                 </Pressable>
-                <Pressable style={[styles.logbookAction, styles.makeWavesSecondaryAction]} onPress={goDrift}
+                <Pressable style={({ pressed }) => [styles.logbookAction, styles.makeWavesWaveCastAction, pressed && styles.logbookActionPressed]} onPress={goDrift}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   pressRetentionOffset={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   delayPressIn={0}
@@ -17382,11 +17449,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#00C2FF',
                       }}
                     />
-                    <Text style={styles.logbookActionText}>Drift Expo</Text>
+                    <Text style={styles.logbookActionText}>WaveCast</Text>
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton
-                  buttonStyle={styles.logbookAction}
+                  buttonStyle={[styles.logbookAction, styles.makeWavesPremiumAction]}
                   buttonTextStyle={styles.logbookActionText}
                   hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {

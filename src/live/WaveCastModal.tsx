@@ -168,6 +168,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
   const [statusText, setStatusText] = useState('Opening camera...');
   const [errorText, setErrorText] = useState<string | null>(null);
   const [showInviteSheet, setShowInviteSheet] = useState(false);
+  const [showInFeed, setShowInFeed] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchBusy, setSearchBusy] = useState(false);
   const [searchResults, setSearchResults] = useState<UserRow[]>([]);
@@ -177,10 +178,20 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
   const [showReactionTray, setShowReactionTray] = useState(false);
   const [floatingComments, setFloatingComments] = useState<FloatingComment[]>([]);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
+  const [participantCount, setParticipantCount] = useState(1);
+  const [hugCount, setHugCount] = useState(0);
+  const [hasHuggedToday, setHasHuggedToday] = useState(false);
   const remoteVideoWatchdogRef = useRef<any>(null);
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
   const seenReactionIdsRef = useRef<Set<string>>(new Set());
-  const reactionOptions = ['❤️', '🔥', '👏', '😂', '😍', '🎉'];
+  const reactionOptions = ['🫂', '❤️', '🔥', '👏', '😂', '😍', '🎉', '💯', '🙌', '🥳', '🤩', '💙'];
+  const todayHugKey = useMemo(() => {
+    try {
+      return new Date().toISOString().slice(0, 10);
+    } catch {
+      return `${Date.now()}`;
+    }
+  }, []);
 
   const RtcTextureView = (Agora as any)?.RtcTextureView;
   const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
@@ -642,9 +653,24 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     const unsubReactions = firestore()
       .collection(`wavecasts/${roomId}/reactions`)
       .orderBy('createdAt', 'asc')
-      .limitToLast(40)
+      .limitToLast(120)
       .onSnapshot(snap => {
-        (snap?.docs || []).forEach(doc => {
+        const docs = snap?.docs || [];
+        const hugs = docs.filter((doc: any) => {
+          const data = doc.data() || {};
+          return String(data.type || '') === 'hug' || String(data.emoji || '') === '🫂';
+        });
+        setHugCount(hugs.length);
+        setHasHuggedToday(
+          hugs.some((doc: any) => {
+            const data = doc.data() || {};
+            return (
+              String(data.fromUid || '') === myUid &&
+              String(data.dayKey || '') === todayHugKey
+            );
+          }),
+        );
+        docs.forEach(doc => {
           const data = doc.data() || {};
           const reactionId = doc.id;
           if (seenReactionIdsRef.current.has(reactionId)) return;
@@ -657,6 +683,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     const unsubParticipants = firestore()
       .collection(`wavecasts/${roomId}/participants`)
       .onSnapshot(snap => {
+        setParticipantCount(Math.max(1, snap?.docs?.length || 0));
         const others = (snap?.docs || [])
           .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
           .filter((row: any) => String(row.uid || row.id) !== myUid);
@@ -671,7 +698,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
       try { unsubReactions(); } catch {}
       try { unsubParticipants(); } catch {}
     };
-  }, [isHost, myUid, pushFloatingComment, pushFloatingReaction, remoteUid, roomId, visible]);
+  }, [isHost, myUid, pushFloatingComment, pushFloatingReaction, remoteUid, roomId, todayHugKey, visible]);
 
   useEffect(() => {
     try {
@@ -719,6 +746,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
           title: 'WaveCast',
           hostUid: myUid,
           hostName: myName,
+          showInFeed,
           status: 'live',
           createdAt: firestore.FieldValue.serverTimestamp(),
           updatedAt: firestore.FieldValue.serverTimestamp(),
@@ -734,7 +762,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
     } catch (error: any) {
       setErrorText(String(error?.message || 'Could not start WaveCast.'));
     }
-  }, [defaultChannel, joinWaveCast, myName, myUid]);
+  }, [defaultChannel, joinWaveCast, myName, myUid, showInFeed]);
 
   const searchUsers = useCallback(async () => {
     const term = String(searchQuery || '').trim().toLowerCase();
@@ -774,6 +802,21 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
   const sendInvite = useCallback(async (target: UserRow) => {
     if (!roomId || !myUid) return;
     try {
+      const existing = await firestore()
+        .collection(`users/${target.uid}/wavecast_invites`)
+        .limit(50)
+        .get()
+        .catch(() => null);
+      const pendingFromMe = (existing?.docs || []).filter((doc: any) => {
+        const data = doc.data() || {};
+        return (
+          String(data.fromUid || '') === myUid &&
+          String(data.status || 'pending').toLowerCase() === 'pending'
+        );
+      });
+      if (pendingFromMe.length) {
+        await Promise.all(pendingFromMe.map((doc: any) => doc.ref.delete().catch(() => {})));
+      }
       await firestore().collection(`users/${target.uid}/wavecast_invites`).add({
         fromUid: myUid,
         fromName: myName,
@@ -831,20 +874,28 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
   const sendReaction = useCallback(async (emoji: string) => {
     if (!roomId || !myUid) return;
     setShowReactionTray(false);
-    const reactionRef = firestore().collection(`wavecasts/${roomId}/reactions`).doc();
+    if (emoji === '🫂' && hasHuggedToday) {
+      return;
+    }
+    const reactionRef =
+      emoji === '🫂'
+        ? firestore().collection(`wavecasts/${roomId}/reactions`).doc(`hug_${myUid}_${todayHugKey}`)
+        : firestore().collection(`wavecasts/${roomId}/reactions`).doc();
     const reactionId = reactionRef.id;
     seenReactionIdsRef.current.add(reactionId);
     pushFloatingReaction(reactionId, emoji, myName);
     try {
       await reactionRef.set({
         emoji,
+        type: emoji === '🫂' ? 'hug' : 'reaction',
+        dayKey: todayHugKey,
         fromUid: myUid,
         fromName: myName,
         createdAt: firestore.FieldValue.serverTimestamp(),
         createdAtMs: Date.now(),
       });
     } catch {}
-  }, [myName, myUid, pushFloatingReaction, roomId]);
+  }, [hasHuggedToday, myName, myUid, pushFloatingReaction, roomId, todayHugKey]);
 
   const leaveWaveCast = useCallback(async () => {
     const activeRoomId = roomId;
@@ -932,7 +983,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
             <Text style={styles.topStatus}>{errorText || statusText}</Text>
           </View>
           {!!roomId && (
-            <Pressable style={styles.closeBtn} onPress={leaveWaveCast}>
+            <Pressable style={({ pressed }) => [styles.closeBtn, pressed && styles.buttonPressed]} onPress={leaveWaveCast}>
               <Text style={styles.closeBtnText}>Close</Text>
             </Pressable>
           )}
@@ -944,7 +995,19 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
             <Text style={styles.startCardText}>
               Your camera is open. Start WaveCast and bring your Crew on screen.
             </Text>
-            <Pressable style={styles.primaryBtn} onPress={startWaveCast}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.feedToggle,
+                showInFeed && styles.feedToggleActive,
+                pressed && styles.buttonPressed,
+              ]}
+              onPress={() => setShowInFeed(prev => !prev)}
+            >
+              <Text style={styles.feedToggleText}>
+                {showInFeed ? 'Will also appear in feeds' : 'Show in feeds is off'}
+              </Text>
+            </Pressable>
+            <Pressable style={({ pressed }) => [styles.primaryBtn, pressed && styles.buttonPressed]} onPress={startWaveCast}>
               <Text style={styles.primaryBtnText}>Start WaveCast</Text>
             </Pressable>
           </View>
@@ -957,6 +1020,17 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
               canvas: { uid: 0, renderMode: VideoRenderMode?.Fit ?? 2 },
               zOrderMediaOverlay: true,
             })}
+          </View>
+        )}
+
+        {!!roomId && (
+          <View style={[styles.statsRail, { top: Math.max(insets.top + 110, 122) }]}>
+            <View style={styles.statsChip}>
+              <Text style={styles.statsChipText}>👥 ({participantCount})</Text>
+            </View>
+            <View style={[styles.statsChip, hasHuggedToday && styles.statsChipActive]}>
+              <Text style={styles.statsChipText}>🫂 ({hugCount})</Text>
+            </View>
           </View>
         )}
 
@@ -1031,22 +1105,22 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.controlRow}
             >
-              <Pressable style={[styles.controlBtn, styles.controlBtnMic, micMuted && styles.controlBtnMuted]} onPress={toggleMic}>
+              <Pressable style={({ pressed }) => [styles.controlBtn, styles.controlBtnMic, micMuted && styles.controlBtnMuted, pressed && styles.buttonPressed]} onPress={toggleMic}>
                 <Text style={styles.controlBtnText}>{micMuted ? 'Mic Off' : 'Mic On'}</Text>
               </Pressable>
-              <Pressable style={[styles.controlBtn, styles.controlBtnVideo, cameraMuted && styles.controlBtnMuted]} onPress={toggleCamera}>
+              <Pressable style={({ pressed }) => [styles.controlBtn, styles.controlBtnVideo, cameraMuted && styles.controlBtnMuted, pressed && styles.buttonPressed]} onPress={toggleCamera}>
                 <Text style={styles.controlBtnText}>{cameraMuted ? 'Video Off' : 'Video On'}</Text>
               </Pressable>
-              <Pressable style={[styles.controlBtn, styles.controlBtnSpeaker, !speakerEnabled && styles.controlBtnMuted]} onPress={toggleSpeaker}>
+              <Pressable style={({ pressed }) => [styles.controlBtn, styles.controlBtnSpeaker, !speakerEnabled && styles.controlBtnMuted, pressed && styles.buttonPressed]} onPress={toggleSpeaker}>
                 <Text style={styles.controlBtnText}>{speakerEnabled ? 'Speaker' : 'Earpiece'}</Text>
               </Pressable>
               {isHost && (
-                <Pressable style={[styles.controlBtn, styles.controlBtnInvite]} onPress={() => setShowInviteSheet(true)}>
+                <Pressable style={({ pressed }) => [styles.controlBtn, styles.controlBtnInvite, pressed && styles.buttonPressed]} onPress={() => setShowInviteSheet(true)}>
                   <Text style={styles.controlBtnText}>Invite Crew</Text>
                 </Pressable>
               )}
               <Pressable
-                style={[styles.controlBtn, styles.controlBtnReact, showReactionTray && styles.controlBtnMuted]}
+                style={({ pressed }) => [styles.controlBtn, styles.controlBtnReact, showReactionTray && styles.controlBtnMuted, pressed && styles.buttonPressed]}
                 onPress={() => setShowReactionTray(prev => !prev)}
               >
                 <Text style={styles.controlBtnText}>React</Text>
@@ -1054,10 +1128,10 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
             </ScrollView>
             {showReactionTray && (
               <View style={styles.reactionTray}>
-                {['\u2764\uFE0F', '\uD83D\uDD25', '\uD83D\uDC4F', '\uD83D\uDE02', '\uD83D\uDE0D', '\uD83C\uDF89', '\uD83D\uDCAF', '\uD83D\uDE4C', '\uD83E\uDD73', '\uD83E\uDD29', '\uD83D\uDCA5', '\uD83D\uDC99'].map(emoji => (
+                {reactionOptions.map(emoji => (
                   <Pressable
                     key={emoji}
-                    style={styles.reactionChip}
+                    style={({ pressed }) => [styles.reactionChip, pressed && styles.buttonPressed]}
                     onPress={() => sendReaction(emoji)}
                   >
                     <Text style={styles.reactionChipText}>{emoji}</Text>
@@ -1071,7 +1145,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
                   <Text numberOfLines={1} style={styles.replyPillText}>
                     Replying to {replyingTo.fromName}
                   </Text>
-                  <Pressable onPress={() => setReplyingTo(null)}>
+                  <Pressable style={({ pressed }) => pressed && styles.buttonPressedLite} onPress={() => setReplyingTo(null)}>
                     <Text style={styles.replyPillClose}>x</Text>
                   </Pressable>
                 </View>
@@ -1084,7 +1158,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
                   placeholder={replyingTo ? `Reply to ${replyingTo.fromName}` : 'Comment'}
                   placeholderTextColor="rgba(255,255,255,0.55)"
                 />
-                <Pressable style={styles.sendBtn} onPress={sendComment}>
+                <Pressable style={({ pressed }) => [styles.sendBtn, pressed && styles.buttonPressed]} onPress={sendComment}>
                   <Text style={styles.sendBtnText}>Send</Text>
                 </Pressable>
               </View>
@@ -1105,7 +1179,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
                   placeholder="Find display name"
                   placeholderTextColor="rgba(255,255,255,0.48)"
                 />
-                <Pressable style={styles.findBtn} onPress={searchUsers}>
+                <Pressable style={({ pressed }) => [styles.findBtn, pressed && styles.buttonPressed]} onPress={searchUsers}>
                   <Text style={styles.findBtnText}>{searchBusy ? 'Finding...' : 'Find'}</Text>
                 </Pressable>
               </View>
@@ -1114,7 +1188,7 @@ const WaveCastModal = ({ visible, onClose, searchOceanEntities, inviteJoinPreset
                 keyExtractor={item => item.uid}
                 keyboardShouldPersistTaps="always"
                 renderItem={({ item }) => (
-                  <Pressable style={styles.resultRow} onPress={() => sendInvite(item)}>
+                  <Pressable style={({ pressed }) => [styles.resultRow, pressed && styles.buttonPressedLite]} onPress={() => sendInvite(item)}>
                     {item.photoURL ? (
                       <Image source={{ uri: item.photoURL }} style={styles.resultAvatar} />
                     ) : (
@@ -1158,9 +1232,18 @@ const styles = StyleSheet.create({
   startCard: { position: 'absolute', left: 14, right: 14, zIndex: 11, borderRadius: 22, backgroundColor: 'rgba(6,12,20,0.9)', borderWidth: 1, borderColor: 'rgba(157,230,255,0.25)', padding: 16 },
   startCardTitle: { color: '#fff', fontSize: 18, fontWeight: '800' },
   startCardText: { color: 'rgba(255,255,255,0.78)', marginTop: 6, marginBottom: 14 },
+  feedToggle: { alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(157,230,255,0.22)', backgroundColor: 'rgba(8,14,24,0.82)', paddingHorizontal: 14, paddingVertical: 9, marginBottom: 12 },
+  feedToggleActive: { backgroundColor: 'rgba(24,153,198,0.22)', borderColor: 'rgba(157,230,255,0.45)' },
+  feedToggleText: { color: '#DDF6FF', fontWeight: '700', fontSize: 12 },
   primaryBtn: { backgroundColor: '#E34949', borderRadius: 999, paddingVertical: 12, alignItems: 'center' },
   primaryBtnText: { color: '#fff', fontWeight: '800' },
+  buttonPressed: { opacity: 0.68, transform: [{ scale: 0.93 }] },
+  buttonPressedLite: { opacity: 0.85 },
   localPip: { position: 'absolute', right: 12, width: 120, height: 170, borderRadius: 14, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.42)', backgroundColor: '#02060F' },
+  statsRail: { position: 'absolute', right: 12, zIndex: 13, gap: 10 },
+  statsChip: { minWidth: 86, borderRadius: 18, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: 'rgba(8,14,24,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)', alignItems: 'center' },
+  statsChipActive: { borderColor: 'rgba(0,194,255,0.75)', backgroundColor: 'rgba(0,194,255,0.18)' },
+  statsChipText: { color: '#fff', fontWeight: '800', fontSize: 12 },
   bottomDock: { position: 'absolute', left: 12, right: 12, zIndex: 12 },
   controlRow: { gap: 8, paddingRight: 10 },
   controlBtn: { minWidth: 92, borderRadius: 999, backgroundColor: 'rgba(8,14,24,0.88)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)', paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center' },
