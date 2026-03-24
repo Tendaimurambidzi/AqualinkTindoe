@@ -22,6 +22,29 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const LIVE_INVITE_WINDOW_MS = 3 * 60 * 1000;
+const COMMENT_FLOAT_MAX = 5;
+const COMMENT_FLOAT_LIFETIME_MS = 6800;
+const COMMENT_STACK_GAP = 58;
+const REACTION_EMOJIS = [
+  '❤️',
+  '💙',
+  '🩵',
+  '🫶',
+  '🫂',
+  '🤗',
+  '💕',
+  '💖',
+  '😍',
+  '😘',
+  '🔥',
+  '✨',
+  '👏',
+  '🙌',
+  '💯',
+  '😂',
+  '🌊',
+  '💎',
+];
 
 type InviteJoinPreset = {
   liveId?: string | null;
@@ -177,6 +200,7 @@ const FreshDriftExpoModal = ({
   const engineRef = useRef<any>(null);
   const joinedChannelRef = useRef<string | null>(null);
   const joiningChannelRef = useRef<string | null>(null);
+  const reactionTrayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roomRef = useRef<{ id: string; channel: string; title: string; hostUid: string | null } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState<string>('Ready');
@@ -206,10 +230,18 @@ const FreshDriftExpoModal = ({
   const [replayItem, setReplayItem] = useState<RecentDriftItem | null>(null);
   const [engineReady, setEngineReady] = useState(false);
   const [floatingComments, setFloatingComments] = useState<
-    Array<{ id: string; text: string; fromName: string; anim: Animated.Value }>
+    Array<{
+      id: string;
+      text: string;
+      fromName: string;
+      replyToName?: string | null;
+      replyToText?: string | null;
+      stack: Animated.Value;
+      fade: Animated.Value;
+    }>
   >([]);
   const [floatingReactions, setFloatingReactions] = useState<
-    Array<{ id: string; emoji: string; anim: Animated.Value; lane: number }>
+    Array<{ id: string; emoji: string; anim: Animated.Value; lane: number; xOffset: number }>
   >([]);
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
   const seenReactionIdsRef = useRef<Set<string>>(new Set());
@@ -257,6 +289,10 @@ const FreshDriftExpoModal = ({
     setFloatingReactions([]);
     seenCommentIdsRef.current = new Set();
     seenReactionIdsRef.current = new Set();
+    if (reactionTrayTimerRef.current) {
+      clearTimeout(reactionTrayTimerRef.current);
+      reactionTrayTimerRef.current = null;
+    }
     joinedChannelRef.current = null;
     joiningChannelRef.current = null;
   }, []);
@@ -550,27 +586,31 @@ const FreshDriftExpoModal = ({
               const next = Number(uid);
               if (!Number.isFinite(next) || next <= 0) return;
               const activeChannel =
-                String(connection?.channelId || roomRef.current?.channel || '').trim() || undefined;
-              const localUid = Number(connection?.localUid || myRtcUid || 0) || undefined;
-              if (typeof engine.setupRemoteVideoEx === 'function' && activeChannel && localUid) {
-                engine.setupRemoteVideoEx(
-                  {
-                    uid: next,
-                    channelId: activeChannel,
-                    sourceType: Agora.VideoSourceType?.VideoSourceRemote,
-                  },
-                  {
-                    channelId: activeChannel,
-                    localUid,
-                  },
-                );
-              } else {
-                engine.setupRemoteVideo?.({
-                  uid: next,
-                  channelId: activeChannel,
-                  sourceType: Agora.VideoSourceType?.VideoSourceRemote,
-                });
+                String(connection?.channelId || roomRef.current?.channel || '').trim() || '';
+              if (activeChannel && connection?.localUid) {
+                setMyRtcUid(prev => prev || Number(connection.localUid) || 0);
               }
+              try {
+                if (typeof engine.setupRemoteVideoEx === 'function' && activeChannel && connection?.localUid) {
+                  engine.setupRemoteVideoEx(
+                    {
+                      uid: next,
+                      channelId: activeChannel,
+                      sourceType: Agora.VideoSourceType?.VideoSourceRemote,
+                    },
+                    {
+                      channelId: activeChannel,
+                      localUid: Number(connection.localUid) || 0,
+                    },
+                  );
+                } else {
+                  engine.setupRemoteVideo?.({
+                    uid: next,
+                    channelId: activeChannel || undefined,
+                    sourceType: Agora.VideoSourceType?.VideoSourceRemote,
+                  });
+                }
+              } catch {}
               setRemoteUids(prev => (prev.includes(next) ? prev : [...prev, next]));
             },
             onUserOffline: (_conn: any, uid: number) => {
@@ -760,11 +800,14 @@ const FreshDriftExpoModal = ({
           const emoji = String(data.emoji || '').trim();
           if (!emoji) return;
           const anim = new Animated.Value(0);
-          const lane = index % 3;
-          setFloatingReactions(prev => [...prev, { id: doc.id, emoji, anim, lane }].slice(-18));
+          const lane = index % 6;
+          const xOffsets = [-118, -72, -28, 28, 72, 118];
+          setFloatingReactions(prev =>
+            [...prev, { id: doc.id, emoji, anim, lane, xOffset: xOffsets[lane] }].slice(-6),
+          );
           Animated.timing(anim, {
             toValue: 1,
-            duration: 2400,
+            duration: 3600,
             useNativeDriver: true,
           }).start(() => {
             setFloatingReactions(prev => prev.filter(item => item.id !== doc.id));
@@ -809,28 +852,75 @@ const FreshDriftExpoModal = ({
     }
   }, [commentText, meName, mePhoto, meUid, replyTarget, roomId]);
 
+  const restackFloatingComments = useCallback(
+    (
+      items: Array<{
+        id: string;
+        text: string;
+        fromName: string;
+        replyToName?: string | null;
+        replyToText?: string | null;
+        stack: Animated.Value;
+        fade: Animated.Value;
+      }>,
+    ) => {
+      items.forEach((item, index) => {
+        const stackIndex = items.length - 1 - index;
+        Animated.spring(item.stack, {
+          toValue: stackIndex,
+          damping: 18,
+          mass: 0.75,
+          stiffness: 180,
+          useNativeDriver: true,
+        }).start();
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     comments.forEach(comment => {
       if (seenCommentIdsRef.current.has(comment.id)) return;
       seenCommentIdsRef.current.add(comment.id);
-      const anim = new Animated.Value(0);
-      setFloatingComments(prev =>
-        [...prev, { id: comment.id, text: comment.text, fromName: comment.fromName, anim }].slice(-8),
-      );
-      Animated.timing(anim, {
-        toValue: 1,
-        duration: 4200,
-        useNativeDriver: true,
-      }).start(() => {
-        setFloatingComments(prev => prev.filter(item => item.id !== comment.id));
+      const nextItem = {
+        id: comment.id,
+        text: comment.text,
+        fromName: comment.fromName,
+        replyToName: comment.replyToName || null,
+        replyToText: comment.replyToText || null,
+        stack: new Animated.Value(0),
+        fade: new Animated.Value(0),
+      };
+      setFloatingComments(prev => {
+        const next = [...prev, nextItem].slice(-COMMENT_FLOAT_MAX);
+        restackFloatingComments(next);
+        return next;
+      });
+      Animated.sequence([
+        Animated.timing(nextItem.fade, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }),
+        Animated.delay(COMMENT_FLOAT_LIFETIME_MS),
+        Animated.timing(nextItem.fade, {
+          toValue: 0,
+          duration: 260,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        setFloatingComments(prev => {
+          const next = prev.filter(item => item.id !== comment.id);
+          restackFloatingComments(next);
+          return next;
+        });
       });
     });
-  }, [comments]);
+  }, [comments, restackFloatingComments]);
 
   const sendReaction = useCallback(
     async (emoji: string) => {
       if (!roomId || !meUid) return;
-      setShowReactionPicker(false);
       try {
         await firestore().collection(`live/${roomId}/reactions`).add({
           emoji,
@@ -842,6 +932,29 @@ const FreshDriftExpoModal = ({
     },
     [meName, meUid, roomId],
   );
+
+  useEffect(() => {
+    if (!showReactionPicker) {
+      if (reactionTrayTimerRef.current) {
+        clearTimeout(reactionTrayTimerRef.current);
+        reactionTrayTimerRef.current = null;
+      }
+      return;
+    }
+    if (reactionTrayTimerRef.current) {
+      clearTimeout(reactionTrayTimerRef.current);
+    }
+    reactionTrayTimerRef.current = setTimeout(() => {
+      setShowReactionPicker(false);
+      reactionTrayTimerRef.current = null;
+    }, 4000);
+    return () => {
+      if (reactionTrayTimerRef.current) {
+        clearTimeout(reactionTrayTimerRef.current);
+        reactionTrayTimerRef.current = null;
+      }
+    };
+  }, [showReactionPicker]);
 
   const searchInviteTargets = useCallback(async () => {
     const query = inviteQuery.trim();
@@ -1055,6 +1168,52 @@ const FreshDriftExpoModal = ({
     [myRtcUid, remoteUids],
   );
 
+  const attachRemoteVideo = useCallback(
+    (uid: number) => {
+      const engine = engineRef.current;
+      const nextUid = Number(uid);
+      if (!engine || !Number.isFinite(nextUid) || nextUid <= 0) return;
+      const activeChannel = String(roomChannel || roomRef.current?.channel || '').trim();
+      if (!activeChannel) return;
+      try {
+        if (typeof engine.setupRemoteVideoEx === 'function' && myRtcUid) {
+          engine.setupRemoteVideoEx(
+            {
+              uid: nextUid,
+              channelId: activeChannel,
+              sourceType: Agora?.VideoSourceType?.VideoSourceRemote,
+            },
+            {
+              channelId: activeChannel,
+              localUid: myRtcUid,
+            },
+          );
+          return;
+        }
+        engine.setupRemoteVideo?.({
+          uid: nextUid,
+          channelId: activeChannel,
+          sourceType: Agora?.VideoSourceType?.VideoSourceRemote,
+        });
+      } catch {}
+    },
+    [Agora, myRtcUid, roomChannel],
+  );
+
+  useEffect(() => {
+    if (!roomId || !joined) return;
+    const participantRemoteUids = participants
+      .map(item => Number(item.rtcUid || 0))
+      .filter(uid => Number.isFinite(uid) && uid > 0 && uid !== myRtcUid);
+    if (!participantRemoteUids.length) return;
+    setRemoteUids(prev => Array.from(new Set([...participantRemoteUids, ...prev])));
+    participantRemoteUids.forEach(uid => attachRemoteVideo(uid));
+  }, [attachRemoteVideo, joined, myRtcUid, participants, roomId]);
+
+  useEffect(() => {
+    remoteRenderUids.forEach(uid => attachRemoteVideo(uid));
+  }, [attachRemoteVideo, remoteRenderUids]);
+
   const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
@@ -1067,17 +1226,25 @@ const FreshDriftExpoModal = ({
         {roomId && joined ? (
           <>
             <View style={styles.videoStage}>
-              {cameraOff ? (
+              {remoteRenderUids.length > 0 ? (
+                renderRemoteView(remoteRenderUids[0])
+              ) : cameraOff ? (
                 <View style={[styles.videoFill, styles.cameraOffStage]}>
                   <Text style={styles.cameraOffText}>Camera off</Text>
                 </View>
-              ) : remoteRenderUids.length > 0 ? (
-                renderRemoteView(remoteRenderUids[0])
               ) : (
                 renderLocalView(true)
               )}
               {remoteRenderUids.length > 0 ? (
-                <View style={styles.pictureInPicture}>{renderLocalView(false)}</View>
+                <View style={styles.pictureInPicture}>
+                  {cameraOff ? (
+                    <View style={[styles.pictureInPictureVideo, styles.cameraOffStage]}>
+                      <Text style={styles.cameraOffText}>Camera off</Text>
+                    </View>
+                  ) : (
+                    renderLocalView(false)
+                  )}
+                </View>
               ) : null}
               <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
                 <View>
@@ -1097,6 +1264,7 @@ const FreshDriftExpoModal = ({
                 </Pressable>
                 <Pressable style={styles.railButton} onPress={() => setShowReactionPicker(v => !v)}>
                   <Text style={styles.railIcon}>React</Text>
+                  <Text style={styles.railEmojiLine}>💙 🫶 ❤️ ✨ 🤗</Text>
                 </Pressable>
                 <Pressable style={styles.railButton} onPress={() => setShowComments(v => !v)}>
                   <Text style={styles.railIcon}>Chat</Text>
@@ -1139,9 +1307,9 @@ const FreshDriftExpoModal = ({
               </View>
               {showReactionPicker ? (
                 <View style={styles.reactionTray}>
-                  {['❤️', '🔥', '👏', '😂', '💯', '😍'].map(emoji => (
+                  {REACTION_EMOJIS.map(emoji => (
                     <Pressable
-                      key={emoji}
+                      key={`react-${emoji}`}
                       style={styles.reactionChip}
                       onPress={() => sendReaction(emoji)}
                     >
@@ -1153,34 +1321,36 @@ const FreshDriftExpoModal = ({
               {showComments ? (
                 <View pointerEvents="box-none" style={styles.commentLane}>
                   <View style={styles.commentGuide} />
-                  {floatingComments.map((comment, idx) => (
+                  {floatingComments.map(comment => (
                     <Animated.View
                       key={comment.id}
                       style={[
                         styles.floatingCommentWrap,
                         {
-                          bottom: 150 + idx * 42,
-                          opacity: comment.anim.interpolate({
-                            inputRange: [0, 0.15, 0.7, 1],
-                            outputRange: [0, 1, 1, 0],
-                          }),
+                          bottom: 148,
+                          opacity: comment.fade,
                           transform: [
                             {
-                              translateY: comment.anim.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [0, -(SCREEN_HEIGHT * 0.34)],
-                              }),
+                              translateY: Animated.multiply(comment.stack, -COMMENT_STACK_GAP),
                             },
                           ],
                         },
                       ]}
                     >
-                      <Pressable onPress={() => {
-                        const full = comments.find(item => item.id === comment.id);
-                        if (full) setReplyTarget(full);
-                      }}>
+                      <Pressable
+                        style={styles.floatingCommentBubble}
+                        onPress={() => {
+                          const full = comments.find(item => item.id === comment.id);
+                          if (full) setReplyTarget(full);
+                        }}
+                      >
                         <Text style={styles.floatingCommentAuthor}>{comment.fromName}</Text>
-                        <Text style={styles.floatingCommentText} numberOfLines={2}>
+                        {comment.replyToName || comment.replyToText ? (
+                          <Text style={styles.floatingReplyText} numberOfLines={1}>
+                            Reply to {comment.replyToName || 'comment'}: {comment.replyToText || ''}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.floatingCommentText} numberOfLines={3}>
                           {comment.text}
                         </Text>
                       </Pressable>
@@ -1194,23 +1364,36 @@ const FreshDriftExpoModal = ({
                   style={[
                     styles.floatingReaction,
                     {
-                      right: 18 + item.lane * 26,
-                      bottom: 140,
+                      left: '50%',
+                      marginLeft: -18,
+                      bottom: SCREEN_HEIGHT * 0.26,
                       opacity: item.anim.interpolate({
-                        inputRange: [0, 0.15, 0.8, 1],
+                        inputRange: [0, 0.08, 0.9, 1],
                         outputRange: [0, 1, 1, 0],
                       }),
                       transform: [
                         {
+                          translateX: item.anim.interpolate({
+                            inputRange: [0, 0.25, 1],
+                            outputRange: [0, item.xOffset * 0.35, item.xOffset],
+                          }),
+                        },
+                        {
                           translateY: item.anim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0, -(SCREEN_HEIGHT * 0.42)],
+                            inputRange: [0, 0.22, 1],
+                            outputRange: [0, -18, -(SCREEN_HEIGHT * 0.78)],
                           }),
                         },
                         {
                           scale: item.anim.interpolate({
                             inputRange: [0, 0.2, 1],
                             outputRange: [0.7, 1.08, 0.92],
+                          }),
+                        },
+                        {
+                          rotate: item.anim.interpolate({
+                            inputRange: [0, 0.5, 1],
+                            outputRange: ['-10deg', '6deg', '-4deg'],
                           }),
                         },
                       ],
@@ -1385,17 +1568,9 @@ const FreshDriftExpoModal = ({
               }}
             >
               <Text style={styles.primaryStartButtonText}>
-                {inviteJoinPreset?.liveId ? 'Open invited room' : 'Start new Drift Expo'}
+                {inviteJoinPreset?.liveId ? 'Join room' : 'Start new Drift Expo'}
               </Text>
             </Pressable>
-            {inviteJoinPreset?.liveId ? (
-              <Pressable
-                style={styles.secondaryStartButton}
-                onPress={() => hydrateRoom(String(inviteJoinPreset.liveId)).catch(() => {})}
-              >
-                <Text style={styles.secondaryStartButtonText}>Join invite</Text>
-              </Pressable>
-            ) : null}
             {recentDrifts.length > 0 ? (
               <View style={styles.recentSection}>
                 <Text style={styles.recentSectionTitle}>Recent Drift Expos</Text>
@@ -1541,22 +1716,27 @@ const styles = StyleSheet.create({
   },
   rightRail: {
     position: 'absolute',
-    right: 14,
+    right: 6,
     bottom: 160,
-    gap: 10,
+    gap: 8,
   },
   railButton: {
-    backgroundColor: 'rgba(6,15,24,0.82)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 18,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     alignItems: 'center',
   },
   railIcon: {
-    color: 'white',
+    color: '#ff2a2a',
     fontWeight: '800',
+    textShadowColor: 'rgba(75,0,0,0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  railEmojiLine: {
+    color: '#ff7a7a',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 4,
   },
   reactionTray: {
     position: 'absolute',
@@ -1564,7 +1744,7 @@ const styles = StyleSheet.create({
     bottom: 250,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    width: 160,
+    width: 244,
     gap: 8,
     backgroundColor: 'rgba(10,16,24,0.82)',
     borderRadius: 18,
@@ -1599,12 +1779,25 @@ const styles = StyleSheet.create({
   floatingCommentWrap: {
     position: 'absolute',
     left: 16,
-    maxWidth: 180,
+    maxWidth: 218,
+  },
+  floatingCommentBubble: {
+    backgroundColor: 'rgba(6,16,27,0.82)',
+    borderColor: 'rgba(158,232,255,0.24)',
+    borderWidth: 1,
+    borderRadius: 18,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   floatingCommentAuthor: {
     color: '#9de8ff',
     fontWeight: '800',
     marginBottom: 2,
+  },
+  floatingReplyText: {
+    color: 'rgba(143,220,255,0.82)',
+    fontSize: 11,
+    marginBottom: 5,
   },
   floatingCommentText: {
     color: 'white',

@@ -1235,6 +1235,13 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
     backgroundColor: 'rgba(255,255,255,0.05)',
   },
+  createPostEmojiLine: {
+    color: '#FFE8A3',
+    fontSize: 21,
+    lineHeight: 27,
+    textAlign: 'center',
+    marginTop: 6,
+  },
   textComposerButtonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1321,6 +1328,32 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(255,255,255,0.12)',
     backgroundColor: 'rgba(6,16,28,0.88)',
+  },
+  auraActionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    alignItems: 'stretch',
+    gap: 12,
+  },
+  auraActionButton: {
+    flexBasis: '30%',
+    flexGrow: 1,
+    minWidth: 104,
+    maxWidth: '31%',
+  },
+  auraVibesBtn: {
+    backgroundColor: '#0A4D7A',
+    borderColor: '#0A4D7A',
+  },
+  auraCollectionBtn: {
+    backgroundColor: '#7B4A00',
+    borderColor: '#7B4A00',
+  },
+  auraNotificationsBtn: {
+    backgroundColor: '#5B2788',
+    borderColor: '#5B2788',
   },
   bridgeSettingButton: {
     padding: 12,
@@ -2028,12 +2061,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   makeWavesPrimaryAction: {
-    backgroundColor: 'rgba(0,194,255,0.16)',
-    borderColor: 'rgba(0,194,255,0.9)',
+    backgroundColor: '#0A4D7A',
+    borderColor: '#0A4D7A',
   },
   makeWavesSecondaryAction: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#0F6B63',
+    borderColor: '#0F6B63',
+  },
+  makeWavesPremiumAction: {
+    backgroundColor: '#5B2788',
+    borderColor: '#5B2788',
   },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
@@ -14581,16 +14618,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 Here Now! {hereNowFeedAlert.name}
               </Text>
             </Pressable>
-            <Pressable
-              style={[styles.driftAlertButton, { width: 86, marginLeft: 8 }]}
-              onPress={() =>
-                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
-              }
-            >
-              <Text style={[styles.driftAlertText, { fontSize: 14 }]}>
-                Reply
-              </Text>
-            </Pressable>
           </View>
         </Animated.View>
       )}
@@ -14653,25 +14680,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
               <Text style={styles.driftAlertText}>
                 Open Sea Vibe - {vibeAlert.hostName}
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.driftAlertButton, { width: 80, marginLeft: 8 }]}
-              onPress={() => {
-                setVibeAlert(null);
-                lastDriftHostRef.current = null;
-                if (driftAlertTimerRef.current) {
-                  clearTimeout(driftAlertTimerRef.current);
-                  driftAlertTimerRef.current = null;
-                }
-                openMessageThread(vibeAlert.hostUid, vibeAlert.hostName);
-              }}
-              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-              pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
-              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-            >
-              <Text style={[styles.driftAlertText, { fontSize: 14 }]}>
-                Reply
               </Text>
             </Pressable>
           </View>
@@ -15034,58 +15042,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.umbrellaIcon}>⛱️</Text>
                   <Text style={styles.topLabel}>MY AURA</Text>
                 </Pressable>
-                {/* SET SAIL */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeOut}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open adventure space"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.boatIcon}>⛵</Text>
-                  <Text style={styles.topLabel}>ADVENTURE SPACE</Text>
-                </Pressable>
-                {/* SCHOOL MODE */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeMode}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open study hub"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.schoolIcon}>🏫</Text>
-                  <Text style={styles.topLabel}>STUDY HUB</Text>
-                </Pressable>
-                {/* AI ASSISTANT */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleAiAssistant}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open AI assistant"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.aiIcon}>🤖</Text>
-                  <Text style={styles.topLabel}>AI ASSISTANT</Text>
-                </Pressable>
-                {/* NOTICE BOARD */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={handleVibeBoard}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open bulletin board"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.noticeIcon}>📋</Text>
-                  <Text style={styles.topLabel}>BULLETIN BOARD</Text>
-                </Pressable>
                 {/* THE BRIDGE */}
                 <Pressable
                   style={styles.topItem}
@@ -15101,22 +15057,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 >
                   <Text style={styles.gearIcon}>⚙️</Text>
                   <Text style={styles.topLabel}>COMMAND CENTRE</Text>
-                </Pressable>
-                {/* PLACE HOLDER */}
-                <Pressable
-                  style={styles.topItem}
-                  onPress={() => {
-                    showTopBar();
-                    Alert.alert('Tools', 'Additional tools will appear here.');
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="Open tools"
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                >
-                  <Text style={styles.placeholderIcon}>🔮</Text>
-                  <Text style={styles.topLabel}>TOOLS</Text>
                 </Pressable>
               </ScrollView>
             )}
@@ -15526,9 +15466,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 </Pressable>
               </View>
               {/* My Vibes, Notifications, and My Collection */}
-              <View style={{ flexDirection: 'row', justifyContent: 'flex-start', paddingHorizontal: 20, alignItems: 'center', gap: 16 }}>
+              <View style={styles.auraActionRow}>
                 <Pressable
-                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
+                  style={[styles.logbookAction, styles.auraActionButton, styles.auraVibesBtn]}
                   onPress={() => {
                     setShowProfile(false);
                     setShowMyWaves(true);
@@ -15554,7 +15494,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                 </Pressable>
                 <Pressable
-                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
+                  style={[styles.logbookAction, styles.auraActionButton, styles.auraCollectionBtn]}
                   onPress={() => {
                     setShowProfile(false);
                     setShowTreasure(true);
@@ -15580,7 +15520,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                 </Pressable>
                 <Pressable
-                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
+                  style={[styles.logbookAction, styles.auraActionButton, styles.auraNotificationsBtn]}
                   onPress={() => {
                     setShowProfile(false);
                     setShowNotifications(true);
@@ -17280,7 +17220,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton
-                  buttonStyle={styles.logbookAction}
+                  buttonStyle={[styles.logbookAction, styles.makeWavesPremiumAction]}
                   buttonTextStyle={styles.logbookActionText}
                   hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {
@@ -17451,6 +17391,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   numberOfLines={4}
                   textAlignVertical="top"
                 />
+                {[
+                  '😄 😁 😊 🥳 🎉 🎊 ✨ 🌈 🎂 🧁 🍰 🍭 🍬',
+                  '🏃 💃 🕺 🤸 🛼 🎈 🎁 🌟 😎 😇 🤗 🥰 😍',
+                  '🧁 🍓 🍒 🍉 🍍 🍹 ☀️ 🌻 🌺 🪅 🎶 🎵 🫶 💙',
+                  '😺 🐬 🦋 🐣 🌸 🎠 🎪 🧃 🍕 🍟 🍩 😋 🙌 🎯',
+                  '🎉 🥂 🍾 🎆 🎇 🌠 😍 🫂 ❤️ 💙 🩵 💖 🤩 🚀',
+                ].map(line => (
+                  <Text key={line} style={styles.createPostEmojiLine}>
+                    {line}
+                  </Text>
+                ))}
 
                 {isUnifiedPosting && (
                   <View
