@@ -22609,6 +22609,20 @@ const LiveStreamModal = ({
   const applyLiveQualityProfile = useCallback((_engine: any) => {
     // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
   }, []);
+  const ensureDriftJoinPermissions = useCallback(async () => {
+    if (Platform.OS !== 'android') return true;
+    try {
+      const ok = await ensureCamMicPermissionsAndroid();
+      if (!ok) {
+        setStartError('Camera/Mic permission required');
+      }
+      return ok;
+    } catch (error) {
+      console.warn('Drift join permission check failed', error);
+      setStartError('Camera/Mic permission required');
+      return false;
+    }
+  }, []);
   useEffect(() => {
     if (!showUserPanel) setUserPanelMode('none');
   }, [showUserPanel]);
@@ -22672,6 +22686,8 @@ const LiveStreamModal = ({
       }
 
       if (!resolvedChannel) return;
+      const hasPermissions = await ensureDriftJoinPermissions();
+      if (!hasPermissions || cancelled) return;
       const mappedUid = mapRtcUidFromUserId(auth?.()?.currentUser?.uid);
       setLiveDocId(resolvedLiveDocId);
       setLiveTitle(resolvedTitle);
@@ -22689,6 +22705,7 @@ const LiveStreamModal = ({
     };
   }, [
     defaultChannel,
+    ensureDriftJoinPermissions,
     inviteJoinPreset,
     isLiveStarted,
     staticToken,
@@ -22705,11 +22722,13 @@ const LiveStreamModal = ({
       .collection(`live/${liveDocId}/invite_status`)
       .doc(me.uid)
       .onSnapshot(
-        snap => {
+        async snap => {
           const data = snap?.data?.() || {};
           const status = String(data.status || '').toLowerCase();
           if (!status) return;
           if (status === 'accepted') {
+            const hasPermissions = await ensureDriftJoinPermissions();
+            if (!hasPermissions) return;
             const suggestedChannel = String(
               data.channel ||
                 data.liveChannel ||
@@ -22751,6 +22770,7 @@ const LiveStreamModal = ({
     awaitingCaptainApproval,
     channelInput,
     defaultChannel,
+    ensureDriftJoinPermissions,
     inviteJoinPreset?.channel,
     isLiveStarted,
     liveDocId,

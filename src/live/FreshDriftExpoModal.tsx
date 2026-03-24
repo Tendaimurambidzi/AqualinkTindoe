@@ -176,6 +176,7 @@ const FreshDriftExpoModal = ({
   const defaultChannel = String(cfg?.AGORA_CHANNEL_NAME || 'SplashlineDrift').trim();
   const engineRef = useRef<any>(null);
   const joinedChannelRef = useRef<string | null>(null);
+  const joiningChannelRef = useRef<string | null>(null);
   const roomRef = useRef<{ id: string; channel: string; title: string; hostUid: string | null } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState<string>('Ready');
@@ -257,6 +258,7 @@ const FreshDriftExpoModal = ({
     seenCommentIdsRef.current = new Set();
     seenReactionIdsRef.current = new Set();
     joinedChannelRef.current = null;
+    joiningChannelRef.current = null;
   }, []);
 
   const cleanupEngine = useCallback(async () => {
@@ -283,6 +285,9 @@ const FreshDriftExpoModal = ({
     const engine = engineRef.current;
     if (engine) {
       try {
+        engine.stopPreview?.();
+      } catch {}
+      try {
         if (
           typeof engine.leaveChannelEx === 'function' &&
           roomRef.current?.channel &&
@@ -303,6 +308,7 @@ const FreshDriftExpoModal = ({
       engineRef.current = null;
     }
     joinedChannelRef.current = null;
+    joiningChannelRef.current = null;
   }, [meUid, myRtcUid, roomHostUid]);
 
   useEffect(() => {
@@ -372,6 +378,10 @@ const FreshDriftExpoModal = ({
       setRoomHostUid(String(data.hostUid || ''));
       setRoomHostName(String(data.hostName || inviteJoinPreset?.fromName || 'Host'));
       setMyRtcUid(uid);
+      setJoined(false);
+      setRemoteUids([]);
+      joinedChannelRef.current = null;
+      joiningChannelRef.current = null;
       setStatusText('Joining room');
     },
     [defaultChannel, inviteJoinPreset?.fromName, inviteJoinPreset?.title, meUid],
@@ -408,6 +418,10 @@ const FreshDriftExpoModal = ({
       setRoomHostUid(meUid);
       setRoomHostName(meName);
       setMyRtcUid(uid);
+      setJoined(false);
+      setRemoteUids([]);
+      joinedChannelRef.current = null;
+      joiningChannelRef.current = null;
       setStatusText(engineReady ? 'Joining room' : 'Camera warming up');
     } catch (error: any) {
       Alert.alert('Could not start Drift Expo', String(error?.message || 'Try again.'));
@@ -512,10 +526,6 @@ const FreshDriftExpoModal = ({
           Agora.ClientRoleType?.ClientRoleBroadcaster ??
           Agora.ClientRole?.Broadcaster ??
           1;
-        const cameraSource =
-          Agora.VideoSourceType?.VideoSourceCameraPrimary ??
-          Agora.VideoSourceType?.VideoSourceCamera ??
-          0;
         if (isV4) {
           const engine = Agora.createAgoraRtcEngine();
           engine.initialize?.({
@@ -526,11 +536,6 @@ const FreshDriftExpoModal = ({
           engine.enableAudio?.();
           engine.enableLocalVideo?.(true);
           engine.setClientRole?.(broadcasterRole);
-          engine.setupLocalVideo?.({
-            uid: 0,
-            sourceType: cameraSource,
-          });
-          engine.startPreview?.();
           engine.registerEventHandler?.({
             onJoinChannelSuccess: (connection: any) => {
               if (!cancelled) {
@@ -624,13 +629,19 @@ const FreshDriftExpoModal = ({
   useEffect(() => {
     if (!visible || !roomId || !roomChannel || !myRtcUid || !engineRef.current) return;
     if (joinedChannelRef.current === roomChannel) return;
+    if (joiningChannelRef.current === roomChannel) return;
     let cancelled = false;
     (async () => {
       try {
         const engine = engineRef.current;
         const isHost = roomHostUid === meUid;
         const isV4 = typeof Agora?.createAgoraRtcEngine === 'function';
+        joiningChannelRef.current = roomChannel;
         if (isV4) {
+          const cameraSource =
+            Agora.VideoSourceType?.VideoSourceCameraPrimary ??
+            Agora.VideoSourceType?.VideoSourceCamera ??
+            0;
           const connection = {
             channelId: roomChannel,
             localUid: myRtcUid,
@@ -645,6 +656,13 @@ const FreshDriftExpoModal = ({
             autoSubscribeAudio: true,
             autoSubscribeVideo: true,
           };
+          engine.enableLocalVideo?.(true);
+          engine.setupLocalVideo?.({
+            uid: myRtcUid,
+            channelId: roomChannel,
+            sourceType: cameraSource,
+          });
+          engine.startPreview?.();
           if (typeof engine.joinChannelEx === 'function') {
             await engine.joinChannelEx(null, connection, mediaOptions);
           } else {
@@ -652,12 +670,18 @@ const FreshDriftExpoModal = ({
             await engine.joinChannel(null, roomChannel, myRtcUid, mediaOptions);
           }
         } else {
+          engine.enableLocalVideo?.(true);
+          engine.startPreview?.();
           await engine.joinChannel(null, roomChannel, myRtcUid);
         }
         if (cancelled) return;
         joinedChannelRef.current = roomChannel;
+        joiningChannelRef.current = null;
+        setJoined(true);
+        setStatusText('Live');
         await upsertParticipant(roomId, roomChannel, myRtcUid, isHost);
       } catch (error: any) {
+        joiningChannelRef.current = null;
         if (!cancelled) {
           setStatusText(String(error?.message || 'Could not join channel'));
         }
@@ -665,6 +689,9 @@ const FreshDriftExpoModal = ({
     })();
     return () => {
       cancelled = true;
+      if (joiningChannelRef.current === roomChannel) {
+        joiningChannelRef.current = null;
+      }
     };
   }, [Agora, meUid, myRtcUid, roomChannel, roomHostUid, roomId, upsertParticipant, visible]);
 
@@ -937,7 +964,7 @@ const FreshDriftExpoModal = ({
           style,
           connection,
           canvas: {
-            uid: 0,
+            uid: myRtcUid || 0,
             channelId: roomChannel || undefined,
             sourceType:
               VideoSourceType?.VideoSourceCameraPrimary ??
@@ -953,7 +980,7 @@ const FreshDriftExpoModal = ({
           style,
           connection,
           canvas: {
-            uid: 0,
+            uid: myRtcUid || 0,
             channelId: roomChannel || undefined,
             sourceType:
               VideoSourceType?.VideoSourceCameraPrimary ??
