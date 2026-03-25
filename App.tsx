@@ -797,17 +797,34 @@ function useAppVersionInfo() {
   return info;
 }
                     
-const waveOptionMenu = [
-  {
-    label: 'Save to device',
-    description: 'Download a copy of this splashline for offline viewing.',
-  },
-  { label: 'Share', description: 'Share the splashline link with friends.' },
-  {
-    label: 'Report',
-    description: 'Let us know if this splashline violates guidelines.',
-  },
-];
+const getWaveOptionMenu = (isOwnPost: boolean) =>
+  isOwnPost
+    ? [
+        {
+          label: 'Edit post',
+          description: 'Open this post in the right composer and update it.',
+        },
+        {
+          label: 'Delete post',
+          description: 'Remove this post from your feed immediately.',
+        },
+        {
+          label: 'Copy link',
+          description: 'Copy your post link for quick sharing.',
+        },
+        { label: 'Share', description: 'Share the splashline link with friends.' },
+      ]
+    : [
+        {
+          label: 'Save to device',
+          description: 'Download a copy of this splashline for offline viewing.',
+        },
+        { label: 'Share', description: 'Share the splashline link with friends.' },
+        {
+          label: 'Report',
+          description: 'Let us know if this splashline violates guidelines.',
+        },
+      ];
                     
 // ======================== STYLES ========================
 const NAVY_BLUE = 'black';
@@ -1242,6 +1259,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 6,
   },
+  makeVibesEmojiLine: {
+    color: '#F7FBFF',
+    fontSize: 18,
+    lineHeight: 26,
+    textAlign: 'center',
+    marginTop: 8,
+    letterSpacing: 0.4,
+  },
   textComposerButtonRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1331,17 +1356,15 @@ const styles = StyleSheet.create({
   },
   auraActionRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     alignItems: 'stretch',
     gap: 12,
   },
   auraActionButton: {
-    flexBasis: '30%',
-    flexGrow: 1,
-    minWidth: 104,
-    maxWidth: '31%',
+    flex: 1,
+    minWidth: 0,
   },
   auraVibesBtn: {
     backgroundColor: '#0A4D7A',
@@ -4739,6 +4762,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
     setIsTextStorySending(true);
     try {
+      if (editingWave) {
+        await firestore().collection('waves').doc(editingWave.id).set(
+          {
+            text: trimmed,
+            captionText: trimmed,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        const applyTextUpdate = (wave: Vibe) =>
+          wave.id === editingWave.id
+            ? {
+                ...wave,
+                captionText: trimmed,
+              }
+            : wave;
+        setVibesFeed(prev => prev.map(applyTextUpdate));
+        setPublicFeed(prev => prev.map(applyTextUpdate));
+        setPostFeed(prev => prev.map(applyTextUpdate));
+        setShowTextComposer(false);
+        setTextComposerText('');
+        setEditingWave(null);
+        notifySuccess('Post updated.');
+        return;
+      }
       const result = await uploadPost({ 
         caption: trimmed,
         authorName: profileName || accountCreationHandle || auth?.()?.currentUser?.displayName || null
@@ -4778,6 +4826,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     notifySuccess,
     profileName,
     textComposerText,
+    editingWave,
   ]);
                     
   const handleAISuggest = useCallback(async () => {
@@ -6052,6 +6101,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     name?: string;
   } | null>(null);
   const [capturedMedia, setCapturedMedia] = useState<Asset | null>(null);
+  const [capturedMediaGrid, setCapturedMediaGrid] = useState<Asset[]>([]);
   const [capturedMediaEdits, setCapturedMediaEdits] =
     useState<MediaEdits>(defaultMediaEdits);
   const [waveCaption, setWaveCaption] = useState<string>('');
@@ -6074,6 +6124,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [unifiedPostProgress, setUnifiedPostProgress] = useState<number | null>(null);
   const [unifiedPostError, setUnifiedPostError] = useState<string | null>(null);
   const unifiedPostMedia = unifiedPostMediaItems[0] || null;
+  const [editingWave, setEditingWave] = useState<Vibe | null>(null);
+  const [deletingWaveIds, setDeletingWaveIds] = useState<Record<string, boolean>>({});
                     
   // DM subscription - adds messages to pings automatically
   useEffect(() => {
@@ -7287,10 +7339,104 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const handleWaveOptionSelect = useCallback(
     async (label: string) => {
       if (!waveOptionsTarget) return;
-      const entry = waveOptionMenu.find(item => item.label === label);
+      const isOwnPost = !!waveOptionsTarget.ownerUid && waveOptionsTarget.ownerUid === myUid;
+      const entry = getWaveOptionMenu(isOwnPost).find(item => item.label === label);
       setWaveOptionsTarget(null);
+      const waveLink = `aqualink://wave/${encodeURIComponent(waveOptionsTarget.id)}`;
+
+      const copyWaveLink = async () => {
+        try {
+          let clipboardModule: any = null;
+          try {
+            clipboardModule = require('@react-native-clipboard/clipboard');
+          } catch {}
+          const setString =
+            clipboardModule?.default?.setString || clipboardModule?.setString;
+          if (typeof setString === 'function') {
+            setString(waveLink);
+            notifySuccess('Link copied.');
+            return;
+          }
+        } catch {}
+        Alert.alert('Copy link', waveLink);
+      };
+
+      const openEditPostComposer = () => {
+        const target = waveOptionsTarget;
+        const targetMediaItems = Array.isArray(target.mediaItems)
+          ? target.mediaItems.filter(item => !!item?.uri)
+          : [];
+        const singleVisualMedia =
+          targetMediaItems.length === 1
+            ? targetMediaItems[0]
+            : target.media?.uri
+            ? target.media
+            : null;
+        const hasMedia =
+          !!target.media?.uri ||
+          targetMediaItems.length > 0 ||
+          !!target.audio?.uri ||
+          String(target.postType || '').toLowerCase() === 'audio' ||
+          String(target.postType || '').toLowerCase() === 'document';
+        setEditingWave(target);
+        if (!hasMedia) {
+          setShowMakeWaves(false);
+          setCapturedMedia(null);
+          setAttachedAudio(null);
+          setUnifiedPostText(target.captionText || '');
+          setUnifiedPostMediaItems([]);
+          setUnifiedPostAudio(null);
+          setUnifiedPostError(null);
+          setUnifiedPostProgress(null);
+          setNeedsUnifiedCaptionReview(false);
+          setShowUnifiedPostModal(true);
+          return;
+        }
+        if (
+          singleVisualMedia &&
+          (isImageAsset(singleVisualMedia) || isVideoAsset(singleVisualMedia)) &&
+          !target.audio?.uri
+        ) {
+          setShowMakeWaves(false);
+          setUnifiedPostMediaItems([]);
+          setUnifiedPostAudio(null);
+          setCapturedMedia(singleVisualMedia);
+          setCapturedMediaEdits(target.mediaEdits || defaultMediaEdits);
+          setWaveCaption(target.captionText || '');
+          setTextComposerText(target.captionText || '');
+          return;
+        }
+        setUnifiedPostText(target.captionText || '');
+        setUnifiedPostMediaItems(
+          targetMediaItems.length > 0
+            ? targetMediaItems
+            : target.media?.uri
+            ? [target.media]
+            : [],
+        );
+        setUnifiedPostAudio(target.audio || null);
+        setUnifiedPostError(null);
+        setUnifiedPostProgress(null);
+        setNeedsUnifiedCaptionReview(false);
+        setShowUnifiedPostModal(true);
+      };
                     
       // Handle other wave options
+      if (label === 'Edit post') {
+        openEditPostComposer();
+        return;
+      }
+
+      if (label === 'Delete post') {
+        deleteWave(waveOptionsTarget.id);
+        return;
+      }
+
+      if (label === 'Copy link') {
+        await copyWaveLink();
+        return;
+      }
+
       if (label === 'Save to device') {
         if (isSavingWave) return;
         setIsSavingWave(true);
@@ -7443,10 +7589,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return;
       }
                     
-      if (label === 'Share' && currentWave) {
+      if (label === 'Share') {
         try {
           await Share.share({
-            message: `Check out this Vibe vibe: ${currentWave.id}`,
+            title: 'Cast SplashLine',
+            message: `Cast SplashLine - Check out ${waveOptionsTarget.captionText ? `"${waveOptionsTarget.captionText}"` : 'this splashline'}\n\n${waveLink}`,
           });
         } catch {}
         return;
@@ -7467,7 +7614,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       Alert.alert(entry?.label || label, entry?.description || 'Coming soon!');
     },
-    [waveOptionsTarget, functionsClient, isSavingWave, currentWave],
+    [waveOptionsTarget, myUid, notifySuccess, isSavingWave],
   );
   const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
@@ -7537,6 +7684,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
                     
   const deleteWave = (waveId: string) => {
+    setDeletingWaveIds(prev => ({ ...prev, [waveId]: true }));
     // Only update UI after confirmed deletion
     const doDelete = async (retryCount = 0) => {
       let firestoreMod: any = null;
@@ -7553,6 +7701,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
       const user = authMod?.().currentUser;
       if (!firestoreMod || !user) {
+        setDeletingWaveIds(prev => {
+          const next = { ...prev };
+          delete next[waveId];
+          return next;
+        });
         Alert.alert('Delete failed', 'Not signed in or backend unavailable.');
         return;
       }
@@ -7590,6 +7743,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         if (!waveDoc.exists) {
           setVibesFeed(prev => prev.filter(w => w.id !== waveId));
           setPublicFeed(prev => prev.filter(w => w.id !== waveId));
+          setPostFeed(prev => prev.filter(w => w.id !== waveId));
+          setDeletingWaveIds(prev => {
+            const next = { ...prev };
+            delete next[waveId];
+            return next;
+          });
           Alert.alert('Wave deleted', 'Wave already removed.');
           return;
         }
@@ -7611,6 +7770,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         console.log('[DELETE DEBUG] waveOwner === user.uid:', waveOwner === user.uid);
         
         if (waveOwner && waveOwner !== user.uid) {
+          setDeletingWaveIds(prev => {
+            const next = { ...prev };
+            delete next[waveId];
+            return next;
+          });
           Alert.alert('Delete failed', 'You can only delete your own wave.');
           return;
         }
@@ -7628,12 +7792,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         await firestoreMod().collection('waves').doc(waveId).delete();
         setVibesFeed(prev => prev.filter(w => w.id !== waveId));
         setPublicFeed(prev => prev.filter(w => w.id !== waveId));
+        setPostFeed(prev => prev.filter(w => w.id !== waveId));
+        setDeletingWaveIds(prev => {
+          const next = { ...prev };
+          delete next[waveId];
+          return next;
+        });
         Alert.alert('Wave deleted', 'Your wave has been removed from My Shore.');
       } catch (e) {
         console.warn('Delete wave failed', e);
         if (retryCount < 2) {
           setTimeout(() => doDelete(retryCount + 1), 1000 * (retryCount + 1));
         } else {
+          setDeletingWaveIds(prev => {
+            const next = { ...prev };
+            delete next[waveId];
+            return next;
+          });
           Alert.alert('Delete failed', 'Could not delete wave right now. Please try again later.');
         }
       }
@@ -7733,6 +7908,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!showMakeWaves && !capturedMedia) {
       setShowTextComposer(false);
       setTextComposerText('');
+      setEditingWave(null);
     }
   }, [showMakeWaves, capturedMedia]);
                     
@@ -11855,7 +12031,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     });
   }, []);
   const removeUnifiedPostMediaAt = useCallback((index: number) => {
-    setUnifiedPostMediaItems(prev => prev.filter((_, idx) => idx !== index));
+    setUnifiedPostMediaItems(prev => {
+      const next = prev.filter((_, idx) => idx !== index);
+      return next;
+    });
   }, []);
 
   const handleUnifiedCameraCapture = () => {
@@ -12162,6 +12341,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setUnifiedPostProgress(null);
     setIsUnifiedPosting(true);
     try {
+      if (editingWave) {
+        await firestore().collection('waves').doc(editingWave.id).set(
+          {
+            text: trimmedText,
+            captionText: trimmedText,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        const applyEdit = (wave: Vibe) =>
+          wave.id === editingWave.id
+            ? {
+                ...wave,
+                captionText: trimmedText,
+              }
+            : wave;
+        setVibesFeed(prev => prev.map(applyEdit));
+        setPublicFeed(prev => prev.map(applyEdit));
+        setPostFeed(prev => prev.map(applyEdit));
+        closeUnifiedPostModal();
+        notifySuccess('Post updated.');
+        return;
+      }
+
       const trackUploadTask = async (
         task: any,
         startPercent: number = 0,
@@ -12194,95 +12397,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       if (unifiedPostMediaItems.length > 0) {
         if (unifiedPostMediaItems.length > 1) {
-          if (unifiedPostAudio?.uri) {
-            Alert.alert('Unsupported Mix', 'Audio overlay is only supported for a single image or video post.');
-            return;
-          }
-          let storageMod: any = null;
-          let firestoreMod: any = null;
-          let authMod: any = null;
-          try {
-            storageMod = require('@react-native-firebase/storage').default;
-          } catch {}
-          try {
-            firestoreMod = require('@react-native-firebase/firestore').default;
-          } catch {}
-          try {
-            authMod = require('@react-native-firebase/auth').default;
-          } catch {}
-          if (!storageMod || !firestoreMod || !authMod) {
-            Alert.alert('Backend not ready', 'Multi-media posting is unavailable right now.');
-            return;
-          }
-          const a = authMod();
-          const uid = a.currentUser?.uid;
-          if (!uid) {
-            Alert.alert('Sign in required', 'Please sign in to post media.');
-            return;
-          }
-          const uploadedItems = [];
-          for (let i = 0; i < unifiedPostMediaItems.length; i += 1) {
-            const start = (i / unifiedPostMediaItems.length) * 100;
-            const end = ((i + 1) / unifiedPostMediaItems.length) * 100;
-            const uploaded = await uploadUnifiedPostAsset(
-              unifiedPostMediaItems[i],
-              storageMod,
-              trackUploadTask,
-              start,
-              end,
-              uid,
-            );
-            uploadedItems.push(uploaded);
-          }
-          const primaryItem = uploadedItems[0];
-          const hasAnyVideo = uploadedItems.some(item => item.postType === 'video');
-          const docRef = await firestoreMod()
-            .collection('waves')
-            .add({
-              authorId: uid,
-              ownerUid: uid,
-              authorName:
-                profileName ||
-                accountCreationHandle ||
-                a.currentUser?.displayName ||
-                null,
-              mediaItems: uploadedItems,
-              mediaPath: primaryItem?.mediaPath || null,
-              mediaType: primaryItem?.type || null,
-              postType: hasAnyVideo ? 'gallery' : 'image',
-              text: trimmedText,
-              captionText: trimmedText,
-              createdAt: firestoreMod.FieldValue?.serverTimestamp
-                ? firestoreMod.FieldValue.serverTimestamp()
-                : new Date(),
-              audioUrl: null,
-              muxStatus: 'ready',
-              playbackUrl: null,
-              mediaUrl: primaryItem?.uri || null,
-              isPublic: true,
-            });
-
-          handlePostPublished({
-            id: docRef?.id || new Date().toISOString(),
-            media: primaryItem ? ({ uri: primaryItem.uri, type: primaryItem.type, fileName: primaryItem.fileName } as any) : null,
-            mediaItems: uploadedItems.map(item => ({ uri: item.uri, type: item.type, fileName: item.fileName } as any)),
-            audio: null,
-            captionText: trimmedText,
-            playbackUrl: null,
-            muxStatus: 'ready',
-            authorName:
-              profileName ||
-              accountCreationHandle ||
-              a.currentUser?.displayName ||
-              null,
-            ownerUid: uid,
-            postType: hasAnyVideo ? 'gallery' : 'image',
-          });
-
+          const preparedItems = await Promise.all(
+            unifiedPostMediaItems.map(item => normalizeAssetForEditor(item)),
+          );
+          setCapturedMedia(preparedItems[0] || null);
+          setCapturedMediaGrid(preparedItems);
+          setCapturedMediaEdits(defaultMediaEdits);
+          setWaveCaption(trimmedText);
+          setTextComposerText(trimmedText);
+          setAttachedAudio(null);
+          setShowUnifiedPostModal(false);
+          setShowMakeWaves(false);
           setUnifiedPostText('');
           setUnifiedPostMediaItems([]);
           setUnifiedPostAudio(null);
-          setShowUnifiedPostModal(false);
           return;
         }
 
@@ -12637,6 +12765,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setUnifiedPostAudio(null);
     setUnifiedPostError(null);
     setUnifiedPostProgress(null);
+    setEditingWave(null);
   };
 
   useEffect(() => {
@@ -13983,6 +14112,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // (removed Movable Textbox state)
   const onEditorToolPress = async (toolLabel: string) => {
+    if (capturedMediaGrid.length > 1 && toolLabel !== 'Ocean Melodies') {
+      Alert.alert(toolLabel, 'This tool is not available for grid preview yet.');
+      return;
+    }
     if (toolLabel === 'Ocean Melodies') {
       setShowAudioModal(true);
       return;
@@ -14038,7 +14171,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [capturedMedia?.uri, attachedAudio?.uri]);
 
   const handleAIMediaCaptionSuggest = useCallback(async () => {
-    if (!capturedMedia?.uri) {
+    const aiTarget =
+      capturedMediaGrid.find(item => isVideoAsset(item) || isImageAsset(item)) ||
+      capturedMedia;
+    if (!aiTarget?.uri) {
       Alert.alert('No media', 'Select media first to generate a caption.');
       return;
     }
@@ -14062,17 +14198,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         .join(', ');
 
       const suggestion = await generateMediaCaptionSuggestion({
-        mediaKind: isVideoAsset(capturedMedia) ? 'video' : 'image',
-        mimeType: capturedMedia.type || undefined,
-        fileName: capturedMedia.fileName || undefined,
-        width: capturedMedia.width || undefined,
-        height: capturedMedia.height || undefined,
-        durationSec: isVideoAsset(capturedMedia) ? playbackDuration || undefined : undefined,
+        mediaKind: isVideoAsset(aiTarget) ? 'video' : 'image',
+        mimeType: aiTarget.type || undefined,
+        fileName: aiTarget.fileName || undefined,
+        width: aiTarget.width || undefined,
+        height: aiTarget.height || undefined,
+        durationSec: isVideoAsset(aiTarget) ? playbackDuration || undefined : undefined,
         hasAudioOverlay: !!attachedAudio?.uri,
         editsSummary,
         sceneHints: inferMediaSceneHints([
-          capturedMedia.fileName,
-          capturedMedia.uri,
+          ...capturedMediaGrid.flatMap(item => [item.fileName, item.uri]),
+          aiTarget.fileName,
+          aiTarget.uri,
           waveCaption,
           textComposerText,
         ]),
@@ -14089,6 +14226,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [
     attachedAudio?.uri,
     capturedMedia,
+    capturedMediaGrid,
     capturedMediaEdits.brightness,
     capturedMediaEdits.contrast,
     capturedMediaEdits.filter,
@@ -14102,7 +14240,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   ]);
                     
   const onPostWave = async () => {
-    if (!capturedMedia) {
+    if (!capturedMedia && capturedMediaGrid.length === 0) {
       Alert.alert('No media', 'Please select or capture media first.');
       return;
     }
@@ -14117,6 +14255,129 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let firestoreMod: any = null;
     let authMod: any = null;
     try {
+      if (capturedMediaGrid.length > 1) {
+        try {
+          storageMod = require('@react-native-firebase/storage').default;
+        } catch {}
+        try {
+          firestoreMod = require('@react-native-firebase/firestore').default;
+        } catch {}
+        try {
+          authMod = require('@react-native-firebase/auth').default;
+        } catch {}
+        if (!storageMod || !firestoreMod || !authMod) {
+          Alert.alert('Backend not ready', 'Multi-media posting is unavailable right now.');
+          return;
+        }
+        const a = authMod();
+        const uid = a.currentUser?.uid;
+        if (!uid) {
+          Alert.alert('Sign in required', 'Please sign in to upload your wave.');
+          return;
+        }
+        const uploadedItems = [];
+        for (let i = 0; i < capturedMediaGrid.length; i += 1) {
+          const uploaded = await uploadUnifiedPostAsset(
+            capturedMediaGrid[i],
+            storageMod,
+            async (task: any) => {
+              if (!task) return;
+              await task;
+            },
+            (i / capturedMediaGrid.length) * 100,
+            ((i + 1) / capturedMediaGrid.length) * 100,
+            uid,
+          );
+          uploadedItems.push(uploaded);
+        }
+        const primaryItem = uploadedItems[0];
+        const hasAnyVideo = uploadedItems.some(item => item.postType === 'video');
+        const docRef = await firestoreMod()
+          .collection('waves')
+          .add({
+            authorId: uid,
+            ownerUid: uid,
+            authorName:
+              profileName ||
+              accountCreationHandle ||
+              a.currentUser?.displayName ||
+              null,
+            mediaItems: uploadedItems,
+            mediaPath: primaryItem?.mediaPath || null,
+            mediaType: primaryItem?.type || null,
+            postType: hasAnyVideo ? 'gallery' : 'image',
+            text: finalCaption,
+            captionText: finalCaption,
+            createdAt: firestoreMod.FieldValue?.serverTimestamp
+              ? firestoreMod.FieldValue.serverTimestamp()
+              : new Date(),
+            audioUrl: null,
+            muxStatus: 'ready',
+            playbackUrl: null,
+            mediaUrl: primaryItem?.uri || null,
+            isPublic: true,
+          });
+        serverDocId = docRef?.id || null;
+        handlePostPublished({
+          id: serverDocId || new Date().toISOString(),
+          media: primaryItem
+            ? ({ uri: primaryItem.uri, type: primaryItem.type, fileName: primaryItem.fileName } as any)
+            : null,
+          mediaItems: uploadedItems.map(item => ({ uri: item.uri, type: item.type, fileName: item.fileName } as any)),
+          audio: null,
+          captionText: finalCaption,
+          playbackUrl: null,
+          muxStatus: 'ready',
+          authorName:
+            profileName ||
+            accountCreationHandle ||
+            a.currentUser?.displayName ||
+            null,
+          ownerUid: uid,
+          postType: hasAnyVideo ? 'gallery' : 'image',
+        });
+        notifySuccess('You dropped a vibe!');
+        setCapturedMedia(null);
+        setCapturedMediaGrid([]);
+        setCapturedMediaEdits(defaultMediaEdits);
+        setWaveCaption('');
+        setTextComposerText('');
+        setAttachedAudio(null);
+        return;
+      }
+
+      if (editingWave) {
+        await firestore().collection('waves').doc(editingWave.id).set(
+          {
+            text: finalCaption,
+            captionText: finalCaption,
+            mediaEdits: capturedMediaEdits,
+            editorState: capturedMediaEdits,
+            edits: capturedMediaEdits,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        const applyEdit = (wave: Vibe) =>
+          wave.id === editingWave.id
+            ? {
+                ...wave,
+                captionText: finalCaption,
+                mediaEdits: capturedMediaEdits,
+              }
+            : wave;
+        setVibesFeed(prev => prev.map(applyEdit));
+        setPublicFeed(prev => prev.map(applyEdit));
+        setPostFeed(prev => prev.map(applyEdit));
+        notifySuccess('Post updated.');
+        setCapturedMedia(null);
+        setCapturedMediaEdits(defaultMediaEdits);
+        setWaveCaption('');
+        setTextComposerText('');
+        setAttachedAudio(null);
+        setEditingWave(null);
+        return;
+      }
       try {
         storageMod = require('@react-native-firebase/storage').default;
       } catch {}
@@ -14462,6 +14723,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setHasSplashed(false); // Reset splash state for new wave
       setSplashes(0); // Reset splash count for new wave
       setCapturedMedia(null); // Clear captured media
+      setCapturedMediaGrid([]);
       setCapturedMediaEdits(defaultMediaEdits);
       setWaveCaption(''); // Clear caption
       setTextComposerText('');
@@ -14512,6 +14774,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
       // Reset editor state
       setCapturedMedia(null);
+      setCapturedMediaGrid([]);
       setCapturedMediaEdits(defaultMediaEdits);
       setAttachedAudio(null);
       setReleasing(false);
@@ -15465,7 +15728,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={{ color: '#001529', fontWeight: 'bold', fontSize: 16 }}>Save Profile</Text>
                 </Pressable>
               </View>
-              {/* My Vibes, Notifications, and My Collection */}
+              {/* My Vibes and My Treasure */}
               <View style={styles.auraActionRow}>
                 <Pressable
                   style={[styles.logbookAction, styles.auraActionButton, styles.auraVibesBtn]}
@@ -15490,7 +15753,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#1E90FF',
                       }}
                     />
-                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Vibes</Text>
+                    <Text
+                      style={[styles.logbookActionText, { fontSize: 14, flexShrink: 1 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      My Vibes
+                    </Text>
                   </View>
                 </Pressable>
                 <Pressable
@@ -15516,74 +15785,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#FFD700',
                       }}
                     />
-                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Collection</Text>
-                  </View>
-                </Pressable>
-                <Pressable
-                  style={[styles.logbookAction, styles.auraActionButton, styles.auraNotificationsBtn]}
-                  onPress={() => {
-                    setShowProfile(false);
-                    setShowNotifications(true);
-                  }}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  activeOpacity={0.7}
-                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                >
-                  <View
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
-                  >
-                    <View
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: 6,
-                        backgroundColor: unreadAlertsCount > 0 ? '#FF4444' : '#00C2FF',
-                      }}
-                    />
-                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>Notifications</Text>
-                    {unreadAlertsCount > 0 && (
-                      <View style={{
-                        backgroundColor: '#FF4444',
-                        borderRadius: 10,
-                        minWidth: 20,
-                        height: 20,
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        paddingHorizontal: 6,
-                      }}>
-                        <Text style={{ color: 'white', fontSize: 12, fontWeight: 'bold' }}>
-                          {unreadAlertsCount > 99 ? '99+' : unreadAlertsCount}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                </Pressable>
-                <Pressable
-                  style={[styles.logbookAction, { flex: 0, minWidth: 120 }]}
-                  onPress={() => {
-                    setShowProfile(false);
-                    setShowTreasure(true);
-                  }}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  activeOpacity={0.7}
-                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                >
-                  <View
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
-                  >
-                    <View
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: 6,
-                        backgroundColor: '#FFD700',
-                      }}
-                    />
-                    <Text style={[styles.logbookActionText, { fontSize: 16 }]}>My Treasure</Text>
+                    <Text
+                      style={[styles.logbookActionText, { fontSize: 14, flexShrink: 1 }]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
+                    >
+                      My Treasure
+                    </Text>
                   </View>
                 </Pressable>
               </View>
@@ -17096,6 +17304,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         >
                           <Pressable
                             onPress={() => deleteWave(w.id)}
+                            disabled={!!deletingWaveIds[w.id]}
                             hitSlop={{top: 30, bottom: 30, left: 30, right: 30}}
                             style={[
                               styles.closeBtn,
@@ -17104,12 +17313,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 paddingVertical: 4,
                                 paddingHorizontal: 8,
                                 marginTop: 4,
+                                opacity: deletingWaveIds[w.id] ? 0.65 : 1,
                               },
                             ]}
                           >
-                            <Text style={[styles.closeText, { fontSize: 12 }]}>
-                              Delete
-                            </Text>
+                            {deletingWaveIds[w.id] ? (
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                <ActivityIndicator color="white" size="small" />
+                                <Text style={[styles.closeText, { fontSize: 12 }]}>
+                                  Deleting...
+                                </Text>
+                              </View>
+                            ) : (
+                              <Text style={[styles.closeText, { fontSize: 12 }]}>
+                                Delete
+                              </Text>
+                            )}
                           </Pressable>
                           <Pressable
                             onPress={() => onShareWave(w)}
@@ -17251,6 +17470,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     );
                   }}
                 />
+                {[
+                  '🥳 🎉 ✨ 😄 😍 🌈 🎂 🍰 🧁 🍭 🎈 🎊',
+                  '🚀 🦋 🌸 🐬 😎 🙌 💙 🫶 🤗 🌟 🎶 🍓',
+                  '🍉 🍍 🍒 🍹 ☀️ 🌺 🪅 💖 😁 🕺 💃 🎯',
+                  '😺 🐣 🌻 🎠 🎪 🍕 🍟 🍩 😋 🥂 🎆 🌠',
+                  '❤️ 🩵 💎 🔥 🎁 🧃 🍬 🧸 🌼 🌊 🥰 🤩',
+                  '🏃 🤸 🛼 🏖️ 🏆 🎵 🍇 🍊 🌷 ☕ 🎇 😇',
+                  '🎉 ✨ 💙 🫂 🌈 🎂 🍰 🎈 🌟 🥳 🍓 🐬',
+                  '🧁 🍭 😄 😍 🚀 🌺 🎶 🙌 💖 ☀️ 🍍 🤗',
+                ].map(line => (
+                  <Text key={line} style={styles.makeVibesEmojiLine}>
+                    {line}
+                  </Text>
+                ))}
               </ScrollView>
             </View>
           </View>
@@ -17287,7 +17520,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>Create Post</Text>
+              <Text style={styles.logbookTitle}>{editingWave ? 'Edit Post' : 'Create Post'}</Text>
               <ScrollView
                 style={styles.createPostScrollArea}
                 contentContainerStyle={{ paddingBottom: 8 }}
@@ -17328,20 +17561,22 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               </Text>
                             </View>
                           )}
-                          <Pressable
-                            onPress={() => removeUnifiedPostMediaAt(mediaIndex)}
-                            style={{
-                              position: 'absolute',
-                              top: 6,
-                              right: 6,
-                              backgroundColor: 'rgba(255,68,68,0.92)',
-                              borderRadius: 12,
-                              paddingHorizontal: 6,
-                              paddingVertical: 3,
-                            }}
-                          >
-                            <Text style={{ color: 'white', fontSize: 10, fontWeight: '700' }}>Remove</Text>
-                          </Pressable>
+                          {!editingWave ? (
+                            <Pressable
+                              onPress={() => removeUnifiedPostMediaAt(mediaIndex)}
+                              style={{
+                                position: 'absolute',
+                                top: 6,
+                                right: 6,
+                                backgroundColor: 'rgba(255,68,68,0.92)',
+                                borderRadius: 12,
+                                paddingHorizontal: 6,
+                                paddingVertical: 3,
+                              }}
+                            >
+                              <Text style={{ color: 'white', fontSize: 10, fontWeight: '700' }}>Remove</Text>
+                            </Pressable>
+                          ) : null}
                         </View>
                       ))}
                     </View>
@@ -17365,19 +17600,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
                       {unifiedPostAudio.name || unifiedPostAudio.uri}
                     </Text>
-                    <Pressable
-                      onPress={() => setUnifiedPostAudio(null)}
-                      style={{
-                        marginTop: 8,
-                        alignSelf: 'flex-start',
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        backgroundColor: '#ff4444',
-                        borderRadius: 4,
-                      }}
-                    >
-                      <Text style={{ color: 'white', fontSize: 12 }}>Remove Audio</Text>
-                    </Pressable>
+                    {!editingWave ? (
+                      <Pressable
+                        onPress={() => setUnifiedPostAudio(null)}
+                        style={{
+                          marginTop: 8,
+                          alignSelf: 'flex-start',
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          backgroundColor: '#ff4444',
+                          borderRadius: 4,
+                        }}
+                      >
+                        <Text style={{ color: 'white', fontSize: 12 }}>Remove Audio</Text>
+                      </Pressable>
+                    ) : null}
                   </View>
                 )}
 
@@ -17479,54 +17716,58 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
               <View style={[styles.createPostFooter, { paddingBottom: Math.max(insets.bottom, 10) }]}>
                 <View style={styles.createPostActionRow}>
-                <Pressable
-                  onPress={handleUnifiedCameraCapture}
-                  disabled={isUnifiedPosting}
-                  style={[
-                    styles.createPostActionBtn,
-                    styles.createPostCameraBtn,
-                    isUnifiedPosting && { opacity: 0.5 },
-                  ]}
-                >
-                  <Text style={styles.createPostActionIcon}>📷</Text>
-                  <Text style={styles.createPostActionLabel}>Camera</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleUnifiedGallerySelect}
-                  disabled={isUnifiedPosting}
-                  style={[
-                    styles.createPostActionBtn,
-                    styles.createPostGalleryBtn,
-                    isUnifiedPosting && { opacity: 0.5 },
-                  ]}
-                >
-                  <Text style={styles.createPostActionIcon}>🖼️</Text>
-                  <Text style={styles.createPostActionLabel}>Gallery</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleSDCardPicker}
-                  disabled={isUnifiedPosting}
-                  style={[
-                    styles.createPostActionBtn,
-                    styles.createPostSdBtn,
-                    isUnifiedPosting && { opacity: 0.5 },
-                  ]}
-                >
-                  <Text style={styles.createPostActionIcon}>💾</Text>
-                  <Text style={styles.createPostActionLabel}>SD Card</Text>
-                </Pressable>
-                <Pressable
-                  onPress={handleUnifiedAudioSelect}
-                  disabled={isUnifiedPosting}
-                  style={[
-                    styles.createPostActionBtn,
-                    styles.createPostMusicBtn,
-                    isUnifiedPosting && { opacity: 0.5 },
-                  ]}
-                >
-                  <Text style={styles.createPostActionIcon}>🎵</Text>
-                  <Text style={styles.createPostActionLabel}>Music</Text>
-                </Pressable>
+                {!editingWave ? (
+                  <>
+                    <Pressable
+                      onPress={handleUnifiedCameraCapture}
+                      disabled={isUnifiedPosting}
+                      style={[
+                        styles.createPostActionBtn,
+                        styles.createPostCameraBtn,
+                        isUnifiedPosting && { opacity: 0.5 },
+                      ]}
+                    >
+                      <Text style={styles.createPostActionIcon}>📷</Text>
+                      <Text style={styles.createPostActionLabel}>Camera</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={handleUnifiedGallerySelect}
+                      disabled={isUnifiedPosting}
+                      style={[
+                        styles.createPostActionBtn,
+                        styles.createPostGalleryBtn,
+                        isUnifiedPosting && { opacity: 0.5 },
+                      ]}
+                    >
+                      <Text style={styles.createPostActionIcon}>🖼️</Text>
+                      <Text style={styles.createPostActionLabel}>Gallery</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={handleSDCardPicker}
+                      disabled={isUnifiedPosting}
+                      style={[
+                        styles.createPostActionBtn,
+                        styles.createPostSdBtn,
+                        isUnifiedPosting && { opacity: 0.5 },
+                      ]}
+                    >
+                      <Text style={styles.createPostActionIcon}>💾</Text>
+                      <Text style={styles.createPostActionLabel}>SD Card</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={handleUnifiedAudioSelect}
+                      disabled={isUnifiedPosting}
+                      style={[
+                        styles.createPostActionBtn,
+                        styles.createPostMusicBtn,
+                        isUnifiedPosting && { opacity: 0.5 },
+                      ]}
+                    >
+                      <Text style={styles.createPostActionIcon}>🎵</Text>
+                      <Text style={styles.createPostActionLabel}>Music</Text>
+                    </Pressable>
+                  </>
+                ) : null}
                 </View>
                 <View style={styles.textComposerButtonRow}>
                 <Pressable
@@ -17548,7 +17789,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     <ActivityIndicator color="white" />
                   ) : (
                     <Text style={styles.textComposerButtonText}>
-                      {unifiedPostMediaItems.length > 1
+                      {editingWave
+                        ? 'Save Edit'
+                        : unifiedPostMediaItems.length > 1
                         ? 'Post Grid'
                         : unifiedPostMedia
                         ? 'Post with Media'
@@ -20346,11 +20589,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
       {/* MEDIA EDITOR */}
       <Modal
-        visible={!!capturedMedia}
+        visible={!!capturedMedia || capturedMediaGrid.length > 1}
         transparent
         animationType="slide"
         onRequestClose={() => {
           setCapturedMedia(null);
+          setCapturedMediaGrid([]);
           setCapturedMediaEdits(defaultMediaEdits);
         }}
       >
@@ -20377,8 +20621,57 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               setStageSize({ w: width, h: height });
             }}
           >
-            {capturedMedia?.uri &&
-              (RNVideo && isVideoAsset(capturedMedia) ? (
+            {capturedMediaGrid.length > 1 ? (
+              <View
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  padding: 10,
+                  gap: 8,
+                  justifyContent: 'center',
+                  alignContent: 'center',
+                }}
+              >
+                {capturedMediaGrid.map((item, index) => (
+                  <View
+                    key={`${item.uri || 'grid'}_${index}`}
+                    style={{
+                      width: '47%',
+                      aspectRatio: 1,
+                      borderRadius: 12,
+                      overflow: 'hidden',
+                      backgroundColor: '#08111d',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.08)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {isImageAsset(item) ? (
+                      <Image
+                        source={{ uri: item.uri }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={{ alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+                        <Text style={{ fontSize: 28 }}>
+                          {isVideoAsset(item) ? '🎥' : isAudioAsset(item) ? '🎵' : '📄'}
+                        </Text>
+                        <Text
+                          style={{ color: 'white', fontSize: 11, marginTop: 8, textAlign: 'center' }}
+                          numberOfLines={2}
+                        >
+                          {item.fileName || `Item ${index + 1}`}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </View>
+            ) : capturedMedia?.uri ? (
+              RNVideo && isVideoAsset(capturedMedia) ? (
                 <>
                   <View style={{ flex: 1 }}>
                     <RNVideo
@@ -20491,9 +20784,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     />
                   )}
                 </>
-              ))}
+              )
+            ) : null}
 
-            {capturedMedia?.uri ? (
+            {capturedMedia?.uri && capturedMediaGrid.length <= 1 ? (
               <>
                 {capturedMediaEdits.filter !== 'none' && (
                   <View
@@ -20593,9 +20887,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 }}
               >
                 <Pressable
-                  onPress={() => setAttachedAudio(null)}
-                  style={{ paddingHorizontal: 8, paddingVertical: 4 }}
-                >
+                onPress={() => setAttachedAudio(null)}
+                style={{ paddingHorizontal: 8, paddingVertical: 4 }}
+              >
                   <Text style={{ color: '#00C2FF', fontWeight: '700' }}>
                     Remove audio
                   </Text>
@@ -20693,6 +20987,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 ]}
                 onPress={() => {
                   setCapturedMedia(null);
+                  setCapturedMediaGrid([]);
                   setCapturedMediaEdits(defaultMediaEdits);
                 }}
                 disabled={releasing}
@@ -20838,9 +21133,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           onPress={() => setWaveOptionsTarget(null)}
         >
           <View style={styles.waveOptionsMenu}>
-            {/* Other existing options - filter out Connect Vibe and Gem from the static list */}
-            {waveOptionMenu
-              .filter(option => option.label !== 'Connect Vibe' && option.label !== 'Gem')
+            {/* Owner menu is customized; other-user menu stays as before */}
+            {getWaveOptionMenu(
+              !!waveOptionsTarget?.ownerUid && waveOptionsTarget.ownerUid === myUid,
+            )
               .map(option => (
                 <Pressable
                   key={option.label}
