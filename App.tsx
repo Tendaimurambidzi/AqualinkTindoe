@@ -93,8 +93,11 @@ import VideoWithTapControls from './src/components/VideoWithTapControls';
 import { appTokens } from './src/theme/tokens';
 import SectionHeaderRow from './src/components/SectionHeaderRow';
 import MediaEditor, {
+  CaptionStylePreset,
   defaultMediaEdits,
+  getTextOverlayPresetStyle,
   MediaEdits,
+  TextOverlay,
 } from './src/components/MediaEditor';
                     
 
@@ -153,6 +156,43 @@ const isImageAsset = (asset: Asset | null | undefined): boolean => {
   if (t.includes('image')) return true;
   const uri = String(asset.uri || '').toLowerCase();
   return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
+};
+
+const CAPTION_STYLE_SEQUENCE: Array<CaptionStylePreset | 'off'> = [
+  'plain',
+  'white_on_black',
+  'black_on_white',
+  'soft_box',
+  'highlight',
+  'blue_glow',
+  'off',
+];
+
+const buildTextOverlay = (
+  text: string,
+  preset: CaptionStylePreset,
+  previous?: TextOverlay | null,
+): TextOverlay => {
+  const presetStyle = getTextOverlayPresetStyle({ stylePreset: preset } as TextOverlay);
+  return {
+    text,
+    x: previous?.x ?? 0.5,
+    y: previous?.y ?? 0.72,
+    fontSize: previous?.fontSize ?? 28,
+    color: presetStyle.textColor,
+    fontWeight: preset === 'plain' ? '700' : '800',
+    rotation: previous?.rotation ?? 0,
+    textAlign: 'center',
+    stylePreset: preset,
+    backgroundColor:
+      presetStyle.backgroundColor === 'transparent'
+        ? null
+        : presetStyle.backgroundColor,
+    paddingHorizontal: presetStyle.paddingHorizontal,
+    paddingVertical: presetStyle.paddingVertical,
+    borderRadius: presetStyle.borderRadius,
+    shadow: presetStyle.shadow,
+  };
 };
 
 const inferMediaSceneHints = (
@@ -3067,6 +3107,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const editorTools = useMemo(
     () => [
       { icon: '\u2702\ufe0f', label: 'Cut the Wake' },
+      { icon: '\ud83d\udcac', label: 'Caption Style' },
       { icon: '\ud83c\udfa8', label: 'Ocean Tones' },
       { icon: '\ud83c\udfb5', label: 'Ocean Melodies' },
       { icon: '\ud83d\udee0\ufe0f', label: 'Media Editor' },
@@ -6106,6 +6147,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     useState<MediaEdits>(defaultMediaEdits);
   const [waveCaption, setWaveCaption] = useState<string>('');
   const [isAIMediaCaptioning, setIsAIMediaCaptioning] = useState<boolean>(false);
+  const [showTextOverlayModal, setShowTextOverlayModal] =
+    useState<boolean>(false);
+  const [textOverlayDraft, setTextOverlayDraft] = useState<string>('');
   const [showAudioModal, setShowAudioModal] = useState<boolean>(false);
   const [showMediaEditorModal, setShowMediaEditorModal] =
     useState<boolean>(false);
@@ -6193,6 +6237,74 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   
   const [releasing, setReleasing] = useState(false);
+  const previewTextOverlay = useMemo(() => {
+    const overlay = capturedMediaEdits.textOverlay;
+    const overlayText = overlay?.text?.trim();
+    if (!overlay || !overlayText) return null;
+    const presetStyle = getTextOverlayPresetStyle(overlay);
+    const containerWidth = stageSize.w
+      ? Math.max(160, Math.min(stageSize.w * 0.82, stageSize.w - 24))
+      : SCREEN_WIDTH * 0.82;
+    const left = stageSize.w
+      ? Math.max(
+          12,
+          Math.min(stageSize.w - containerWidth - 12, overlay.x * stageSize.w - containerWidth / 2),
+        )
+      : 12;
+    const top = stageSize.h
+      ? Math.max(
+          12,
+          Math.min(stageSize.h - 64, overlay.y * stageSize.h - (overlay.fontSize || 28)),
+        )
+      : 24;
+    const shouldShadow =
+      typeof overlay.shadow === 'boolean' ? overlay.shadow : !!presetStyle.shadow;
+    return {
+      text: overlayText,
+      containerStyle: {
+        position: 'absolute' as const,
+        left,
+        top,
+        width: containerWidth,
+        alignItems: 'center' as const,
+        paddingHorizontal: overlay.paddingHorizontal ?? presetStyle.paddingHorizontal,
+        paddingVertical: overlay.paddingVertical ?? presetStyle.paddingVertical,
+        borderRadius: overlay.borderRadius ?? presetStyle.borderRadius,
+        backgroundColor:
+          overlay.backgroundColor ?? presetStyle.backgroundColor ?? 'transparent',
+      },
+      textStyle: {
+        color: overlay.color || presetStyle.textColor,
+        fontSize: overlay.fontSize || 28,
+        fontWeight: overlay.fontWeight || '800',
+        textAlign: overlay.textAlign || ('center' as const),
+        lineHeight: Math.round((overlay.fontSize || 28) * 1.18),
+        textShadowColor: shouldShadow ? 'rgba(0,0,0,0.45)' : 'transparent',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: shouldShadow ? 10 : 0,
+      },
+    };
+  }, [capturedMediaEdits.textOverlay, stageSize.h, stageSize.w]);
+  const openTextOverlayEditor = useCallback(() => {
+    setTextOverlayDraft(capturedMediaEdits.textOverlay?.text || '');
+    setShowTextOverlayModal(true);
+  }, [capturedMediaEdits.textOverlay?.text]);
+  const applyTextOverlayDraft = useCallback(() => {
+    const trimmed = textOverlayDraft.trim();
+    if (!trimmed) {
+      setCapturedMediaEdits(prev => ({ ...prev, textOverlay: null }));
+      setShowTextOverlayModal(false);
+      return;
+    }
+    setCapturedMediaEdits(prev => {
+      const preset = prev.textOverlay?.stylePreset || 'plain';
+      return {
+        ...prev,
+        textOverlay: buildTextOverlay(trimmed, preset, prev.textOverlay || undefined),
+      };
+    });
+    setShowTextOverlayModal(false);
+  }, [textOverlayDraft]);
   const splashAnimation = useRef(new Animated.Value(1)).current;
   // Animation for the two small drops when transitioning to Splashed
   const smallDropsOpacity = useRef(
@@ -6477,7 +6589,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .limit(100)
       .onSnapshot(
         snap => {
-          inboxLoaded = true;
           const docs = (snap?.docs || []).filter((doc: any) => {
             const data = doc.data() || {};
             const status = String(data.status || 'pending').toLowerCase();
@@ -14112,8 +14223,47 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   // (removed Movable Textbox state)
   const onEditorToolPress = async (toolLabel: string) => {
-    if (capturedMediaGrid.length > 1 && toolLabel !== 'Ocean Melodies') {
+    if (
+      capturedMediaGrid.length > 1 &&
+      toolLabel !== 'Ocean Melodies' &&
+      toolLabel !== 'Caption Style'
+    ) {
       Alert.alert(toolLabel, 'This tool is not available for grid preview yet.');
+      return;
+    }
+    if (toolLabel === 'Caption Style') {
+      const overlayText = capturedMediaEdits.textOverlay?.text?.trim() || '';
+      if (!overlayText) {
+        openTextOverlayEditor();
+        return;
+      }
+      const currentKey = capturedMediaEdits.textOverlay?.text
+        ? capturedMediaEdits.textOverlay.stylePreset || 'plain'
+        : 'off';
+      const currentIndex = CAPTION_STYLE_SEQUENCE.indexOf(currentKey);
+      const nextKey =
+        CAPTION_STYLE_SEQUENCE[
+          (currentIndex + 1 + CAPTION_STYLE_SEQUENCE.length) %
+            CAPTION_STYLE_SEQUENCE.length
+        ];
+      if (nextKey === 'off') {
+        setCapturedMediaEdits(prev => ({ ...prev, textOverlay: null }));
+        notifySuccess('Caption overlay off');
+        return;
+      }
+      setCapturedMediaEdits(prev => ({
+        ...prev,
+        textOverlay: buildTextOverlay(
+          overlayText,
+          nextKey,
+          prev.textOverlay || undefined,
+        ),
+      }));
+      notifySuccess(
+        nextKey === 'plain'
+          ? 'Caption overlay on'
+          : `Caption style: ${String(nextKey).replace(/_/g, ' ')}`,
+      );
       return;
     }
     if (toolLabel === 'Ocean Melodies') {
@@ -14316,6 +14466,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             playbackUrl: null,
             mediaUrl: primaryItem?.uri || null,
             isPublic: true,
+            mediaEdits: capturedMediaEdits,
+            editorState: capturedMediaEdits,
+            edits: capturedMediaEdits,
           });
         serverDocId = docRef?.id || null;
         handlePostPublished({
@@ -14335,6 +14488,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             null,
           ownerUid: uid,
           postType: hasAnyVideo ? 'gallery' : 'image',
+          mediaEdits: capturedMediaEdits,
         });
         notifySuccess('You dropped a vibe!');
         setCapturedMedia(null);
@@ -14342,6 +14496,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setCapturedMediaEdits(defaultMediaEdits);
         setWaveCaption('');
         setTextComposerText('');
+        setShowTextOverlayModal(false);
+        setTextOverlayDraft('');
         setAttachedAudio(null);
         return;
       }
@@ -14374,6 +14530,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setCapturedMediaEdits(defaultMediaEdits);
         setWaveCaption('');
         setTextComposerText('');
+        setShowTextOverlayModal(false);
+        setTextOverlayDraft('');
         setAttachedAudio(null);
         setEditingWave(null);
         return;
@@ -14727,6 +14885,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCapturedMediaEdits(defaultMediaEdits);
       setWaveCaption(''); // Clear caption
       setTextComposerText('');
+      setShowTextOverlayModal(false);
+      setTextOverlayDraft('');
       setAttachedAudio(null); // Clear attached audio
       setVibesFeed(prev => {
         // Add new wave to the beginning of the array
@@ -14776,6 +14936,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCapturedMedia(null);
       setCapturedMediaGrid([]);
       setCapturedMediaEdits(defaultMediaEdits);
+      setShowTextOverlayModal(false);
+      setTextOverlayDraft('');
       setAttachedAudio(null);
       setReleasing(false);
       setWaveKey(Date.now()); // Force the feed to update and play the new wave
@@ -20596,6 +20758,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setCapturedMedia(null);
           setCapturedMediaGrid([]);
           setCapturedMediaEdits(defaultMediaEdits);
+          setShowTextOverlayModal(false);
+          setTextOverlayDraft('');
         }}
       >
         <View
@@ -20870,6 +21034,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 ))}
               </>
             ) : null}
+            {previewTextOverlay ? (
+              <Pressable
+                onPress={openTextOverlayEditor}
+                style={previewTextOverlay.containerStyle}
+              >
+                <Text style={previewTextOverlay.textStyle}>
+                  {previewTextOverlay.text}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
                     
           {/* Attached Audio Summary */}
@@ -20989,6 +21163,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   setCapturedMedia(null);
                   setCapturedMediaGrid([]);
                   setCapturedMediaEdits(defaultMediaEdits);
+                  setShowTextOverlayModal(false);
+                  setTextOverlayDraft('');
                 }}
                 disabled={releasing}
               >
@@ -21027,6 +21203,130 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }}
         onClose={() => setShowMediaEditorModal(false)}
       />
+      <Modal
+        visible={showTextOverlayModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowTextOverlayModal(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            justifyContent: 'flex-start',
+            paddingTop: SCREEN_HEIGHT * 0.12,
+            paddingHorizontal: 18,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#07111C',
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: 'rgba(0, 194, 255, 0.22)',
+              padding: 16,
+            }}
+          >
+            <Text
+              style={{
+                color: '#EAF6FF',
+                fontSize: 18,
+                fontWeight: '800',
+                marginBottom: 8,
+              }}
+            >
+              Text On Media
+            </Text>
+            <Text
+              style={{
+                color: '#9FB3C8',
+                fontSize: 13,
+                lineHeight: 18,
+                marginBottom: 12,
+              }}
+            >
+              This text appears on the image or video itself. It is separate from
+              the story description.
+            </Text>
+            <TextInput
+              placeholder="Type text for the media"
+              placeholderTextColor="#7F94A8"
+              value={textOverlayDraft}
+              onChangeText={setTextOverlayDraft}
+              autoFocus
+              multiline
+              style={{
+                backgroundColor: '#0B1220',
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: '#355070',
+                minHeight: 96,
+                color: '#E6F1FF',
+                paddingHorizontal: 12,
+                paddingVertical: 12,
+                textAlignVertical: 'top',
+                fontSize: 16,
+              }}
+            />
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: 10,
+                marginTop: 14,
+              }}
+            >
+              <Pressable
+                style={[
+                  styles.closeBtn,
+                  {
+                    flex: 1,
+                    marginVertical: 0,
+                    backgroundColor: '#182433',
+                    borderColor: '#182433',
+                  },
+                ]}
+                onPress={() => setShowTextOverlayModal(false)}
+              >
+                <Text style={[styles.closeText, { color: '#FFFFFF' }]}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.closeBtn,
+                  {
+                    flex: 1,
+                    marginVertical: 0,
+                    backgroundColor: '#7A1F1F',
+                    borderColor: '#7A1F1F',
+                  },
+                ]}
+                onPress={() => {
+                  setTextOverlayDraft('');
+                  setCapturedMediaEdits(prev => ({ ...prev, textOverlay: null }));
+                  setShowTextOverlayModal(false);
+                }}
+              >
+                <Text style={[styles.closeText, { color: '#FFFFFF' }]}>Clear</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  editorStyles.doneButton,
+                  {
+                    flex: 1.4,
+                    margin: 0,
+                    backgroundColor: '#0077C8',
+                    borderColor: '#0077C8',
+                  },
+                ]}
+                onPress={applyTextOverlayDraft}
+              >
+                <Text style={[editorStyles.doneButtonText, { color: '#FFFFFF' }]}>
+                  Apply
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
                     
       {/* OCEAN MELODIES: Attach Audio */}
       <Modal

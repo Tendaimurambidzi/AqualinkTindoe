@@ -27,6 +27,31 @@ export type StickerPoint = {
   rotation?: number;
 };
 
+export type CaptionStylePreset =
+  | 'plain'
+  | 'white_on_black'
+  | 'black_on_white'
+  | 'soft_box'
+  | 'highlight'
+  | 'blue_glow';
+
+export type TextOverlay = {
+  text: string;
+  x: number;
+  y: number;
+  fontSize: number;
+  color: string;
+  fontWeight?: '400' | '500' | '600' | '700' | '800';
+  rotation?: number;
+  textAlign?: 'left' | 'center' | 'right';
+  stylePreset?: CaptionStylePreset;
+  backgroundColor?: string | null;
+  paddingHorizontal?: number;
+  paddingVertical?: number;
+  borderRadius?: number;
+  shadow?: boolean;
+};
+
 export type MediaEdits = {
   filter: 'none' | 'warm' | 'cool' | 'mono' | 'vivid';
   brightness: number;
@@ -38,6 +63,7 @@ export type MediaEdits = {
   volumeBoost?: number;
   voiceMode?: 'normal' | 'chipmunk' | 'deep' | 'robot';
   stickers: StickerPoint[];
+  textOverlay?: TextOverlay | null;
 };
 
 export const defaultMediaEdits: MediaEdits = {
@@ -51,6 +77,70 @@ export const defaultMediaEdits: MediaEdits = {
   volumeBoost: 1,
   voiceMode: 'normal',
   stickers: [],
+  textOverlay: null,
+};
+
+export const getTextOverlayPresetStyle = (
+  overlay: TextOverlay | null | undefined,
+) => {
+  const preset = overlay?.stylePreset || 'plain';
+  switch (preset) {
+    case 'white_on_black':
+      return {
+        textColor: '#FFFFFF',
+        backgroundColor: '#0B0F17',
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderRadius: 14,
+        shadow: false,
+      };
+    case 'black_on_white':
+      return {
+        textColor: '#0B0F17',
+        backgroundColor: '#FFFFFF',
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderRadius: 14,
+        shadow: false,
+      };
+    case 'soft_box':
+      return {
+        textColor: '#F8FBFF',
+        backgroundColor: 'rgba(9, 16, 28, 0.62)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 16,
+        shadow: true,
+      };
+    case 'highlight':
+      return {
+        textColor: '#201200',
+        backgroundColor: '#FFD36C',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 16,
+        shadow: false,
+      };
+    case 'blue_glow':
+      return {
+        textColor: '#F4FBFF',
+        backgroundColor: 'rgba(0, 119, 200, 0.42)',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 18,
+        shadow: true,
+      };
+    case 'plain':
+    default:
+      return {
+        textColor: '#FFFFFF',
+        backgroundColor: 'transparent',
+        paddingHorizontal: 4,
+        paddingVertical: 2,
+        borderRadius: 0,
+        shadow: true,
+      };
+  }
 };
 
 type CropMedia = {

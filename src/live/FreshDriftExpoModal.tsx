@@ -415,7 +415,18 @@ const FreshDriftExpoModal = ({
       setRoomHostName(String(data.hostName || inviteJoinPreset?.fromName || 'Host'));
       setMyRtcUid(uid);
       setJoined(false);
-      setRemoteUids([]);
+      try {
+        const participantSnap = await firestore()
+          .collection(`live/${liveId}/participants`)
+          .limit(12)
+          .get();
+        const seededRemoteUids = (participantSnap?.docs || [])
+          .map((doc: any) => Number((doc.data() || {}).rtcUid || 0))
+          .filter((rtcUid: number) => Number.isFinite(rtcUid) && rtcUid > 0 && rtcUid !== uid);
+        setRemoteUids(Array.from(new Set(seededRemoteUids)));
+      } catch {
+        setRemoteUids([]);
+      }
       joinedChannelRef.current = null;
       joiningChannelRef.current = null;
       setStatusText('Joining room');
@@ -456,6 +467,7 @@ const FreshDriftExpoModal = ({
       setMyRtcUid(uid);
       setJoined(false);
       setRemoteUids([]);
+      upsertParticipant(ref.id, channel, uid, true).catch(() => {});
       joinedChannelRef.current = null;
       joiningChannelRef.current = null;
       setStatusText(engineReady ? 'Joining room' : 'Camera warming up');
@@ -464,7 +476,7 @@ const FreshDriftExpoModal = ({
     } finally {
       setIsBusy(false);
     }
-  }, [appId, engineReady, meName, mePhoto, meUid]);
+  }, [appId, engineReady, meName, mePhoto, meUid, upsertParticipant]);
 
   useEffect(() => {
     if (!visible) return;
