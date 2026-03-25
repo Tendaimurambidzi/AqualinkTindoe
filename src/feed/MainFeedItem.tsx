@@ -96,7 +96,25 @@ type Vibe = {
       paddingVertical?: number;
       borderRadius?: number;
       shadow?: boolean;
+      animationPreset?: 'none' | 'pulse' | 'float';
     } | null;
+    mediaTextOverlays?: Array<{
+      text: string;
+      x: number;
+      y: number;
+      fontSize: number;
+      color: string;
+      fontWeight?: '400' | '500' | '600' | '700' | '800';
+      rotation?: number;
+      textAlign?: 'left' | 'center' | 'right';
+      stylePreset?: CaptionStylePreset;
+      backgroundColor?: string | null;
+      paddingHorizontal?: number;
+      paddingVertical?: number;
+      borderRadius?: number;
+      shadow?: boolean;
+      animationPreset?: 'none' | 'pulse' | 'float';
+    } | null>;
   } | null;
   captionText: string;
   playbackUrl?: string | null;
@@ -514,68 +532,71 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         }
       : null;
   const textOverlay = mediaEdits?.textOverlay;
-  const textOverlayPresetStyle = getTextOverlayPresetStyle(textOverlay || undefined);
-  const shouldRenderTextOverlay = !!textOverlay?.text?.trim();
-  const feedOverlayWidth = SCREEN_WIDTH * 0.8;
-  const feedOverlayHeightHint = hasMultiMediaGrid
-    ? SCREEN_WIDTH
-    : Math.min(SCREEN_HEIGHT * 0.68, SCREEN_WIDTH * 1.28);
-  const feedTextOverlayContainerStyle = shouldRenderTextOverlay
-    ? {
-        position: 'absolute' as const,
-        left: Math.max(
-          16,
-          Math.min(
-            SCREEN_WIDTH - feedOverlayWidth - 16,
-            Number(textOverlay?.x ?? 0.5) * SCREEN_WIDTH - feedOverlayWidth / 2,
+  const buildFeedTextOverlay = useCallback(
+    (
+      overlay: NonNullable<NonNullable<Vibe['mediaEdits']>['textOverlay']>,
+      frameWidth: number,
+      frameHeight: number,
+    ) => {
+      const presetStyle = getTextOverlayPresetStyle(overlay || undefined);
+      const overlayWidth = Math.max(96, Math.min(frameWidth * 0.8, frameWidth - 16));
+      return {
+        containerStyle: {
+          position: 'absolute' as const,
+          left: Math.max(
+            8,
+            Math.min(
+              frameWidth - overlayWidth - 8,
+              Number(overlay?.x ?? 0.5) * frameWidth - overlayWidth / 2,
+            ),
           ),
-        ),
-        top: Math.max(
-          16,
-          Math.min(
-            feedOverlayHeightHint - 72,
-            Number(textOverlay?.y ?? 0.72) * feedOverlayHeightHint - (textOverlay?.fontSize || 28),
+          top: Math.max(
+            8,
+            Math.min(
+              frameHeight - 56,
+              Number(overlay?.y ?? 0.72) * frameHeight - (overlay?.fontSize || 28),
+            ),
           ),
-        ),
-        width: feedOverlayWidth,
-        alignItems: 'center' as const,
-        paddingHorizontal:
-          textOverlay?.paddingHorizontal ?? textOverlayPresetStyle.paddingHorizontal,
-        paddingVertical:
-          textOverlay?.paddingVertical ?? textOverlayPresetStyle.paddingVertical,
-        borderRadius: textOverlay?.borderRadius ?? textOverlayPresetStyle.borderRadius,
-        backgroundColor:
-          textOverlay?.backgroundColor ??
-          textOverlayPresetStyle.backgroundColor ??
-          'transparent',
-      }
-    : null;
-  const feedTextOverlayTextStyle = shouldRenderTextOverlay
-    ? {
-        color: textOverlay?.color || textOverlayPresetStyle.textColor,
-        fontSize: textOverlay?.fontSize || 28,
-        fontWeight: textOverlay?.fontWeight || '800',
-        textAlign: textOverlay?.textAlign || ('center' as const),
-        lineHeight: Math.round((textOverlay?.fontSize || 28) * 1.18),
-        textShadowColor:
-          typeof textOverlay?.shadow === 'boolean'
-            ? textOverlay.shadow
+          width: overlayWidth,
+          alignItems: 'center' as const,
+          paddingHorizontal:
+            overlay?.paddingHorizontal ?? presetStyle.paddingHorizontal,
+          paddingVertical:
+            overlay?.paddingVertical ?? presetStyle.paddingVertical,
+          borderRadius: overlay?.borderRadius ?? presetStyle.borderRadius,
+          backgroundColor:
+            overlay?.backgroundColor ??
+            presetStyle.backgroundColor ??
+            'transparent',
+        },
+        textStyle: {
+          color: overlay?.color || presetStyle.textColor,
+          fontSize: overlay?.fontSize || 28,
+          fontWeight: overlay?.fontWeight || '800',
+          textAlign: overlay?.textAlign || ('center' as const),
+          lineHeight: Math.round((overlay?.fontSize || 28) * 1.18),
+          textShadowColor:
+            typeof overlay?.shadow === 'boolean'
+              ? overlay.shadow
+                ? 'rgba(0,0,0,0.45)'
+                : 'transparent'
+              : presetStyle.shadow
               ? 'rgba(0,0,0,0.45)'
-              : 'transparent'
-            : textOverlayPresetStyle.shadow
-            ? 'rgba(0,0,0,0.45)'
-            : 'transparent',
-        textShadowOffset: { width: 0, height: 2 },
-        textShadowRadius:
-          typeof textOverlay?.shadow === 'boolean'
-            ? textOverlay.shadow
+              : 'transparent',
+          textShadowOffset: { width: 0, height: 2 },
+          textShadowRadius:
+            typeof overlay?.shadow === 'boolean'
+              ? overlay.shadow
+                ? 10
+                : 0
+              : presetStyle.shadow
               ? 10
-              : 0
-            : textOverlayPresetStyle.shadow
-            ? 10
-            : 0,
-      }
-    : null;
+              : 0,
+        },
+      };
+    },
+    [],
+  );
 
   const handleProfilePress = useCallback(() => {
     if (item.ownerUid === myUid) {
@@ -1169,6 +1190,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       const isVideo = isVideoAsset(mediaItem);
                       const isLastVisibleTile =
                         mediaIndex === previewGridItems.length - 1 && hiddenGridCount > 0;
+                      const tileOverlay =
+                        mediaEdits?.mediaTextOverlays?.[mediaIndex] || null;
+                      const tileOverlayRender =
+                        tileOverlay?.text?.trim()
+                          ? buildFeedTextOverlay(tileOverlay, SCREEN_WIDTH / 2 - 10, SCREEN_WIDTH / 2 - 10)
+                          : null;
                       return (
                         <Pressable
                           key={`${mediaItem.uri || 'media'}_${mediaIndex}`}
@@ -1234,18 +1261,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                                 </Text>
                               </View>
                             ) : null}
+                            {tileOverlayRender ? (
+                              <View pointerEvents="none" style={tileOverlayRender.containerStyle}>
+                                <Text style={tileOverlayRender.textStyle}>
+                                  {tileOverlay?.text?.trim()}
+                                </Text>
+                              </View>
+                            ) : null}
                           </View>
                         </Pressable>
                       );
                     })}
                   </View>
-                  {shouldRenderTextOverlay && feedTextOverlayContainerStyle && feedTextOverlayTextStyle ? (
-                    <View pointerEvents="none" style={feedTextOverlayContainerStyle}>
-                      <Text style={feedTextOverlayTextStyle}>
-                        {textOverlay?.text?.trim()}
-                      </Text>
-                    </View>
-                  ) : null}
                 </View>
               ) : hasVideoMedia ? (
                 <View style={{ marginHorizontal: 0, position: 'relative', backgroundColor: '#000' }}>
@@ -1350,13 +1377,21 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       {s.emoji}
                     </Text>
                   ))}
-                  {shouldRenderTextOverlay && feedTextOverlayContainerStyle && feedTextOverlayTextStyle ? (
-                    <View pointerEvents="none" style={feedTextOverlayContainerStyle}>
-                      <Text style={feedTextOverlayTextStyle}>
-                        {textOverlay?.text?.trim()}
-                      </Text>
-                    </View>
-                  ) : null}
+                  {(() => {
+                    if (!textOverlay?.text?.trim()) return null;
+                    const overlayRender = buildFeedTextOverlay(
+                      textOverlay,
+                      SCREEN_WIDTH,
+                      Math.min(SCREEN_HEIGHT * 0.68, SCREEN_WIDTH * 1.28),
+                    );
+                    return (
+                      <View pointerEvents="none" style={overlayRender.containerStyle}>
+                        <Text style={overlayRender.textStyle}>
+                          {textOverlay.text.trim()}
+                        </Text>
+                      </View>
+                    );
+                  })()}
                   {hasOverlayAudio && RNVideo ? (
                     <RNVideo
                       source={{ uri: String(item.audio?.uri || '') }}
@@ -1497,13 +1532,21 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         {s.emoji}
                       </Text>
                     ))}
-                    {shouldRenderTextOverlay && feedTextOverlayContainerStyle && feedTextOverlayTextStyle ? (
-                      <View pointerEvents="none" style={feedTextOverlayContainerStyle}>
-                        <Text style={feedTextOverlayTextStyle}>
-                          {textOverlay?.text?.trim()}
-                        </Text>
-                      </View>
-                    ) : null}
+                    {(() => {
+                      if (!textOverlay?.text?.trim()) return null;
+                      const overlayRender = buildFeedTextOverlay(
+                        textOverlay,
+                        SCREEN_WIDTH,
+                        Math.min(SCREEN_HEIGHT * 0.68, SCREEN_WIDTH * 1.28),
+                      );
+                      return (
+                        <View pointerEvents="none" style={overlayRender.containerStyle}>
+                          <Text style={overlayRender.textStyle}>
+                            {textOverlay.text.trim()}
+                          </Text>
+                        </View>
+                      );
+                    })()}
                   </View>
                   {hasOverlayAudio && RNVideo ? (
                     <RNVideo

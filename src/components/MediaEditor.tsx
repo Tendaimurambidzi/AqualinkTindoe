@@ -33,7 +33,12 @@ export type CaptionStylePreset =
   | 'black_on_white'
   | 'soft_box'
   | 'highlight'
-  | 'blue_glow';
+  | 'blue_glow'
+  | 'rounded_bubble'
+  | 'rugged_label'
+  | 'sunset_chip'
+  | 'pulse_round'
+  | 'float_cloud';
 
 export type TextOverlay = {
   text: string;
@@ -50,6 +55,7 @@ export type TextOverlay = {
   paddingVertical?: number;
   borderRadius?: number;
   shadow?: boolean;
+  animationPreset?: 'none' | 'pulse' | 'float';
 };
 
 export type MediaEdits = {
@@ -64,6 +70,7 @@ export type MediaEdits = {
   voiceMode?: 'normal' | 'chipmunk' | 'deep' | 'robot';
   stickers: StickerPoint[];
   textOverlay?: TextOverlay | null;
+  mediaTextOverlays?: Array<TextOverlay | null>;
 };
 
 export const defaultMediaEdits: MediaEdits = {
@@ -78,6 +85,7 @@ export const defaultMediaEdits: MediaEdits = {
   voiceMode: 'normal',
   stickers: [],
   textOverlay: null,
+  mediaTextOverlays: [],
 };
 
 export const getTextOverlayPresetStyle = (
@@ -129,6 +137,57 @@ export const getTextOverlayPresetStyle = (
         paddingVertical: 10,
         borderRadius: 18,
         shadow: true,
+        animationPreset: 'pulse' as const,
+      };
+    case 'rounded_bubble':
+      return {
+        textColor: '#172033',
+        backgroundColor: '#EAF7FF',
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        borderRadius: 999,
+        shadow: true,
+        animationPreset: 'none' as const,
+      };
+    case 'rugged_label':
+      return {
+        textColor: '#FFF6DA',
+        backgroundColor: '#773F14',
+        paddingHorizontal: 18,
+        paddingVertical: 11,
+        borderRadius: 8,
+        shadow: true,
+        animationPreset: 'none' as const,
+      };
+    case 'sunset_chip':
+      return {
+        textColor: '#FFF8F1',
+        backgroundColor: '#C24E24',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 22,
+        shadow: true,
+        animationPreset: 'none' as const,
+      };
+    case 'pulse_round':
+      return {
+        textColor: '#F5FBFF',
+        backgroundColor: 'rgba(18, 68, 148, 0.78)',
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        borderRadius: 999,
+        shadow: true,
+        animationPreset: 'pulse' as const,
+      };
+    case 'float_cloud':
+      return {
+        textColor: '#10324D',
+        backgroundColor: 'rgba(255,255,255,0.92)',
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        borderRadius: 20,
+        shadow: true,
+        animationPreset: 'float' as const,
       };
     case 'plain':
     default:
@@ -139,6 +198,7 @@ export const getTextOverlayPresetStyle = (
         paddingVertical: 2,
         borderRadius: 0,
         shadow: true,
+        animationPreset: 'none' as const,
       };
   }
 };
