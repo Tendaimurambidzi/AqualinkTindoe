@@ -575,6 +575,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           fontWeight: overlay?.fontWeight || '800',
           textAlign: overlay?.textAlign || ('center' as const),
           lineHeight: Math.round((overlay?.fontSize || 28) * 1.18),
+          transform: [{ rotate: `${Number(overlay?.rotation || 0)}deg` }],
           textShadowColor:
             typeof overlay?.shadow === 'boolean'
               ? overlay.shadow

@@ -190,6 +190,74 @@ const CAPTION_STYLE_OPTIONS: Array<{
   { preset: 'float_cloud', label: 'Float Cloud' },
 ];
 
+const POINTER_CATEGORIES = [
+  { key: 'straight', label: 'Straight' },
+  { key: 'curved', label: 'Curved' },
+  { key: 'lines', label: 'Lines' },
+  { key: 'callouts', label: 'Callouts' },
+] as const;
+
+type PointerCategoryKey = (typeof POINTER_CATEGORIES)[number]['key'];
+
+const POINTER_OPTIONS: Array<{
+  symbol: string;
+  label: string;
+  category: PointerCategoryKey;
+  preset: CaptionStylePreset;
+  defaultRotation?: number;
+}> = [
+  { symbol: '→', label: 'Arrow Right', category: 'straight', preset: 'plain' },
+  { symbol: '⇒', label: 'Bold Right', category: 'straight', preset: 'highlight' },
+  { symbol: '➜', label: 'Sharp Right', category: 'straight', preset: 'pulse_round' },
+  { symbol: '⟶', label: 'Long Right', category: 'straight', preset: 'white_on_black' },
+  { symbol: '⬅', label: 'Arrow Left', category: 'straight', preset: 'plain' },
+  { symbol: '⬆', label: 'Arrow Up', category: 'straight', preset: 'plain' },
+  { symbol: '⬇', label: 'Arrow Down', category: 'straight', preset: 'plain' },
+  { symbol: '➝', label: 'Thin Arrow', category: 'straight', preset: 'soft_box' },
+  { symbol: '↷', label: 'Curve Right', category: 'curved', preset: 'float_cloud' },
+  { symbol: '↶', label: 'Curve Left', category: 'curved', preset: 'float_cloud' },
+  { symbol: '⤴', label: 'Curve Up', category: 'curved', preset: 'pulse_round' },
+  { symbol: '⤵', label: 'Curve Down', category: 'curved', preset: 'pulse_round' },
+  { symbol: '↺', label: 'Loop Left', category: 'curved', preset: 'blue_glow' },
+  { symbol: '↻', label: 'Loop Right', category: 'curved', preset: 'blue_glow' },
+  { symbol: '➰', label: 'Swirl', category: 'curved', preset: 'sunset_chip' },
+  { symbol: '⤿', label: 'Turn In', category: 'curved', preset: 'rugged_label' },
+  { symbol: '─', label: 'Line', category: 'lines', preset: 'plain' },
+  { symbol: '━', label: 'Bold Line', category: 'lines', preset: 'highlight' },
+  { symbol: '│', label: 'Vertical', category: 'lines', preset: 'plain' },
+  { symbol: '╱', label: 'Diagonal', category: 'lines', preset: 'plain' },
+  { symbol: '╲', label: 'Diagonal Alt', category: 'lines', preset: 'plain' },
+  { symbol: '┄', label: 'Dash Line', category: 'lines', preset: 'soft_box' },
+  { symbol: '◎', label: 'Focus Ring', category: 'callouts', preset: 'blue_glow' },
+  { symbol: '◉', label: 'Target', category: 'callouts', preset: 'pulse_round' },
+  { symbol: 'LOOK', label: 'Look', category: 'callouts', preset: 'pulse_round' },
+  { symbol: 'WOW', label: 'Wow', category: 'callouts', preset: 'float_cloud' },
+  { symbol: 'HERE', label: 'Here', category: 'callouts', preset: 'highlight' },
+  { symbol: 'FOCUS', label: 'Focus', category: 'callouts', preset: 'rugged_label' },
+];
+
+const POINTER_COLOR_OPTIONS = [
+  '#FFFFFF',
+  '#FF4D4F',
+  '#FFD400',
+  '#00C2FF',
+  '#62F2A2',
+  '#FF8A00',
+  '#FF5FD2',
+  '#111111',
+];
+
+const POINTER_SIZE_OPTIONS = [18, 26, 34, 44, 56];
+
+const POINTER_ANIMATION_OPTIONS: Array<{
+  key: 'none' | 'pulse' | 'float';
+  label: string;
+}> = [
+  { key: 'none', label: 'Still' },
+  { key: 'pulse', label: 'Pulse' },
+  { key: 'float', label: 'Float' },
+];
+
 const buildTextOverlay = (
   text: string,
   preset: CaptionStylePreset,
@@ -215,6 +283,25 @@ const buildTextOverlay = (
     borderRadius: presetStyle.borderRadius,
     shadow: presetStyle.shadow,
     animationPreset: presetStyle.animationPreset,
+  };
+};
+
+const buildPointerOverlay = (
+  option: (typeof POINTER_OPTIONS)[number],
+  previous?: TextOverlay | null,
+): TextOverlay => {
+  const next = buildTextOverlay(
+    option.symbol,
+    previous?.stylePreset || option.preset,
+    previous || undefined,
+  );
+  return {
+    ...next,
+    text: option.symbol,
+    fontSize: previous?.fontSize ?? 42,
+    color: previous?.color || '#FF4D4F',
+    rotation: previous?.rotation ?? option.defaultRotation ?? 0,
+    animationPreset: previous?.animationPreset || next.animationPreset || 'pulse',
   };
 };
 
@@ -3146,6 +3233,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     () => [
       { icon: '\u2702\ufe0f', label: 'Cut the Wake' },
       { icon: '\ud83d\udcac', label: 'Caption' },
+      { icon: '\u27a1\ufe0f', label: 'Pointers' },
       { icon: '\ud83c\udfa8', label: 'Ocean Tones' },
       { icon: '\ud83c\udfb5', label: 'Ocean Melodies' },
       { icon: '\ud83d\udee0\ufe0f', label: 'Media Editor' },
@@ -6287,6 +6375,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   
   const [releasing, setReleasing] = useState(false);
+  const [showPointersModal, setShowPointersModal] = useState(false);
+  const [activePointerCategory, setActivePointerCategory] =
+    useState<PointerCategoryKey>('straight');
   const activeMediaOverlay = useMemo(() => {
     if (capturedMediaGrid.length > 1) {
       return (
@@ -6480,6 +6571,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       : frame.top + 24;
     const shouldShadow =
       typeof overlay.shadow === 'boolean' ? overlay.shadow : !!presetStyle.shadow;
+    const animationTransform =
+      (overlay.animationPreset || presetStyle.animationPreset) === 'pulse'
+        ? [
+            {
+              scale: overlayAnimationValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [1, 1.06],
+              }),
+            },
+          ]
+        : (overlay.animationPreset || presetStyle.animationPreset) === 'float'
+        ? [
+            {
+              translateY: overlayAnimationValue.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, -8],
+              }),
+            },
+          ]
+        : [];
     return {
       text: overlayText,
       containerStyle: {
@@ -6503,26 +6614,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         textShadowColor: shouldShadow ? 'rgba(0,0,0,0.45)' : 'transparent',
         textShadowOffset: { width: 0, height: 2 },
         textShadowRadius: shouldShadow ? 10 : 0,
-        transform:
-          (overlay.animationPreset || presetStyle.animationPreset) === 'pulse'
-            ? [
-                {
-                  scale: overlayAnimationValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [1, 1.06],
-                  }),
-                },
-              ]
-            : (overlay.animationPreset || presetStyle.animationPreset) === 'float'
-            ? [
-                {
-                  translateY: overlayAnimationValue.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, -8],
-                  }),
-                },
-              ]
-            : [],
+        transform: [
+          { rotate: `${Number(overlay.rotation || 0)}deg` },
+          ...animationTransform,
+        ],
       },
     };
   }, [
@@ -6535,6 +6630,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setTextOverlayDraft(activeMediaOverlay?.text || '');
     setShowTextOverlayModal(true);
   }, [activeMediaOverlay?.text]);
+  const updateActiveMediaOverlay = useCallback(
+    (updates: Partial<TextOverlay>) => {
+      const current = activeMediaOverlayRef.current;
+      if (!current) return;
+      const nextOverlay = {
+        ...current,
+        ...updates,
+      };
+      activeMediaOverlayRef.current = nextOverlay;
+      setActiveMediaOverlay(nextOverlay);
+    },
+    [setActiveMediaOverlay],
+  );
+  const visiblePointerOptions = useMemo(
+    () =>
+      POINTER_OPTIONS.filter(option => option.category === activePointerCategory),
+    [activePointerCategory],
+  );
   const applyTextOverlayDraft = useCallback(() => {
     const trimmed = textOverlayDraft.trim();
     if (!trimmed) {
@@ -14481,13 +14594,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (
       capturedMediaGrid.length > 1 &&
       toolLabel !== 'Ocean Melodies' &&
-      toolLabel !== 'Caption'
+      toolLabel !== 'Caption' &&
+      toolLabel !== 'Pointers'
     ) {
       Alert.alert(toolLabel, 'This tool is not available for grid preview yet.');
       return;
     }
     if (toolLabel === 'Caption') {
       setShowCaptionStyleModal(true);
+      return;
+    }
+    if (toolLabel === 'Pointers') {
+      setShowPointersModal(true);
       return;
     }
     if (toolLabel === 'Ocean Melodies') {
@@ -14723,6 +14841,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setTextComposerText('');
         setShowTextOverlayModal(false);
         setShowCaptionStyleModal(false);
+        setShowPointersModal(false);
         setTextOverlayDraft('');
         setSelectedGridMediaIndex(0);
         setAttachedAudio(null);
@@ -14759,6 +14878,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setTextComposerText('');
         setShowTextOverlayModal(false);
         setShowCaptionStyleModal(false);
+        setShowPointersModal(false);
         setTextOverlayDraft('');
         setSelectedGridMediaIndex(0);
         setAttachedAudio(null);
@@ -15116,6 +15236,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setTextComposerText('');
       setShowTextOverlayModal(false);
       setShowCaptionStyleModal(false);
+      setShowPointersModal(false);
       setTextOverlayDraft('');
       setSelectedGridMediaIndex(0);
       setAttachedAudio(null); // Clear attached audio
@@ -15169,6 +15290,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCapturedMediaEdits(defaultMediaEdits);
       setShowTextOverlayModal(false);
       setShowCaptionStyleModal(false);
+      setShowPointersModal(false);
       setTextOverlayDraft('');
       setSelectedGridMediaIndex(0);
       setAttachedAudio(null);
@@ -20993,6 +21115,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setCapturedMediaEdits(defaultMediaEdits);
           setShowTextOverlayModal(false);
           setShowCaptionStyleModal(false);
+          setShowPointersModal(false);
           setTextOverlayDraft('');
           setSelectedGridMediaIndex(0);
         }}
@@ -21104,6 +21227,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               fontSize: Math.max(13, Math.min(22, overlay.fontSize || 22)),
                               fontWeight: overlay.fontWeight || '800',
                               textAlign: overlay.textAlign || 'center',
+                              transform: [
+                                { rotate: `${Number(overlay.rotation || 0)}deg` },
+                              ],
                             }}
                             numberOfLines={3}
                           >
@@ -21464,6 +21590,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   setCapturedMediaEdits(defaultMediaEdits);
                   setShowTextOverlayModal(false);
                   setShowCaptionStyleModal(false);
+                  setShowPointersModal(false);
                   setTextOverlayDraft('');
                   setSelectedGridMediaIndex(0);
                 }}
@@ -21589,78 +21716,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Text style={[styles.closeText, { color: '#FFFFFF' }]}>Remove</Text>
               </Pressable>
             </View>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              {['⬅️', '➡️', '⬆️', '⬇️'].map(arrow => (
-                <Pressable
-                  key={arrow}
-                  onPress={() => {
-                    setActiveMediaOverlay(
-                      buildTextOverlay(
-                        arrow,
-                        'pulse_round',
-                        activeMediaOverlay || undefined,
-                      ),
-                    );
-                    notifySuccess('Arrow overlay added');
-                  }}
-                  style={{
-                    flex: 1,
-                    minHeight: 46,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: 'rgba(0, 194, 255, 0.12)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(0, 194, 255, 0.22)',
-                  }}
-                >
-                  <Text style={{ fontSize: 22 }}>{arrow}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-              {[
-                { label: 'LOOK', preset: 'pulse_round' as CaptionStylePreset },
-                { label: 'WOW', preset: 'float_cloud' as CaptionStylePreset },
-                { label: 'HERE', preset: 'highlight' as CaptionStylePreset },
-              ].map(item => (
-                <Pressable
-                  key={item.label}
-                  onPress={() => {
-                    const nextText =
-                      activeMediaOverlay?.text?.trim() || item.label;
-                    setActiveMediaOverlay(
-                      buildTextOverlay(
-                        nextText,
-                        item.preset,
-                        activeMediaOverlay || undefined,
-                      ),
-                    );
-                    notifySuccess(`${item.label} callout added`);
-                  }}
-                  style={{
-                    flex: 1,
-                    minHeight: 42,
-                    borderRadius: 12,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: 'rgba(255,255,255,0.06)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.12)',
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: '#F3FBFF',
-                      fontSize: 12,
-                      fontWeight: '800',
-                    }}
-                  >
-                    {item.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
             <ScrollView showsVerticalScrollIndicator={false}>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
                 {CAPTION_STYLE_OPTIONS.map(option => {
@@ -21771,6 +21826,302 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 Done
               </Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={showPointersModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPointersModal(false)}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            justifyContent: 'flex-start',
+            paddingTop: SCREEN_HEIGHT * 0.1,
+            paddingHorizontal: 18,
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#07111C',
+              borderRadius: 18,
+              borderWidth: 1,
+              borderColor: 'rgba(0, 194, 255, 0.22)',
+              padding: 16,
+              maxHeight: SCREEN_HEIGHT * 0.78,
+            }}
+          >
+            <Text style={{ color: '#EAF6FF', fontSize: 18, fontWeight: '800' }}>
+              Pointers
+            </Text>
+            <Text
+              style={{
+                color: '#9FB3C8',
+                fontSize: 13,
+                lineHeight: 18,
+                marginTop: 8,
+                marginBottom: 12,
+              }}
+            >
+              Add arrows, lines, and callouts. Pick one, then drag it on the media
+              and tune its style, color, size, rotation, and animation.
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {POINTER_CATEGORIES.map(category => (
+                  <Pressable
+                    key={category.key}
+                    onPress={() => setActivePointerCategory(category.key)}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 999,
+                      backgroundColor:
+                        activePointerCategory === category.key
+                          ? 'rgba(0, 194, 255, 0.18)'
+                          : 'rgba(255,255,255,0.05)',
+                      borderWidth: 1,
+                      borderColor:
+                        activePointerCategory === category.key
+                          ? '#00C2FF'
+                          : 'rgba(255,255,255,0.10)',
+                    }}
+                  >
+                    <Text style={{ color: '#F3FBFF', fontSize: 12, fontWeight: '800' }}>
+                      {category.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  flexWrap: 'wrap',
+                  gap: 8,
+                  marginBottom: 16,
+                }}
+              >
+                {visiblePointerOptions.map(option => (
+                  <Pressable
+                    key={`${option.category}_${option.label}`}
+                    onPress={() => {
+                      setActiveMediaOverlay(
+                        buildPointerOverlay(option, activeMediaOverlay || undefined),
+                      );
+                      notifySuccess(`${option.label} ready`);
+                    }}
+                    style={{
+                      width: '15.5%',
+                      minWidth: 48,
+                      minHeight: 48,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.10)',
+                    }}
+                  >
+                    <Text style={{ fontSize: 18, color: '#F3FBFF', fontWeight: '800' }}>
+                      {option.symbol}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={{ color: '#DCEFFF', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
+                Color
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14 }}>
+                {POINTER_COLOR_OPTIONS.map(color => (
+                  <Pressable
+                    key={color}
+                    onPress={() => updateActiveMediaOverlay({ color })}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 999,
+                      backgroundColor: color,
+                      borderWidth: activeMediaOverlay?.color === color ? 3 : 1,
+                      borderColor:
+                        activeMediaOverlay?.color === color
+                          ? '#FFFFFF'
+                          : 'rgba(255,255,255,0.18)',
+                    }}
+                  />
+                ))}
+              </View>
+              <Text style={{ color: '#DCEFFF', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
+                Size
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {POINTER_SIZE_OPTIONS.map(size => (
+                  <Pressable
+                    key={size}
+                    onPress={() => updateActiveMediaOverlay({ fontSize: size })}
+                    style={{
+                      flex: 1,
+                      minHeight: 40,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      borderWidth:
+                        (activeMediaOverlay?.fontSize || 0) === size ? 2 : 1,
+                      borderColor:
+                        (activeMediaOverlay?.fontSize || 0) === size
+                          ? '#00C2FF'
+                          : 'rgba(255,255,255,0.10)',
+                    }}
+                  >
+                    <Text style={{ color: '#F3FBFF', fontSize: 12, fontWeight: '800' }}>
+                      {size}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={{ color: '#DCEFFF', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
+                Rotation
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {[
+                  { label: '-15°', delta: -15 },
+                  { label: '-5°', delta: -5 },
+                  { label: '+5°', delta: 5 },
+                  { label: '+15°', delta: 15 },
+                ].map(item => (
+                  <Pressable
+                    key={item.label}
+                    onPress={() =>
+                      updateActiveMediaOverlay({
+                        rotation: Number(activeMediaOverlayRef.current?.rotation || 0) + item.delta,
+                      })
+                    }
+                    style={{
+                      flex: 1,
+                      minHeight: 40,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.10)',
+                    }}
+                  >
+                    <Text style={{ color: '#F3FBFF', fontSize: 12, fontWeight: '800' }}>
+                      {item.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={{ color: '#DCEFFF', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
+                Animation
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+                {POINTER_ANIMATION_OPTIONS.map(option => (
+                  <Pressable
+                    key={option.key}
+                    onPress={() => updateActiveMediaOverlay({ animationPreset: option.key })}
+                    style={{
+                      flex: 1,
+                      minHeight: 40,
+                      borderRadius: 12,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      borderWidth:
+                        (activeMediaOverlay?.animationPreset || 'none') === option.key ? 2 : 1,
+                      borderColor:
+                        (activeMediaOverlay?.animationPreset || 'none') === option.key
+                          ? '#00C2FF'
+                          : 'rgba(255,255,255,0.10)',
+                    }}
+                  >
+                    <Text style={{ color: '#F3FBFF', fontSize: 12, fontWeight: '800' }}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={{ color: '#DCEFFF', fontSize: 12, fontWeight: '800', marginBottom: 8 }}>
+                Style
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {CAPTION_STYLE_OPTIONS.slice(0, 6).map(option => (
+                  <Pressable
+                    key={option.preset}
+                    onPress={() => {
+                      const baseText =
+                        activeMediaOverlayRef.current?.text?.trim() ||
+                        visiblePointerOptions[0]?.symbol ||
+                        '→';
+                      setActiveMediaOverlay(
+                        buildTextOverlay(
+                          baseText,
+                          option.preset,
+                          activeMediaOverlayRef.current || undefined,
+                        ),
+                      );
+                    }}
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 12,
+                      backgroundColor: 'rgba(255,255,255,0.04)',
+                      borderWidth:
+                        (activeMediaOverlay?.stylePreset || 'plain') === option.preset ? 2 : 1,
+                      borderColor:
+                        (activeMediaOverlay?.stylePreset || 'plain') === option.preset
+                          ? '#00C2FF'
+                          : 'rgba(255,255,255,0.10)',
+                    }}
+                  >
+                    <Text style={{ color: '#F3FBFF', fontSize: 11, fontWeight: '800' }}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 6 }}>
+              <Pressable
+                style={[
+                  styles.closeBtn,
+                  {
+                    flex: 1,
+                    marginVertical: 0,
+                    backgroundColor: '#7A1F1F',
+                    borderColor: '#7A1F1F',
+                  },
+                ]}
+                onPress={() => {
+                  setActiveMediaOverlay(null);
+                  setShowPointersModal(false);
+                }}
+              >
+                <Text style={[styles.closeText, { color: '#FFFFFF' }]}>Remove</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  editorStyles.doneButton,
+                  {
+                    flex: 1.4,
+                    margin: 0,
+                    backgroundColor: '#0077C8',
+                    borderColor: '#0077C8',
+                  },
+                ]}
+                onPress={() => setShowPointersModal(false)}
+              >
+                <Text style={[editorStyles.doneButtonText, { color: '#FFFFFF' }]}>
+                  Done
+                </Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
