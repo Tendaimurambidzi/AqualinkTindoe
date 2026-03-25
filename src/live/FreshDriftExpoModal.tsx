@@ -19,6 +19,10 @@ import {
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  canCurrentUserJoinPremiumShow,
+  recordPremiumEntry,
+} from '../services/premiumService';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const LIVE_INVITE_WINDOW_MS = 3 * 60 * 1000;
@@ -97,6 +101,7 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   isChartered?: boolean;
+  premiumShowId?: string | null;
   inviteJoinPreset?: InviteJoinPreset | null;
   searchOceanEntities: (term: string) => Promise<any[]>;
 };
@@ -170,6 +175,8 @@ const normalizeSearchResult = (entry: any): SearchResultItem | null => {
 const FreshDriftExpoModal = ({
   visible,
   onClose,
+  isChartered,
+  premiumShowId,
   inviteJoinPreset,
   searchOceanEntities,
 }: Props) => {
@@ -208,6 +215,7 @@ const FreshDriftExpoModal = ({
   const [roomChannel, setRoomChannel] = useState<string>('');
   const [roomTitle, setRoomTitle] = useState<string>('Drift Expo');
   const [roomHostUid, setRoomHostUid] = useState<string | null>(null);
+  const [roomPremiumShowId, setRoomPremiumShowId] = useState<string | null>(null);
   const [roomHostName, setRoomHostName] = useState<string>('Host');
   const [myRtcUid, setMyRtcUid] = useState<number>(0);
   const [joined, setJoined] = useState(false);
@@ -264,6 +272,7 @@ const FreshDriftExpoModal = ({
     setRoomChannel('');
     setRoomTitle('Drift Expo');
     setRoomHostUid(null);
+    setRoomPremiumShowId(null);
     setRoomHostName('Host');
     setMyRtcUid(0);
     setJoined(false);
@@ -400,6 +409,15 @@ const FreshDriftExpoModal = ({
     async (liveId: string) => {
       const snap = await firestore().collection('live').doc(liveId).get();
       const data = snap?.data?.() || {};
+      const premiumRequired = !!data.premiumRequired;
+      const nextPremiumShowId = data.premiumShowId ? String(data.premiumShowId) : null;
+      const nextHostUid = String(data.hostUid || '');
+      if (premiumRequired && nextPremiumShowId) {
+        const access = await canCurrentUserJoinPremiumShow(nextPremiumShowId, nextHostUid || null);
+        if (!access.allowed) {
+          throw new Error(access.reason || 'Aqua Premium token required.');
+        }
+      }
       const channel = String(data.channel || data.liveChannel || defaultChannel || '')
         .trim()
         .replace(/[^A-Za-z0-9_]/g, '_')
@@ -411,7 +429,8 @@ const FreshDriftExpoModal = ({
       setRoomId(liveId);
       setRoomChannel(channel);
       setRoomTitle(String(data.title || data.liveTitle || inviteJoinPreset?.title || 'Drift Expo'));
-      setRoomHostUid(String(data.hostUid || ''));
+      setRoomHostUid(nextHostUid);
+      setRoomPremiumShowId(nextPremiumShowId);
       setRoomHostName(String(data.hostName || inviteJoinPreset?.fromName || 'Host'));
       setMyRtcUid(uid);
       setJoined(false);
@@ -454,6 +473,8 @@ const FreshDriftExpoModal = ({
         hostUid: meUid,
         hostName: meName,
         hostPhoto: mePhoto,
+        premiumRequired: !!(isChartered && premiumShowId),
+        premiumShowId: isChartered ? premiumShowId || null : null,
         status: 'live',
         appId,
         createdAt: firestore.FieldValue.serverTimestamp(),
@@ -463,6 +484,7 @@ const FreshDriftExpoModal = ({
       setRoomChannel(channel);
       setRoomTitle(title);
       setRoomHostUid(meUid);
+      setRoomPremiumShowId(isChartered ? premiumShowId || null : null);
       setRoomHostName(meName);
       setMyRtcUid(uid);
       setJoined(false);
@@ -476,7 +498,7 @@ const FreshDriftExpoModal = ({
     } finally {
       setIsBusy(false);
     }
-  }, [appId, engineReady, meName, mePhoto, meUid, upsertParticipant]);
+  }, [appId, engineReady, isChartered, meName, mePhoto, meUid, premiumShowId, upsertParticipant]);
 
   useEffect(() => {
     if (!visible) return;
@@ -732,6 +754,9 @@ const FreshDriftExpoModal = ({
         setJoined(true);
         setStatusText('Live');
         await upsertParticipant(roomId, roomChannel, myRtcUid, isHost);
+        if (roomPremiumShowId) {
+          await recordPremiumEntry(roomPremiumShowId).catch(() => {});
+        }
       } catch (error: any) {
         joiningChannelRef.current = null;
         if (!cancelled) {
@@ -745,7 +770,7 @@ const FreshDriftExpoModal = ({
         joiningChannelRef.current = null;
       }
     };
-  }, [Agora, meUid, myRtcUid, roomChannel, roomHostUid, roomId, upsertParticipant, visible]);
+  }, [Agora, meUid, myRtcUid, roomChannel, roomHostUid, roomId, roomPremiumShowId, upsertParticipant, visible]);
 
   useEffect(() => {
     if (!visible || !roomId) return;
@@ -763,6 +788,7 @@ const FreshDriftExpoModal = ({
             String(data.channel).trim().replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64),
           );
         }
+        setRoomPremiumShowId(data.premiumShowId ? String(data.premiumShowId) : null);
       });
     const unsubParticipants = firestore()
       .collection(`live/${roomId}/participants`)

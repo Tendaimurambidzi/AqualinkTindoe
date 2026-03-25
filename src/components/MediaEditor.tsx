@@ -38,7 +38,23 @@ export type CaptionStylePreset =
   | 'rugged_label'
   | 'sunset_chip'
   | 'pulse_round'
-  | 'float_cloud';
+  | 'float_cloud'
+  | 'neon_pink'
+  | 'mint_frame'
+  | 'noir_stripe'
+  | 'royal_badge'
+  | 'coral_tag'
+  | 'midnight_glass'
+  | 'lemon_pop'
+  | 'lilac_mist'
+  | 'ocean_stamp'
+  | 'pearl_pill'
+  | 'danger_tape'
+  | 'cinema_bar'
+  | 'aqua_outline'
+  | 'cherry_chip'
+  | 'gold_frame'
+  | 'storm_panel';
 
 export type TextOverlay = {
   text: string;
@@ -186,6 +202,153 @@ export const getTextOverlayPresetStyle = (
         paddingHorizontal: 18,
         paddingVertical: 12,
         borderRadius: 20,
+        shadow: true,
+        animationPreset: 'float' as const,
+      };
+    case 'neon_pink':
+      return {
+        textColor: '#FFF6FF',
+        backgroundColor: 'rgba(255, 45, 129, 0.78)',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 18,
+        shadow: true,
+        animationPreset: 'pulse' as const,
+      };
+    case 'mint_frame':
+      return {
+        textColor: '#042B24',
+        backgroundColor: '#B8FFE6',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderRadius: 12,
+        shadow: false,
+      };
+    case 'noir_stripe':
+      return {
+        textColor: '#FFFFFF',
+        backgroundColor: 'rgba(0,0,0,0.82)',
+        paddingHorizontal: 20,
+        paddingVertical: 8,
+        borderRadius: 6,
+        shadow: true,
+      };
+    case 'royal_badge':
+      return {
+        textColor: '#FFF8DF',
+        backgroundColor: '#3521A1',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 999,
+        shadow: true,
+      };
+    case 'coral_tag':
+      return {
+        textColor: '#FFF9F5',
+        backgroundColor: '#FF6F61',
+        paddingHorizontal: 16,
+        paddingVertical: 9,
+        borderRadius: 10,
+        shadow: true,
+      };
+    case 'midnight_glass':
+      return {
+        textColor: '#EAF6FF',
+        backgroundColor: 'rgba(11, 23, 41, 0.62)',
+        paddingHorizontal: 18,
+        paddingVertical: 11,
+        borderRadius: 18,
+        shadow: true,
+      };
+    case 'lemon_pop':
+      return {
+        textColor: '#292100',
+        backgroundColor: '#FFF06A',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 999,
+        shadow: false,
+      };
+    case 'lilac_mist':
+      return {
+        textColor: '#2A1847',
+        backgroundColor: '#E8D7FF',
+        paddingHorizontal: 18,
+        paddingVertical: 11,
+        borderRadius: 16,
+        shadow: true,
+      };
+    case 'ocean_stamp':
+      return {
+        textColor: '#EFFFFF',
+        backgroundColor: '#007C91',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 8,
+        shadow: true,
+      };
+    case 'pearl_pill':
+      return {
+        textColor: '#21303D',
+        backgroundColor: '#F6FBFF',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 999,
+        shadow: true,
+      };
+    case 'danger_tape':
+      return {
+        textColor: '#1A1300',
+        backgroundColor: '#FFC83D',
+        paddingHorizontal: 20,
+        paddingVertical: 8,
+        borderRadius: 4,
+        shadow: false,
+      };
+    case 'cinema_bar':
+      return {
+        textColor: '#FFF8F2',
+        backgroundColor: '#3A1108',
+        paddingHorizontal: 22,
+        paddingVertical: 9,
+        borderRadius: 2,
+        shadow: true,
+      };
+    case 'aqua_outline':
+      return {
+        textColor: '#E9FDFF',
+        backgroundColor: 'rgba(0, 194, 255, 0.18)',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 18,
+        shadow: true,
+        animationPreset: 'pulse' as const,
+      };
+    case 'cherry_chip':
+      return {
+        textColor: '#FFF7FA',
+        backgroundColor: '#B42348',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 22,
+        shadow: true,
+      };
+    case 'gold_frame':
+      return {
+        textColor: '#2D1F00',
+        backgroundColor: '#F8D77B',
+        paddingHorizontal: 18,
+        paddingVertical: 10,
+        borderRadius: 12,
+        shadow: true,
+      };
+    case 'storm_panel':
+      return {
+        textColor: '#F3F7FF',
+        backgroundColor: '#32435E',
+        paddingHorizontal: 18,
+        paddingVertical: 11,
+        borderRadius: 14,
         shadow: true,
         animationPreset: 'float' as const,
       };

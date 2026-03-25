@@ -170,6 +170,22 @@ const CAPTION_STYLE_SEQUENCE: Array<CaptionStylePreset | 'off'> = [
   'sunset_chip',
   'pulse_round',
   'float_cloud',
+  'neon_pink',
+  'mint_frame',
+  'noir_stripe',
+  'royal_badge',
+  'coral_tag',
+  'midnight_glass',
+  'lemon_pop',
+  'lilac_mist',
+  'ocean_stamp',
+  'pearl_pill',
+  'danger_tape',
+  'cinema_bar',
+  'aqua_outline',
+  'cherry_chip',
+  'gold_frame',
+  'storm_panel',
   'off',
 ];
 
@@ -188,11 +204,28 @@ const CAPTION_STYLE_OPTIONS: Array<{
   { preset: 'sunset_chip', label: 'Sunset Chip' },
   { preset: 'pulse_round', label: 'Pulse Round' },
   { preset: 'float_cloud', label: 'Float Cloud' },
+  { preset: 'neon_pink', label: 'Neon Pink' },
+  { preset: 'mint_frame', label: 'Mint Frame' },
+  { preset: 'noir_stripe', label: 'Noir Stripe' },
+  { preset: 'royal_badge', label: 'Royal Badge' },
+  { preset: 'coral_tag', label: 'Coral Tag' },
+  { preset: 'midnight_glass', label: 'Midnight Glass' },
+  { preset: 'lemon_pop', label: 'Lemon Pop' },
+  { preset: 'lilac_mist', label: 'Lilac Mist' },
+  { preset: 'ocean_stamp', label: 'Ocean Stamp' },
+  { preset: 'pearl_pill', label: 'Pearl Pill' },
+  { preset: 'danger_tape', label: 'Danger Tape' },
+  { preset: 'cinema_bar', label: 'Cinema Bar' },
+  { preset: 'aqua_outline', label: 'Aqua Outline' },
+  { preset: 'cherry_chip', label: 'Cherry Chip' },
+  { preset: 'gold_frame', label: 'Gold Frame' },
+  { preset: 'storm_panel', label: 'Storm Panel' },
 ];
 
 const POINTER_CATEGORIES = [
   { key: 'straight', label: 'Straight' },
   { key: 'curved', label: 'Curved' },
+  { key: 'stylish', label: 'Stylish' },
   { key: 'lines', label: 'Lines' },
   { key: 'callouts', label: 'Callouts' },
 ] as const;
@@ -214,6 +247,10 @@ const POINTER_OPTIONS: Array<{
   { symbol: '⬆', label: 'Arrow Up', category: 'straight', preset: 'plain' },
   { symbol: '⬇', label: 'Arrow Down', category: 'straight', preset: 'plain' },
   { symbol: '➝', label: 'Thin Arrow', category: 'straight', preset: 'soft_box' },
+  { symbol: '➤', label: 'Solid Point', category: 'straight', preset: 'coral_tag' },
+  { symbol: '➣', label: 'Feather Point', category: 'straight', preset: 'aqua_outline' },
+  { symbol: '⮕', label: 'Wide Arrow', category: 'straight', preset: 'royal_badge' },
+  { symbol: '➽', label: 'Swift Arrow', category: 'straight', preset: 'neon_pink' },
   { symbol: '↷', label: 'Curve Right', category: 'curved', preset: 'float_cloud' },
   { symbol: '↶', label: 'Curve Left', category: 'curved', preset: 'float_cloud' },
   { symbol: '⤴', label: 'Curve Up', category: 'curved', preset: 'pulse_round' },
@@ -222,18 +259,42 @@ const POINTER_OPTIONS: Array<{
   { symbol: '↻', label: 'Loop Right', category: 'curved', preset: 'blue_glow' },
   { symbol: '➰', label: 'Swirl', category: 'curved', preset: 'sunset_chip' },
   { symbol: '⤿', label: 'Turn In', category: 'curved', preset: 'rugged_label' },
+  { symbol: '➵', label: 'Swoop', category: 'curved', preset: 'lilac_mist' },
+  { symbol: '➶', label: 'Swoop Up', category: 'curved', preset: 'mint_frame' },
+  { symbol: '➷', label: 'Swoop Down', category: 'curved', preset: 'gold_frame' },
+  { symbol: '⤳', label: 'Wave Arrow', category: 'curved', preset: 'ocean_stamp' },
+  { symbol: '➳', label: 'Elegant Point', category: 'stylish', preset: 'royal_badge' },
+  { symbol: '➸', label: 'Ribbon Arrow', category: 'stylish', preset: 'sunset_chip' },
+  { symbol: '➹', label: 'Flare Arrow', category: 'stylish', preset: 'neon_pink' },
+  { symbol: '➺', label: 'Flying Arrow', category: 'stylish', preset: 'cherry_chip' },
+  { symbol: '➻', label: 'Grand Arrow', category: 'stylish', preset: 'gold_frame' },
+  { symbol: '➼', label: 'Show Arrow', category: 'stylish', preset: 'midnight_glass' },
+  { symbol: '⥤', label: 'Twin Tail', category: 'stylish', preset: 'storm_panel' },
+  { symbol: '⇢', label: 'Fashion Point', category: 'stylish', preset: 'coral_tag' },
+  { symbol: '⇝', label: 'Drift Arrow', category: 'stylish', preset: 'aqua_outline' },
+  { symbol: '⤜', label: 'Bracket Curve', category: 'stylish', preset: 'lemon_pop' },
+  { symbol: '⤛', label: 'Bracket Left', category: 'stylish', preset: 'mint_frame' },
+  { symbol: '⤞', label: 'Sweep In', category: 'stylish', preset: 'pearl_pill' },
   { symbol: '─', label: 'Line', category: 'lines', preset: 'plain' },
   { symbol: '━', label: 'Bold Line', category: 'lines', preset: 'highlight' },
   { symbol: '│', label: 'Vertical', category: 'lines', preset: 'plain' },
   { symbol: '╱', label: 'Diagonal', category: 'lines', preset: 'plain' },
   { symbol: '╲', label: 'Diagonal Alt', category: 'lines', preset: 'plain' },
   { symbol: '┄', label: 'Dash Line', category: 'lines', preset: 'soft_box' },
+  { symbol: '⎯', label: 'Scene Line', category: 'lines', preset: 'cinema_bar' },
+  { symbol: '⋯', label: 'Dot Trail', category: 'lines', preset: 'pearl_pill' },
+  { symbol: '╍', label: 'Stage Line', category: 'lines', preset: 'danger_tape' },
+  { symbol: '╏', label: 'Tall Stripe', category: 'lines', preset: 'storm_panel' },
   { symbol: '◎', label: 'Focus Ring', category: 'callouts', preset: 'blue_glow' },
   { symbol: '◉', label: 'Target', category: 'callouts', preset: 'pulse_round' },
   { symbol: 'LOOK', label: 'Look', category: 'callouts', preset: 'pulse_round' },
   { symbol: 'WOW', label: 'Wow', category: 'callouts', preset: 'float_cloud' },
   { symbol: 'HERE', label: 'Here', category: 'callouts', preset: 'highlight' },
   { symbol: 'FOCUS', label: 'Focus', category: 'callouts', preset: 'rugged_label' },
+  { symbol: 'THIS', label: 'This', category: 'callouts', preset: 'white_on_black' },
+  { symbol: 'STAR', label: 'Star', category: 'callouts', preset: 'lemon_pop' },
+  { symbol: 'ICON', label: 'Icon', category: 'callouts', preset: 'royal_badge' },
+  { symbol: 'VIP', label: 'VIP', category: 'callouts', preset: 'gold_frame' },
 ];
 
 const POINTER_COLOR_OPTIONS = [
@@ -6721,6 +6782,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showLive, setShowLive] = useState(false);
   // Editor playback control + sync helpers
   const [isCharteredDrift, setIsCharteredDrift] = useState(false);
+  const [activePremiumShowId, setActivePremiumShowId] = useState<string | null>(null);
   const [crew, setCrew] = useState<
     Array<{ id: string; name: string; avatar: string | null }>
   >([]);
@@ -17961,12 +18023,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {
                     setIsCharteredDrift(true);
+                    setActivePremiumShowId(cfg.premiumShowId || null);
                     console.log('Chartered Drift Started:', cfg.title);
                     void goDrift();
                   }}
                   onEndPaidDrift={() => {
                     console.log('Chartered Drift Ended');
                     setIsCharteredDrift(false);
+                    setActivePremiumShowId(null);
                   }}
                   onViewPasses={() => {
                     console.log(
@@ -22051,7 +22115,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 Style
               </Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
-                {CAPTION_STYLE_OPTIONS.slice(0, 6).map(option => (
+                {CAPTION_STYLE_OPTIONS.map(option => (
                   <Pressable
                     key={option.preset}
                     onPress={() => {
@@ -22068,6 +22132,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       );
                     }}
                     style={{
+                      minWidth: '30%',
                       paddingHorizontal: 10,
                       paddingVertical: 8,
                       borderRadius: 12,
@@ -22596,12 +22661,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       <FreshDriftExpoModal
         visible={showLive}
         isChartered={isCharteredDrift}
+        premiumShowId={activePremiumShowId}
         searchOceanEntities={searchOceanEntities}
         inviteJoinPreset={liveInviteJoinPreset}
         onClose={() => {
           setShowLive(false);
           setLiveInviteJoinPreset(null);
           setIsCharteredDrift(false);
+          setActivePremiumShowId(null);
         }}
       />
                     

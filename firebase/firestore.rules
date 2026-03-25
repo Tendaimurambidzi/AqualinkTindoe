@@ -10,6 +10,25 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == ownerUid;
     }
 
+    function isPremiumHost() {
+      return isAuthed()
+        && (
+          resource == null
+            ? request.resource.data.hostUid == request.auth.uid
+            : resource.data.hostUid == request.auth.uid
+        );
+    }
+
+    function isPremiumShowHost(showId) {
+      return isAuthed()
+        && get(/databases/$(database)/documents/premium_shows/$(showId)).data.hostUid == request.auth.uid;
+    }
+
+    function isPremiumShowHostAfter(showId) {
+      return isAuthed()
+        && getAfter(/databases/$(database)/documents/premium_shows/$(showId)).data.hostUid == request.auth.uid;
+    }
+
     // Allow updates that ONLY change the top-level "counts" map (e.g., counts.echoes, counts.splashes)
     function isOnlyCountsUpdate() {
       // Check if the update only modifies the 'counts' field at the top level
@@ -196,6 +215,42 @@ service cloud.firestore {
       match /participants/{uid} {
         allow read, create, update, delete: if isAuthed();
       }
+    }
+
+    match /premium_shows/{showId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+        && request.resource.data.hostUid == request.auth.uid;
+      allow update, delete: if isPremiumHost();
+
+      match /tickets/{ticketId} {
+        allow read: if isAuthed();
+        allow create: if isPremiumShowHostAfter(showId);
+        allow update: if isAuthed() && (
+          isPremiumShowHost(showId) ||
+          (
+            resource.data.claimedByUid == null &&
+            request.resource.data.claimedByUid == request.auth.uid
+          )
+        );
+        allow delete: if isPremiumShowHost(showId);
+      }
+
+      match /entries/{entryId} {
+        allow read: if isAuthed();
+        allow create: if isAuthed();
+        allow update, delete: if isPremiumHost();
+      }
+    }
+
+    match /users/{uid}/premium_access/{showId} {
+      allow read: if isOwner(uid);
+      allow create, update, delete: if isOwner(uid);
+    }
+
+    match /users/{uid}/premium_redemptions/{redemptionId} {
+      allow read: if isOwner(uid);
+      allow create, update, delete: if isOwner(uid);
     }
 
     // Post reach subcollection - viewers list stays private
