@@ -359,6 +359,7 @@ const FreshDriftExpoModal = ({
   const soundBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAutoOpenedDocIdRef = useRef<string | null>(null);
   const slideshowTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const openingPdfDocIdRef = useRef<string | null>(null);
 
   const me = auth().currentUser;
   const meUid = me?.uid || '';
@@ -606,6 +607,17 @@ const FreshDriftExpoModal = ({
     [PdfRenderer],
   );
 
+  const isBenignPdfOpenError = useCallback((error: any) => {
+    const message = String(error?.message || error || '').toLowerCase();
+    return (
+      message.includes('not in pdf format') ||
+      message.includes('corrupt') ||
+      message.includes('corrupted') ||
+      message.includes('file not found') ||
+      message.includes('pdf file not found')
+    );
+  }, []);
+
   const openSharedPdf = useCallback(
     async (
       doc: SharedPdfDoc,
@@ -623,6 +635,10 @@ const FreshDriftExpoModal = ({
         Alert.alert('PDF unavailable', 'This build does not include the in-app PDF viewer.');
         return false;
       }
+      if (openingPdfDocIdRef.current === doc.id) {
+        return false;
+      }
+      openingPdfDocIdRef.current = doc.id;
       setDocBusy(true);
       try {
         const localPath = resolvePdfCachePath(doc);
@@ -646,13 +662,16 @@ const FreshDriftExpoModal = ({
         await renderActivePdfPage(localPath, 0);
         return true;
       } catch (error: any) {
-        Alert.alert('PDF open failed', String(error?.message || 'Could not open PDF.'));
+        if (!isBenignPdfOpenError(error)) {
+          Alert.alert('PDF open failed', String(error?.message || 'Could not open PDF.'));
+        }
         return false;
       } finally {
+        openingPdfDocIdRef.current = null;
         setDocBusy(false);
       }
     },
-    [PdfRenderer, renderActivePdfPage, resolvePdfCachePath],
+    [PdfRenderer, isBenignPdfOpenError, renderActivePdfPage, resolvePdfCachePath],
   );
 
   const closePdfViewer = useCallback(() => {
