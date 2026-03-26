@@ -1510,8 +1510,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   textComposerCancelBtn: {
-    backgroundColor: '#5B4B8A',
-    borderColor: '#5B4B8A',
+    backgroundColor: '#8D0000',
+    borderColor: '#8D0000',
   },
   textComposerSubmitBtn: {
     backgroundColor: '#1282A2',
@@ -4585,6 +4585,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const paginationInFlightRef = useRef(false);
+  const refreshInFlightRef = useRef(false);
+  const queuedFeedRetryRef = useRef(false);
   const lastEndReachedTsRef = useRef(0);
                     
   const [showProfile, setShowProfile] = useState<boolean>(false);
@@ -8889,6 +8891,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Function to load more feed items
   const loadMoreFeedItems = useCallback(async () => {
     if (isLoadingMore || paginationInFlightRef.current || !hasMoreItems) return;
+    if (isOffline) {
+      queuedFeedRetryRef.current = true;
+      return;
+    }
     
     paginationInFlightRef.current = true;
     setIsLoadingMore(true);
@@ -9055,10 +9061,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             
             // Add new waves to the feed with memory-safe limit
             if (lastLoadedDoc) {
-              // Append for pagination, keep max 50 posts to prevent memory issues
+              // Append for pagination, dedupe by id, and keep a smaller cap to avoid memory pressure.
               setPublicFeed(prev => {
-                const combined = [...prev, ...wavesWithUserData];
-                return combined.length > 50 ? combined.slice(-50) : combined;
+                const seen = new Set<string>();
+                const combined = [...prev, ...wavesWithUserData].filter(wave => {
+                  if (!wave?.id || seen.has(wave.id)) return false;
+                  seen.add(wave.id);
+                  return true;
+                });
+                return combined.length > 35 ? combined.slice(-35) : combined;
               });
             } else {
               // Replace for initial load or refresh
@@ -9093,7 +9104,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             setWaveStats(prev => ({ ...prev, ...waveStatsUpdate }));
             
             // Load echoes for new waves
-            wavesWithUserData.forEach(wave => {
+            wavesWithUserData.slice(0, 8).forEach(wave => {
               if (!postEchoLists[wave.id]) {
                 try {
                   loadPostEchoes(wave.id);
@@ -9104,7 +9115,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             });
             
             // Load reach counts for new waves
-            const waveIds = wavesWithUserData.map(wave => wave.id);
+            const waveIds = wavesWithUserData.slice(0, 12).map(wave => wave.id);
             try {
               loadReachCounts(waveIds);
             } catch (error) {
@@ -9123,23 +9134,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       paginationInFlightRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [isLoadingMore, lastLoadedDoc, hasMoreItems]);
+  }, [hasMoreItems, isLoadingMore, isOffline, lastLoadedDoc, loadPostEchoes, loadReachCounts, postEchoLists]);
 
   const onRefresh = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    if (isOffline) {
+      queuedFeedRetryRef.current = true;
+      return;
+    }
+    refreshInFlightRef.current = true;
     setRefreshing(true);
     setLastLoadedDoc(null);
     setHasMoreItems(true);
-    setPublicFeed([]);
-    await loadMoreFeedItems();
-    setRefreshing(false);
-  }, [loadMoreFeedItems]);
+    try {
+      await loadMoreFeedItems();
+    } finally {
+      setRefreshing(false);
+      refreshInFlightRef.current = false;
+    }
+  }, [isOffline, loadMoreFeedItems]);
 
   // Initial load of public feed
   useEffect(() => {
-    if (publicFeed.length === 0 && !isLoadingMore && !refreshing) {
+    if (!isOffline && publicFeed.length === 0 && !isLoadingMore && !refreshing) {
       loadMoreFeedItems();
     }
-  }, [publicFeed.length, isLoadingMore, refreshing, loadMoreFeedItems]);
+  }, [isOffline, publicFeed.length, isLoadingMore, refreshing, loadMoreFeedItems]);
+
+  useEffect(() => {
+    if (isOffline) return;
+    if (!queuedFeedRetryRef.current) return;
+    queuedFeedRetryRef.current = false;
+    if (!isLoadingMore && !refreshing) {
+      loadMoreFeedItems();
+    }
+  }, [isOffline, isLoadingMore, loadMoreFeedItems, refreshing]);
 
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
@@ -15628,10 +15657,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
                 removeClippedSubviews={Platform.OS === 'android'}
-                maxToRenderPerBatch={4}
-                windowSize={9}
-                initialNumToRender={2}
-                updateCellsBatchingPeriod={50}
+                maxToRenderPerBatch={2}
+                windowSize={5}
+                initialNumToRender={1}
+                updateCellsBatchingPeriod={80}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -15669,7 +15698,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     console.warn('Error in onEndReached:', error);
                   }
                 }}
-                onEndReachedThreshold={0.5} // Trigger when 50% from the end
+                onEndReachedThreshold={0.25}
                 onScrollToIndexFailed={(info) => {
                   // Fallback when scrollToIndex fails - try to scroll to a nearby index
                   const { index, highestMeasuredFrameIndex } = info;
@@ -15753,7 +15782,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   }
                 }}
                 refreshControl={
-                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+                  <RefreshControl refreshing={refreshing} onRefresh={onRefresh} enabled={!isOffline} />
                 }
             />
               </ErrorBoundary>
@@ -15832,7 +15861,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </View>
                   <Text style={styles.topLabel}>ALERTS</Text>
                 </Pressable>
-                {/* HUINT */}
+                {/* HUNT */}
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeHunt}
@@ -15843,7 +15872,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.dolphinIcon}>🔎</Text>
-                  <Text style={styles.topLabel}>HUINT</Text>
+                  <Text style={styles.topLabel}>HUNT</Text>
                 </Pressable>
                     
                 {/* MY SHORE */}

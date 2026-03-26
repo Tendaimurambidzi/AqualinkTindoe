@@ -23,6 +23,13 @@ service firebase.storage {
       allow delete: if isAuthenticated() && request.auth.uid == userId;
     }
 
+    // Shared Aqua Premium room PDFs
+    match /premium_docs/{roomId}/{fileName} {
+      allow create: if isAuthenticated() && request.resource.contentType == 'application/pdf';
+      allow read: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
     // Default deny for other paths
     match /{allPaths=**} {
       allow read, write: if false;

@@ -225,6 +225,10 @@ service cloud.firestore {
       match /participants/{uid} {
         allow read, create, update, delete: if isAuthed();
       }
+
+      match /shared_docs/{docId} {
+        allow read, create, update, delete: if isAuthed();
+      }
     }
 
     match /premium_shows/{showId} {

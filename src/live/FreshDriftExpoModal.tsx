@@ -7,6 +7,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Modal,
+  NativeModules,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +18,8 @@ import {
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
+import RNFS from 'react-native-fs';
 import Sound from 'react-native-sound';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -124,6 +127,16 @@ type RecentDriftItem = {
   updatedAtMs: number;
 };
 
+type SharedPdfDoc = {
+  id: string;
+  title: string;
+  fileName: string;
+  downloadUrl: string;
+  storagePath: string;
+  sharedByName: string;
+  createdAtMs: number;
+};
+
 type PremiumRoomMeta = {
   title: string;
   description: string | null;
@@ -227,6 +240,19 @@ const FreshDriftExpoModal = ({
   inviteJoinPreset,
   searchOceanEntities,
 }: Props) => {
+  const { AudioPicker, PdfRenderer } = NativeModules as {
+    AudioPicker?: {
+      pickFiles?: () => Promise<any[] | any>;
+    };
+    PdfRenderer?: {
+      getPageCount?: (localPath: string) => Promise<{ pageCount: number }>;
+      renderPage?: (
+        localPath: string,
+        pageIndex: number,
+        targetWidth: number,
+      ) => Promise<{ uri: string; pageCount: number; pageIndex: number }>;
+    };
+  };
   const insets = useSafeAreaInsets();
   const Agora = useMemo(() => {
     try {
@@ -290,6 +316,15 @@ const FreshDriftExpoModal = ({
   const [inviteBusyUid, setInviteBusyUid] = useState<string | null>(null);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [soundBadgeLabel, setSoundBadgeLabel] = useState<string | null>(null);
+  const [showDocsPanel, setShowDocsPanel] = useState(false);
+  const [sharedDocs, setSharedDocs] = useState<SharedPdfDoc[]>([]);
+  const [currentSharedDocId, setCurrentSharedDocId] = useState<string | null>(null);
+  const [docBusy, setDocBusy] = useState(false);
+  const [activeDoc, setActiveDoc] = useState<SharedPdfDoc | null>(null);
+  const [pdfLocalPath, setPdfLocalPath] = useState<string | null>(null);
+  const [pdfPageCount, setPdfPageCount] = useState(0);
+  const [pdfPageIndex, setPdfPageIndex] = useState(0);
+  const [pdfPreviewUri, setPdfPreviewUri] = useState<string | null>(null);
   const [recentDrifts, setRecentDrifts] = useState<RecentDriftItem[]>([]);
   const [replayItem, setReplayItem] = useState<RecentDriftItem | null>(null);
   const [engineReady, setEngineReady] = useState(false);
@@ -311,6 +346,7 @@ const FreshDriftExpoModal = ({
   const seenReactionIdsRef = useRef<Set<string>>(new Set());
   const handledSoundEventIdsRef = useRef<Set<string>>(new Set());
   const soundBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoOpenedDocIdRef = useRef<string | null>(null);
 
   const me = auth().currentUser;
   const meUid = me?.uid || '';
@@ -386,6 +422,15 @@ const FreshDriftExpoModal = ({
     setInviteBusyUid(null);
     setShowReactionPicker(false);
     setSoundBadgeLabel(null);
+    setShowDocsPanel(false);
+    setSharedDocs([]);
+    setCurrentSharedDocId(null);
+    setDocBusy(false);
+    setActiveDoc(null);
+    setPdfLocalPath(null);
+    setPdfPageCount(0);
+    setPdfPageIndex(0);
+    setPdfPreviewUri(null);
     setRecentDrifts([]);
     setReplayItem(null);
     setEngineReady(false);
@@ -394,6 +439,7 @@ const FreshDriftExpoModal = ({
     seenCommentIdsRef.current = new Set();
     seenReactionIdsRef.current = new Set();
     handledSoundEventIdsRef.current = new Set();
+    lastAutoOpenedDocIdRef.current = null;
     if (reactionTrayTimerRef.current) {
       clearTimeout(reactionTrayTimerRef.current);
       reactionTrayTimerRef.current = null;
@@ -483,6 +529,174 @@ const FreshDriftExpoModal = ({
       ],
     );
   }, [triggerRoomSoundEffect]);
+
+  const resolvePdfCachePath = useCallback((doc: SharedPdfDoc) => {
+    const safeName = (doc.fileName || doc.id || 'shared.pdf').replace(/[^A-Za-z0-9._-]/g, '_');
+    return `${RNFS.CachesDirectoryPath}/${roomId || 'live'}_${doc.id}_${safeName}`;
+  }, [roomId]);
+
+  const normalizePdfUploadPath = useCallback(async (rawUri: string, fileName: string) => {
+    let localPath = String(rawUri || '').trim();
+    try {
+      localPath = decodeURI(localPath);
+    } catch {}
+    if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+      localPath = localPath.replace('file://', '');
+    }
+    if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+      const safeName = (fileName || 'shared.pdf').replace(/[^A-Za-z0-9._-]/g, '_');
+      const copyDest = `${RNFS.CachesDirectoryPath}/premium_pdf_${Date.now()}_${safeName}`;
+      await RNFS.copyFile(String(rawUri), copyDest);
+      localPath = copyDest;
+    }
+    return localPath;
+  }, []);
+
+  const renderActivePdfPage = useCallback(
+    async (localPath: string, pageIndex: number) => {
+      if (!PdfRenderer?.renderPage) {
+        throw new Error('PDF renderer is not available on this device.');
+      }
+      const page = await PdfRenderer.renderPage(localPath, pageIndex, 1440);
+      setPdfPreviewUri(String(page?.uri || ''));
+      setPdfPageCount(Number(page?.pageCount || 0));
+      setPdfPageIndex(Number(page?.pageIndex || pageIndex));
+    },
+    [PdfRenderer],
+  );
+
+  const openSharedPdf = useCallback(
+    async (doc: SharedPdfDoc) => {
+      if (!PdfRenderer?.getPageCount || !PdfRenderer?.renderPage) {
+        Alert.alert('PDF unavailable', 'This build does not include the in-app PDF viewer.');
+        return;
+      }
+      setDocBusy(true);
+      try {
+        const localPath = resolvePdfCachePath(doc);
+        const exists = await RNFS.exists(localPath);
+        if (!exists) {
+          const download = RNFS.downloadFile({
+            fromUrl: doc.downloadUrl,
+            toFile: localPath,
+            background: true,
+          });
+          const result = await download.promise;
+          if (Number(result?.statusCode || 0) >= 400) {
+            throw new Error('Could not download PDF.');
+          }
+        }
+        const meta = await PdfRenderer.getPageCount(localPath);
+        setActiveDoc(doc);
+        setPdfLocalPath(localPath);
+        setPdfPageCount(Number(meta?.pageCount || 0));
+        await renderActivePdfPage(localPath, 0);
+      } catch (error: any) {
+        Alert.alert('PDF open failed', String(error?.message || 'Could not open PDF.'));
+      } finally {
+        setDocBusy(false);
+      }
+    },
+    [PdfRenderer, renderActivePdfPage, resolvePdfCachePath],
+  );
+
+  const closePdfViewer = useCallback(() => {
+    setActiveDoc(null);
+    setPdfLocalPath(null);
+    setPdfPageCount(0);
+    setPdfPageIndex(0);
+    setPdfPreviewUri(null);
+  }, []);
+
+  const changePdfPage = useCallback(
+    async (direction: -1 | 1) => {
+      if (!pdfLocalPath) return;
+      const nextIndex = pdfPageIndex + direction;
+      if (nextIndex < 0 || nextIndex >= pdfPageCount) return;
+      setDocBusy(true);
+      try {
+        await renderActivePdfPage(pdfLocalPath, nextIndex);
+      } catch (error: any) {
+        Alert.alert('PDF page failed', String(error?.message || 'Could not turn page.'));
+      } finally {
+        setDocBusy(false);
+      }
+    },
+    [pdfLocalPath, pdfPageCount, pdfPageIndex, renderActivePdfPage],
+  );
+
+  const handleSharePdf = useCallback(async () => {
+    if (!roomId || !isPremiumRoom || !isPremiumHost) return;
+    if (!AudioPicker?.pickFiles) {
+      Alert.alert('File picker unavailable', 'This build cannot pick PDF files yet.');
+      return;
+    }
+    setDocBusy(true);
+    try {
+      const result = await AudioPicker.pickFiles();
+      const pickedItems = Array.isArray(result) ? result : result ? [result] : [];
+      const pdfEntry = pickedItems.find((entry: any) => {
+        const name = String(entry?.name || entry?.uri || '').trim();
+        const type = String(entry?.type || '').trim().toLowerCase();
+        return type === 'application/pdf' || /\.pdf$/i.test(name);
+      });
+      if (!pdfEntry?.uri) {
+        Alert.alert('PDF only', 'Choose a PDF file to share in Aqua Premium.');
+        return;
+      }
+      const localUri = String(pdfEntry.uri);
+      const fileName = String(pdfEntry.name || 'shared.pdf').trim() || 'shared.pdf';
+      const uploadPath = await normalizePdfUploadPath(localUri, fileName);
+      const storagePath = `premium_docs/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`;
+      const uploadRef = storage().ref(storagePath);
+      await uploadRef.putFile(uploadPath, { contentType: 'application/pdf' });
+      const downloadUrl = await uploadRef.getDownloadURL();
+      const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
+      await docRef.set({
+        title: fileName.replace(/\.pdf$/i, ''),
+        fileName,
+        downloadUrl,
+        storagePath,
+        sharedByUid: meUid,
+        sharedByName: meName,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAtMs: Date.now(),
+      });
+      await firestore()
+        .collection('live')
+        .doc(roomId)
+        .set(
+          {
+            currentSharedDocId: docRef.id,
+            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      setShowDocsPanel(true);
+      Alert.alert('PDF shared', `${fileName} is now available in the room.`);
+    } catch (error: any) {
+      const message = String(error?.message || error || '');
+      if (!/cancel/i.test(message)) {
+        Alert.alert('Share failed', message || 'Could not share the PDF.');
+      }
+    } finally {
+      setDocBusy(false);
+    }
+  }, [AudioPicker, isPremiumHost, isPremiumRoom, meName, meUid, normalizePdfUploadPath, roomId]);
+
+  const autoOpenSharedPdf = useCallback(
+    async (docId: string | null | undefined) => {
+      const normalizedDocId = String(docId || '').trim();
+      if (!normalizedDocId) return;
+      if (lastAutoOpenedDocIdRef.current === normalizedDocId) return;
+      const targetDoc = sharedDocs.find(item => item.id === normalizedDocId);
+      if (!targetDoc) return;
+      lastAutoOpenedDocIdRef.current = normalizedDocId;
+      await openSharedPdf(targetDoc);
+    },
+    [openSharedPdf, sharedDocs],
+  );
 
   const cleanupEngine = useCallback(async () => {
     if (roomRef.current?.id && meUid) {
@@ -1097,6 +1311,13 @@ const FreshDriftExpoModal = ({
           );
         }
         setRoomPremiumShowId(data.premiumShowId ? String(data.premiumShowId) : null);
+        const currentSharedDocIdValue = String(data.currentSharedDocId || '').trim();
+        setCurrentSharedDocId(currentSharedDocIdValue || null);
+        if (currentSharedDocIdValue) {
+          setTimeout(() => {
+            autoOpenSharedPdf(currentSharedDocIdValue).catch(() => {});
+          }, 0);
+        }
         const soundEvent =
           data.lastSoundEffect && typeof data.lastSoundEffect === 'object'
             ? data.lastSoundEffect
@@ -1174,6 +1395,25 @@ const FreshDriftExpoModal = ({
           });
         });
       });
+    const unsubSharedDocs = firestore()
+      .collection(`live/${roomId}/shared_docs`)
+      .orderBy('createdAt', 'desc')
+      .limit(24)
+      .onSnapshot(snap => {
+        const rows = (snap?.docs || []).map(doc => {
+          const data = doc.data() || {};
+          return {
+            id: doc.id,
+            title: String(data.title || data.fileName || 'Shared PDF'),
+            fileName: String(data.fileName || 'shared.pdf'),
+            downloadUrl: String(data.downloadUrl || ''),
+            storagePath: String(data.storagePath || ''),
+            sharedByName: String(data.sharedByName || 'Host'),
+            createdAtMs: toMillis(data.createdAt) || Number(data.createdAtMs || 0) || 0,
+          } as SharedPdfDoc;
+        });
+        setSharedDocs(rows.filter(item => item.downloadUrl));
+      });
     return () => {
       try {
         unsubRoom();
@@ -1187,8 +1427,16 @@ const FreshDriftExpoModal = ({
       try {
         unsubReactions();
       } catch {}
+      try {
+        unsubSharedDocs();
+      } catch {}
     };
-  }, [meUid, playRoomSoundEffect, roomHostUid, roomId, visible]);
+  }, [autoOpenSharedPdf, meUid, playRoomSoundEffect, roomHostUid, roomId, visible]);
+
+  useEffect(() => {
+    if (!currentSharedDocId || sharedDocs.length === 0) return;
+    autoOpenSharedPdf(currentSharedDocId).catch(() => {});
+  }, [autoOpenSharedPdf, currentSharedDocId, sharedDocs]);
 
   const sendComment = useCallback(async () => {
     const text = commentText.trim();
@@ -1688,6 +1936,16 @@ const FreshDriftExpoModal = ({
                 <Pressable style={styles.railButton} onPress={openSoundBoard}>
                   <Text style={styles.railIcon}>Sounds</Text>
                 </Pressable>
+                {isPremiumRoom ? (
+                  <Pressable style={styles.railButton} onPress={() => setShowDocsPanel(v => !v)}>
+                    <Text style={styles.railIcon}>Docs</Text>
+                  </Pressable>
+                ) : null}
+                {isPremiumRoom && isPremiumHost ? (
+                  <Pressable style={styles.railButton} onPress={() => void handleSharePdf()}>
+                    <Text style={styles.railIcon}>{docBusy ? '...' : 'Share PDF'}</Text>
+                  </Pressable>
+                ) : null}
               </View>
               {soundBadgeLabel ? (
                 <View style={styles.soundBadge}>
@@ -1706,6 +1964,35 @@ const FreshDriftExpoModal = ({
                         <Text style={styles.audienceRowText}>{item.label}</Text>
                       </View>
                     ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+              {showDocsPanel && isPremiumRoom ? (
+                <View style={[styles.docsPanel, { top: insets.top + 78, right: insets.right + 14 }]}>
+                  <Text style={styles.docsPanelTitle}>Shared PDFs</Text>
+                  {isPremiumHost ? (
+                    <Pressable style={styles.docsShareButton} onPress={() => void handleSharePdf()}>
+                      <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share PDF'}</Text>
+                    </Pressable>
+                  ) : null}
+                  <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
+                    {sharedDocs.length === 0 ? (
+                      <Text style={styles.docsEmptyText}>No PDFs shared yet.</Text>
+                    ) : (
+                      sharedDocs.map(doc => (
+                        <Pressable
+                          key={doc.id}
+                          style={styles.docsRow}
+                          onPress={() => void openSharedPdf(doc)}
+                          disabled={docBusy}
+                        >
+                          <Text style={styles.docsRowTitle} numberOfLines={1}>{doc.title}</Text>
+                          <Text style={styles.docsRowMeta} numberOfLines={1}>
+                            {doc.sharedByName} · {formatTimestamp(doc.createdAtMs)}
+                          </Text>
+                        </Pressable>
+                      ))
+                    )}
                   </ScrollView>
                 </View>
               ) : null}
@@ -2024,6 +2311,55 @@ const FreshDriftExpoModal = ({
             </View>
           </View>
         </Modal>
+        <Modal
+          visible={!!activeDoc}
+          transparent
+          animationType="fade"
+          onRequestClose={closePdfViewer}
+        >
+          <View style={styles.pdfBackdrop}>
+            <View style={styles.pdfCard}>
+              <View style={styles.pdfHeader}>
+                <Text style={styles.pdfTitle} numberOfLines={1}>
+                  {activeDoc?.title || 'Shared PDF'}
+                </Text>
+                <Pressable style={styles.pdfCloseButton} onPress={closePdfViewer}>
+                  <Text style={styles.pdfCloseButtonText}>Close</Text>
+                </Pressable>
+              </View>
+              <Text style={styles.pdfMeta}>
+                Page {Math.min(pdfPageCount || 0, pdfPageIndex + 1)} of {pdfPageCount || 0}
+              </Text>
+              <View style={styles.pdfPreviewFrame}>
+                {docBusy ? <ActivityIndicator color="#8D0000" size="large" /> : null}
+                {!docBusy && pdfPreviewUri ? (
+                  <Image source={{ uri: pdfPreviewUri }} style={styles.pdfPreviewImage} resizeMode="contain" />
+                ) : !docBusy ? (
+                  <Text style={styles.docsEmptyText}>PDF preview unavailable.</Text>
+                ) : null}
+              </View>
+              <View style={styles.pdfPagerRow}>
+                <Pressable
+                  style={[styles.pdfPagerButton, pdfPageIndex <= 0 ? styles.pdfPagerButtonDisabled : null]}
+                  onPress={() => void changePdfPage(-1)}
+                  disabled={docBusy || pdfPageIndex <= 0}
+                >
+                  <Text style={styles.pdfPagerButtonText}>Previous</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.pdfPagerButton,
+                    pdfPageIndex >= pdfPageCount - 1 ? styles.pdfPagerButtonDisabled : null,
+                  ]}
+                  onPress={() => void changePdfPage(1)}
+                  disabled={docBusy || pdfPageIndex >= pdfPageCount - 1}
+                >
+                  <Text style={styles.pdfPagerButtonText}>Next</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </View>
     </Modal>
   );
@@ -2206,6 +2542,56 @@ const styles = StyleSheet.create({
     color: '#FFDADA',
     fontSize: 13,
     fontWeight: '700',
+  },
+  docsPanel: {
+    position: 'absolute',
+    width: 260,
+    borderRadius: 18,
+    backgroundColor: 'rgba(10,16,24,0.95)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: 12,
+  },
+  docsPanelTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  docsShareButton: {
+    backgroundColor: '#8D0000',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  docsShareButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  docsEmptyText: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 12,
+    textAlign: 'center',
+    paddingVertical: 16,
+  },
+  docsRow: {
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  docsRowTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  docsRowMeta: {
+    color: 'rgba(255,255,255,0.66)',
+    fontSize: 11,
+    marginTop: 4,
   },
   reactionTray: {
     position: 'absolute',
@@ -2618,6 +3004,81 @@ const styles = StyleSheet.create({
     backgroundColor: '#091019',
     borderRadius: 24,
     padding: 18,
+  },
+  pdfBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+  },
+  pdfCard: {
+    width: '100%',
+    maxWidth: 460,
+    maxHeight: '92%',
+    backgroundColor: '#091019',
+    borderRadius: 20,
+    padding: 16,
+  },
+  pdfHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  pdfTitle: {
+    flex: 1,
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  pdfCloseButton: {
+    backgroundColor: '#8D0000',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  pdfCloseButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+  pdfMeta: {
+    color: '#BFD7E8',
+    fontSize: 12,
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  pdfPreviewFrame: {
+    flex: 1,
+    minHeight: 420,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  pdfPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  pdfPagerRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+  pdfPagerButton: {
+    flex: 1,
+    backgroundColor: '#8D0000',
+    borderRadius: 14,
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  pdfPagerButtonDisabled: {
+    backgroundColor: 'rgba(141,0,0,0.35)',
+  },
+  pdfPagerButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
   },
   replayTitle: {
     color: 'white',
