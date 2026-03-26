@@ -52,23 +52,24 @@ public class PdfRendererModule extends ReactContextBaseJavaModule {
                 float scale = safeWidth / (float) page.getWidth();
                 int bitmapWidth = Math.max(1, Math.round(page.getWidth() * scale));
                 int bitmapHeight = Math.max(1, Math.round(page.getHeight() * scale));
-                Bitmap bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888);
-                bitmap.eraseColor(0xFFFFFFFF);
-                page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
-
                 File dir = new File(reactContext.getCacheDir(), "pdf_previews");
                 if (!dir.exists() && !dir.mkdirs()) {
                     throw new IOException("Could not create pdf preview cache");
                 }
                 String key = String.valueOf(Math.abs(localPath.hashCode()));
-                File imageFile = new File(dir, key + "_page_" + pageIndex + ".png");
-                FileOutputStream outputStream = new FileOutputStream(imageFile, false);
-                try {
-                    bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
-                    outputStream.flush();
-                } finally {
-                    outputStream.close();
-                    bitmap.recycle();
+                File imageFile = new File(dir, key + "_page_" + pageIndex + "_w" + safeWidth + ".png");
+                if (!imageFile.exists() || imageFile.length() == 0) {
+                    Bitmap bitmap = Bitmap.createBitmap(bitmapWidth, bitmapHeight, Bitmap.Config.ARGB_8888);
+                    bitmap.eraseColor(0xFFFFFFFF);
+                    FileOutputStream outputStream = new FileOutputStream(imageFile, false);
+                    try {
+                        page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY);
+                        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
+                        outputStream.flush();
+                    } finally {
+                        outputStream.close();
+                        bitmap.recycle();
+                    }
                 }
 
                 WritableMap result = Arguments.createMap();

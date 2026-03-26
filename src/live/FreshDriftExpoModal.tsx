@@ -331,6 +331,11 @@ const FreshDriftExpoModal = ({
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfPageIndex, setPdfPageIndex] = useState(0);
   const [pdfPreviewUri, setPdfPreviewUri] = useState<string | null>(null);
+  const [pdfPreviewWidth, setPdfPreviewWidth] = useState(0);
+  const [pdfPreviewHeight, setPdfPreviewHeight] = useState(0);
+  const [pdfZoomLevel, setPdfZoomLevel] = useState(1);
+  const [pdfFrameWidth, setPdfFrameWidth] = useState(0);
+  const [pdfFrameHeight, setPdfFrameHeight] = useState(0);
   const [recentDrifts, setRecentDrifts] = useState<RecentDriftItem[]>([]);
   const [replayItem, setReplayItem] = useState<RecentDriftItem | null>(null);
   const [engineReady, setEngineReady] = useState(false);
@@ -390,6 +395,22 @@ const FreshDriftExpoModal = ({
       })),
     [participantTicketLabels, participants, roomHostUid],
   );
+  const pdfDisplayMetrics = useMemo(() => {
+    const frameWidth = Math.max(0, pdfFrameWidth - 20);
+    const frameHeight = Math.max(0, pdfFrameHeight - 20);
+    if (!pdfPreviewWidth || !pdfPreviewHeight || !frameWidth || !frameHeight) {
+      return {
+        width: '100%' as const,
+        height: '100%' as const,
+      };
+    }
+    const fitScale = Math.min(frameWidth / pdfPreviewWidth, frameHeight / pdfPreviewHeight);
+    const safeScale = Number.isFinite(fitScale) && fitScale > 0 ? fitScale : 1;
+    return {
+      width: Math.max(220, Math.round(pdfPreviewWidth * safeScale * pdfZoomLevel)),
+      height: Math.max(300, Math.round(pdfPreviewHeight * safeScale * pdfZoomLevel)),
+    };
+  }, [pdfFrameHeight, pdfFrameWidth, pdfPreviewHeight, pdfPreviewWidth, pdfZoomLevel]);
   useEffect(() => {
     roomRef.current =
       roomId && roomChannel
@@ -440,6 +461,11 @@ const FreshDriftExpoModal = ({
     setPdfPageCount(0);
     setPdfPageIndex(0);
     setPdfPreviewUri(null);
+    setPdfPreviewWidth(0);
+    setPdfPreviewHeight(0);
+    setPdfZoomLevel(1);
+    setPdfFrameWidth(0);
+    setPdfFrameHeight(0);
     setRecentDrifts([]);
     setReplayItem(null);
     setEngineReady(false);
@@ -574,6 +600,8 @@ const FreshDriftExpoModal = ({
       setPdfPreviewUri(String(page?.uri || ''));
       setPdfPageCount(Number(page?.pageCount || 0));
       setPdfPageIndex(Number(page?.pageIndex || pageIndex));
+      setPdfPreviewWidth(Number(page?.width || 0));
+      setPdfPreviewHeight(Number(page?.height || 0));
     },
     [PdfRenderer],
   );
@@ -613,6 +641,7 @@ const FreshDriftExpoModal = ({
         const meta = await PdfRenderer.getPageCount(localPath);
         setActiveDoc(doc);
         setPdfLocalPath(localPath);
+        setPdfZoomLevel(1);
         setPdfPageCount(Number(meta?.pageCount || 0));
         await renderActivePdfPage(localPath, 0);
         return true;
@@ -632,6 +661,9 @@ const FreshDriftExpoModal = ({
     setPdfPageCount(0);
     setPdfPageIndex(0);
     setPdfPreviewUri(null);
+    setPdfPreviewWidth(0);
+    setPdfPreviewHeight(0);
+    setPdfZoomLevel(1);
     setCurrentSharedDocSlideShow(false);
   }, []);
 
@@ -2125,12 +2157,7 @@ const FreshDriftExpoModal = ({
                 </Pressable>
                 {isPremiumRoom ? (
                   <Pressable style={styles.railButton} onPress={() => setShowDocsPanel(v => !v)}>
-                    <Text style={styles.railIcon}>Docs</Text>
-                  </Pressable>
-                ) : null}
-                {isPremiumRoom && isPremiumHost ? (
-                  <Pressable style={styles.railButton} onPress={() => void handleShareFile()}>
-                    <Text style={styles.railIcon}>{docBusy ? '...' : 'Share File'}</Text>
+                    <Text style={styles.railIcon}>Share Files</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -2522,10 +2549,42 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.pdfCloseButtonText}>Close</Text>
                 </Pressable>
               </View>
-              <View style={styles.pdfPreviewFrame}>
+              <View
+                style={styles.pdfPreviewFrame}
+                onLayout={event => {
+                  const { width, height } = event.nativeEvent.layout;
+                  setPdfFrameWidth(width);
+                  setPdfFrameHeight(height);
+                }}
+              >
                 {docBusy ? <ActivityIndicator color="#8D0000" size="large" /> : null}
                 {!docBusy && pdfPreviewUri ? (
-                  <Image source={{ uri: pdfPreviewUri }} style={styles.pdfPreviewImage} resizeMode="contain" />
+                  <ScrollView
+                    style={styles.pdfPreviewScroll}
+                    contentContainerStyle={styles.pdfPreviewScrollContent}
+                    maximumZoomScale={1}
+                    minimumZoomScale={1}
+                    showsVerticalScrollIndicator={false}
+                    showsHorizontalScrollIndicator={false}
+                  >
+                    <ScrollView
+                      horizontal
+                      contentContainerStyle={styles.pdfPreviewScrollContent}
+                      showsHorizontalScrollIndicator={false}
+                    >
+                      <Image
+                        source={{ uri: pdfPreviewUri }}
+                        style={[
+                          styles.pdfPreviewImage,
+                          {
+                            width: pdfDisplayMetrics.width,
+                            height: pdfDisplayMetrics.height,
+                          },
+                        ]}
+                        resizeMode="contain"
+                      />
+                    </ScrollView>
+                  </ScrollView>
                 ) : !docBusy ? (
                   <Text style={styles.docsEmptyText}>PDF preview unavailable.</Text>
                 ) : null}
@@ -2543,20 +2602,15 @@ const FreshDriftExpoModal = ({
                   }}
                   disabled={!isPremiumHost || docBusy || pdfPageIndex <= 0}
                 >
-                  <Text style={styles.pdfPagerButtonText}>First</Text>
+                  <Text style={styles.pdfPagerButtonText}>{'|<'}</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.pdfPagerButton, pdfPageIndex <= 0 ? styles.pdfPagerButtonDisabled : null]}
                   onPress={() => void changePdfPage(-1)}
                   disabled={docBusy || pdfPageIndex <= 0 || (!isPremiumHost && !!currentSharedDocId)}
                 >
-                  <Text style={styles.pdfPagerButtonText}>Previous</Text>
+                  <Text style={styles.pdfPagerButtonText}>{'<'}</Text>
                 </Pressable>
-                <View style={styles.pdfPageBadge}>
-                  <Text style={styles.pdfPageBadgeText}>
-                    {Math.min(pdfPageCount || 0, pdfPageIndex + 1)} / {pdfPageCount || 0}
-                  </Text>
-                </View>
                 <Pressable
                   style={[
                     styles.pdfPagerButton,
@@ -2571,9 +2625,7 @@ const FreshDriftExpoModal = ({
                   }}
                   disabled={!isPremiumHost || docBusy || pdfPageCount <= 1}
                 >
-                  <Text style={styles.pdfPagerButtonText}>
-                    {currentSharedDocSlideShow ? 'Pause' : 'Slide Show'}
-                  </Text>
+                  <Text style={styles.pdfPagerButtonText}>{currentSharedDocSlideShow ? '||' : '▶'}</Text>
                 </Pressable>
                 <Pressable
                   style={[
@@ -2583,7 +2635,7 @@ const FreshDriftExpoModal = ({
                   onPress={() => void changePdfPage(1)}
                   disabled={docBusy || pdfPageIndex >= pdfPageCount - 1 || (!isPremiumHost && !!currentSharedDocId)}
                 >
-                  <Text style={styles.pdfPagerButtonText}>Next</Text>
+                  <Text style={styles.pdfPagerButtonText}>{'>'}</Text>
                 </Pressable>
                 <Pressable
                   style={[
@@ -2597,8 +2649,25 @@ const FreshDriftExpoModal = ({
                   }}
                   disabled={!isPremiumHost || docBusy || pdfPageIndex >= pdfPageCount - 1}
                 >
-                  <Text style={styles.pdfPagerButtonText}>Last</Text>
+                  <Text style={styles.pdfPagerButtonText}>{'>|'}</Text>
                 </Pressable>
+                <Pressable
+                  style={styles.pdfPagerButton}
+                  onPress={() => setPdfZoomLevel(level => Math.max(1, Number((level - 0.25).toFixed(2))))}
+                  disabled={docBusy || pdfZoomLevel <= 1}
+                >
+                  <Text style={styles.pdfPagerButtonText}>−</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.pdfPagerButton}
+                  onPress={() => setPdfZoomLevel(level => Math.min(2.5, Number((level + 0.25).toFixed(2))))}
+                  disabled={docBusy || pdfZoomLevel >= 2.5}
+                >
+                  <Text style={styles.pdfPagerButtonText}>+</Text>
+                </Pressable>
+                <Text style={styles.pdfPageCounterText}>
+                  {Math.min(pdfPageCount || 0, pdfPageIndex + 1)} / {pdfPageCount || 0}
+                </Text>
               </View>
               {!isPremiumHost && currentSharedDocId ? (
                 <Text style={styles.pdfGuestHint}>Host is controlling the shared document.</Text>
@@ -3301,13 +3370,21 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     padding: 12,
   },
-  pdfPreviewImage: {
+  pdfPreviewScroll: {
     width: '100%',
-    height: '100%',
+    flex: 1,
+  },
+  pdfPreviewScrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pdfPreviewImage: {
+    borderRadius: 12,
   },
   pdfPagerRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     marginTop: 14,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3318,9 +3395,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 92,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
+    minWidth: 52,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   pdfPagerButtonDisabled: {
     backgroundColor: 'rgba(141,0,0,0.35)',
@@ -3328,19 +3405,13 @@ const styles = StyleSheet.create({
   pdfPagerButtonText: {
     color: '#FFFFFF',
     fontWeight: '900',
+    fontSize: 17,
   },
-  pdfPageBadge: {
-    minWidth: 88,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pdfPageBadgeText: {
+  pdfPageCounterText: {
     color: '#FFFFFF',
     fontWeight: '900',
+    fontSize: 15,
+    marginLeft: 8,
   },
   pdfGuestHint: {
     color: 'rgba(255,255,255,0.72)',
