@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
+import firestore from '@react-native-firebase/firestore';
 import {
   ActivityIndicator,
   Alert,
@@ -39,6 +40,13 @@ type Props = {
     startLive: () => void;
     premiumShowId: string;
   }) => void;
+  onJoinPremiumShow?: (cfg: {
+    liveId: string;
+    premiumShowId: string;
+    title: string;
+    channel?: string | null;
+    hostName?: string | null;
+  }) => void;
   onEndPaidDrift?: () => void;
   onViewPasses?: () => void;
   onToggleChat?: (enabled: boolean) => void;
@@ -55,6 +63,7 @@ const minutesOptions: MinutesOption[] = [30, 60, 120];
 export default function CharteredSeaDriftButton(props: Props) {
   const {
     onStartPaidDrift,
+    onJoinPremiumShow,
     onEndPaidDrift,
     onViewPasses,
     onToggleChat,
@@ -84,6 +93,7 @@ export default function CharteredSeaDriftButton(props: Props) {
     Array<{
       showId: string;
       showTitle: string;
+      hostUid: string;
       status: string;
       validUntilMs: number;
       ticketId: string;
@@ -116,6 +126,29 @@ export default function CharteredSeaDriftButton(props: Props) {
     } catch {
       setMyAccess([]);
     }
+  }, []);
+
+  const resolvePremiumLiveRoom = useCallback(async (showId: string) => {
+    const snap = await firestore()
+      .collection('live')
+      .where('premiumShowId', '==', showId)
+      .limit(6)
+      .get();
+    const rows = (snap?.docs || []).map(doc => {
+      const data = doc.data() || {};
+      return {
+        liveId: doc.id,
+        status: String(data.status || '').toLowerCase(),
+        title: String(data.title || data.liveTitle || 'Aqua Premium Show'),
+        channel: data.channel ? String(data.channel) : data.liveChannel ? String(data.liveChannel) : null,
+        hostName: data.hostName ? String(data.hostName) : null,
+      };
+    });
+    return (
+      rows.find(item => item.status === 'live') ||
+      rows.find(item => item.status !== 'ended' && item.status !== 'cancelled') ||
+      null
+    );
   }, []);
 
   const validateConfig = useCallback(() => {
@@ -253,13 +286,61 @@ export default function CharteredSeaDriftButton(props: Props) {
       const result = await redeemPremiumCode(redeemCode);
       setRedeemCode('');
       await loadMyAccess();
-      Alert.alert('Access granted', `You can now join ${result.showTitle}.`);
+      const liveRoom = await resolvePremiumLiveRoom(result.showId);
+      if (liveRoom && onJoinPremiumShow) {
+        onJoinPremiumShow({
+          liveId: liveRoom.liveId,
+          premiumShowId: result.showId,
+          title: liveRoom.title || result.showTitle,
+          channel: liveRoom.channel,
+          hostName: liveRoom.hostName,
+        });
+        setOpen(false);
+        return;
+      }
+      Alert.alert(
+        'Access granted',
+        `${result.showTitle} is now unlocked. Tap Join Aqua Premium Show when the host opens the camera.`,
+      );
     } catch (error: any) {
       Alert.alert('Redeem failed', String(error?.message || 'Try another token.'));
     } finally {
       setBusy(false);
     }
-  }, [loadMyAccess, redeemCode]);
+  }, [loadMyAccess, onJoinPremiumShow, redeemCode, resolvePremiumLiveRoom]);
+
+  const handleJoinPremiumShow = useCallback(
+    async (item: { showId: string; showTitle: string }) => {
+      try {
+        setBusy(true);
+        const liveRoom = await resolvePremiumLiveRoom(item.showId);
+        if (!liveRoom) {
+          Alert.alert(
+            'Show not live yet',
+            'Your access is active. The Join Aqua Premium Show button will work once the host starts the premium camera.',
+          );
+          return;
+        }
+        if (!onJoinPremiumShow) {
+          Alert.alert('Join unavailable', 'This build is missing the Aqua Premium join callback.');
+          return;
+        }
+        onJoinPremiumShow({
+          liveId: liveRoom.liveId,
+          premiumShowId: item.showId,
+          title: liveRoom.title || item.showTitle || 'Aqua Premium Show',
+          channel: liveRoom.channel,
+          hostName: liveRoom.hostName,
+        });
+        setOpen(false);
+      } catch (error: any) {
+        Alert.alert('Could not join Aqua Premium', String(error?.message || 'Try again.'));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [onJoinPremiumShow, resolvePremiumLiveRoom],
+  );
 
   const handleShareToken = useCallback(
     async (token: PremiumTokenRecord) => {
@@ -535,6 +616,13 @@ export default function CharteredSeaDriftButton(props: Props) {
                             Valid until:{' '}
                             {item.validUntilMs ? new Date(item.validUntilMs).toLocaleString() : 'Unknown'}
                           </Text>
+                          <Pressable
+                            onPress={() => handleJoinPremiumShow(item)}
+                            style={styles.joinPremiumAction}
+                            disabled={busy}
+                          >
+                            <Text style={styles.joinPremiumActionText}>Join Aqua Premium Show</Text>
+                          </Pressable>
                         </View>
                       ))
                     )}
@@ -762,6 +850,17 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.68)',
     fontSize: 12,
     marginTop: 4,
+  },
+  joinPremiumAction: {
+    alignSelf: 'flex-start',
+    paddingTop: 12,
+    paddingBottom: 4,
+  },
+  joinPremiumActionText: {
+    color: '#8D0000',
+    fontSize: 14,
+    fontWeight: '900',
+    letterSpacing: 0.3,
   },
   grid: {
     gap: 10,

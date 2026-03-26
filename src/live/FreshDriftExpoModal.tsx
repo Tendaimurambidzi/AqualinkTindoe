@@ -97,6 +97,15 @@ type RecentDriftItem = {
   updatedAtMs: number;
 };
 
+type PremiumRoomMeta = {
+  title: string;
+  description: string | null;
+  status: string;
+  startsAtMs: number;
+  endsAtMs: number;
+  hostName: string | null;
+};
+
 type Props = {
   visible: boolean;
   onClose: () => void;
@@ -135,6 +144,17 @@ const formatTimestamp = (value: number): string => {
   } catch {
     return '';
   }
+};
+
+const formatCountdown = (diffMs: number): string => {
+  const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${hours}h ${String(minutes).padStart(2, '0')}m ${String(seconds).padStart(2, '0')}s`;
+  }
+  return `${minutes}m ${String(seconds).padStart(2, '0')}s`;
 };
 
 const normalizeSearchResult = (entry: any): SearchResultItem | null => {
@@ -216,6 +236,8 @@ const FreshDriftExpoModal = ({
   const [roomTitle, setRoomTitle] = useState<string>('Drift Expo');
   const [roomHostUid, setRoomHostUid] = useState<string | null>(null);
   const [roomPremiumShowId, setRoomPremiumShowId] = useState<string | null>(null);
+  const [premiumMeta, setPremiumMeta] = useState<PremiumRoomMeta | null>(null);
+  const [clockNowMs, setClockNowMs] = useState<number>(Date.now());
   const [pendingPremiumJoin, setPendingPremiumJoin] = useState<{
     liveId: string;
     showId: string;
@@ -262,6 +284,26 @@ const FreshDriftExpoModal = ({
   const meUid = me?.uid || '';
   const meName = String(me?.displayName || (me?.email ? me.email.split('@')[0] : '') || 'Viber');
   const mePhoto = me?.photoURL || null;
+  const isPremiumRoom = !!roomPremiumShowId;
+  const isPremiumHost = !!(roomPremiumShowId && roomHostUid && meUid && roomHostUid === meUid);
+  const premiumCountdownLabel = useMemo(() => {
+    if (!premiumMeta) return null;
+    if (premiumMeta.status === 'scheduled' && premiumMeta.startsAtMs > clockNowMs) {
+      return `Starts in ${formatCountdown(premiumMeta.startsAtMs - clockNowMs)}`;
+    }
+    if (premiumMeta.endsAtMs > clockNowMs) {
+      return `Ends in ${formatCountdown(premiumMeta.endsAtMs - clockNowMs)}`;
+    }
+    return premiumMeta.status === 'ended' ? 'Show ended' : 'Closing soon';
+  }, [clockNowMs, premiumMeta]);
+  const premiumStatusLine = useMemo(() => {
+    if (!premiumMeta) return null;
+    const viewerLabel = isPremiumHost ? 'Host view' : 'Guest view';
+    const windowLabel = premiumMeta.endsAtMs
+      ? `Window: ${formatTimestamp(premiumMeta.startsAtMs)} - ${formatTimestamp(premiumMeta.endsAtMs)}`
+      : null;
+    return [viewerLabel, windowLabel].filter(Boolean).join(' | ');
+  }, [isPremiumHost, premiumMeta]);
   useEffect(() => {
     roomRef.current =
       roomId && roomChannel
@@ -277,6 +319,8 @@ const FreshDriftExpoModal = ({
     setRoomTitle('Drift Expo');
     setRoomHostUid(null);
     setRoomPremiumShowId(null);
+    setPremiumMeta(null);
+    setClockNowMs(Date.now());
     setPendingPremiumJoin(null);
     setRoomHostName('Host');
     setMyRtcUid(0);
@@ -434,9 +478,10 @@ const FreshDriftExpoModal = ({
         throw new Error('This Drift Expo room is missing a channel.');
       }
       const uid = mapRtcUidFromUserId(meUid);
+      const fallbackTitle = nextPremiumShowId ? 'Aqua Premium Show' : 'Drift Expo';
       setRoomId(liveId);
       setRoomChannel(channel);
-      setRoomTitle(String(data.title || data.liveTitle || inviteJoinPreset?.title || 'Drift Expo'));
+      setRoomTitle(String(data.title || data.liveTitle || inviteJoinPreset?.title || fallbackTitle));
       setRoomHostUid(nextHostUid);
       setRoomPremiumShowId(nextPremiumShowId);
       setRoomHostName(String(data.hostName || inviteJoinPreset?.fromName || 'Host'));
@@ -481,18 +526,87 @@ const FreshDriftExpoModal = ({
     };
   }, [hydrateRoom, meUid, pendingPremiumJoin, visible]);
 
+  useEffect(() => {
+    if (!visible || !roomPremiumShowId) return;
+    setClockNowMs(Date.now());
+    const timer = setInterval(() => {
+      setClockNowMs(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [roomPremiumShowId, visible]);
+
+  useEffect(() => {
+    if (!visible || !roomPremiumShowId) {
+      setPremiumMeta(null);
+      return;
+    }
+    const unsub = firestore()
+      .collection('premium_shows')
+      .doc(roomPremiumShowId)
+      .onSnapshot(snap => {
+        const data = snap?.data?.() || {};
+        const nextTitle = String(data.title || 'Aqua Premium Show');
+        setPremiumMeta({
+          title: nextTitle,
+          description: data.description ? String(data.description) : null,
+          status: String(data.status || 'live'),
+          startsAtMs: toMillis(data.startsAt),
+          endsAtMs: toMillis(data.endsAt),
+          hostName: data.hostName ? String(data.hostName) : null,
+        });
+        setRoomTitle(currentTitle =>
+          currentTitle && currentTitle !== 'Drift Expo' ? currentTitle : nextTitle,
+        );
+        if (data.hostName) {
+          setRoomHostName(currentName =>
+            currentName && currentName !== 'Host' ? currentName : String(data.hostName || 'Host'),
+          );
+        }
+      });
+    return () => {
+      try {
+        unsub();
+      } catch {}
+    };
+  }, [roomPremiumShowId, visible]);
+
   const startFreshRoom = useCallback(async () => {
     if (!meUid) {
       Alert.alert('Sign in required', 'Please sign in to start Drift Expo.');
       return;
     }
     setIsBusy(true);
-    setStatusText(engineReady ? 'Creating room' : 'Preparing camera');
+    setStatusText(
+      engineReady
+        ? isChartered && premiumShowId
+          ? 'Creating Aqua Premium show'
+          : 'Creating room'
+        : 'Preparing camera',
+    );
     try {
       const ref = firestore().collection('live').doc();
-      const channel = `drift_${ref.id}`.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
+      let premiumTitle = 'Aqua Premium Show';
+      if (isChartered && premiumShowId) {
+        try {
+          const premiumSnap = await firestore().collection('premium_shows').doc(premiumShowId).get();
+          const premiumData = premiumSnap?.data?.() || {};
+          premiumTitle = String(premiumData.title || premiumTitle);
+          setPremiumMeta({
+            title: premiumTitle,
+            description: premiumData.description ? String(premiumData.description) : null,
+            status: String(premiumData.status || 'live'),
+            startsAtMs: toMillis(premiumData.startsAt),
+            endsAtMs: toMillis(premiumData.endsAt),
+            hostName: premiumData.hostName ? String(premiumData.hostName) : meName,
+          });
+        } catch {}
+      }
+      const channelPrefix = isChartered && premiumShowId ? 'aqua_premium' : 'drift';
+      const channel = `${channelPrefix}_${ref.id}`.replace(/[^A-Za-z0-9_]/g, '_').slice(0, 64);
       const uid = mapRtcUidFromUserId(meUid);
-      const title = 'Drift Expo';
+      const title = isChartered && premiumShowId ? premiumTitle : 'Drift Expo';
       await ref.set({
         title,
         liveTitle: title,
@@ -501,6 +615,7 @@ const FreshDriftExpoModal = ({
         hostUid: meUid,
         hostName: meName,
         hostPhoto: mePhoto,
+        roomKind: isChartered && premiumShowId ? 'aqua-premium' : 'drift-expo',
         premiumRequired: !!(isChartered && premiumShowId),
         premiumShowId: isChartered ? premiumShowId || null : null,
         status: 'live',
@@ -520,7 +635,13 @@ const FreshDriftExpoModal = ({
       upsertParticipant(ref.id, channel, uid, true).catch(() => {});
       joinedChannelRef.current = null;
       joiningChannelRef.current = null;
-      setStatusText(engineReady ? 'Joining room' : 'Camera warming up');
+      setStatusText(
+        engineReady
+          ? isChartered && premiumShowId
+            ? 'Opening Aqua Premium camera'
+            : 'Joining room'
+          : 'Camera warming up',
+      );
     } catch (error: any) {
       Alert.alert('Could not start Drift Expo', String(error?.message || 'Try again.'));
     } finally {
@@ -1314,11 +1435,23 @@ const FreshDriftExpoModal = ({
               ) : null}
               <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
                 <View>
-                  <Text style={styles.livePill}>LIVE</Text>
+                  <Text style={[styles.livePill, isPremiumRoom ? styles.premiumLivePill : null]}>
+                    {isPremiumRoom ? 'AQUA PREMIUM' : 'LIVE'}
+                  </Text>
                   <Text style={styles.roomTitle}>{roomTitle}</Text>
                   <Text style={styles.roomMeta}>
                     {roomChannel} | {participants.length} in room
                   </Text>
+                  {isPremiumRoom ? (
+                    <View style={styles.premiumInfoPanel}>
+                      <Text style={styles.premiumCountdownText}>
+                        {premiumCountdownLabel || 'Premium stream active'}
+                      </Text>
+                      {premiumStatusLine ? (
+                        <Text style={styles.premiumMetaText}>{premiumStatusLine}</Text>
+                      ) : null}
+                    </View>
+                  ) : null}
                 </View>
                 <Pressable onPress={handleClose} style={styles.closeChip}>
                   <Text style={styles.closeChipText}>Close</Text>
@@ -1634,7 +1767,13 @@ const FreshDriftExpoModal = ({
               }}
             >
               <Text style={styles.primaryStartButtonText}>
-                {inviteJoinPreset?.liveId ? 'Join room' : 'Start new Drift Expo'}
+                {inviteJoinPreset?.liveId
+                  ? premiumShowId
+                    ? 'Join Aqua Premium Show'
+                    : 'Join room'
+                  : premiumShowId
+                  ? 'Start Aqua Premium Show'
+                  : 'Start new Drift Expo'}
               </Text>
             </Pressable>
             {recentDrifts.length > 0 ? (
@@ -1761,6 +1900,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 8,
   },
+  premiumLivePill: {
+    color: '#fff4f4',
+    backgroundColor: '#8d0000',
+  },
   roomTitle: {
     color: 'white',
     fontSize: 22,
@@ -1768,6 +1911,26 @@ const styles = StyleSheet.create({
   },
   roomMeta: {
     color: 'rgba(255,255,255,0.76)',
+    marginTop: 4,
+  },
+  premiumInfoPanel: {
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(141,0,0,0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,210,210,0.26)',
+    maxWidth: 320,
+  },
+  premiumCountdownText: {
+    color: '#ffe1e1',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  premiumMetaText: {
+    color: 'rgba(255,235,235,0.84)',
+    fontSize: 11,
     marginTop: 4,
   },
   closeChip: {

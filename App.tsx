@@ -18002,6 +18002,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     console.log('Chartered Drift Started:', cfg.title);
                     void goDrift();
                   }}
+                  onJoinPremiumShow={cfg => {
+                    setIsCharteredDrift(true);
+                    setActivePremiumShowId(cfg.premiumShowId || null);
+                    setLiveInviteJoinPreset({
+                      liveId: cfg.liveId,
+                      channel: cfg.channel || null,
+                      title: cfg.title || 'Aqua Premium Show',
+                      fromName: cfg.hostName || 'Host',
+                      nonce: Date.now(),
+                    });
+                    setShowLive(true);
+                  }}
                   onEndPaidDrift={() => {
                     console.log('Chartered Drift Ended');
                     setIsCharteredDrift(false);
