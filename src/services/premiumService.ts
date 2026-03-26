@@ -124,6 +124,48 @@ export const getCurrentUserIdentity = () => {
   };
 };
 
+export async function findReusablePremiumShowForCurrentHost(): Promise<{
+  show: PremiumShowRecord;
+  tokens: PremiumTokenRecord[];
+} | null> {
+  const me = auth().currentUser;
+  if (!me?.uid) return null;
+  const snap = await firestore()
+    .collection('premium_shows')
+    .where('hostUid', '==', me.uid)
+    .get();
+  const candidate = (snap?.docs || [])
+    .sort((a, b) => {
+      const aData = a.data() || {};
+      const bData = b.data() || {};
+      return (toMillis(bData.createdAt) || 0) - (toMillis(aData.createdAt) || 0);
+    })
+    .find(doc => {
+    const data = doc.data() || {};
+    const status = String(data.status || 'scheduled') as PremiumShowStatus;
+    const endsAtMs = toMillis(data.endsAt);
+    return status !== 'ended' && status !== 'cancelled' && (!endsAtMs || endsAtMs > nowMs());
+  });
+  if (!candidate) return null;
+  const data = candidate.data() || {};
+  const tokens = await listPremiumTokens(candidate.id);
+  return {
+    show: {
+      id: candidate.id,
+      hostUid: String(data.hostUid || me.uid),
+      hostName: data.hostName ? String(data.hostName) : null,
+      title: String(data.title || 'Aqua Premium Show'),
+      description: data.description ? String(data.description) : null,
+      status: String(data.status || 'scheduled') as PremiumShowStatus,
+      startsAtMs: toMillis(data.startsAt),
+      endsAtMs: toMillis(data.endsAt),
+      capacity: Math.max(1, Number(data.capacity || tokens.length || 1)),
+      ticketStats: data.ticketStats || undefined,
+    },
+    tokens,
+  };
+}
+
 export async function createPremiumShowWithTokens(params: {
   title: string;
   description?: string | null;
@@ -138,6 +180,10 @@ export async function createPremiumShowWithTokens(params: {
 }> {
   const me = auth().currentUser;
   if (!me?.uid) throw new Error('Sign in required');
+  const reusable = await findReusablePremiumShowForCurrentHost();
+  if (reusable) {
+    return reusable;
+  }
   const startsAtMs = nowMs();
   const endsAtMs = startsAtMs + Math.max(15, Number(params.durationMins || 60)) * 60 * 1000;
   const showRef = firestore().collection('premium_shows').doc();

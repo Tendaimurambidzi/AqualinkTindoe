@@ -360,6 +360,8 @@ const FreshDriftExpoModal = ({
   const lastAutoOpenedDocIdRef = useRef<string | null>(null);
   const slideshowTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const openingPdfDocIdRef = useRef<string | null>(null);
+  const pdfCachePromiseByDocRef = useRef<Record<string, Promise<string>>>({});
+  const primedPdfDocIdsRef = useRef<Set<string>>(new Set());
 
   const me = auth().currentUser;
   const meUid = me?.uid || '';
@@ -396,6 +398,7 @@ const FreshDriftExpoModal = ({
       })),
     [participantTicketLabels, participants, roomHostUid],
   );
+  const premiumChatRows = useMemo(() => comments.slice(-12), [comments]);
   const pdfDisplayMetrics = useMemo(() => {
     const frameWidth = Math.max(0, pdfFrameWidth - 20);
     const frameHeight = Math.max(0, pdfFrameHeight - 20);
@@ -607,6 +610,52 @@ const FreshDriftExpoModal = ({
     [PdfRenderer],
   );
 
+  const ensureSharedPdfCached = useCallback(
+    async (doc: SharedPdfDoc) => {
+      const existingPromise = pdfCachePromiseByDocRef.current[doc.id];
+      if (existingPromise) {
+        return existingPromise;
+      }
+      const nextPromise = (async () => {
+        const localPath = resolvePdfCachePath(doc);
+        const exists = await RNFS.exists(localPath);
+        if (!exists) {
+          const download = RNFS.downloadFile({
+            fromUrl: doc.downloadUrl,
+            toFile: localPath,
+            background: true,
+          });
+          const result = await download.promise;
+          if (Number(result?.statusCode || 0) >= 400) {
+            throw new Error('Could not download PDF.');
+          }
+        }
+        return localPath;
+      })();
+      pdfCachePromiseByDocRef.current[doc.id] = nextPromise;
+      try {
+        return await nextPromise;
+      } finally {
+        delete pdfCachePromiseByDocRef.current[doc.id];
+      }
+    },
+    [resolvePdfCachePath],
+  );
+
+  const primeSharedPdf = useCallback(
+    async (doc: SharedPdfDoc) => {
+      if (!doc.downloadUrl || !PdfRenderer?.getPageCount || !PdfRenderer?.renderPage) return;
+      const localPath = await ensureSharedPdfCached(doc);
+      if (primedPdfDocIdsRef.current.has(doc.id)) return;
+      await Promise.all([
+        PdfRenderer.getPageCount(localPath),
+        PdfRenderer.renderPage(localPath, 0, 1560),
+      ]);
+      primedPdfDocIdsRef.current.add(doc.id);
+    },
+    [PdfRenderer, ensureSharedPdfCached],
+  );
+
   const isBenignPdfOpenError = useCallback((error: any) => {
     const message = String(error?.message || error || '').toLowerCase();
     return (
@@ -641,25 +690,17 @@ const FreshDriftExpoModal = ({
       openingPdfDocIdRef.current = doc.id;
       setDocBusy(true);
       try {
-        const localPath = resolvePdfCachePath(doc);
-        const exists = await RNFS.exists(localPath);
-        if (!exists) {
-          const download = RNFS.downloadFile({
-            fromUrl: doc.downloadUrl,
-            toFile: localPath,
-            background: true,
-          });
-          const result = await download.promise;
-          if (Number(result?.statusCode || 0) >= 400) {
-            throw new Error('Could not download PDF.');
-          }
-        }
+        const localPath = await ensureSharedPdfCached(doc);
         const meta = await PdfRenderer.getPageCount(localPath);
+        const targetPage =
+          currentSharedDocId && currentSharedDocId === doc.id
+            ? Math.max(0, Math.min(currentSharedDocPage, Math.max(0, Number(meta?.pageCount || 1) - 1)))
+            : 0;
         setActiveDoc(doc);
         setPdfLocalPath(localPath);
         setPdfZoomLevel(1);
         setPdfPageCount(Number(meta?.pageCount || 0));
-        await renderActivePdfPage(localPath, 0);
+        await renderActivePdfPage(localPath, targetPage);
         return true;
       } catch (error: any) {
         if (!isBenignPdfOpenError(error)) {
@@ -671,7 +712,14 @@ const FreshDriftExpoModal = ({
         setDocBusy(false);
       }
     },
-    [PdfRenderer, isBenignPdfOpenError, renderActivePdfPage, resolvePdfCachePath],
+    [
+      PdfRenderer,
+      currentSharedDocId,
+      currentSharedDocPage,
+      ensureSharedPdfCached,
+      isBenignPdfOpenError,
+      renderActivePdfPage,
+    ],
   );
 
   const closePdfViewer = useCallback(() => {
@@ -794,8 +842,20 @@ const FreshDriftExpoModal = ({
       });
       const downloadUrl = await uploadRef.getDownloadURL();
       const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
-      await docRef.set({
+      const sharedDocPayload = {
+        id: docRef.id,
         title: fileName.replace(/\.(pdf|ppt|pptx|doc|docx)$/i, ''),
+        fileName,
+        downloadUrl: isPdf ? downloadUrl : '',
+        storagePath: isPdf ? storagePath : '',
+        sharedByName: meName,
+        createdAtMs: Date.now(),
+        status: isPdf ? 'ready' : 'converting',
+        sourceKind,
+        errorMessage: null,
+      } as SharedPdfDoc;
+      await docRef.set({
+        title: sharedDocPayload.title,
         fileName,
         downloadUrl: isPdf ? downloadUrl : '',
         storagePath: isPdf ? storagePath : '',
@@ -810,6 +870,18 @@ const FreshDriftExpoModal = ({
         updatedAtMs: Date.now(),
       });
       if (isPdf) {
+        try {
+          const localCachePath = resolvePdfCachePath(sharedDocPayload);
+          const exists = await RNFS.exists(localCachePath);
+          if (!exists) {
+            await RNFS.copyFile(uploadPath, localCachePath);
+          }
+          primedPdfDocIdsRef.current.add(sharedDocPayload.id);
+          await Promise.all([
+            PdfRenderer?.getPageCount?.(localCachePath),
+            PdfRenderer?.renderPage?.(localCachePath, 0, 1560),
+          ]);
+        } catch {}
         await firestore()
           .collection('live')
           .doc(roomId)
@@ -825,12 +897,22 @@ const FreshDriftExpoModal = ({
           );
       } else {
         const requestConversion = functions().httpsCallable('requestPresentationConversion');
-        await requestConversion({
+        requestConversion({
           roomId,
           docId: docRef.id,
           sourcePath: storagePath,
           fileName,
           sourceKind,
+        }).catch(async (error: any) => {
+          await docRef.set(
+            {
+              status: 'error',
+              errorMessage: String(error?.message || 'Presentation conversion failed.'),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAtMs: Date.now(),
+            },
+            { merge: true },
+          );
         });
       }
       setShowDocsPanel(true);
@@ -842,7 +924,17 @@ const FreshDriftExpoModal = ({
     } finally {
       setDocBusy(false);
     }
-  }, [AudioPicker, isPremiumHost, isPremiumRoom, meName, meUid, normalizePdfUploadPath, roomId]);
+  }, [
+    AudioPicker,
+    PdfRenderer,
+    isPremiumHost,
+    isPremiumRoom,
+    meName,
+    meUid,
+    normalizePdfUploadPath,
+    resolvePdfCachePath,
+    roomId,
+  ]);
 
   const autoOpenSharedPdf = useCallback(
     async (docId: string | null | undefined) => {
@@ -1608,6 +1700,17 @@ const FreshDriftExpoModal = ({
   }, [autoOpenSharedPdf, currentSharedDocId, sharedDocs]);
 
   useEffect(() => {
+    if (!isPremiumRoom || sharedDocs.length === 0) return;
+    const docsToPrime = sharedDocs.filter((doc, index) => {
+      if (doc.status !== 'ready' || !doc.downloadUrl) return false;
+      return doc.id === currentSharedDocId || index === 0;
+    });
+    docsToPrime.forEach(doc => {
+      primeSharedPdf(doc).catch(() => {});
+    });
+  }, [currentSharedDocId, isPremiumRoom, primeSharedPdf, sharedDocs]);
+
+  useEffect(() => {
     if (!activeDoc || !pdfLocalPath) return;
     if (!currentSharedDocId || activeDoc.id !== currentSharedDocId) return;
     if (pdfPageIndex === currentSharedDocPage) return;
@@ -1625,6 +1728,13 @@ const FreshDriftExpoModal = ({
     pdfPageIndex,
     renderActivePdfPage,
   ]);
+
+  useEffect(() => {
+    if (!isPremiumRoom) return;
+    setShowInvitePanel(false);
+    setShowReactionPicker(false);
+    setShowComments(false);
+  }, [isPremiumRoom]);
 
   useEffect(() => {
     const shouldHideCamera = !!activeDoc;
@@ -2126,13 +2236,15 @@ const FreshDriftExpoModal = ({
                 </Pressable>
               </View>
               <View style={styles.rightRail}>
-                <Pressable style={styles.railButton} onPress={() => setShowInvitePanel(true)}>
+                {!isPremiumRoom ? <Pressable style={styles.railButton} onPress={() => setShowInvitePanel(true)}>
                   <Text style={styles.railIcon}>Invite</Text>
-                </Pressable>
-                <Pressable style={styles.railButton} onPress={() => setShowReactionPicker(v => !v)}>
+                </Pressable> : <Pressable style={styles.railButton} onPress={() => setShowComments(v => !v)}>
+                  <Text style={styles.railIcon}>{`Chat (${comments.length})`}</Text>
+                </Pressable>}
+                {!isPremiumRoom ? <Pressable style={styles.railButton} onPress={() => setShowReactionPicker(v => !v)}>
                   <Text style={styles.railIcon}>React</Text>
                   <Text style={styles.railEmojiLine}>💙 🫶 ❤️ ✨ 🤗</Text>
-                </Pressable>
+                </Pressable> : null}
                 <Pressable style={styles.railButton} onPress={() => setShowAudiencePanel(v => !v)}>
                   <Text style={styles.railIcon}>👥 ({participants.length})</Text>
                 </Pressable>
@@ -2171,16 +2283,16 @@ const FreshDriftExpoModal = ({
                 >
                   <Text style={styles.railIcon}>Flip</Text>
                 </Pressable>
-                <Pressable style={styles.railButton} onPress={openSoundBoard}>
+                {!isPremiumRoom ? <Pressable style={styles.railButton} onPress={openSoundBoard}>
                   <Text style={styles.railIcon}>Sounds</Text>
-                </Pressable>
+                </Pressable> : null}
                 {isPremiumRoom ? (
                   <Pressable style={styles.railButton} onPress={() => setShowDocsPanel(v => !v)}>
                     <Text style={styles.railIcon}>Share Files</Text>
                   </Pressable>
                 ) : null}
               </View>
-              {soundBadgeLabel ? (
+              {soundBadgeLabel && !isPremiumRoom ? (
                 <View style={styles.soundBadge}>
                   <Text style={styles.soundBadgeText}>{soundBadgeLabel}</Text>
                 </View>
@@ -2197,6 +2309,50 @@ const FreshDriftExpoModal = ({
                         <Text style={styles.audienceRowText}>{item.label}</Text>
                       </View>
                     ))}
+                  </ScrollView>
+                </View>
+              ) : null}
+              {showComments && isPremiumRoom ? (
+                <View
+                  style={[
+                    styles.premiumCommentPanel,
+                    {
+                      left: insets.left + 12,
+                      right: insets.right + 96,
+                      bottom: insets.bottom + 92,
+                    },
+                  ]}
+                >
+                  <View style={styles.premiumCommentHeader}>
+                    <Text style={styles.premiumCommentTitle}>Chat</Text>
+                    <Pressable onPress={() => setShowComments(false)}>
+                      <Text style={styles.premiumCommentClose}>Hide</Text>
+                    </Pressable>
+                  </View>
+                  <ScrollView
+                    style={styles.premiumCommentScroll}
+                    contentContainerStyle={styles.premiumCommentScrollContent}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {premiumChatRows.length === 0 ? (
+                      <Text style={styles.premiumCommentEmpty}>No messages yet.</Text>
+                    ) : (
+                      premiumChatRows.map(item => (
+                        <Pressable
+                          key={item.id}
+                          style={styles.premiumCommentBubble}
+                          onPress={() => setReplyTarget(item)}
+                        >
+                          <Text style={styles.premiumCommentAuthor}>{item.fromName}</Text>
+                          {item.replyToName || item.replyToText ? (
+                            <Text style={styles.premiumCommentReply} numberOfLines={1}>
+                              Reply to {item.replyToName || 'message'}: {item.replyToText || ''}
+                            </Text>
+                          ) : null}
+                          <Text style={styles.premiumCommentText}>{item.text}</Text>
+                        </Pressable>
+                      ))
+                    )}
                   </ScrollView>
                 </View>
               ) : null}
@@ -2237,7 +2393,7 @@ const FreshDriftExpoModal = ({
                   </ScrollView>
                 </View>
               ) : null}
-              {showReactionPicker ? (
+              {showReactionPicker && !isPremiumRoom ? (
                 <View style={styles.reactionTray}>
                   {REACTION_EMOJIS.map(emoji => (
                     <Pressable
@@ -2250,7 +2406,7 @@ const FreshDriftExpoModal = ({
                   ))}
                 </View>
               ) : null}
-              {showComments ? (
+              {showComments && !isPremiumRoom ? (
                 <View pointerEvents="box-none" style={styles.commentLane}>
                   <View style={styles.commentGuide} />
                   {floatingComments.map(comment => (
@@ -2290,7 +2446,7 @@ const FreshDriftExpoModal = ({
                   ))}
                 </View>
               ) : null}
-              {floatingReactions.map(item => (
+              {!isPremiumRoom ? floatingReactions.map(item => (
                 <Animated.Text
                   key={item.id}
                   style={[
@@ -2334,7 +2490,7 @@ const FreshDriftExpoModal = ({
                 >
                   {item.emoji}
                 </Animated.Text>
-              ))}
+              )) : null}
               <View style={[styles.bottomComposer, { paddingBottom: insets.bottom + 14 }]}>
                 {replyTarget ? (
                   <View style={styles.replyPill}>
@@ -2351,7 +2507,7 @@ const FreshDriftExpoModal = ({
                     <TextInput
                       value={commentText}
                       onChangeText={setCommentText}
-                      placeholder="Say something to the room"
+                      placeholder={isPremiumRoom ? 'Message the room' : 'Say something to the room'}
                       placeholderTextColor="rgba(255,255,255,0.55)"
                       style={styles.commentInput}
                     />
@@ -2362,6 +2518,7 @@ const FreshDriftExpoModal = ({
                 </KeyboardAvoidingView>
               </View>
             </View>
+            {!isPremiumRoom ? (
             <Modal visible={showInvitePanel} transparent animationType="fade" onRequestClose={() => setShowInvitePanel(false)}>
               <View style={styles.inviteBackdrop}>
                 <View style={[styles.invitePanel, { paddingBottom: insets.bottom + 18 }]}>
@@ -2439,6 +2596,7 @@ const FreshDriftExpoModal = ({
                 </View>
               </View>
             </Modal>
+            ) : null}
           </>
         ) : (
           <View style={[styles.lobby, { paddingTop: insets.top + 36, paddingBottom: insets.bottom + 24 }]}>
@@ -2926,6 +3084,67 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.66)',
     fontSize: 11,
     marginTop: 4,
+  },
+  premiumCommentPanel: {
+    position: 'absolute',
+    borderRadius: 16,
+    backgroundColor: 'rgba(6,13,22,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: 10,
+    maxHeight: SCREEN_HEIGHT * 0.24,
+  },
+  premiumCommentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  premiumCommentTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  premiumCommentClose: {
+    color: '#9de8ff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  premiumCommentScroll: {
+    maxHeight: SCREEN_HEIGHT * 0.18,
+  },
+  premiumCommentScrollContent: {
+    paddingBottom: 4,
+  },
+  premiumCommentEmpty: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 12,
+    textAlign: 'center',
+    paddingVertical: 14,
+  },
+  premiumCommentBubble: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 7,
+  },
+  premiumCommentAuthor: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+  premiumCommentReply: {
+    color: '#8fdcff',
+    fontSize: 11,
+    marginBottom: 4,
+  },
+  premiumCommentText: {
+    color: '#F7FBFF',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '700',
   },
   reactionTray: {
     position: 'absolute',

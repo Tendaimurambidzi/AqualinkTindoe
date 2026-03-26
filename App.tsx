@@ -2310,16 +2310,16 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   makeWavesPrimaryAction: {
-    backgroundColor: '#0A4D7A',
-    borderColor: '#0A4D7A',
+    backgroundColor: '#2FA7FF',
+    borderColor: '#2FA7FF',
   },
   makeWavesSecondaryAction: {
-    backgroundColor: '#0F6B63',
-    borderColor: '#0F6B63',
+    backgroundColor: '#D7263D',
+    borderColor: '#D7263D',
   },
   makeWavesPremiumAction: {
-    backgroundColor: '#5B2788',
-    borderColor: '#5B2788',
+    backgroundColor: '#8B1020',
+    borderColor: '#8B1020',
   },
   tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tag: {
@@ -18001,8 +18001,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       justifyContent: 'space-between',
                     }}
                   >
-                    <Text style={styles.logbookActionText}>Say Something</Text>
-                    <Text style={styles.logbookActionText}>✍️</Text>
+                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>Say Something</Text>
+                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>✍️</Text>
                   </View>
                 </Pressable>
                 <Pressable style={[styles.logbookAction, styles.makeWavesSecondaryAction]} onPress={goDrift}
@@ -18027,13 +18027,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#00C2FF',
                       }}
                     />
-                    <Text style={styles.logbookActionText}>Drift Expo</Text>
-                    <Text style={styles.logbookActionText}>🎥</Text>
+                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>Drift Expo</Text>
+                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>🎥</Text>
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton
                   buttonStyle={[styles.logbookAction, styles.makeWavesPremiumAction]}
-                  buttonTextStyle={styles.logbookActionText}
+                  buttonTextStyle={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}
                   hitSlop={{top: 0, left: 0, bottom: 0, right: 0}}
                   onStartPaidDrift={cfg => {
                     setIsCharteredDrift(true);

@@ -20,6 +20,7 @@ import {
 import {
   createPremiumShowWithTokens,
   endPremiumShow,
+  findReusablePremiumShowForCurrentHost,
   listMyPremiumAccess,
   listPremiumTokens,
   redeemPremiumCode,
@@ -378,6 +379,24 @@ export default function CharteredSeaDriftButton(props: Props) {
   const handleOpen = useCallback(() => {
     setOpen(true);
     void loadMyAccess();
+    void (async () => {
+      try {
+        const reusable = await findReusablePremiumShowForCurrentHost();
+        if (!reusable) return;
+        const reusableDuration = Math.max(
+          30,
+          Number(Math.round((reusable.show.endsAtMs - reusable.show.startsAtMs) / 60000)) || 60,
+        );
+        const nearestDuration =
+          minutesOptions.find(option => option >= reusableDuration) || minutesOptions[minutesOptions.length - 1];
+        setActiveShowId(reusable.show.id);
+        setGeneratedTokens(reusable.tokens);
+        setTitle(reusable.show.title || 'Aqua Premium Show');
+        setDescription(reusable.show.description || '');
+        setDuration(nearestDuration);
+        setTokenCount(String(reusable.tokens.length || reusable.show.capacity || ''));
+      } catch {}
+    })();
   }, [loadMyAccess]);
 
   return (
