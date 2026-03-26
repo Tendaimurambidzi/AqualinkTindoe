@@ -30,6 +30,12 @@ service firebase.storage {
       allow update, delete: if isAuthenticated();
     }
 
+    match /premium_presentations/{roomId}/{fileName} {
+      allow create: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow update, delete: if isAuthenticated();
+    }
+
     // Default deny for other paths
     match /{allPaths=**} {
       allow read, write: if false;

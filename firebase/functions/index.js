@@ -1,4 +1,5 @@
 const { onCall, HttpsError, onRequest } = require('firebase-functions/v2/https');
+const { defineString } = require('firebase-functions/params');
 const { VertexAI } = require('@google-cloud/vertexai');
 // ...existing code...
 
@@ -16,16 +17,21 @@ const functions = require('firebase-functions');
 const { onDocumentCreated, onDocumentDeleted, onDocumentWritten } = require('firebase-functions/v2/firestore');
 // Already imported at the top
 const admin = require('firebase-admin');
+const { randomUUID } = require('crypto');
 const os = require('os');
 const path = require('path');
 const { promises: fsPromises } = require('fs');
 const AdmZip = require('adm-zip');
+const fetch = require('node-fetch');
 
 try { admin.initializeApp(); } catch {}
 const db = admin.firestore();
 const DOWNLOAD_BUCKET = admin.storage().bucket();
 const LOGO_SOURCE_PATH = path.join(__dirname, 'assets', 'my_logo.jpg');
 const DOWNLOADS_PREFIX = 'downloads/waves';
+const PPT_CONVERTER_URL = defineString('PPT_CONVERTER_URL');
+const PPT_CONVERTER_SHARED_TOKEN = defineString('PPT_CONVERTER_SHARED_TOKEN');
+
 const DEFAULT_TONE_SETTINGS = {
   incoming_call: 'lg_cat_ring',
   messages: 'default_notification',
@@ -1611,4 +1617,140 @@ exports.generateAIResponse = onCall({ region: 'us-central1' }, async (req) => {
     console.error('AI generation error:', error);
     throw new HttpsError('internal', `Failed to generate AI response: ${error.message}`);
   }
+});
+
+exports.requestPresentationConversion = onCall({ region: 'us-central1' }, async (req) => {
+  if (!req.auth) {
+    throw new HttpsError('unauthenticated', 'Sign in is required.');
+  }
+
+  const roomId = String(req.data?.roomId || '').trim();
+  const docId = String(req.data?.docId || '').trim();
+  const sourcePath = String(req.data?.sourcePath || '').trim();
+  const fileName = String(req.data?.fileName || '').trim();
+  const sourceKind = String(req.data?.sourceKind || '').trim().toLowerCase();
+
+  if (!roomId || !docId || !sourcePath || !fileName) {
+    throw new HttpsError('invalid-argument', 'roomId, docId, sourcePath, and fileName are required.');
+  }
+
+  if (!['ppt', 'pptx', 'doc', 'docx'].includes(sourceKind)) {
+    throw new HttpsError('invalid-argument', 'Unsupported source presentation type.');
+  }
+
+  const liveRef = db.collection('live').doc(roomId);
+  const sharedDocRef = liveRef.collection('shared_docs').doc(docId);
+  const liveSnap = await liveRef.get();
+  const liveData = liveSnap.exists ? liveSnap.data() || {} : {};
+
+  if (!liveSnap.exists) {
+    throw new HttpsError('not-found', 'Live room not found.');
+  }
+
+  if (String(liveData.hostUid || '') !== req.auth.uid) {
+    throw new HttpsError('permission-denied', 'Only the room host can convert presentations.');
+  }
+
+  const converterUrl = String(
+    process.env.PPT_CONVERTER_URL || PPT_CONVERTER_URL.value() || '',
+  ).trim();
+  if (!converterUrl) {
+    throw new HttpsError('failed-precondition', 'PPT converter URL is not configured.');
+  }
+
+  const bucket = admin.storage().bucket();
+  const bucketName = bucket.name;
+  const outputFileName = `${path.parse(fileName).name}.pdf`.replace(/[^A-Za-z0-9._-]/g, '_');
+  const outputPath = `premium_docs/${roomId}/converted/${Date.now()}_${outputFileName}`;
+
+  await sharedDocRef.set({
+    status: 'converting',
+    sourceKind,
+    sourcePath,
+    fileName,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAtMs: Date.now(),
+  }, { merge: true });
+
+  const headers = { 'Content-Type': 'application/json' };
+  const sharedToken = String(
+    process.env.PPT_CONVERTER_SHARED_TOKEN || PPT_CONVERTER_SHARED_TOKEN.value() || '',
+  ).trim();
+  if (sharedToken) {
+    headers['x-converter-token'] = sharedToken;
+  }
+
+  let response;
+  try {
+    response = await fetch(`${converterUrl.replace(/\/+$/, '')}/convert`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        bucketName,
+        sourcePath,
+        outputPath,
+      }),
+    });
+  } catch (error) {
+    await sharedDocRef.set({
+      status: 'error',
+      errorMessage: String(error?.message || 'Could not reach converter service.'),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: Date.now(),
+    }, { merge: true });
+    throw new HttpsError('unavailable', 'Could not reach converter service.');
+  }
+
+  let payload = {};
+  try {
+    payload = await response.json();
+  } catch {}
+
+  if (!response.ok) {
+    const errorMessage = String(payload?.error || 'Presentation conversion failed.');
+    await sharedDocRef.set({
+      status: 'error',
+      errorMessage,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAtMs: Date.now(),
+    }, { merge: true });
+    throw new HttpsError('internal', errorMessage);
+  }
+
+  const downloadToken = randomUUID();
+  await bucket.file(outputPath).setMetadata({
+    metadata: {
+      firebaseStorageDownloadTokens: downloadToken,
+    },
+  });
+  const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(
+    outputPath,
+  )}?alt=media&token=${downloadToken}`;
+
+  await sharedDocRef.set({
+    title: path.parse(outputFileName).name,
+    status: 'ready',
+    sourceKind,
+    fileName: outputFileName,
+    storagePath: outputPath,
+    downloadUrl,
+    convertedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAtMs: Date.now(),
+  }, { merge: true });
+
+  await liveRef.set({
+    currentSharedDocId: docId,
+    currentSharedDocPage: 0,
+    currentSharedDocSlideShow: false,
+    currentSharedDocUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
+
+  return {
+    ok: true,
+    docId,
+    outputPath,
+    downloadUrl,
+  };
 });

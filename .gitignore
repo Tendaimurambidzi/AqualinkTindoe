@@ -43,6 +43,10 @@ android/app/build/
 node_modules/
 npm-debug.log
 yarn-error.log
+.env
+.env.*
+firebase/functions/.env
+firebase/functions/.env.*
 
 # fastlane
 #

@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import functions from '@react-native-firebase/functions';
 import storage from '@react-native-firebase/storage';
 import RNFS from 'react-native-fs';
 import Sound from 'react-native-sound';
@@ -135,6 +136,9 @@ type SharedPdfDoc = {
   storagePath: string;
   sharedByName: string;
   createdAtMs: number;
+  status?: string;
+  sourceKind?: string | null;
+  errorMessage?: string | null;
 };
 
 type PremiumRoomMeta = {
@@ -575,10 +579,21 @@ const FreshDriftExpoModal = ({
   );
 
   const openSharedPdf = useCallback(
-    async (doc: SharedPdfDoc) => {
+    async (
+      doc: SharedPdfDoc,
+      options?: {
+        silentIfPending?: boolean;
+      },
+    ) => {
+      if (!doc.downloadUrl) {
+        if (!options?.silentIfPending) {
+          Alert.alert('Not ready', 'This file is still converting to PDF.');
+        }
+        return false;
+      }
       if (!PdfRenderer?.getPageCount || !PdfRenderer?.renderPage) {
         Alert.alert('PDF unavailable', 'This build does not include the in-app PDF viewer.');
-        return;
+        return false;
       }
       setDocBusy(true);
       try {
@@ -600,8 +615,10 @@ const FreshDriftExpoModal = ({
         setPdfLocalPath(localPath);
         setPdfPageCount(Number(meta?.pageCount || 0));
         await renderActivePdfPage(localPath, 0);
+        return true;
       } catch (error: any) {
         Alert.alert('PDF open failed', String(error?.message || 'Could not open PDF.'));
+        return false;
       } finally {
         setDocBusy(false);
       }
@@ -670,7 +687,7 @@ const FreshDriftExpoModal = ({
     [isPremiumHost, pdfLocalPath, pdfPageCount, pdfPageIndex, pushSharedDocState, renderActivePdfPage],
   );
 
-  const handleSharePdf = useCallback(async () => {
+  const handleShareFile = useCallback(async () => {
     if (!roomId || !isPremiumRoom || !isPremiumHost) return;
     if (!AudioPicker?.pickFiles) {
       Alert.alert('File picker unavailable', 'This build cannot pick PDF files yet.');
@@ -680,46 +697,91 @@ const FreshDriftExpoModal = ({
     try {
       const result = await AudioPicker.pickFiles();
       const pickedItems = Array.isArray(result) ? result : result ? [result] : [];
-      const pdfEntry = pickedItems.find((entry: any) => {
+      const selectedEntry = pickedItems.find((entry: any) => {
         const name = String(entry?.name || entry?.uri || '').trim();
         const type = String(entry?.type || '').trim().toLowerCase();
-        return type === 'application/pdf' || /\.pdf$/i.test(name);
+        return (
+          type === 'application/pdf' ||
+          /\.pdf$/i.test(name) ||
+          /\.ppt$/i.test(name) ||
+          /\.pptx$/i.test(name) ||
+          /\.doc$/i.test(name) ||
+          /\.docx$/i.test(name)
+        );
       });
-      if (!pdfEntry?.uri) {
-        Alert.alert('PDF only', 'Choose a PDF file to share in Aqua Premium.');
+      if (!selectedEntry?.uri) {
+        Alert.alert('Supported files only', 'Choose a PDF, PPT, PPTX, DOC, or DOCX file.');
         return;
       }
-      const localUri = String(pdfEntry.uri);
-      const fileName = String(pdfEntry.name || 'shared.pdf').trim() || 'shared.pdf';
+      const localUri = String(selectedEntry.uri);
+      const fileName = String(selectedEntry.name || 'shared_file').trim() || 'shared_file';
+      const isPdf = /\.pdf$/i.test(fileName) || String(selectedEntry.type || '').toLowerCase() === 'application/pdf';
+      const sourceKind = /\.pptx$/i.test(fileName)
+        ? 'pptx'
+        : /\.ppt$/i.test(fileName)
+        ? 'ppt'
+        : /\.docx$/i.test(fileName)
+        ? 'docx'
+        : /\.doc$/i.test(fileName)
+        ? 'doc'
+        : 'pdf';
       const uploadPath = await normalizePdfUploadPath(localUri, fileName);
-      const storagePath = `premium_docs/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`;
+      const storagePath = isPdf
+        ? `premium_docs/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`
+        : `premium_presentations/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`;
       const uploadRef = storage().ref(storagePath);
-      await uploadRef.putFile(uploadPath, { contentType: 'application/pdf' });
+      await uploadRef.putFile(uploadPath, {
+        contentType: isPdf
+          ? 'application/pdf'
+          : /\.pptx$/i.test(fileName)
+          ? 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+          : /\.ppt$/i.test(fileName)
+          ? 'application/vnd.ms-powerpoint'
+          : /\.docx$/i.test(fileName)
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'application/msword',
+      });
       const downloadUrl = await uploadRef.getDownloadURL();
       const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
       await docRef.set({
-        title: fileName.replace(/\.pdf$/i, ''),
+        title: fileName.replace(/\.(pdf|ppt|pptx|doc|docx)$/i, ''),
         fileName,
-        downloadUrl,
-        storagePath,
+        downloadUrl: isPdf ? downloadUrl : '',
+        storagePath: isPdf ? storagePath : '',
+        sourcePath: !isPdf ? storagePath : '',
+        sourceKind,
+        status: isPdf ? 'ready' : 'converting',
         sharedByUid: meUid,
         sharedByName: meName,
         createdAt: firestore.FieldValue.serverTimestamp(),
         createdAtMs: Date.now(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAtMs: Date.now(),
       });
-      await firestore()
-        .collection('live')
-        .doc(roomId)
-        .set(
-          {
-            currentSharedDocId: docRef.id,
-            currentSharedDocPage: 0,
-            currentSharedDocSlideShow: false,
-            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
+      if (isPdf) {
+        await firestore()
+          .collection('live')
+          .doc(roomId)
+          .set(
+            {
+              currentSharedDocId: docRef.id,
+              currentSharedDocPage: 0,
+              currentSharedDocSlideShow: false,
+              currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+      } else {
+        const requestConversion = functions().httpsCallable('requestPresentationConversion');
+        await requestConversion({
+          roomId,
+          docId: docRef.id,
+          sourcePath: storagePath,
+          fileName,
+          sourceKind,
+        });
+      }
       setShowDocsPanel(true);
     } catch (error: any) {
       const message = String(error?.message || error || '');
@@ -738,9 +800,13 @@ const FreshDriftExpoModal = ({
       if (lastAutoOpenedDocIdRef.current === normalizedDocId) return;
       const targetDoc = sharedDocs.find(item => item.id === normalizedDocId);
       if (!targetDoc) return;
+      const opened = await openSharedPdf(targetDoc, { silentIfPending: true });
+      if (!opened) {
+        setShowDocsPanel(true);
+        return;
+      }
       lastAutoOpenedDocIdRef.current = normalizedDocId;
       setShowDocsPanel(false);
-      await openSharedPdf(targetDoc);
     },
     [openSharedPdf, sharedDocs],
   );
@@ -1459,9 +1525,12 @@ const FreshDriftExpoModal = ({
             storagePath: String(data.storagePath || ''),
             sharedByName: String(data.sharedByName || 'Host'),
             createdAtMs: toMillis(data.createdAt) || Number(data.createdAtMs || 0) || 0,
+            status: String(data.status || 'ready'),
+            sourceKind: data.sourceKind ? String(data.sourceKind) : null,
+            errorMessage: data.errorMessage ? String(data.errorMessage) : null,
           } as SharedPdfDoc;
         });
-        setSharedDocs(rows.filter(item => item.downloadUrl));
+        setSharedDocs(rows);
       });
     return () => {
       try {
@@ -2060,8 +2129,8 @@ const FreshDriftExpoModal = ({
                   </Pressable>
                 ) : null}
                 {isPremiumRoom && isPremiumHost ? (
-                  <Pressable style={styles.railButton} onPress={() => void handleSharePdf()}>
-                    <Text style={styles.railIcon}>{docBusy ? '...' : 'Share PDF'}</Text>
+                  <Pressable style={styles.railButton} onPress={() => void handleShareFile()}>
+                    <Text style={styles.railIcon}>{docBusy ? '...' : 'Share File'}</Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -2087,26 +2156,34 @@ const FreshDriftExpoModal = ({
               ) : null}
               {showDocsPanel && isPremiumRoom ? (
                 <View style={[styles.docsPanel, { top: insets.top + 78, right: insets.right + 14 }]}>
-                  <Text style={styles.docsPanelTitle}>Shared PDFs</Text>
+                  <Text style={styles.docsPanelTitle}>Shared Files</Text>
                   {isPremiumHost ? (
-                    <Pressable style={styles.docsShareButton} onPress={() => void handleSharePdf()}>
-                      <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share PDF'}</Text>
+                    <Pressable style={styles.docsShareButton} onPress={() => void handleShareFile()}>
+                      <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share File'}</Text>
                     </Pressable>
                   ) : null}
                   <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
                     {sharedDocs.length === 0 ? (
-                      <Text style={styles.docsEmptyText}>No PDFs shared yet.</Text>
+                      <Text style={styles.docsEmptyText}>No shared files yet.</Text>
                     ) : (
                       sharedDocs.map(doc => (
                         <Pressable
                           key={doc.id}
                           style={styles.docsRow}
-                          onPress={() => void openSharedPdf(doc)}
-                          disabled={docBusy}
+                          onPress={() => {
+                            if (doc.status === 'ready') {
+                              void openSharedPdf(doc);
+                            }
+                          }}
+                          disabled={docBusy || doc.status !== 'ready'}
                         >
                           <Text style={styles.docsRowTitle} numberOfLines={1}>{doc.title}</Text>
                           <Text style={styles.docsRowMeta} numberOfLines={1}>
-                            {doc.sharedByName} · {formatTimestamp(doc.createdAtMs)}
+                            {doc.status === 'converting'
+                              ? `Converting ${String(doc.sourceKind || '').toUpperCase()}...`
+                              : doc.status === 'error'
+                              ? doc.errorMessage || 'Conversion failed'
+                              : `${doc.sharedByName} · ${formatTimestamp(doc.createdAtMs)}`}
                           </Text>
                         </Pressable>
                       ))
