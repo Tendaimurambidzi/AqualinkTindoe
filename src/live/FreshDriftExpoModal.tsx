@@ -4,7 +4,6 @@ import {
   Alert,
   Animated,
   Dimensions,
-  FlatList,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -247,6 +246,8 @@ const FreshDriftExpoModal = ({
   const [joined, setJoined] = useState(false);
   const [remoteUids, setRemoteUids] = useState<number[]>([]);
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
+  const [showAudiencePanel, setShowAudiencePanel] = useState(false);
+  const [participantTicketLabels, setParticipantTicketLabels] = useState<Record<string, string>>({});
   const [comments, setComments] = useState<CommentRow[]>([]);
   const [commentText, setCommentText] = useState('');
   const [replyTarget, setReplyTarget] = useState<CommentRow | null>(null);
@@ -304,6 +305,17 @@ const FreshDriftExpoModal = ({
       : null;
     return [viewerLabel, windowLabel].filter(Boolean).join(' | ');
   }, [isPremiumHost, premiumMeta]);
+  const audienceRows = useMemo(
+    () =>
+      participants.map(item => ({
+        uid: item.uid,
+        label:
+          item.isHost || item.uid === roomHostUid
+            ? 'Host'
+            : participantTicketLabels[item.uid] || `Ticket ${String(item.uid || '').slice(-4).toUpperCase()}`,
+      })),
+    [participantTicketLabels, participants, roomHostUid],
+  );
   useEffect(() => {
     roomRef.current =
       roomId && roomChannel
@@ -327,6 +339,8 @@ const FreshDriftExpoModal = ({
     setJoined(false);
     setRemoteUids([]);
     setParticipants([]);
+    setShowAudiencePanel(false);
+    setParticipantTicketLabels({});
     setComments([]);
     setCommentText('');
     setReplyTarget(null);
@@ -564,6 +578,36 @@ const FreshDriftExpoModal = ({
             currentName && currentName !== 'Host' ? currentName : String(data.hostName || 'Host'),
           );
         }
+      });
+    return () => {
+      try {
+        unsub();
+      } catch {}
+    };
+  }, [roomPremiumShowId, visible]);
+
+  useEffect(() => {
+    if (!visible || !roomPremiumShowId) {
+      setParticipantTicketLabels({});
+      return;
+    }
+    const unsub = firestore()
+      .collection(`premium_shows/${roomPremiumShowId}/tickets`)
+      .onSnapshot(snap => {
+        const nextLabels: Record<string, string> = {};
+        (snap?.docs || []).forEach(doc => {
+          const data = doc.data() || {};
+          const claimedByUid = String(data.claimedByUid || '').trim();
+          if (!claimedByUid) return;
+          const rawCode = String(data.code || '').trim();
+          const codeLast4 = String(data.codeLast4 || '').trim();
+          nextLabels[claimedByUid] =
+            rawCode ||
+            (codeLast4
+              ? `Ticket ${codeLast4}`
+              : `Ticket ${doc.id.slice(-4).toUpperCase()}`);
+        });
+        setParticipantTicketLabels(nextLabels);
       });
     return () => {
       try {
@@ -1433,23 +1477,32 @@ const FreshDriftExpoModal = ({
                   )}
                 </View>
               ) : null}
-              <View style={[styles.topBar, { paddingTop: insets.top + 10 }]}>
-                <View>
-                  <Text style={[styles.livePill, isPremiumRoom ? styles.premiumLivePill : null]}>
-                    {isPremiumRoom ? 'AQUA PREMIUM' : 'LIVE'}
+              <View
+                style={[
+                  styles.topBar,
+                  {
+                    paddingTop: insets.top + 10,
+                    paddingLeft: insets.left + 12,
+                    paddingRight: insets.right + 12,
+                  },
+                ]}
+              >
+                <View style={styles.topBarTitleWrap}>
+                  {isPremiumRoom ? null : <Text style={styles.livePill}>LIVE</Text>}
+                  <Text
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                    style={[styles.roomTitle, isPremiumRoom ? styles.premiumRoomTitle : null]}
+                  >
+                    {roomTitle}
                   </Text>
-                  <Text style={styles.roomTitle}>{roomTitle}</Text>
-                  <Text style={styles.roomMeta}>
-                    {roomChannel} | {participants.length} in room
-                  </Text>
+                </View>
+                <View style={styles.topBarCenter}>
                   {isPremiumRoom ? (
-                    <View style={styles.premiumInfoPanel}>
+                    <View style={styles.premiumCountdownPill}>
                       <Text style={styles.premiumCountdownText}>
                         {premiumCountdownLabel || 'Premium stream active'}
                       </Text>
-                      {premiumStatusLine ? (
-                        <Text style={styles.premiumMetaText}>{premiumStatusLine}</Text>
-                      ) : null}
                     </View>
                   ) : null}
                 </View>
@@ -1465,8 +1518,8 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.railIcon}>React</Text>
                   <Text style={styles.railEmojiLine}>💙 🫶 ❤️ ✨ 🤗</Text>
                 </Pressable>
-                <Pressable style={styles.railButton} onPress={() => setShowComments(v => !v)}>
-                  <Text style={styles.railIcon}>Chat</Text>
+                <Pressable style={styles.railButton} onPress={() => setShowAudiencePanel(v => !v)}>
+                  <Text style={styles.railIcon}>👥 ({participants.length})</Text>
                 </Pressable>
                 <Pressable
                   style={styles.railButton}
@@ -1504,6 +1557,21 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.railIcon}>Flip</Text>
                 </Pressable>
               </View>
+              {showAudiencePanel ? (
+                <View style={[styles.audiencePanel, { top: insets.top + 78, right: insets.right + 14 }]}>
+                  <Text style={styles.audiencePanelTitle}>In The Room</Text>
+                  {premiumStatusLine ? (
+                    <Text style={styles.audiencePanelMeta}>{premiumStatusLine}</Text>
+                  ) : null}
+                  <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                    {audienceRows.map(item => (
+                      <View key={item.uid} style={styles.audienceRow}>
+                        <Text style={styles.audienceRowText}>{item.label}</Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                </View>
+              ) : null}
               {showReactionPicker ? (
                 <View style={styles.reactionTray}>
                   {REACTION_EMOJIS.map(emoji => (
@@ -1628,29 +1696,6 @@ const FreshDriftExpoModal = ({
                   </View>
                 </KeyboardAvoidingView>
               </View>
-              <FlatList
-                horizontal
-                data={participants}
-                keyExtractor={item => item.uid}
-                style={[styles.participantStrip, { top: insets.top + 82 }]}
-                contentContainerStyle={{ paddingHorizontal: 14, gap: 10 }}
-                renderItem={({ item }) => (
-                  <View style={styles.participantChip}>
-                    {item.photo ? (
-                      <Image source={{ uri: item.photo }} style={styles.participantAvatar} />
-                    ) : (
-                      <View style={[styles.participantAvatar, styles.commentAvatarFallback]}>
-                        <Text style={styles.commentAvatarFallbackText}>
-                          {item.name.charAt(0).toUpperCase()}
-                        </Text>
-                      </View>
-                    )}
-                    <Text style={styles.participantName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                  </View>
-                )}
-              />
             </View>
             <Modal visible={showInvitePanel} transparent animationType="fade" onRequestClose={() => setShowInvitePanel(false)}>
               <View style={styles.inviteBackdrop}>
@@ -1757,7 +1802,7 @@ const FreshDriftExpoModal = ({
             ) : null}
             {isBusy ? <ActivityIndicator color="#10c9ff" style={{ marginTop: 20 }} /> : null}
             <Pressable
-              style={styles.primaryStartButton}
+              style={[styles.primaryStartButton, premiumShowId ? styles.premiumPrimaryStartButton : null]}
               onPress={() => {
                 if (inviteJoinPreset?.liveId) {
                   hydrateRoom(String(inviteJoinPreset.liveId)).catch(() => {});
@@ -1766,7 +1811,12 @@ const FreshDriftExpoModal = ({
                 startFreshRoom();
               }}
             >
-              <Text style={styles.primaryStartButtonText}>
+              <Text
+                style={[
+                  styles.primaryStartButtonText,
+                  premiumShowId ? styles.premiumPrimaryStartButtonText : null,
+                ]}
+              >
                 {inviteJoinPreset?.liveId
                   ? premiumShowId
                     ? 'Join Aqua Premium Show'
@@ -1886,8 +1936,18 @@ const styles = StyleSheet.create({
     right: 16,
     top: 0,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  topBarTitleWrap: {
+    flex: 1,
+    paddingRight: 12,
+    minWidth: 0,
+  },
+  topBarCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   livePill: {
     color: '#061117',
@@ -1900,52 +1960,46 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: 8,
   },
-  premiumLivePill: {
-    color: '#fff4f4',
-    backgroundColor: '#8d0000',
-  },
   roomTitle: {
     color: 'white',
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '800',
+    flexShrink: 1,
   },
-  roomMeta: {
-    color: 'rgba(255,255,255,0.76)',
-    marginTop: 4,
-  },
-  premiumInfoPanel: {
-    marginTop: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 14,
-    backgroundColor: 'rgba(141,0,0,0.28)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,210,210,0.26)',
-    maxWidth: 320,
-  },
-  premiumCountdownText: {
-    color: '#ffe1e1',
-    fontSize: 13,
+  premiumRoomTitle: {
+    color: '#B30000',
+    fontSize: 16,
     fontWeight: '900',
   },
-  premiumMetaText: {
-    color: 'rgba(255,235,235,0.84)',
-    fontSize: 11,
-    marginTop: 4,
+  premiumCountdownPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: 'rgba(141,0,0,0.14)',
+    borderWidth: 1,
+    borderColor: 'rgba(179,0,0,0.58)',
+  },
+  premiumCountdownText: {
+    color: '#FFD9D9',
+    fontSize: 12,
+    fontWeight: '900',
   },
   closeChip: {
-    backgroundColor: 'rgba(0,0,0,0.56)',
-    paddingHorizontal: 12,
+    backgroundColor: '#0EA5D9',
+    paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#0EA5D9',
+    marginLeft: 12,
   },
   closeChipText: {
-    color: 'white',
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontWeight: '900',
   },
   rightRail: {
     position: 'absolute',
-    right: 6,
+    right: 10,
     bottom: 160,
     gap: 8,
   },
@@ -1966,6 +2020,36 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     marginTop: 4,
+  },
+  audiencePanel: {
+    position: 'absolute',
+    width: 200,
+    borderRadius: 18,
+    backgroundColor: 'rgba(10,16,24,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    padding: 12,
+  },
+  audiencePanelTitle: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  audiencePanelMeta: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 11,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  audienceRow: {
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  audienceRowText: {
+    color: '#FFDADA',
+    fontSize: 13,
+    fontWeight: '700',
   },
   reactionTray: {
     position: 'absolute',
@@ -2251,7 +2335,7 @@ const styles = StyleSheet.create({
   },
   inviteCloseButton: {
     marginTop: 14,
-    backgroundColor: '#182434',
+    backgroundColor: '#0EA5D9',
     borderRadius: 16,
     alignItems: 'center',
     paddingVertical: 14,
@@ -2316,15 +2400,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '900',
   },
+  premiumPrimaryStartButton: {
+    backgroundColor: '#8D0000',
+  },
+  premiumPrimaryStartButtonText: {
+    color: '#FFFFFF',
+  },
   secondaryStartButton: {
-    backgroundColor: '#162333',
+    backgroundColor: '#0EA5D9',
     borderRadius: 18,
     alignItems: 'center',
     paddingVertical: 16,
     marginBottom: 10,
   },
   secondaryStartButtonText: {
-    color: 'white',
+    color: '#FFFFFF',
     fontWeight: '800',
   },
   recentSection: {

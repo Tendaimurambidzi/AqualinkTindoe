@@ -1984,18 +1984,18 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#5B4B8A',
   },
-  dismissText: { color: 'white', fontWeight: '700' },
+  dismissText: { color: '#FFFFFF', fontWeight: '700' },
   secondaryBtn: {
     alignSelf: 'center',
     marginTop: 6,
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#2C6E49',
+    backgroundColor: '#8D0000',
     borderWidth: 1,
-    borderColor: '#2C6E49',
+    borderColor: '#8D0000',
   },
-  secondaryBtnText: { color: '#F3FFF8', fontWeight: '700' },
+  secondaryBtnText: { color: '#FFFFFF', fontWeight: '700' },
   attachActionBtn: {
     minHeight: 40,
     borderRadius: 10,
@@ -15810,12 +15810,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <Text style={styles.dolphinIcon}>✨</Text>
                   <Text style={styles.topLabel}>DROP A WAVE</Text>
                 </Pressable>
-                {/* VIBE ALERTS - Placeholder */}
+                {/* ALERTS - Placeholder */}
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeAlerts}
                   accessibilityRole="button"
-                  accessibilityLabel="Open vibe alerts"
+                  accessibilityLabel="Open alerts"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -15830,20 +15830,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </View>
                     )}
                   </View>
-                  <Text style={styles.topLabel}>VIBE ALERTS</Text>
+                  <Text style={styles.topLabel}>ALERTS</Text>
                 </Pressable>
-                {/* DEEP DIVE */}
+                {/* HUINT */}
                 <Pressable
                   style={styles.topItem}
                   onPress={handleVibeHunt}
                   accessibilityRole="button"
-                  accessibilityLabel="Open vibe hunt"
+                  accessibilityLabel="Open huint"
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
                   <Text style={styles.dolphinIcon}>🔎</Text>
-                  <Text style={styles.topLabel}>VIBE HUNT</Text>
+                  <Text style={styles.topLabel}>HUINT</Text>
                 </Pressable>
                     
                 {/* MY SHORE */}
@@ -17965,7 +17965,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   activeOpacity={0.7}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
-                  <Text style={styles.logbookActionText}>Say Something</Text>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                    }}
+                  >
+                    <Text style={styles.logbookActionText}>Say Something</Text>
+                    <Text style={styles.logbookActionText}>✍️</Text>
+                  </View>
                 </Pressable>
                 <Pressable style={[styles.logbookAction, styles.makeWavesSecondaryAction]} onPress={goDrift}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
@@ -17990,6 +17999,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       }}
                     />
                     <Text style={styles.logbookActionText}>Drift Expo</Text>
+                    <Text style={styles.logbookActionText}>🎥</Text>
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton

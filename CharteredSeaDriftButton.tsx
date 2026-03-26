@@ -80,8 +80,7 @@ export default function CharteredSeaDriftButton(props: Props) {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState<string>('1.00');
   const [ticketNumber, setTicketNumber] = useState('AQUA001');
-  const [maxAttendees, setMaxAttendees] = useState<string>('20');
-  const [tokenCount, setTokenCount] = useState<string>('20');
+  const [tokenCount, setTokenCount] = useState<string>('');
   const [category, setCategory] = useState<string>('General');
   const [access] = useState<AccessMode>('paid-only');
   const [duration, setDuration] = useState<MinutesOption>(60);
@@ -164,18 +163,13 @@ export default function CharteredSeaDriftButton(props: Props) {
       Alert.alert('Invalid Price', 'Price must be greater than $0.');
       return false;
     }
-    const maxNum = parseInt(maxAttendees, 10);
-    if (!maxNum || maxNum < 1) {
-      Alert.alert('Invalid Capacity', 'Please enter a valid attendee limit.');
-      return false;
-    }
     const tokens = parseInt(tokenCount, 10);
     if (!tokens || tokens < 1) {
       Alert.alert('Invalid Token Count', 'Please enter how many tokens to generate.');
       return false;
     }
     return true;
-  }, [maxAttendees, priceNumber, ticketNumber, title, tokenCount]);
+  }, [priceNumber, ticketNumber, title, tokenCount]);
 
   const ensureShowAndTokens = useCallback(async () => {
     if (!validateConfig()) return null;
@@ -194,7 +188,7 @@ export default function CharteredSeaDriftButton(props: Props) {
       description,
       priceUSD: priceNumber,
       durationMins: duration,
-      capacity: parseInt(maxAttendees, 10),
+      capacity: parseInt(tokenCount, 10),
       tokenCount: parseInt(tokenCount, 10),
       category,
     });
@@ -210,7 +204,6 @@ export default function CharteredSeaDriftButton(props: Props) {
     description,
     duration,
     generatedTokens,
-    maxAttendees,
     priceNumber,
     title,
     tokenCount,
@@ -223,8 +216,8 @@ export default function CharteredSeaDriftButton(props: Props) {
       const result = await ensureShowAndTokens();
       if (!result) return;
       Alert.alert(
-        'Tokens ready',
-        `${result.tokens.length || parseInt(tokenCount, 10)} Aqua Premium tokens are ready to send one by one.`,
+        'Tokens Generated',
+        `${result.tokens.length || parseInt(tokenCount, 10)} Tokens Generated.`,
       );
     } catch (error: any) {
       Alert.alert('Token generation failed', String(error?.message || 'Try again.'));
@@ -401,6 +394,7 @@ export default function CharteredSeaDriftButton(props: Props) {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: 'red' }} />
           <Text style={[styles.logbookActionText, buttonTextStyle]}>Aqua Premium</Text>
+          <Text style={[styles.logbookActionText, buttonTextStyle]}>🎟️</Text>
         </View>
       </Pressable>
 
@@ -432,9 +426,20 @@ export default function CharteredSeaDriftButton(props: Props) {
                   <Pressable
                     key={item.key}
                     onPress={() => setMode(item.key as 'host' | 'redeem')}
-                    style={[styles.modeChip, mode === item.key && styles.modeChipActive]}
+                    style={[
+                      styles.modeChip,
+                      item.key === 'host' ? styles.hostModeChip : styles.redeemModeChip,
+                      mode === item.key &&
+                        (item.key === 'host' ? styles.hostModeChipActive : styles.redeemModeChipActive),
+                    ]}
                   >
-                    <Text style={mode === item.key ? styles.modeChipTextActive : styles.modeChipText}>
+                    <Text
+                      style={
+                        item.key === 'host'
+                          ? styles.hostModeChipText
+                          : styles.redeemModeChipText
+                      }
+                    >
                       {item.label}
                     </Text>
                   </Pressable>
@@ -490,17 +495,7 @@ export default function CharteredSeaDriftButton(props: Props) {
                       value={tokenCount}
                       onChangeText={setTokenCount}
                       keyboardType="number-pad"
-                      placeholder="20"
-                      placeholderTextColor="rgba(255,255,255,0.4)"
-                      style={styles.input}
-                    />
-
-                    <Text style={styles.inputLabel}>Capacity *</Text>
-                    <TextInput
-                      value={maxAttendees}
-                      onChangeText={setMaxAttendees}
-                      keyboardType="number-pad"
-                      placeholder="20"
+                      placeholder="Enter token count"
                       placeholderTextColor="rgba(255,255,255,0.4)"
                       style={styles.input}
                     />
@@ -538,15 +533,15 @@ export default function CharteredSeaDriftButton(props: Props) {
                     </View>
 
                     <View style={styles.actionStack}>
-                      <Pressable onPress={handleGenerateTokens} style={styles.secondaryAction} disabled={busy}>
-                        <Text style={styles.secondaryActionText}>Generate Tokens</Text>
+                      <Pressable onPress={handleGenerateTokens} style={styles.hostSecondaryAction} disabled={busy}>
+                        <Text numberOfLines={1} style={styles.hostSecondaryActionText}>Generate Tokens</Text>
                       </Pressable>
-                      <Pressable onPress={handleStart} style={styles.primaryAction} disabled={busy}>
-                        <Text style={styles.primaryActionText}>Start Aqua Premium</Text>
+                      <Pressable onPress={handleStart} style={styles.hostPrimaryAction} disabled={busy}>
+                        <Text numberOfLines={1} style={styles.hostPrimaryActionText}>Start Aqua Premium Show</Text>
                       </Pressable>
                     </View>
 
-                    {busy ? <ActivityIndicator color="#00C2FF" style={{ marginTop: 10 }} /> : null}
+                    {busy ? <ActivityIndicator color="#8D0000" style={{ marginTop: 10 }} /> : null}
 
                     {activeShowId ? (
                       <Text style={styles.infoText}>Show ID: {activeShowId}</Text>
@@ -600,8 +595,8 @@ export default function CharteredSeaDriftButton(props: Props) {
                       style={styles.input}
                       autoCapitalize="characters"
                     />
-                    <Pressable onPress={handleRedeem} style={styles.primaryAction} disabled={busy}>
-                      <Text style={styles.primaryActionText}>Redeem Code</Text>
+                    <Pressable onPress={handleRedeem} style={styles.redeemPrimaryAction} disabled={busy}>
+                      <Text style={styles.redeemPrimaryActionText}>Enter Code</Text>
                     </Pressable>
                     {busy ? <ActivityIndicator color="#00C2FF" style={{ marginTop: 10 }} /> : null}
                     <Text style={[styles.sectionLabel, { marginTop: 18 }]}>My Premium Access</Text>
@@ -694,11 +689,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 10,
-    backgroundColor: 'rgba(255,255,255,0.03)',
+    backgroundColor: '#8D0000',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    borderColor: '#8D0000',
   },
-  closeText: { color: 'white', fontWeight: '700' },
+  closeText: { color: '#FFFFFF', fontWeight: '900' },
   content: {
     paddingBottom: 32,
     gap: 12,
@@ -730,13 +725,37 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignItems: 'center',
   },
+  hostModeChip: {
+    borderColor: '#8D0000',
+    backgroundColor: '#8D0000',
+  },
+  redeemModeChip: {
+    borderColor: '#0EA5D9',
+    backgroundColor: '#0EA5D9',
+  },
   modeChipActive: {
+    borderColor: '#00C2FF',
+    backgroundColor: 'rgba(0,194,255,0.12)',
+  },
+  hostModeChipActive: {
+    borderColor: '#8D0000',
+    backgroundColor: '#8D0000',
+  },
+  redeemModeChipActive: {
     borderColor: '#00C2FF',
     backgroundColor: 'rgba(0,194,255,0.12)',
   },
   modeChipText: {
     color: '#C9D3DF',
     fontWeight: '700',
+  },
+  hostModeChipText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+  redeemModeChipText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
   },
   modeChipTextActive: {
     color: '#FFFFFF',
@@ -776,7 +795,7 @@ const styles = StyleSheet.create({
   pillTxtActive: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   actionStack: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     marginTop: 10,
   },
   primaryAction: {
@@ -799,6 +818,50 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.18)',
   },
   secondaryActionText: { color: '#FFFFFF', fontWeight: '700' },
+  hostSecondaryAction: {
+    flex: 1,
+    backgroundColor: '#0EA5D9',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0EA5D9',
+  },
+  hostSecondaryActionText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  hostPrimaryAction: {
+    flex: 1,
+    backgroundColor: '#8D0000',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#8D0000',
+  },
+  hostPrimaryActionText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  redeemPrimaryAction: {
+    marginTop: 8,
+    backgroundColor: '#0EA5D9',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#0EA5D9',
+  },
+  redeemPrimaryActionText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
   infoText: {
     color: 'rgba(157,230,255,0.82)',
     fontSize: 11,
@@ -853,11 +916,14 @@ const styles = StyleSheet.create({
   },
   joinPremiumAction: {
     alignSelf: 'flex-start',
-    paddingTop: 12,
-    paddingBottom: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#8D0000',
+    marginTop: 12,
   },
   joinPremiumActionText: {
-    color: '#8D0000',
+    color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '900',
     letterSpacing: 0.3,
