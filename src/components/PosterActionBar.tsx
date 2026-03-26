@@ -66,6 +66,8 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 }) => {
   const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
   const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
+  const [localHugsCount, setLocalHugsCount] = useState(Math.max(0, splashesCount));
+  const [localEchoesCount, setLocalEchoesCount] = useState(Math.max(0, echoesCount));
 
   // State for huggers dropdown
   const [showHuggersDropdown, setShowHuggersDropdown] = useState(false);
@@ -116,10 +118,19 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     checkInteractions();
   }, [waveId, currentUserId]);
 
+  useEffect(() => {
+    setLocalHugsCount(Math.max(0, splashesCount));
+  }, [splashesCount]);
+
+  useEffect(() => {
+    setLocalEchoesCount(Math.max(0, echoesCount));
+  }, [echoesCount]);
+
   const handleHug = () => {
     // Immediate visual feedback - no blocking
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
+    setLocalHugsCount(prev => Math.max(0, prev + (newHasHugged ? 1 : -1)));
 
     // Handle action based on connectivity - fire and forget
     if (isOnline) {
@@ -142,7 +153,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
   const handleEcho = () => {
     // Immediate visual feedback
-    setHasEchoed(true);
+    if (!hasEchoed) {
+      setHasEchoed(true);
+      setLocalEchoesCount(prev => Math.max(0, prev + 1));
+    }
 
     // Handle action based on connectivity
     if (isOnline) {
@@ -237,11 +251,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
       >
         <View style={styles.buttonContent}>
-          <Text style={[styles.actionIcon, (hasHugged && Math.max(0, splashesCount) > 0) && styles.hugActive]}>
+          <Text style={[styles.actionIcon, (hasHugged && localHugsCount > 0) && styles.hugActive]}>
             {'\uD83E\uDEC2'}
           </Text>
-          <Text style={[styles.actionLabel, (hasHugged && Math.max(0, splashesCount) > 0) ? styles.blueCount : styles.whiteCount]}>
-            {(hasHugged && Math.max(0, splashesCount) > 0) ? 'Hugged' : 'Hug'} ({Math.max(0, splashesCount)})
+          <Text style={[styles.actionLabel, (hasHugged && localHugsCount > 0) ? styles.blueCount : styles.whiteCount]}>
+            {(hasHugged && localHugsCount > 0) ? 'Hugged' : 'Hug'} ({localHugsCount})
           </Text>
         </View>
       </Pressable>
@@ -284,7 +298,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             {'\uD83D\uDCE3'}
           </Text>
           <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
-            {hasEchoed ? 'Echoed' : 'Echo'} ({Math.max(0, echoesCount)})
+            {hasEchoed ? 'Echoed' : 'Echo'} ({localEchoesCount})
           </Text>
         </View>
       </Pressable>
@@ -416,14 +430,14 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   textButtonsBar: {
-    paddingVertical: 4,
+    paddingVertical: 6,
     paddingHorizontal: 0,
-    backgroundColor: '#4b5563',
+    backgroundColor: 'transparent',
     borderRadius: 0,
     marginHorizontal: 0,
     marginBottom: 0,
-    minHeight: 32,
-    height: 38,
+    minHeight: 34,
+    height: 42,
     width: '100%',
   },
   actionButton: {
@@ -441,61 +455,82 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   textButton: {
-    backgroundColor: appTokens.colors.danger,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 36,
-    minHeight: 24,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 0,
+    minHeight: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 8,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
   pressedButton: {
-    opacity: 0.6,
-    transform: [{ scale: 0.9 }],
+    opacity: 0.68,
+    transform: [{ scale: 0.98 }],
   },
   disabledButton: {
     opacity: 0.65,
   },
   retryButton: {
-    backgroundColor: '#f59e0b',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    minWidth: 36,
-    minHeight: 24,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    minWidth: 0,
+    minHeight: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 8,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 0,
   },
   buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: 5,
   },
   actionIcon: {
-    fontSize: 20,
-    color: '#fff',
+    fontSize: 18,
+    color: '#7A0008',
     fontWeight: 'bold',
+    textShadowColor: 'rgba(0,0,0,0.72)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   activeAction: {
     color: '#00ff88', // Highlight active interactions
   },
   hugActive: {
-    color: '#0088ff', // Very blue for hugs
+    color: '#6FD6FF',
   },
   echoActive: {
-    color: '#ff4444', // Extra red for echoes
+    color: '#6FD6FF',
   },
   pearlActive: {
     color: '#ff0088', // Red for pearls/gems
   },
   actionLabel: {
     fontSize: 13,
-    color: appTokens.colors.surface,
+    color: '#7A0008',
     marginRight: 2,
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.82)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   huggedLabel: {
     color: '#1e88e5',
@@ -504,15 +539,18 @@ const styles = StyleSheet.create({
     color: '#00ff88',
   },
   blueCount: {
-    color: '#1e88e5',
+    color: '#6FD6FF',
   },
   whiteCount: {
-    color: appTokens.colors.surface,
+    color: '#7A0008',
   },
   actionIconSmall: {
     fontSize: 16,
-    color: '#fff',
+    color: '#7A0008',
     marginRight: 2,
+    textShadowColor: 'rgba(0,0,0,0.72)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   actionCount: {
     fontSize: 12,

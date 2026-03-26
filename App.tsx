@@ -7443,6 +7443,45 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
   }, []);
+
+  const fetchTopLevelEchoesForWave = useCallback(async (waveId: string) => {
+    const echoesSnap = await firestore()
+      .collection('waves')
+      .doc(waveId)
+      .collection('echoes')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const replyCounts: Record<string, number> = {};
+    const allRows = echoesSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data(),
+      uid: doc.data().userUid,
+      text: doc.data().text,
+      userName: doc.data().userName || null,
+      userPhoto: doc.data().userPhoto || null,
+      createdAt: doc.data().createdAt,
+      updatedAt: doc.data().updatedAt || doc.data().createdAt,
+      hugs: Number(doc.data().hugs || 0),
+      huggedBy: doc.data().huggedBy || {},
+      replyCount: Number(doc.data().replyCount || 0),
+      replyToEchoId: doc.data().replyToEchoId || null,
+    }));
+
+    allRows.forEach(echo => {
+      const parentId = String(echo.replyToEchoId || '').trim();
+      if (!parentId) return;
+      replyCounts[parentId] = (replyCounts[parentId] || 0) + 1;
+    });
+
+    return allRows
+      .filter(echo => !echo.replyToEchoId)
+      .map(echo => ({
+        ...echo,
+        replyCount: replyCounts[echo.id] || Number(echo.replyCount || 0) || 0,
+      }));
+  }, []);
                     
   // Load echoes when echo modal opens
   useEffect(() => {
@@ -7453,44 +7492,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
     const loadEchoes = async () => {
       try {
-        const echoesSnap = await firestore()
-          .collection('waves')
-          .doc(echoWaveId)
-          .collection('echoes')
-          .orderBy('createdAt', 'desc')
-          .get();
-                    
-        if (!echoesSnap) {
-          console.warn('Echoes snapshot is null');
-          setEchoList([]);
-          return;
-        }
-        
-        const allEchoes = echoesSnap.docs.map(doc => ({
-          id: doc.id,
-          uid: doc.data().userUid,
-          text: doc.data().text,
-          userName: doc.data().userName || null,
-          updatedAt: doc.data().createdAt,
-          userPhoto: doc.data().userPhoto || null,
-          hugs: Number(doc.data().hugs || 0),
-          huggedBy: doc.data().huggedBy || {},
-          replyCount: Number(doc.data().replyCount || 0),
-          replyToEchoId: doc.data().replyToEchoId || null,
-        }));
-        const replyCounts: Record<string, number> = {};
-        allEchoes.forEach(echo => {
-          const parentId = String(echo.replyToEchoId || '').trim();
-          if (!parentId) return;
-          replyCounts[parentId] = (replyCounts[parentId] || 0) + 1;
-        });
-        const echoes = allEchoes
-          .filter(echo => !echo.replyToEchoId)
-          .map(echo => ({
-            ...echo,
-            replyCount: replyCounts[echo.id] || Number(echo.replyCount || 0) || 0,
-          }));
-                    
+        const echoes = await fetchTopLevelEchoesForWave(echoWaveId);
         setEchoList(echoes);
       } catch (error) {
         console.error('Error loading echoes:', error);
@@ -7499,7 +7501,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
                     
     loadEchoes();
-  }, [showEchoes, echoWaveId]);
+  }, [fetchTopLevelEchoesForWave, showEchoes, echoWaveId]);
                     
   // Load post data when echo modal opens
   useEffect(() => {
@@ -10258,8 +10260,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }));
       }
       
-      // Reload echoes list
-      loadPostEchoes(targetWaveId);
+      const refreshedEchoes = await fetchTopLevelEchoesForWave(targetWaveId);
+      setEchoList(refreshedEchoes);
+      setPostEchoLists(prev => ({
+        ...prev,
+        [targetWaveId]: refreshedEchoes.slice(0, 10),
+      }));
                     
       // Send ping notification to wave owner (if not self)
       const currentUserUid = auth().currentUser?.uid;
@@ -10286,7 +10292,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Clear input and hide echo UI before showing success
       updateEchoText('');
       setReplyingToEcho(null);
-      setEchoList(prev => prev.filter(e => e.id !== pendingId));
       setMyEcho({ text });
       setMainEchoSending(false);
       // setShowEchoes(false); // Keep echo UI open for next echo
@@ -11041,37 +11046,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const loadPostEchoes = async (waveId: string) => {
     try {
-      const echoesSnap = await firestore()
-        .collection('waves')
-        .doc(waveId)
-        .collection('echoes')
-        .orderBy('createdAt', 'desc')
-        .limit(50)
-        .get();
-
-      const replyCounts: Record<string, number> = {};
-      const allRows = echoesSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-        uid: doc.data().userUid,
-        text: doc.data().text,
-        userName: doc.data().userName,
-        userPhoto: doc.data().userPhoto,
-        createdAt: doc.data().createdAt,
-      }));
-      allRows.forEach(echo => {
-        const parentId = String(echo.replyToEchoId || '').trim();
-        if (!parentId) return;
-        replyCounts[parentId] = (replyCounts[parentId] || 0) + 1;
-      });
-      const echoes = allRows
-        .filter(echo => !echo.replyToEchoId)
-        .map(echo => ({
-          ...echo,
-          replyCount: replyCounts[echo.id] || Number(echo.replyCount || 0) || 0,
-        }))
-        .slice(0, 10);
-                    
+      const echoes = (await fetchTopLevelEchoesForWave(waveId)).slice(0, 10);
       setPostEchoLists(prev => ({ ...prev, [waveId]: echoes }));
     } catch (e) {
       console.warn('Load post echoes failed', e);
@@ -20815,7 +20790,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       marginBottom: 8,
                     }}
                   >
-                    Recent Echoes
+                    Echo
                   </Text>
                   {echoList.length === 0 ? (
                     <Text style={{ color: 'rgba(255,255,255,0.7)' }}>

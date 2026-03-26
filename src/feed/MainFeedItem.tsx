@@ -1876,8 +1876,20 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 })()
               ) : (
                 (() => {
-                  const mostRecentEcho = postEchoLists[item.id][0];
-                  return renderEchoItem(mostRecentEcho, 0);
+                  const topEcho = [...postEchoLists[item.id]].sort((a, b) => {
+                    const hugDiff = Number(b?.hugs || 0) - Number(a?.hugs || 0);
+                    if (hugDiff !== 0) return hugDiff;
+                    const bTime =
+                      typeof b?.createdAt?.toMillis === 'function'
+                        ? b.createdAt.toMillis()
+                        : Number(new Date(b?.createdAt || 0).getTime()) || 0;
+                    const aTime =
+                      typeof a?.createdAt?.toMillis === 'function'
+                        ? a.createdAt.toMillis()
+                        : Number(new Date(a?.createdAt || 0).getTime()) || 0;
+                    return bTime - aTime;
+                  })[0];
+                  return topEcho ? renderEchoItem(topEcho, 0) : null;
                 })()
               )}
 

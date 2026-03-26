@@ -50,6 +50,36 @@ const PREMIUM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 const nowMs = () => Date.now();
 
+const isFirestorePermissionError = (error: any): boolean => {
+  const code = String(error?.code || '').toLowerCase();
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    code.includes('permission-denied') ||
+    message.includes('permission-denied') ||
+    message.includes('permission denied')
+  );
+};
+
+const toFriendlyPremiumError = (
+  error: any,
+  fallback: string,
+  stage?: string,
+): Error => {
+  const code = String(error?.code || '').trim() || 'unknown';
+  const message = String(error?.message || '').trim();
+  if (isFirestorePermissionError(error)) {
+    console.warn('Aqua Premium Firestore permission error', {
+      stage: stage || null,
+      code: error?.code || null,
+      message: error?.message || null,
+    });
+    return new Error(
+      `Aqua Premium Firestore denied ${stage || 'request'} (${code}). ${message || fallback}`,
+    );
+  }
+  return new Error(message || fallback);
+};
+
 const toMillis = (value: any): number => {
   try {
     if (!value) return 0;
@@ -203,21 +233,29 @@ export async function createPremiumShowWithTokens(params: {
 }
 
 export async function listPremiumTokens(showId: string): Promise<PremiumTokenRecord[]> {
-  const snap = await firestore()
-    .collection(`premium_shows/${showId}/tickets`)
-    .orderBy('createdAt', 'asc')
-    .get();
-  return (snap?.docs || []).map(doc => {
-    const data = doc.data() || {};
-    return {
-      ticketId: doc.id,
-      code: String(data.code || ''),
-      codeLast4: String(data.codeLast4 || ''),
-      status: String(data.status || 'generated') as PremiumTicketStatus,
-      claimedByUid: data.claimedByUid ? String(data.claimedByUid) : null,
-      intendedName: data.intendedName ? String(data.intendedName) : null,
-    };
-  });
+  try {
+    const snap = await firestore()
+      .collection(`premium_shows/${showId}/tickets`)
+      .orderBy('createdAt', 'asc')
+      .get();
+    return (snap?.docs || []).map(doc => {
+      const data = doc.data() || {};
+      return {
+        ticketId: doc.id,
+        code: String(data.code || ''),
+        codeLast4: String(data.codeLast4 || ''),
+        status: String(data.status || 'generated') as PremiumTicketStatus,
+        claimedByUid: data.claimedByUid ? String(data.claimedByUid) : null,
+        intendedName: data.intendedName ? String(data.intendedName) : null,
+      };
+    });
+  } catch (error: any) {
+    throw toFriendlyPremiumError(
+      error,
+      'Could not load Aqua Premium tokens.',
+      'premium_shows.tickets.list',
+    );
+  }
 }
 
 export async function redeemPremiumCode(rawCode: string) {
@@ -226,17 +264,38 @@ export async function redeemPremiumCode(rawCode: string) {
   const code = String(rawCode || '').trim().toUpperCase();
   if (!code) throw new Error('Enter a token');
   const codeHash = hashToken(code);
-  const snap = await firestore()
-    .collectionGroup('tickets')
-    .where('codeHash', '==', codeHash)
-    .limit(2)
-    .get();
+  let snap: any;
+  try {
+    snap = await firestore()
+      .collectionGroup('tickets')
+      .where('codeHash', '==', codeHash)
+      .limit(2)
+      .get();
+  } catch (error: any) {
+    throw toFriendlyPremiumError(
+      error,
+      'Could not redeem Aqua Premium token.',
+      'tickets.collectionGroup.lookup',
+    );
+  }
+
   const match = snap?.docs?.[0];
   if (!match) throw new Error('Token not found');
   const ticketData = match.data() || {};
   const showRef = match.ref.parent.parent;
   if (!showRef) throw new Error('Show not found');
-  const showSnap = await showRef.get();
+
+  let showSnap: any;
+  try {
+    showSnap = await showRef.get();
+  } catch (error: any) {
+    throw toFriendlyPremiumError(
+      error,
+      'Could not load Premium show.',
+      'premium_shows.doc.get',
+    );
+  }
+
   const showData = showSnap.data() || {};
   const validUntilMs = toMillis(ticketData.validUntil) || toMillis(showData.endsAt);
   const validFromMs = toMillis(ticketData.validFrom) || toMillis(showData.startsAt);
@@ -251,15 +310,9 @@ export async function redeemPremiumCode(rawCode: string) {
     throw new Error('This token is not active yet');
   }
   if (validUntilMs && nowMs() > validUntilMs) {
-    await match.ref.set(
-      {
-        status: 'expired',
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true },
-    );
     throw new Error('This token has expired');
   }
+
   const batch = firestore().batch();
   batch.set(
     match.ref,
@@ -292,22 +345,17 @@ export async function redeemPremiumCode(rawCode: string) {
     codeLast4: String(ticketData.codeLast4 || code.slice(-4)),
     status: 'success',
   });
-  batch.set(
-    showRef,
-    {
-      updatedAt: firestore.FieldValue.serverTimestamp(),
-      ticketStats: {
-        generated: Number(showData.ticketStats?.generated || 0),
-        claimed: Number(showData.ticketStats?.claimed || 0) + (ticketData.claimedByUid ? 0 : 1),
-        active: Number(showData.ticketStats?.active || 0) + (ticketData.claimedByUid ? 0 : 1),
-        used: Number(showData.ticketStats?.used || 0),
-        expired: Number(showData.ticketStats?.expired || 0),
-        revoked: Number(showData.ticketStats?.revoked || 0),
-      },
-    },
-    { merge: true },
-  );
-  await batch.commit();
+
+  try {
+    await batch.commit();
+  } catch (error: any) {
+    throw toFriendlyPremiumError(
+      error,
+      'Could not save Premium access.',
+      'premium.batch.commit',
+    );
+  }
+
   return {
     showId: showRef.id,
     showTitle: String(showData.title || 'Aqua Premium'),
@@ -317,23 +365,31 @@ export async function redeemPremiumCode(rawCode: string) {
 export async function listMyPremiumAccess() {
   const me = auth().currentUser;
   if (!me?.uid) return [];
-  const snap = await firestore()
-    .collection(`users/${me.uid}/premium_access`)
-    .orderBy('grantedAt', 'desc')
-    .limit(20)
-    .get();
-  return (snap?.docs || []).map(doc => {
-    const data = doc.data() || {};
-    return {
-      showId: doc.id,
-      showTitle: String(data.showTitle || 'Aqua Premium'),
-      hostUid: String(data.hostUid || ''),
-      status: String(data.status || 'active') as PremiumAccessStatus,
-      validFromMs: toMillis(data.validFrom),
-      validUntilMs: toMillis(data.validUntil),
-      ticketId: String(data.ticketId || ''),
-    };
-  });
+  try {
+    const snap = await firestore()
+      .collection(`users/${me.uid}/premium_access`)
+      .orderBy('grantedAt', 'desc')
+      .limit(20)
+      .get();
+    return (snap?.docs || []).map(doc => {
+      const data = doc.data() || {};
+      return {
+        showId: doc.id,
+        showTitle: String(data.showTitle || 'Aqua Premium'),
+        hostUid: String(data.hostUid || ''),
+        status: String(data.status || 'active') as PremiumAccessStatus,
+        validFromMs: toMillis(data.validFrom),
+        validUntilMs: toMillis(data.validUntil),
+        ticketId: String(data.ticketId || ''),
+      };
+    });
+  } catch (error: any) {
+    throw toFriendlyPremiumError(
+      error,
+      'Could not load Aqua Premium access.',
+      'users.premium_access.list',
+    );
+  }
 }
 
 export async function startPremiumShow(showId: string) {
@@ -368,39 +424,58 @@ export async function canCurrentUserJoinPremiumShow(showId: string, hostUid?: st
   if (hostUid && me.uid === hostUid) {
     return { allowed: true, reason: null, ticketId: null };
   }
-  const accessSnap = await firestore().doc(`users/${me.uid}/premium_access/${showId}`).get();
-  if (!accessSnap.exists) {
-    return { allowed: false, reason: 'Enter a valid Aqua Premium token first.' };
+  try {
+    const accessSnap = await firestore().doc(`users/${me.uid}/premium_access/${showId}`).get();
+    if (!accessSnap.exists) {
+      return { allowed: false, reason: 'Enter a valid Aqua Premium token first.' };
+    }
+    const accessData = accessSnap.data() || {};
+    const status = String(accessData.status || 'active');
+    const validUntilMs = toMillis(accessData.validUntil);
+    if (status !== 'active') {
+      return { allowed: false, reason: 'Your Aqua Premium access is not active.' };
+    }
+    if (validUntilMs && nowMs() > validUntilMs) {
+      return { allowed: false, reason: 'Your Aqua Premium access has expired.' };
+    }
+    return {
+      allowed: true,
+      reason: null,
+      ticketId: String(accessData.ticketId || ''),
+    };
+  } catch (error: any) {
+    if (isFirestorePermissionError(error)) {
+      return {
+        allowed: false,
+        reason:
+          `Aqua Premium Firestore denied users.premium_access.get (${String(error?.code || 'unknown')}). ${String(error?.message || '').trim()}`,
+      };
+    }
+    throw error;
   }
-  const accessData = accessSnap.data() || {};
-  const status = String(accessData.status || 'active');
-  const validUntilMs = toMillis(accessData.validUntil);
-  if (status !== 'active') {
-    return { allowed: false, reason: 'Your Aqua Premium access is not active.' };
-  }
-  if (validUntilMs && nowMs() > validUntilMs) {
-    return { allowed: false, reason: 'Your Aqua Premium access has expired.' };
-  }
-  return {
-    allowed: true,
-    reason: null,
-    ticketId: String(accessData.ticketId || ''),
-  };
 }
 
 export async function recordPremiumEntry(showId: string) {
   const me = auth().currentUser;
   if (!me?.uid) return;
-  const accessSnap = await firestore().doc(`users/${me.uid}/premium_access/${showId}`).get();
-  const accessData = accessSnap.data() || {};
-  await firestore()
-    .collection(`premium_shows/${showId}/entries`)
-    .add({
-      uid: me.uid,
-      ticketId: String(accessData.ticketId || ''),
-      enteredAt: firestore.FieldValue.serverTimestamp(),
-      exitedAt: null,
-      deviceId: null,
-      status: 'entered',
-    });
+  try {
+    const accessSnap = await firestore().doc(`users/${me.uid}/premium_access/${showId}`).get();
+    const accessData = accessSnap.data() || {};
+    await firestore()
+      .collection(`premium_shows/${showId}/entries`)
+      .add({
+        uid: me.uid,
+        ticketId: String(accessData.ticketId || ''),
+        enteredAt: firestore.FieldValue.serverTimestamp(),
+        exitedAt: null,
+        deviceId: null,
+        status: 'entered',
+      });
+  } catch (error: any) {
+    throw toFriendlyPremiumError(
+      error,
+      'Could not record Aqua Premium entry.',
+      'premium_shows.entries.add',
+    );
+  }
 }

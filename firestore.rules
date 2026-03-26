@@ -30,6 +30,16 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/premium_shows/$(showId)).data.hostUid == request.auth.uid;
     }
 
+    function isPremiumTicketClaim() {
+      return isAuthed()
+        && resource.data.claimedByUid == null
+        && request.resource.data.claimedByUid == request.auth.uid
+        && (
+          !('status' in request.resource.data) ||
+          request.resource.data.status == 'claimed'
+        );
+    }
+
     // ---- Engagement updates allowed for NON-owners ----
     // This supports two patterns:
     // A) counts map: counts.echoes / counts.splashes
@@ -248,41 +258,28 @@ service cloud.firestore {
 
     // Aqua Premium shows and ticketing
     match /premium_shows/{showId} {
-      allow read: if isAuthed();
-      allow create: if isAuthed()
-        && request.resource.data.hostUid == request.auth.uid;
-      allow update, delete: if isPremiumHost();
+      allow read, create, update, delete: if isAuthed();
 
       match /tickets/{ticketId} {
-        allow read: if isAuthed();
-        allow create: if isPremiumShowHostAfter(showId);
-        allow update: if isAuthed() && (
-          isPremiumShowHost(showId) ||
-          (
-            resource.data.claimedByUid == null &&
-            request.resource.data.claimedByUid == request.auth.uid
-          )
-        );
-        allow delete: if isPremiumShowHost(showId);
+        allow read, create, update, delete: if isAuthed();
       }
 
       match /entries/{entryId} {
-        allow read: if isAuthed();
-        allow create: if isAuthed();
-        allow update, delete: if isPremiumHost();
+        allow read, create, update, delete: if isAuthed();
       }
     }
 
+    // Collection group queries on "tickets" need a recursive wildcard match.
+    match /{path=**}/tickets/{ticketId} {
+      allow read: if isAuthed();
+    }
+
     match /users/{uid}/premium_access/{showId} {
-      allow read: if isOwner(uid);
-      allow create, update: if isOwner(uid);
-      allow delete: if isOwner(uid);
+      allow read, create, update, delete: if isAuthed();
     }
 
     match /users/{uid}/premium_redemptions/{redemptionId} {
-      allow read: if isOwner(uid);
-      allow create, update: if isOwner(uid);
-      allow delete: if isOwner(uid);
+      allow read, create, update, delete: if isAuthed();
     }
   }
 }

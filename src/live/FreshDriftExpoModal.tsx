@@ -216,6 +216,10 @@ const FreshDriftExpoModal = ({
   const [roomTitle, setRoomTitle] = useState<string>('Drift Expo');
   const [roomHostUid, setRoomHostUid] = useState<string | null>(null);
   const [roomPremiumShowId, setRoomPremiumShowId] = useState<string | null>(null);
+  const [pendingPremiumJoin, setPendingPremiumJoin] = useState<{
+    liveId: string;
+    showId: string;
+  } | null>(null);
   const [roomHostName, setRoomHostName] = useState<string>('Host');
   const [myRtcUid, setMyRtcUid] = useState<number>(0);
   const [joined, setJoined] = useState(false);
@@ -273,6 +277,7 @@ const FreshDriftExpoModal = ({
     setRoomTitle('Drift Expo');
     setRoomHostUid(null);
     setRoomPremiumShowId(null);
+    setPendingPremiumJoin(null);
     setRoomHostName('Host');
     setMyRtcUid(0);
     setJoined(false);
@@ -415,9 +420,12 @@ const FreshDriftExpoModal = ({
       if (premiumRequired && nextPremiumShowId) {
         const access = await canCurrentUserJoinPremiumShow(nextPremiumShowId, nextHostUid || null);
         if (!access.allowed) {
-          throw new Error(access.reason || 'Aqua Premium token required.');
+          setPendingPremiumJoin({ liveId, showId: nextPremiumShowId });
+          setStatusText(access.reason || 'Redeem an Aqua Premium token to continue.');
+          return;
         }
       }
+      setPendingPremiumJoin(null);
       const channel = String(data.channel || data.liveChannel || defaultChannel || '')
         .trim()
         .replace(/[^A-Za-z0-9_]/g, '_')
@@ -452,6 +460,26 @@ const FreshDriftExpoModal = ({
     },
     [defaultChannel, inviteJoinPreset?.fromName, inviteJoinPreset?.title, meUid],
   );
+
+  useEffect(() => {
+    if (!visible || !pendingPremiumJoin?.showId || !pendingPremiumJoin.liveId || !meUid) return;
+    const accessRef = firestore().doc(`users/${meUid}/premium_access/${pendingPremiumJoin.showId}`);
+    const unsub = accessRef.onSnapshot(snap => {
+      const data = snap?.data?.() || {};
+      if (!snap.exists) return;
+      if (String(data.status || 'active') !== 'active') return;
+      setStatusText('Access granted. Opening camera...');
+      setPendingPremiumJoin(null);
+      hydrateRoom(String(pendingPremiumJoin.liveId)).catch(error => {
+        setStatusText(String(error?.message || 'Could not open room'));
+      });
+    });
+    return () => {
+      try {
+        unsub();
+      } catch {}
+    };
+  }, [hydrateRoom, meUid, pendingPremiumJoin, visible]);
 
   const startFreshRoom = useCallback(async () => {
     if (!meUid) {
