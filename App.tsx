@@ -1980,9 +1980,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 20,
-    backgroundColor: '#5B4B8A',
+    backgroundColor: '#8D0000',
     borderWidth: 1,
-    borderColor: '#5B4B8A',
+    borderColor: '#8D0000',
   },
   dismissText: { color: '#FFFFFF', fontWeight: '700' },
   secondaryBtn: {

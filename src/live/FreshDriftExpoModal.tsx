@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
+import Sound from 'react-native-sound';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   canCurrentUserJoinPremiumShow,
@@ -48,6 +49,33 @@ const REACTION_EMOJIS = [
   '🌊',
   '💎',
 ];
+
+const LIVE_SOUND_EFFECTS = [
+  {
+    id: 'underwater_explosion',
+    label: 'Large Underwater Explosion',
+    icon: '🌊',
+    file: 'large_underwater_explosion_190270',
+  },
+  {
+    id: 'downfall',
+    label: 'Downfall',
+    icon: '💥',
+    file: 'downfall_3_208028',
+  },
+  {
+    id: 'falcon',
+    label: 'Falcon',
+    icon: '🦅',
+    file: 'falcon',
+  },
+  {
+    id: 'sci_fi',
+    label: 'Sci-Fi',
+    icon: '🛸',
+    file: 'sci_fi_sound_effect_designed_circuits_hum_10_200831',
+  },
+] as const;
 
 type InviteJoinPreset = {
   liveId?: string | null;
@@ -261,6 +289,7 @@ const FreshDriftExpoModal = ({
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteBusyUid, setInviteBusyUid] = useState<string | null>(null);
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [soundBadgeLabel, setSoundBadgeLabel] = useState<string | null>(null);
   const [recentDrifts, setRecentDrifts] = useState<RecentDriftItem[]>([]);
   const [replayItem, setReplayItem] = useState<RecentDriftItem | null>(null);
   const [engineReady, setEngineReady] = useState(false);
@@ -280,6 +309,8 @@ const FreshDriftExpoModal = ({
   >([]);
   const seenCommentIdsRef = useRef<Set<string>>(new Set());
   const seenReactionIdsRef = useRef<Set<string>>(new Set());
+  const handledSoundEventIdsRef = useRef<Set<string>>(new Set());
+  const soundBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const me = auth().currentUser;
   const meUid = me?.uid || '';
@@ -354,6 +385,7 @@ const FreshDriftExpoModal = ({
     setInviteLoading(false);
     setInviteBusyUid(null);
     setShowReactionPicker(false);
+    setSoundBadgeLabel(null);
     setRecentDrifts([]);
     setReplayItem(null);
     setEngineReady(false);
@@ -361,13 +393,96 @@ const FreshDriftExpoModal = ({
     setFloatingReactions([]);
     seenCommentIdsRef.current = new Set();
     seenReactionIdsRef.current = new Set();
+    handledSoundEventIdsRef.current = new Set();
     if (reactionTrayTimerRef.current) {
       clearTimeout(reactionTrayTimerRef.current);
       reactionTrayTimerRef.current = null;
     }
+    if (soundBadgeTimerRef.current) {
+      clearTimeout(soundBadgeTimerRef.current);
+      soundBadgeTimerRef.current = null;
+    }
     joinedChannelRef.current = null;
     joiningChannelRef.current = null;
   }, []);
+
+  useEffect(() => {
+    Sound.setCategory('Playback');
+  }, []);
+
+  const playRoomSoundEffect = useCallback((effectId: string) => {
+    const effect = LIVE_SOUND_EFFECTS.find(item => item.id === effectId);
+    if (!effect) return;
+    const player = new Sound(effect.file, Sound.MAIN_BUNDLE, (error: any) => {
+      if (error) {
+        console.log('live sound load failed', effect.label, error);
+        return;
+      }
+      player.setVolume(1);
+      player.play(() => {
+        player.release();
+      });
+    });
+    setSoundBadgeLabel(`${effect.icon} ${effect.label}`);
+    if (soundBadgeTimerRef.current) {
+      clearTimeout(soundBadgeTimerRef.current);
+    }
+    soundBadgeTimerRef.current = setTimeout(() => {
+      setSoundBadgeLabel(null);
+      soundBadgeTimerRef.current = null;
+    }, 2800);
+  }, []);
+
+  const triggerRoomSoundEffect = useCallback(
+    async (effectId: string) => {
+      if (!roomId || !meUid) return;
+      const effect = LIVE_SOUND_EFFECTS.find(item => item.id === effectId);
+      if (!effect) return;
+      const eventId = `${effect.id}_${Date.now()}_${meUid.slice(-5)}`;
+      handledSoundEventIdsRef.current.add(eventId);
+      playRoomSoundEffect(effect.id);
+      try {
+        await firestore()
+          .collection('live')
+          .doc(roomId)
+          .set(
+            {
+              lastSoundEffect: {
+                eventId,
+                effectId: effect.id,
+                effectLabel: effect.label,
+                triggeredByUid: meUid,
+                triggeredByName: meName,
+                createdAt: firestore.FieldValue.serverTimestamp(),
+                createdAtMs: Date.now(),
+              },
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+      } catch (error: any) {
+        handledSoundEventIdsRef.current.delete(eventId);
+        Alert.alert('Sound failed', String(error?.message || 'Could not trigger sound.'));
+      }
+    },
+    [meName, meUid, playRoomSoundEffect, roomId],
+  );
+
+  const openSoundBoard = useCallback(() => {
+    Alert.alert(
+      'Live Sounds',
+      'Choose a room sound:',
+      [
+        ...LIVE_SOUND_EFFECTS.map(effect => ({
+          text: `${effect.icon} ${effect.label}`,
+          onPress: () => {
+            void triggerRoomSoundEffect(effect.id);
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    );
+  }, [triggerRoomSoundEffect]);
 
   const cleanupEngine = useCallback(async () => {
     if (roomRef.current?.id && meUid) {
@@ -982,6 +1097,20 @@ const FreshDriftExpoModal = ({
           );
         }
         setRoomPremiumShowId(data.premiumShowId ? String(data.premiumShowId) : null);
+        const soundEvent =
+          data.lastSoundEffect && typeof data.lastSoundEffect === 'object'
+            ? data.lastSoundEffect
+            : null;
+        const soundEventId = String(soundEvent?.eventId || '').trim();
+        const soundEffectId = String(soundEvent?.effectId || '').trim();
+        if (
+          soundEventId &&
+          soundEffectId &&
+          !handledSoundEventIdsRef.current.has(soundEventId)
+        ) {
+          handledSoundEventIdsRef.current.add(soundEventId);
+          playRoomSoundEffect(soundEffectId);
+        }
       });
     const unsubParticipants = firestore()
       .collection(`live/${roomId}/participants`)
@@ -1059,7 +1188,7 @@ const FreshDriftExpoModal = ({
         unsubReactions();
       } catch {}
     };
-  }, [meUid, roomHostUid, roomId, visible]);
+  }, [meUid, playRoomSoundEffect, roomHostUid, roomId, visible]);
 
   const sendComment = useCallback(async () => {
     const text = commentText.trim();
@@ -1556,7 +1685,15 @@ const FreshDriftExpoModal = ({
                 >
                   <Text style={styles.railIcon}>Flip</Text>
                 </Pressable>
+                <Pressable style={styles.railButton} onPress={openSoundBoard}>
+                  <Text style={styles.railIcon}>Sounds</Text>
+                </Pressable>
               </View>
+              {soundBadgeLabel ? (
+                <View style={styles.soundBadge}>
+                  <Text style={styles.soundBadgeText}>{soundBadgeLabel}</Text>
+                </View>
+              ) : null}
               {showAudiencePanel ? (
                 <View style={[styles.audiencePanel, { top: insets.top + 78, right: insets.right + 14 }]}>
                   <Text style={styles.audiencePanelTitle}>In The Room</Text>
@@ -2021,6 +2158,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 4,
   },
+  soundBadge: {
+    position: 'absolute',
+    left: 14,
+    right: 96,
+    bottom: 134,
+    borderRadius: 16,
+    backgroundColor: 'rgba(141,0,0,0.9)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  soundBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
   audiencePanel: {
     position: 'absolute',
     width: 200,
@@ -2389,14 +2545,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   primaryStartButton: {
-    backgroundColor: '#10c9ff',
+    backgroundColor: '#8D0000',
     borderRadius: 18,
     alignItems: 'center',
     paddingVertical: 16,
     marginBottom: 12,
   },
   primaryStartButtonText: {
-    color: '#04131d',
+    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '900',
   },

@@ -761,9 +761,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '800',
   },
-  sectionLabel: { color: '#A6B4C6', fontSize: 12, marginBottom: 4 },
+  sectionLabel: { color: '#B30000', fontSize: 12, marginBottom: 4, fontWeight: '800' },
   helperText: { color: 'rgba(255,255,255,0.68)', fontSize: 12, lineHeight: 18 },
-  inputLabel: { color: '#E6EDF5', fontSize: 13, marginTop: 14, marginBottom: 4 },
+  inputLabel: { color: '#B30000', fontSize: 13, marginTop: 14, marginBottom: 4, fontWeight: '900' },
   input: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.35)',
@@ -788,8 +788,8 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   pillActive: {
-    borderColor: 'rgba(255,255,255,0.6)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderColor: '#8D0000',
+    backgroundColor: '#8D0000',
   },
   pillTxt: { color: '#C9D3DF', fontSize: 12, fontWeight: '600' },
   pillTxtActive: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
