@@ -47,6 +47,7 @@ export type PremiumShowRecord = {
 };
 
 const PREMIUM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PREMIUM_TOKEN_GRACE_MS = 5 * 60 * 1000;
 
 const nowMs = () => Date.now();
 
@@ -186,6 +187,7 @@ export async function createPremiumShowWithTokens(params: {
   }
   const startsAtMs = nowMs();
   const endsAtMs = startsAtMs + Math.max(15, Number(params.durationMins || 60)) * 60 * 1000;
+  const accessEndsAtMs = endsAtMs + PREMIUM_TOKEN_GRACE_MS;
   const showRef = firestore().collection('premium_shows').doc();
   const tokens: PremiumTokenRecord[] = [];
   await showRef.set({
@@ -202,9 +204,9 @@ export async function createPremiumShowWithTokens(params: {
     startsAt: new Date(startsAtMs),
     endsAt: new Date(endsAtMs),
     redeemOpenAt: new Date(startsAtMs),
-    redeemCloseAt: new Date(endsAtMs),
+    redeemCloseAt: new Date(accessEndsAtMs),
     entryOpenAt: new Date(startsAtMs),
-    entryCloseAt: new Date(endsAtMs),
+    entryCloseAt: new Date(accessEndsAtMs),
     capacity: Math.max(1, Number(params.capacity || params.tokenCount || 1)),
     requiresTicket: true,
     createdAt: firestore.FieldValue.serverTimestamp(),
@@ -241,7 +243,7 @@ export async function createPremiumShowWithTokens(params: {
       claimedByUid: null,
       claimedAt: null,
       validFrom: new Date(startsAtMs),
-      validUntil: new Date(endsAtMs),
+      validUntil: new Date(accessEndsAtMs),
       maxUses: 1,
       useCount: 0,
       status: 'generated',
@@ -263,7 +265,7 @@ export async function createPremiumShowWithTokens(params: {
       description: params.description?.trim() || null,
       status: 'scheduled',
       startsAtMs,
-      endsAtMs,
+      endsAtMs: accessEndsAtMs,
       capacity: Math.max(1, Number(params.capacity || params.tokenCount || 1)),
       ticketStats: {
         generated: tokens.length,

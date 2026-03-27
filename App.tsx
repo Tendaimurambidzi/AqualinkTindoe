@@ -6306,6 +6306,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       userName?: string | null;
       updatedAt?: any;
       userPhoto?: string | null;
+      createdAt?: any;
+      hugs?: number;
+      huggedBy?: Record<string, boolean>;
+      replyCount?: number;
+      replyToEchoId?: string | null;
+      replies?: any[];
     }>
   >([]);
   const [editingEcho, setEditingEcho] = useState<{
@@ -7455,7 +7461,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       .limit(50)
       .get();
 
-    const replyCounts: Record<string, number> = {};
     const allRows = echoesSnap.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
@@ -7469,20 +7474,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       huggedBy: doc.data().huggedBy || {},
       replyCount: Number(doc.data().replyCount || 0),
       replyToEchoId: doc.data().replyToEchoId || null,
+      replies: [],
     }));
-
+    const byId = new Map(allRows.map(echo => [echo.id, echo]));
+    const roots: any[] = [];
     allRows.forEach(echo => {
       const parentId = String(echo.replyToEchoId || '').trim();
-      if (!parentId) return;
-      replyCounts[parentId] = (replyCounts[parentId] || 0) + 1;
+      if (!parentId || !byId.has(parentId)) {
+        roots.push(echo);
+        return;
+      }
+      const parent = byId.get(parentId);
+      if (!Array.isArray(parent.replies)) {
+        parent.replies = [];
+      }
+      parent.replies.push(echo);
     });
-
-    return allRows
-      .filter(echo => !echo.replyToEchoId)
-      .map(echo => ({
-        ...echo,
-        replyCount: replyCounts[echo.id] || Number(echo.replyCount || 0) || 0,
-      }));
+    const sortThread = (items: any[]) =>
+      items
+        .sort((a, b) => {
+          const aMs = a?.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a?.createdAt || 0).getTime();
+          const bMs = b?.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b?.createdAt || 0).getTime();
+          return bMs - aMs;
+        })
+        .map(item => ({
+          ...item,
+          replyCount: Array.isArray(item.replies) ? item.replies.length : Number(item.replyCount || 0) || 0,
+          replies: Array.isArray(item.replies) ? sortThread(item.replies) : [],
+        }));
+    return sortThread(roots);
   }, []);
                     
   // Load echoes when echo modal opens
@@ -10255,25 +10275,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const rawText = echoTextRef.current || '';
       const text = rawText.trim();
       if (!text) return;
-      const pendingId = `pending-${Date.now()}`;
-      setEchoList(prev => [
-        {
-          id: pendingId,
-          uid: 'me',
-          text,
-          userName: profileName || accountCreationHandle || 'You',
-          userPhoto: profilePhoto || null,
-          createdAt: new Date(),
-        },
-        ...prev,
-      ]);
+      if (!parentEchoId) {
+        const pendingId = `pending-${Date.now()}`;
+        setEchoList(prev => [
+          {
+            id: pendingId,
+            uid: 'me',
+            text,
+            userName: profileName || accountCreationHandle || 'You',
+            userPhoto: profilePhoto || null,
+            createdAt: new Date(),
+            replies: [],
+          },
+          ...prev,
+        ]);
+      }
                     
       // Use the new sendEcho transaction
       await sendEcho(targetWaveId, text, parentEchoId || undefined);
 
       if (parentEchoId) {
         setEchoList(prev =>
-          prev.map(item =>
+          mapEchoTree(prev, item =>
             item.id === parentEchoId
               ? { ...item, replyCount: Number(item.replyCount || 0) + 1 }
               : item,
@@ -10399,7 +10422,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         });
       }
       
-      setEchoList(prev => prev.filter(e => e.uid !== user.uid));
+      setEchoList(prev => filterEchoTree(prev, docToDelete?.id || ''));
       setMyEcho(null);
       updateEchoText('');
       showOceanDialog(
@@ -10414,7 +10437,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const onDeleteEchoById = async (echoId: string) => {
     if (!currentWave) return;
-    setEchoList(prev => prev.filter(e => e.id !== echoId));
+    setEchoList(prev => filterEchoTree(prev, echoId));
     setShowEchoes(false);
     showOceanDialog(
       'Echo Removed',
@@ -10451,7 +10474,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
 
       setEchoList(prev =>
-        prev.map(item =>
+        mapEchoTree(prev, item =>
           item.id === echo.id
             ? { ...item, hugs: nextHugs, huggedBy: nextHuggedBy }
             : item,
@@ -10493,6 +10516,104 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     },
     [currentWave?.id],
+  );
+
+  const openEchoActionSheet = useCallback(
+    (echo: any) => {
+      const myUid = (() => {
+        try {
+          return require('@react-native-firebase/auth').default?.()?.currentUser?.uid;
+        } catch {
+          return null;
+        }
+      })();
+      const title = echo.uid === myUid ? 'My Echo' : 'Echo Reply';
+      const actions =
+        echo.uid === myUid
+          ? [
+              {
+                text: `${echo.huggedBy?.[myUid] ? 'Unhug' : 'Hug'} (${Number(echo.hugs || 0)})`,
+                onPress: () => toggleEchoHugFromModal(echo),
+              },
+              {
+                text: 'Reply',
+                onPress: () => {
+                  setReplyingToEcho(echo as any);
+                  updateEchoText(`@${echo.userName || 'user'} `);
+                },
+              },
+              {
+                text: 'Edit',
+                onPress: () => onEditMyEcho(echo as any),
+              },
+              {
+                text: 'Delete',
+                style: 'destructive' as const,
+                onPress: () => onDeleteEchoById(echo.id as any),
+              },
+              { text: 'Cancel', style: 'cancel' as const },
+            ]
+          : [
+              {
+                text: `${echo.huggedBy?.[myUid] ? 'Unhug' : 'Hug'} (${Number(echo.hugs || 0)})`,
+                onPress: () => toggleEchoHugFromModal(echo),
+              },
+              {
+                text: 'Reply',
+                onPress: () => {
+                  setReplyingToEcho(echo as any);
+                  updateEchoText(`@${echo.userName || 'user'} `);
+                },
+              },
+              { text: 'Cancel', style: 'cancel' as const },
+            ];
+      Alert.alert(title, `"${echo.text}"`, actions);
+    },
+    [onDeleteEchoById, onEditMyEcho, toggleEchoHugFromModal, updateEchoText],
+  );
+
+  const renderEchoThreadItem = useCallback(
+    (echo: any, depth = 0): React.ReactNode => {
+      const createdLabel = (() => {
+        try {
+          const date = echo.createdAt?.toDate ? echo.createdAt.toDate() : new Date(echo.createdAt);
+          const now = new Date();
+          const diffMs = now.getTime() - date.getTime();
+          const diffMins = Math.floor(diffMs / (1000 * 60));
+          const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+          const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+          if (diffMins < 1) return 'just now';
+          if (diffMins < 60) return `${diffMins}m ago`;
+          if (diffHours < 24) return `${diffHours}h ago`;
+          if (diffDays < 7) return `${diffDays}d ago`;
+          return date.toLocaleDateString();
+        } catch {
+          return '';
+        }
+      })();
+      return (
+        <View key={echo.id || `${echo.uid}-${depth}-${echo.text}`} style={{ marginLeft: depth * 16, marginBottom: 10 }}>
+          <Pressable onPress={() => openEchoActionSheet(echo)}>
+            <View style={{ paddingVertical: 6 }}>
+              <Text style={{ color: 'rgba(255,255,255,0.9)' }}>
+                <Text style={{ fontWeight: '700' }}>
+                  {displayHandle(echo.uid, echo.userName || echo.uid)}
+                </Text>
+                <Text> </Text>
+                <Text>{echo.text}</Text>
+              </Text>
+              <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 12, marginTop: 2 }}>
+                {Number(echo.hugs || 0)} hugs{createdLabel ? ` • ${createdLabel}` : ''}
+              </Text>
+            </View>
+          </Pressable>
+          {Array.isArray(echo.replies) && echo.replies.length > 0
+            ? echo.replies.map((reply: any) => renderEchoThreadItem(reply, depth + 1))
+            : null}
+        </View>
+      );
+    },
+    [displayHandle, openEchoActionSheet],
   );
                     
   // Keep hasSplashed and counters in sync when the current wave changes
@@ -11081,6 +11202,28 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       console.warn('Load post echoes failed', e);
     }
   };
+
+  const mapEchoTree = useCallback((items: any[], transform: (item: any) => any) => {
+    return items.map(item => {
+      const next = transform(item);
+      if (Array.isArray(next.replies) && next.replies.length > 0) {
+        return {
+          ...next,
+          replies: mapEchoTree(next.replies, transform),
+        };
+      }
+      return next;
+    });
+  }, []);
+
+  const filterEchoTree = useCallback((items: any[], targetId: string): any[] => {
+    return items
+      .filter(item => item.id !== targetId)
+      .map(item => ({
+        ...item,
+        replies: Array.isArray(item.replies) ? filterEchoTree(item.replies, targetId) : [],
+      }));
+  }, []);
 
   const openReplyToPostEcho = useCallback(
     (waveId: string, echo: any) => {
@@ -20848,106 +20991,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       No echoes yet. Be the first to echo.
                     </Text>
                   ) : (
-                    echoList.map((e, idx) => (
-                      <Pressable
-                        key={
-                          (e && (e as any).id) ||
-                          `${(e as any)?.uid || 'u'}-${
-                            (e as any)?.updatedAt?.seconds ??
-                            (e as any)?.createdAt?.seconds ??
-                            0
-                          }-${idx}`
-                        }
-                        onPress={() => {
-                          const myUid = (() => {
-                            try {
-                              return require('@react-native-firebase/auth').default?.()
-                                ?.currentUser?.uid;
-                            } catch {
-                              return null;
-                            }
-                          })();
-                          if (e.uid === myUid) {
-                            Alert.alert('My Echo', `"${e.text}"`, [
-                              {
-                                text: `${e.huggedBy?.[myUid] ? 'Unhug' : 'Hug'} (${Number(e.hugs || 0)})`,
-                                onPress: () => toggleEchoHugFromModal(e as any),
-                              },
-                              {
-                                text: 'Splash',
-                                onPress: () =>
-                                  Alert.alert('Splash', 'Feature coming soon!'),
-                              },
-                              {
-                                text: 'Edit',
-                                onPress: () => onEditMyEcho(e as any),
-                              },
-                              {
-                                text: 'Delete',
-                                style: 'destructive',
-                                onPress: () => onDeleteEchoById(e.id as any),
-                              },
-                              { text: 'Cancel', style: 'cancel' },
-                            ]);
-                          } else {
-                            Alert.alert('Echo Reply', `"${e.text}"`, [
-                              {
-                                text: `${e.huggedBy?.[myUid] ? 'Unhug' : 'Hug'} (${Number(e.hugs || 0)})`,
-                                onPress: () => toggleEchoHugFromModal(e as any),
-                              },
-                              {
-                                text: 'Reply',
-                                onPress: () => {
-                                  setReplyingToEcho(e as any);
-                                  updateEchoText(`@${e.userName || 'user'} `);
-                                },
-                              },
-                              { text: 'Cancel', style: 'cancel' },
-                            ]);
-                          }
-                        }}
-                      >
-                        <View style={{ paddingVertical: 6 }}>
-                          <Text style={{ color: 'rgba(255,255,255,0.9)' }}>
-                            <Text style={{ fontWeight: '700' }}>
-                              {displayHandle(e.uid, e.userName || e.uid)}
-                            </Text>
-                            <Text> </Text>
-                            <Text>{e.text}</Text>
-                          </Text>
-                          {!!e.replyCount && (
-                            <Text style={{ color: 'rgba(157,230,255,0.85)', fontSize: 12, marginTop: 2 }}>
-                              {e.replyCount} {e.replyCount === 1 ? 'reply' : 'replies'}
-                            </Text>
-                          )}
-                          <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 12, marginTop: 2 }}>
-                            {Number(e.hugs || 0)} hugs
-                          </Text>
-                          {e.createdAt && (
-                            <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 2 }}>
-                              {(() => {
-                                try {
-                                  const date = e.createdAt?.toDate ? e.createdAt.toDate() : new Date(e.createdAt);
-                                  const now = new Date();
-                                  const diffMs = now.getTime() - date.getTime();
-                                  const diffMins = Math.floor(diffMs / (1000 * 60));
-                                  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-                                  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-                                  
-                                  if (diffMins < 1) return 'just now';
-                                  if (diffMins < 60) return `${diffMins}m ago`;
-                                  if (diffHours < 24) return `${diffHours}h ago`;
-                                  if (diffDays < 7) return `${diffDays}d ago`;
-                                  return date.toLocaleDateString();
-                                } catch {
-                                  return '';
-                                }
-                              })()}
-                            </Text>
-                          )}
-                        </View>
-                      </Pressable>
-                    ))
+                    echoList.map((e, idx) =>
+                      renderEchoThreadItem(
+                        e,
+                        0,
+                      ) || (
+                        <View key={`${(e as any)?.id || idx}`} />
+                      ),
+                    )
                   )}
                 </View>
               </ScrollView>
