@@ -1277,7 +1277,24 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 </View>
               ) : hasVideoMedia ? (
                 <View style={{ marginHorizontal: 0, position: 'relative', backgroundColor: '#000' }}>
-                  {videoSourceUri ? (
+                  {!allowPlayback ? (
+                    <View
+                      style={[
+                        videoStyleFor(item.id),
+                        { maxHeight: SCREEN_HEIGHT * 0.68, alignItems: 'center', justifyContent: 'center' },
+                      ]}
+                    >
+                      {item.image ? (
+                        <Image
+                          source={{ uri: String(item.image) }}
+                          style={[StyleSheet.absoluteFillObject, { opacity: 0.35 }]}
+                          resizeMode="cover"
+                        />
+                      ) : null}
+                      <Text style={{ color: '#fff', fontSize: 28, marginBottom: 8 }}>📴</Text>
+                      <Text style={{ color: '#fff', fontWeight: '800' }}>Video unavailable offline</Text>
+                    </View>
+                  ) : videoSourceUri ? (
                     <VideoWithTapControls
                       source={{ uri: videoSourceUri }}
                       style={[
@@ -1683,20 +1700,29 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 </Pressable>
                 {isImageAsset(galleryMediaItems[viewerIndex]) ? (
                   <ScrollView
-                    maximumZoomScale={4}
-                    minimumZoomScale={1}
-                    centerContent
-                    contentContainerStyle={{ flexGrow: 1, alignItems: 'center', justifyContent: 'center' }}
                     style={{ width: '100%' }}
+                    contentContainerStyle={{ flexGrow: 1 }}
+                    showsVerticalScrollIndicator={false}
                   >
-                    <Image
-                      source={{ uri: String(galleryMediaItems[viewerIndex].uri) }}
-                      style={{
-                        width: SCREEN_WIDTH * viewerZoom,
-                        height: SCREEN_HEIGHT * 0.72 * viewerZoom,
+                    <ScrollView
+                      horizontal
+                      contentContainerStyle={{
+                        minWidth: '100%',
+                        minHeight: SCREEN_HEIGHT * 0.72,
+                        alignItems: 'center',
+                        justifyContent: 'center',
                       }}
-                      resizeMode="contain"
-                    />
+                      showsHorizontalScrollIndicator={false}
+                    >
+                      <Image
+                        source={{ uri: String(galleryMediaItems[viewerIndex].uri) }}
+                        style={{
+                          width: SCREEN_WIDTH * viewerZoom,
+                          height: SCREEN_HEIGHT * 0.72 * viewerZoom,
+                        }}
+                        resizeMode="contain"
+                      />
+                    </ScrollView>
                   </ScrollView>
                 ) : isVideoAsset(galleryMediaItems[viewerIndex]) && RNVideo ? (
                   <RNVideo

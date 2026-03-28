@@ -5,8 +5,10 @@ const { RtcTokenBuilder, RtcRole } = pkg;
 import admin from 'firebase-admin';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { Mux } from '@mux/mux-node';
+import sharp from 'sharp';
 
 const app = express();
 app.use(cors());
@@ -138,6 +140,225 @@ async function getSignedUrlForPath(storagePath) {
     expires: Date.now() + 60 * 60 * 1000,
   });
   return url;
+}
+
+function looksLikeHttpUrl(value) {
+  const s = String(value || '').trim();
+  return /^https?:\/\//i.test(s);
+}
+
+function isStoragePathLike(value) {
+  const s = String(value || '').trim();
+  return Boolean(s) && !looksLikeHttpUrl(s) && !s.startsWith('data:');
+}
+
+function inferImageFormat(contentType, sourcePath = '') {
+  const ct = String(contentType || '').toLowerCase();
+  const src = String(sourcePath || '').toLowerCase();
+  if (ct.includes('png') || src.endsWith('.png')) return 'png';
+  if (ct.includes('webp') || src.endsWith('.webp')) return 'webp';
+  if (ct.includes('gif') || src.endsWith('.gif')) return 'gif';
+  if (ct.includes('jpg') || ct.includes('jpeg') || src.endsWith('.jpg') || src.endsWith('.jpeg')) return 'jpeg';
+  return 'jpeg';
+}
+
+function inferMediaKind(contentType, sourcePath = '') {
+  const ct = String(contentType || '').toLowerCase();
+  const src = String(sourcePath || '').toLowerCase();
+  if (ct.startsWith('image/')) return 'image';
+  if (ct.startsWith('video/')) return 'video';
+  if (ct.startsWith('audio/')) return 'audio';
+  if (/(jpg|jpeg|png|webp|gif)$/i.test(src)) return 'image';
+  if (/(mp4|mov|m4v|webm|m3u8)$/i.test(src)) return 'video';
+  if (/(mp3|m4a|aac|wav)$/i.test(src)) return 'audio';
+  return 'unknown';
+}
+
+async function resolveOpenableUrl(mediaPath) {
+  if (!mediaPath) return null;
+  if (looksLikeHttpUrl(mediaPath)) return String(mediaPath);
+  if (isStoragePathLike(mediaPath)) {
+    return getSignedUrlForPath(String(mediaPath));
+  }
+  return null;
+}
+
+async function loadMediaBufferForWave(waveData) {
+  const sourcePath = waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || '';
+  const contentTypeGuess = waveData.mediaType || waveData.mimeType || '';
+  if (!sourcePath) {
+    throw new Error('No media path available');
+  }
+
+  if (isStoragePathLike(sourcePath)) {
+    const bucket = admin.storage().bucket(STORAGE_BUCKET);
+    const file = bucket.file(String(sourcePath));
+    const [exists] = await file.exists();
+    if (!exists) {
+      throw new Error(`Storage file not found: ${sourcePath}`);
+    }
+    const [buffer] = await file.download();
+    const [metadata] = await file.getMetadata().catch(() => [{}]);
+    return {
+      buffer,
+      contentType: metadata?.contentType || contentTypeGuess,
+      sourcePath: String(sourcePath),
+      sourceUrl: await getSignedUrlForPath(String(sourcePath)),
+    };
+  }
+
+  const sourceUrl = await resolveOpenableUrl(sourcePath);
+  if (!sourceUrl) {
+    throw new Error('Could not resolve source media URL');
+  }
+  const resp = await fetch(sourceUrl);
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch source media (${resp.status})`);
+  }
+  const arrayBuffer = await resp.arrayBuffer();
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType: resp.headers.get('content-type') || contentTypeGuess,
+    sourcePath: String(sourcePath),
+    sourceUrl,
+  };
+}
+
+function buildCaptionSvg({ width, height, captionText }) {
+  const safeCaption = String(captionText || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const fontSize = Math.max(28, Math.round(Math.min(width, height) * 0.045));
+  const lineHeight = Math.round(fontSize * 1.24);
+  const boxPaddingX = Math.max(24, Math.round(width * 0.03));
+  const boxPaddingY = Math.max(18, Math.round(height * 0.022));
+  const maxTextWidth = Math.round(width * 0.84);
+  const charsPerLine = Math.max(16, Math.floor(maxTextWidth / (fontSize * 0.56)));
+  const words = safeCaption.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let currentLine = '';
+  words.forEach((word) => {
+    const next = currentLine ? `${currentLine} ${word}` : word;
+    if (next.length > charsPerLine && currentLine) {
+      lines.push(currentLine);
+      currentLine = word;
+      return;
+    }
+    currentLine = next;
+  });
+  if (currentLine) lines.push(currentLine);
+  const renderedLines = lines.slice(0, 3);
+  const textBlockHeight = renderedLines.length * lineHeight;
+  const boxHeight = Math.max(textBlockHeight + boxPaddingY * 2, Math.round(height * 0.16));
+  const boxY = Math.max(18, height - boxHeight - Math.round(height * 0.04));
+  const boxX = Math.round((width - (maxTextWidth + boxPaddingX * 2)) / 2);
+  const textStartY = boxY + boxPaddingY + fontSize;
+  const tspans = renderedLines
+    .map((line, idx) => `<tspan x="${width / 2}" dy="${idx === 0 ? 0 : lineHeight}">${line}</tspan>`)
+    .join('');
+
+  return Buffer.from(`
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="rgba(0,0,0,0.4)"/>
+        </filter>
+      </defs>
+      <rect x="${boxX}" y="${boxY}" rx="${Math.round(fontSize * 0.55)}" ry="${Math.round(fontSize * 0.55)}"
+            width="${maxTextWidth + boxPaddingX * 2}" height="${boxHeight}"
+            fill="rgba(0,0,0,0.62)" filter="url(#shadow)"/>
+      <text x="${width / 2}" y="${textStartY}" text-anchor="middle"
+            font-family="Arial, Helvetica, sans-serif" font-size="${fontSize}"
+            font-weight="700" fill="#ffffff" stroke="rgba(0,0,0,0.55)" stroke-width="2" paint-order="stroke fill">
+        ${tspans}
+      </text>
+    </svg>
+  `);
+}
+
+async function createCaptionMergedImage({ waveId, captionText, waveData }) {
+  if (!adminReady) throw new Error('firebase-admin not ready');
+  const trimmedCaption = String(captionText || '').trim();
+  if (!trimmedCaption) {
+    return {
+      downloadUrl: await resolveOpenableUrl(waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || ''),
+      merged: false,
+      reason: 'empty-caption',
+    };
+  }
+
+  const media = await loadMediaBufferForWave(waveData);
+  const mediaKind = inferMediaKind(media.contentType, media.sourcePath);
+  if (mediaKind !== 'image') {
+    return {
+      downloadUrl: await resolveOpenableUrl(waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || ''),
+      merged: false,
+      reason: 'unsupported-media-kind',
+    };
+  }
+
+  const hash = crypto
+    .createHash('sha1')
+    .update(`${waveId}|${media.sourcePath}|${trimmedCaption}`)
+    .digest('hex')
+    .slice(0, 16);
+  const format = inferImageFormat(media.contentType, media.sourcePath);
+  const ext = format === 'jpeg' ? 'jpg' : format;
+  const mergedStoragePath = `wave_downloads/${waveId}/caption_${hash}.${ext}`;
+  const bucket = admin.storage().bucket(STORAGE_BUCKET);
+  const file = bucket.file(mergedStoragePath);
+  const [exists] = await file.exists();
+  if (exists) {
+    return {
+      downloadUrl: await getSignedUrlForPath(mergedStoragePath),
+      merged: true,
+      storagePath: mergedStoragePath,
+      cached: true,
+    };
+  }
+
+  const image = sharp(media.buffer, { animated: false, pages: 1 });
+  const metadata = await image.metadata();
+  const width = Math.max(720, metadata.width || 1080);
+  const height = Math.max(720, metadata.height || 1350);
+  const svgOverlay = buildCaptionSvg({ width, height, captionText: trimmedCaption });
+
+  let pipeline = image
+    .resize({ width, height, fit: 'inside', withoutEnlargement: true })
+    .composite([{ input: svgOverlay, top: 0, left: 0 }]);
+
+  if (format === 'png') {
+    pipeline = pipeline.png({ compressionLevel: 9 });
+  } else if (format === 'webp') {
+    pipeline = pipeline.webp({ quality: 92 });
+  } else {
+    pipeline = pipeline.jpeg({ quality: 92, mozjpeg: true });
+  }
+
+  const output = await pipeline.toBuffer();
+  await file.save(output, {
+    resumable: false,
+    metadata: {
+      contentType:
+        format === 'png' ? 'image/png' : format === 'webp' ? 'image/webp' : 'image/jpeg',
+      cacheControl: 'public,max-age=31536000',
+      metadata: {
+        waveId: String(waveId),
+        captionMerged: 'true',
+      },
+    },
+  });
+
+  return {
+    downloadUrl: await getSignedUrlForPath(mergedStoragePath),
+    merged: true,
+    storagePath: mergedStoragePath,
+    cached: false,
+  };
 }
 
 async function startMuxMerge({ waveId, sourceVideoPath, overlayAudioPath, ownerUid, authorName }) {
@@ -1285,7 +1506,7 @@ app.get('/teacher/lessons', (req, res) => {
 
 // -------------------- Wave Download --------------------
 app.post('/wave/download', async (req, res) => {
-  const { waveId, uid } = req.body || {};
+  const { waveId, uid, mergeCaption, captionText } = req.body || {};
   
   if (!waveId) {
     return bad(res, 'Missing waveId');
@@ -1322,11 +1543,39 @@ app.post('/wave/download', async (req, res) => {
       lastDownloadedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
     
+    let downloadUrl = await resolveOpenableUrl(mediaPath);
+    let captionMerged = false;
+    let mergeReason = null;
+
+    if (mergeCaption && String(captionText || '').trim()) {
+      try {
+        const merged = await createCaptionMergedImage({
+          waveId: String(waveId),
+          captionText: String(captionText || ''),
+          waveData,
+        });
+        downloadUrl = merged.downloadUrl || downloadUrl;
+        captionMerged = Boolean(merged.merged);
+        mergeReason = merged.reason || null;
+      } catch (mergeError) {
+        console.warn('Caption merge skipped for wave', waveId, mergeError?.message || mergeError);
+        mergeReason = 'merge-failed';
+      }
+    }
+
+    if (!downloadUrl) {
+      return bad(res, 'Could not resolve download URL for this wave', 500);
+    }
+
     return res.json({ 
       ok: true, 
-      downloadUrl: mediaPath,
+      downloadUrl,
       waveId,
-      message: 'Wave ready for download' 
+      captionMerged,
+      mergeReason,
+      message: captionMerged
+        ? 'Wave ready for download with caption'
+        : 'Wave ready for download'
     });
   } catch (e) {
     console.error('Wave download error:', e);

@@ -74,6 +74,7 @@ import messaging from '@react-native-firebase/messaging';
 import database from '@react-native-firebase/database';
 import Sound from 'react-native-sound';
 import { shareDriftLink } from './src/services/driftService';
+import { downloadWave } from './src/services/downloadService';
 import {
   getCrewCount,
   getBoardingCount,
@@ -1082,14 +1083,107 @@ const styles = StyleSheet.create({
   topItem: {
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingVertical: 2,
+    paddingVertical: 1,
+    paddingHorizontal: 2,
+  },
+  topArtWrap: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    position: 'relative',
+    paddingTop: 4,
+    paddingBottom: 4,
     paddingHorizontal: 6,
+  },
+  topArtCap: {
+    position: 'absolute',
+    top: 1,
+    width: 33,
+    height: 19,
+    backgroundColor: '#8D0000',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    borderTopLeftRadius: 7,
+    borderTopRightRadius: 13,
+    borderBottomLeftRadius: 11,
+    borderBottomRightRadius: 5,
+    shadowColor: '#8D0000',
+    shadowOpacity: 0.32,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+    transform: [{ rotate: '-4deg' }],
+  },
+  topArtBody: {
+    position: 'absolute',
+    left: 2,
+    right: 2,
+    top: 12,
+    bottom: 0,
+    backgroundColor: '#8D0000',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.14)',
+    borderTopLeftRadius: 9,
+    borderTopRightRadius: 12,
+    borderBottomLeftRadius: 15,
+    borderBottomRightRadius: 8,
+    shadowColor: '#8D0000',
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+    transform: [{ rotate: '-1.25deg' }],
+  },
+  topArtFuse: {
+    position: 'absolute',
+    top: 9,
+    width: 24,
+    height: 9,
+    backgroundColor: '#8D0000',
+    borderTopLeftRadius: 4,
+    borderTopRightRadius: 8,
+    borderBottomLeftRadius: 7,
+    borderBottomRightRadius: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    transform: [{ rotate: '7deg' }],
+  },
+  topArtRagLeft: {
+    position: 'absolute',
+    left: -1,
+    bottom: 2,
+    width: 9,
+    height: 12,
+    backgroundColor: '#8D0000',
+    borderTopLeftRadius: 3,
+    borderTopRightRadius: 7,
+    borderBottomLeftRadius: 8,
+    borderBottomRightRadius: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    transform: [{ rotate: '-11deg' }],
+  },
+  topArtRagRight: {
+    position: 'absolute',
+    right: -1,
+    bottom: 1,
+    width: 10,
+    height: 11,
+    backgroundColor: '#8D0000',
+    borderTopLeftRadius: 6,
+    borderTopRightRadius: 3,
+    borderBottomLeftRadius: 3,
+    borderBottomRightRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    transform: [{ rotate: '9deg' }],
   },
   topLabel: {
     color: 'white',
     fontWeight: '800',
     fontSize: 12,
     letterSpacing: 0.5,
+    textAlign: 'center',
+    paddingHorizontal: 2,
   },
                     
   // Icons above words
@@ -1602,6 +1696,10 @@ const styles = StyleSheet.create({
   auraActionButton: {
     flex: 1,
     minWidth: 0,
+    minHeight: 44,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 14,
   },
   auraVibesBtn: {
     backgroundColor: '#0A4D7A',
@@ -4654,7 +4752,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [aiMode, setAiMode] = useState<'school' | 'explore' | 'creative' | 'analysis'>('school');
   const [selectedGemCountry, setSelectedGemCountry] = useState<string>('');
   const [isWifi, setIsWifi] = useState<boolean>(true);
-  const [isOffline, setIsOffline] = useState<boolean>(false);
+  const [isOffline, setIsOffline] = useState<boolean>(true);
   const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
 
   useEffect(() => {
@@ -8028,7 +8126,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               const resp = await fetch(`${backendBase}/wave/download`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ waveId: waveOptionsTarget.id }),
+                body: JSON.stringify({
+                  waveId: waveOptionsTarget.id,
+                  mergeCaption: true,
+                  captionText: String(waveOptionsTarget.captionText || ''),
+                }),
               });
                     
               if (resp.ok) {
@@ -8083,59 +8185,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
                     
           if (downloadUrl) {
-                    
-            // On Android, request storage permission only if needed (pre-Android 10)
-            if (Platform.OS === 'android') {
-              try {
-                const apiLevel = typeof Platform.Version === 'number' ? Platform.Version : 0;
-                if (apiLevel <= 28) { // Android 9 and below
-                  const granted = await PermissionsAndroid.request(
-                    PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-                    {
-                      title: 'Storage Permission',
-                      message: 'Allow Drift to save this wave to your device?',
-                      buttonPositive: 'Allow',
-                      buttonNegative: 'Deny',
-                    },
-                  );
-                  if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-                    Alert.alert(
-                      'Permission Denied',
-                      'Storage permission is required to save waves to your device.',
-                    );
-                    return;
-                  }
-                }
-                // For Android 10+ (API 29+), no permission needed for app-scoped or Downloads folder
-              } catch (permErr) {
-                console.warn('Permission request failed:', permErr);
-              }
-            }
-                    
-            // Open download URL - system will handle the download
-            try {
-              await Linking.openURL(String(downloadUrl));
-              Alert.alert(
-                'Wave Download Started',
-                'Your wave is being downloaded. Check your Downloads folder or notification bar.',
-                [{ text: 'OK' }],
-              );
-            } catch (linkErr) {
-              console.error('Failed to open download URL:', linkErr);
-              Alert.alert(
-                'Download URL Ready',
-                'Copy this URL to download the wave:\n\n' + downloadUrl,
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  {
-                    text: 'Copy URL',
-                    onPress: () => {
-                      // Simple clipboard alternative - user can manually copy from alert
-                      Alert.alert('Download URL', downloadUrl);
-                    },
-                  },
-                ],
-              );
+            const mediaTypeLower = String(waveOptionsTarget.mediaType || '').toLowerCase();
+            const inferredExt = (() => {
+              const urlLower = String(downloadUrl).toLowerCase();
+              if (urlLower.includes('.png')) return 'png';
+              if (urlLower.includes('.webp')) return 'webp';
+              if (urlLower.includes('.jpg') || urlLower.includes('.jpeg')) return 'jpg';
+              if (urlLower.includes('.mov')) return 'mov';
+              if (urlLower.includes('.m4v')) return 'm4v';
+              if (urlLower.includes('.mp4')) return 'mp4';
+              if (mediaTypeLower.includes('image') || mediaTypeLower.includes('photo')) return 'jpg';
+              return 'mp4';
+            })();
+            const safeBase = String(
+              waveOptionsTarget.captionText ||
+                waveOptionsTarget.authorName ||
+                waveOptionsTarget.id ||
+                'splashline',
+            )
+              .trim()
+              .replace(/[^A-Za-z0-9._-]+/g, '_')
+              .replace(/^_+|_+$/g, '')
+              .slice(0, 42) || 'splashline';
+            const fileName = `SplashLine_${safeBase}_${Date.now()}.${inferredExt}`;
+            const ok = await downloadWave(
+              String(waveOptionsTarget.id),
+              String(downloadUrl),
+              fileName,
+            );
+            if (!ok) {
+              return;
             }
           } else {
             throw new Error('Could not retrieve download link');
@@ -8679,6 +8758,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     let cancelled = false;
                     
     const run = async () => {
+      if (isOffline) return;
                     
       try {
         // Load initial public waves (one-time load, not real-time)
@@ -8917,7 +8997,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
     run();
-  }, []); // Only run once on mount
+  }, [isOffline]); // Wait for connectivity before first network-backed load
 
   // Function to load more feed items
   const loadMoreFeedItems = useCallback(async () => {
@@ -9200,6 +9280,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       loadMoreFeedItems();
     }
   }, [isOffline, isLoadingMore, loadMoreFeedItems, refreshing]);
+
+  useEffect(() => {
+    if (!isOffline) return;
+    setActiveVideoId(null);
+    setPreloadedVideoIds(new Set());
+    setVideoLoading({});
+  }, [isOffline]);
 
   // Load MY SHORE profile once (and keep in sync)
   useEffect(() => {
@@ -15889,7 +15976,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         echoExpansionInProgress={echoExpansionInProgress}
                         reachCounts={reachCounts}
                         isPaused={isPaused}
-                        allowPlayback={allowPlayback}
+                        allowPlayback={allowPlayback && !isOffline}
                         showMakeWaves={showMakeWaves}
                         showAudioModal={showAudioModal}
                         capturedMedia={capturedMedia}
@@ -15990,8 +16077,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.dolphinIcon}>✨</Text>
-                  <Text style={styles.topLabel}>DROP A WAVE</Text>
+                  <View style={styles.topArtWrap}>
+                    <View style={styles.topArtBody} />
+                    <View style={styles.topArtRagLeft} />
+                    <View style={styles.topArtRagRight} />
+                    <View style={styles.topArtFuse} />
+                    <View style={styles.topArtCap} />
+                    <Text style={styles.dolphinIcon}>✨</Text>
+                    <Text style={styles.topLabel}>DROP A WAVE</Text>
+                  </View>
                 </Pressable>
                 {/* ALERTS - Placeholder */}
                 <Pressable
@@ -16003,17 +16097,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <View style={{ position: 'relative' }}>
-                    <Text style={styles.pingsIcon}>📫</Text>
-                    {unreadAlertsCount > 0 && (
-                      <View style={styles.notificationBadge}>
-                        <Text style={styles.notificationBadgeText}>
-                          {unreadAlertsCount > 99 ? '99+' : unreadAlertsCount}
-                        </Text>
-                      </View>
-                    )}
+                  <View style={styles.topArtWrap}>
+                    <View style={styles.topArtBody} />
+                    <View style={styles.topArtRagLeft} />
+                    <View style={styles.topArtRagRight} />
+                    <View style={styles.topArtFuse} />
+                    <View style={styles.topArtCap} />
+                    <View style={{ position: 'relative' }}>
+                      <Text style={styles.pingsIcon}>📫</Text>
+                      {unreadAlertsCount > 0 && (
+                        <View style={styles.notificationBadge}>
+                          <Text style={styles.notificationBadgeText}>
+                            {unreadAlertsCount > 99 ? '99+' : unreadAlertsCount}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.topLabel}>ALERTS</Text>
                   </View>
-                  <Text style={styles.topLabel}>ALERTS</Text>
                 </Pressable>
                 {/* HUNT */}
                 <Pressable
@@ -16025,8 +16126,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.dolphinIcon}>🔎</Text>
-                  <Text style={styles.topLabel}>HUNT</Text>
+                  <View style={styles.topArtWrap}>
+                    <View style={styles.topArtBody} />
+                    <View style={styles.topArtRagLeft} />
+                    <View style={styles.topArtRagRight} />
+                    <View style={styles.topArtFuse} />
+                    <View style={styles.topArtCap} />
+                    <Text style={styles.dolphinIcon}>🔎</Text>
+                    <Text style={styles.topLabel}>HUNT</Text>
+                  </View>
                 </Pressable>
                     
                 {/* MY SHORE */}
@@ -16039,8 +16147,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.umbrellaIcon}>⛱️</Text>
-                  <Text style={styles.topLabel}>MY AURA</Text>
+                  <View style={styles.topArtWrap}>
+                    <View style={styles.topArtBody} />
+                    <View style={styles.topArtRagLeft} />
+                    <View style={styles.topArtRagRight} />
+                    <View style={styles.topArtFuse} />
+                    <View style={styles.topArtCap} />
+                    <Text style={styles.umbrellaIcon}>⛱️</Text>
+                    <Text style={styles.topLabel}>MY AURA</Text>
+                  </View>
                 </Pressable>
                 {/* THE BRIDGE */}
                 <Pressable
@@ -16055,8 +16170,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                 >
-                  <Text style={styles.gearIcon}>⚙️</Text>
-                  <Text style={styles.topLabel}>COMMAND CENTRE</Text>
+                  <View style={styles.topArtWrap}>
+                    <View style={styles.topArtBody} />
+                    <View style={styles.topArtRagLeft} />
+                    <View style={styles.topArtRagRight} />
+                    <View style={styles.topArtFuse} />
+                    <View style={styles.topArtCap} />
+                    <Text style={styles.gearIcon}>⚙️</Text>
+                    <Text style={styles.topLabel}>COMMAND CENTRE</Text>
+                  </View>
                 </Pressable>
               </ScrollView>
             )}
@@ -20055,7 +20177,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           marginBottom: 4,
                         }}
                       >
-                        Version & build
+                        Version
                       </Text>
                       <Text
                         style={{
@@ -20065,7 +20187,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           marginBottom: 2,
                         }}
                       >
-                        v{versionInfo.version} | build {versionInfo.build}
+                        Version 1.0.0
                       </Text>
                       <Text
                         style={{
@@ -20074,42 +20196,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           letterSpacing: 0.2,
                         }}
                       >
-                        Source: {versionInfo.source ?? 'native'}
-                      </Text>
-                    </View>
-                    <View
-                      style={{
-                        width: 108,
-                        borderWidth: 1,
-                        borderColor: '#C00000',
-                        borderRadius: 14,
-                        paddingVertical: 10,
-                        paddingHorizontal: 10,
-                        backgroundColor: 'rgba(192,0,0,0.12)',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginLeft: 12,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: '#C00000',
-                          fontSize: 22,
-                          fontWeight: '900',
-                          letterSpacing: 1.8,
-                        }}
-                      >
-                        SPL
-                      </Text>
-                      <Text
-                        style={{
-                          color: '#C00000',
-                          fontSize: 10,
-                          fontWeight: '800',
-                          letterSpacing: 1,
-                        }}
-                      >
-                        Trademark 2025
+                        Build {versionInfo.build} {versionInfo.source ? `| ${versionInfo.source}` : ''}
                       </Text>
                     </View>
                   </View>
@@ -27486,20 +27573,6 @@ const LiveStreamModal = ({
                       )}
                       <Text style={editorStyles.liveCommentText}>{c.text}</Text>
                     </View>
-                    <Pressable
-                      style={{ marginLeft: 8, paddingVertical: 4, paddingHorizontal: 6 }}
-                      onPress={() =>
-                        onEchoBack({
-                          id: c.id,
-                          from: String(c.from || ''),
-                          text: String(c.text || ''),
-                        })
-                      }
-                    >
-                      <Text style={{ color: '#9DE6FF', fontWeight: '700', fontSize: 11 }}>
-                        Reply
-                      </Text>
-                    </Pressable>
                   </View>
                 </Pressable>
               ))}
@@ -29486,41 +29559,61 @@ function PostDetailScreen({ route, navigation }: any) {
         <View style={{ flex: 1 }}>
           {/* Video or Image */}
           {hasVideo && RNVideo ? (
-            <VideoWithTapControls
-              source={{ uri: String(post.playbackUrl || post.media.uri) }}
-              style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
-              resizeMode="cover"
-              paused={!isFocused}
-              muted={true} // Start muted in full screen, unmute when play is pressed
-              maxBitRate={1500000}
-              bufferConfig={{
-                minBufferMs: 20000,
-                maxBufferMs: 60000,
-                bufferForPlaybackMs: 5000,
-                bufferForPlaybackAfterRebufferMs: 10000,
-              }}
-              useTextureView={false}
-              progressUpdateInterval={750}
-              poster={String(post.media?.uri || post.playbackUrl)}
-              posterResizeMode="cover"
-              disableFocus={true}
-              playInBackground={false}
-              playWhenInactive={false}
-              ignoreSilentSwitch="ignore"
-              onLoad={(e: any) => {
-                setPlaybackDuration(e?.duration || 0);
-                incrementViews();
-              }}
-              onProgress={(e: any) => {
-                setPlaybackTime(e?.currentTime || 0);
-              }}
-              onPlay={() => {
-                // Record video reach when video starts playing
-                recordVideoReach(post.id).catch(error => {
-                  console.log('Reach recording failed:', error.message);
-                });
-              }}
-            />
+            isOffline ? (
+              <View
+                style={{
+                  width: SCREEN_WIDTH,
+                  height: SCREEN_HEIGHT,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: '#000',
+                  paddingHorizontal: 24,
+                }}
+              >
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>📴</Text>
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 18, marginBottom: 6 }}>
+                  Video unavailable offline
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.76)', textAlign: 'center' }}>
+                  Reconnect to the internet to play this video.
+                </Text>
+              </View>
+            ) : (
+              <VideoWithTapControls
+                source={{ uri: String(post.playbackUrl || post.media.uri) }}
+                style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
+                resizeMode="cover"
+                paused={!isFocused}
+                muted={true}
+                maxBitRate={1500000}
+                bufferConfig={{
+                  minBufferMs: 20000,
+                  maxBufferMs: 60000,
+                  bufferForPlaybackMs: 5000,
+                  bufferForPlaybackAfterRebufferMs: 10000,
+                }}
+                useTextureView={false}
+                progressUpdateInterval={750}
+                poster={String(post.media?.uri || post.playbackUrl)}
+                posterResizeMode="cover"
+                disableFocus={true}
+                playInBackground={false}
+                playWhenInactive={false}
+                ignoreSilentSwitch="ignore"
+                onLoad={(e: any) => {
+                  setPlaybackDuration(e?.duration || 0);
+                  incrementViews();
+                }}
+                onProgress={(e: any) => {
+                  setPlaybackTime(e?.currentTime || 0);
+                }}
+                onPlay={() => {
+                  recordVideoReach(post.id).catch(error => {
+                    console.log('Reach recording failed:', error.message);
+                  });
+                }}
+              />
+            )
           ) : hasImage ? (
             <View style={{ flex: 1, backgroundColor: 'black' }}>
               <Image

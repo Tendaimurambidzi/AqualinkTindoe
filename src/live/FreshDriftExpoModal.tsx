@@ -154,12 +154,20 @@ type PickedFileEntry = {
   size?: number | null;
 };
 
-type PresentationToolMode = 'pointer' | 'highlight' | null;
+type PresentationToolMode = 'pointer' | 'highlight' | 'pen' | 'eraser' | null;
 
 type SharedDocMarker = {
   mode: Exclude<PresentationToolMode, null>;
   x: number;
   y: number;
+};
+
+type SharedDocInkPoint = {
+  id: string;
+  x: number;
+  y: number;
+  size: number;
+  color: string;
 };
 
 type PremiumRoomMeta = {
@@ -364,6 +372,10 @@ const FreshDriftExpoModal = ({
   const [pdfPreviewWidth, setPdfPreviewWidth] = useState(0);
   const [pdfPreviewHeight, setPdfPreviewHeight] = useState(0);
   const [pdfZoomLevel, setPdfZoomLevel] = useState(1);
+  const [currentSharedDocZoom, setCurrentSharedDocZoom] = useState(1);
+  const [currentSharedDocPanX, setCurrentSharedDocPanX] = useState(0);
+  const [currentSharedDocPanY, setCurrentSharedDocPanY] = useState(0);
+  const [sharedDocInkPoints, setSharedDocInkPoints] = useState<SharedDocInkPoint[]>([]);
   const [pdfFrameWidth, setPdfFrameWidth] = useState(0);
   const [pdfFrameHeight, setPdfFrameHeight] = useState(0);
   const [recentDrifts, setRecentDrifts] = useState<RecentDriftItem[]>([]);
@@ -391,6 +403,10 @@ const FreshDriftExpoModal = ({
   const lastAutoOpenedDocIdRef = useRef<string | null>(null);
   const slideshowTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const openingPdfDocIdRef = useRef<string | null>(null);
+  const pdfVerticalScrollRef = useRef<ScrollView | null>(null);
+  const pdfHorizontalScrollRef = useRef<ScrollView | null>(null);
+  const pendingViewportRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const viewportSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const me = auth().currentUser;
   const meUid = me?.uid || '';
@@ -502,6 +518,7 @@ const FreshDriftExpoModal = ({
     setSoundBadgeLabel(null);
     setShowDocsPanel(false);
     setSharedDocs([]);
+    setSharedDocStatusText(null);
     setCurrentSharedDocId(null);
     setCurrentSharedDocPage(0);
     setCurrentSharedDocSlideShow(false);
@@ -514,6 +531,12 @@ const FreshDriftExpoModal = ({
     setPdfPreviewWidth(0);
     setPdfPreviewHeight(0);
     setPdfZoomLevel(1);
+    setCurrentSharedDocZoom(1);
+    setCurrentSharedDocPanX(0);
+    setCurrentSharedDocPanY(0);
+    setSharedDocInkPoints([]);
+    setCurrentPresentationTool(null);
+    setSharedDocMarker(null);
     setPdfFrameWidth(0);
     setPdfFrameHeight(0);
     setRecentDrifts([]);
@@ -536,6 +559,10 @@ const FreshDriftExpoModal = ({
     if (slideshowTimerRef.current) {
       clearInterval(slideshowTimerRef.current);
       slideshowTimerRef.current = null;
+    }
+    if (viewportSyncTimerRef.current) {
+      clearTimeout(viewportSyncTimerRef.current);
+      viewportSyncTimerRef.current = null;
     }
     joinedChannelRef.current = null;
     joiningChannelRef.current = null;
@@ -674,6 +701,17 @@ const FreshDriftExpoModal = ({
         silentIfPending?: boolean;
       },
     ) => {
+      if (String(doc.sourceKind || '').toLowerCase() === 'blank') {
+        setActiveDoc(doc);
+        setPdfLocalPath(null);
+        setPdfPreviewUri(null);
+        setPdfPreviewWidth(1080);
+        setPdfPreviewHeight(1440);
+        setPdfPageCount(1);
+        setPdfPageIndex(0);
+        setPdfZoomLevel(currentSharedDocZoom || 1);
+        return true;
+      }
       if (!doc.downloadUrl) {
         if (!options?.silentIfPending) {
           Alert.alert('Not ready', 'This file is still converting to PDF.');
@@ -710,7 +748,7 @@ const FreshDriftExpoModal = ({
             : 0;
         setActiveDoc(doc);
         setPdfLocalPath(localPath);
-        setPdfZoomLevel(1);
+        setPdfZoomLevel(currentSharedDocZoom || 1);
         setPdfPageCount(Number(meta?.pageCount || 0));
         await renderActivePdfPage(localPath, targetPage);
         return true;
@@ -728,6 +766,7 @@ const FreshDriftExpoModal = ({
       PdfRenderer,
       currentSharedDocId,
       currentSharedDocPage,
+      currentSharedDocZoom,
       isBenignPdfOpenError,
       resolvePdfCachePath,
       renderActivePdfPage,
@@ -743,6 +782,10 @@ const FreshDriftExpoModal = ({
     setPdfPreviewWidth(0);
     setPdfPreviewHeight(0);
     setPdfZoomLevel(1);
+    setCurrentSharedDocZoom(1);
+    setCurrentSharedDocPanX(0);
+    setCurrentSharedDocPanY(0);
+    setSharedDocInkPoints([]);
     setCurrentSharedDocSlideShow(false);
     setCurrentPresentationTool(null);
     setSharedDocMarker(null);
@@ -751,6 +794,10 @@ const FreshDriftExpoModal = ({
         docId: null,
         slideShow: false,
         marker: null,
+        zoom: 1,
+        panX: 0,
+        panY: 0,
+        inkPoints: [],
         statusText: null,
       });
       lastAutoOpenedDocIdRef.current = null;
@@ -764,6 +811,10 @@ const FreshDriftExpoModal = ({
       slideShow?: boolean;
       slideSeconds?: number;
       marker?: SharedDocMarker | null;
+      zoom?: number;
+      panX?: number;
+      panY?: number;
+      inkPoints?: SharedDocInkPoint[];
       statusText?: string | null;
     }) => {
       if (!roomId) return;
@@ -791,6 +842,26 @@ const FreshDriftExpoModal = ({
               y: Math.max(0, Math.min(1, next.marker.y)),
             }
           : firestore.FieldValue.delete();
+      }
+      if (typeof next.zoom === 'number') {
+        payload.currentSharedDocZoom = Math.max(1, Math.min(3, Number(next.zoom)));
+      }
+      if (typeof next.panX === 'number') {
+        payload.currentSharedDocPanX = Math.max(0, Math.min(1, Number(next.panX)));
+      }
+      if (typeof next.panY === 'number') {
+        payload.currentSharedDocPanY = Math.max(0, Math.min(1, Number(next.panY)));
+      }
+      if (typeof next.inkPoints !== 'undefined') {
+        payload.currentSharedDocInkPoints = Array.isArray(next.inkPoints)
+          ? next.inkPoints.slice(-240).map(point => ({
+              id: String(point.id || `${Date.now()}`),
+              x: Math.max(0, Math.min(1, Number(point.x))),
+              y: Math.max(0, Math.min(1, Number(point.y))),
+              size: Math.max(2, Math.min(12, Number(point.size || 4))),
+              color: String(point.color || '#EF4444'),
+            }))
+          : [];
       }
       if (typeof next.statusText !== 'undefined') {
         payload.currentSharedDocStatusText = next.statusText;
@@ -828,6 +899,79 @@ const FreshDriftExpoModal = ({
     [canControlCurrentSharedDoc, pdfLocalPath, pdfPageCount, pdfPageIndex, pushSharedDocState, renderActivePdfPage],
   );
 
+  const queueSharedViewportSync = useCallback(
+    (nextX: number, nextY: number, nextZoom: number = pdfZoomLevel) => {
+      pendingViewportRef.current = {
+        x: Math.max(0, Math.min(1, nextX)),
+        y: Math.max(0, Math.min(1, nextY)),
+      };
+      if (viewportSyncTimerRef.current) {
+        clearTimeout(viewportSyncTimerRef.current);
+      }
+      viewportSyncTimerRef.current = setTimeout(() => {
+        viewportSyncTimerRef.current = null;
+        void pushSharedDocState({
+          zoom: nextZoom,
+          panX: pendingViewportRef.current.x,
+          panY: pendingViewportRef.current.y,
+        });
+      }, 90);
+    },
+    [pdfZoomLevel, pushSharedDocState],
+  );
+
+  const applySharedInkAtPoint = useCallback(
+    (x: number, y: number) => {
+      if (!canControlCurrentSharedDoc || !currentPresentationTool || pdfFrameWidth <= 0 || pdfFrameHeight <= 0) {
+        return;
+      }
+      const normalizedX = Math.max(0, Math.min(1, x / pdfFrameWidth));
+      const normalizedY = Math.max(0, Math.min(1, y / pdfFrameHeight));
+      if (currentPresentationTool === 'pointer' || currentPresentationTool === 'highlight') {
+        const marker: SharedDocMarker = {
+          mode: currentPresentationTool,
+          x: normalizedX,
+          y: normalizedY,
+        };
+        setSharedDocMarker(marker);
+        void pushSharedDocState({ marker });
+        return;
+      }
+      if (currentPresentationTool === 'pen') {
+        const nextPoints = [
+          ...sharedDocInkPoints,
+          {
+            id: `${Date.now()}_${Math.random()}`,
+            x: normalizedX,
+            y: normalizedY,
+            size: 4,
+            color: '#E11D48',
+          },
+        ].slice(-240);
+        setSharedDocInkPoints(nextPoints);
+        void pushSharedDocState({ inkPoints: nextPoints });
+        return;
+      }
+      if (currentPresentationTool === 'eraser') {
+        const nextPoints = sharedDocInkPoints.filter(point => {
+          const dx = point.x - normalizedX;
+          const dy = point.y - normalizedY;
+          return Math.sqrt(dx * dx + dy * dy) > 0.03;
+        });
+        setSharedDocInkPoints(nextPoints);
+        void pushSharedDocState({ inkPoints: nextPoints });
+      }
+    },
+    [
+      canControlCurrentSharedDoc,
+      currentPresentationTool,
+      pdfFrameHeight,
+      pdfFrameWidth,
+      pushSharedDocState,
+      sharedDocInkPoints,
+    ],
+  );
+
   const pauseSharedDocSlideShow = useCallback(() => {
     if (slideshowTimerRef.current) {
       clearInterval(slideshowTimerRef.current);
@@ -859,20 +1003,9 @@ const FreshDriftExpoModal = ({
 
   const placePresentationMarker = useCallback(
     (x: number, y: number) => {
-      if (!canControlCurrentSharedDoc || !currentPresentationTool || pdfFrameWidth <= 0 || pdfFrameHeight <= 0) {
-        return;
-      }
-      const normalizedX = Math.max(0, Math.min(1, x / pdfFrameWidth));
-      const normalizedY = Math.max(0, Math.min(1, y / pdfFrameHeight));
-      const marker: SharedDocMarker = {
-        mode: currentPresentationTool,
-        x: normalizedX,
-        y: normalizedY,
-      };
-      setSharedDocMarker(marker);
-      void pushSharedDocState({ marker });
+      applySharedInkAtPoint(x, y);
     },
-    [canControlCurrentSharedDoc, currentPresentationTool, pdfFrameHeight, pdfFrameWidth, pushSharedDocState],
+    [applySharedInkAtPoint],
   );
 
   const handleShareFile = useCallback(async () => {
@@ -982,6 +1115,10 @@ const FreshDriftExpoModal = ({
             currentSharedDocPage: 0,
             currentSharedDocSlideShow: false,
             currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
+            currentSharedDocZoom: 1,
+            currentSharedDocPanX: 0,
+            currentSharedDocPanY: 0,
+            currentSharedDocInkPoints: [],
             currentSharedDocStatusText: `${meName} is uploading ${sharedDocPayload.title}`,
             currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
             updatedAt: firestore.FieldValue.serverTimestamp(),
@@ -1111,6 +1248,70 @@ const FreshDriftExpoModal = ({
     upsertParticipant,
   ]);
 
+  const handleShareBlankDoc = useCallback(async () => {
+    if (!roomId || !isPremiumRoom || currentSharedDocId) return;
+    setDocBusy(true);
+    try {
+      const participantRtcUid = myRtcUid || mapRtcUidFromUserId(meUid);
+      await upsertParticipant(
+        roomId,
+        roomChannel || 'premium_room',
+        participantRtcUid,
+        !!(roomHostUid && meUid && roomHostUid === meUid),
+      );
+      const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
+      const title = 'Blank Page';
+      await docRef.set({
+        title,
+        fileName: 'blank-page.pdf',
+        downloadUrl: '',
+        storagePath: '',
+        sourceKind: 'blank',
+        status: 'ready',
+        sharedByUid: meUid,
+        sharedByName: meName,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAtMs: Date.now(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAtMs: Date.now(),
+      });
+      await firestore()
+        .collection('live')
+        .doc(roomId)
+        .set(
+          {
+            currentSharedDocId: docRef.id,
+            currentSharedDocPage: 0,
+            currentSharedDocSlideShow: false,
+            currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
+            currentSharedDocStatusText: `${meName} shared a blank page`,
+            currentSharedDocZoom: 1,
+            currentSharedDocPanX: 0,
+            currentSharedDocPanY: 0,
+            currentSharedDocInkPoints: [],
+            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      setShowDocsPanel(true);
+    } catch (error: any) {
+      Alert.alert('Blank page failed', String(error?.message || 'Could not start a blank page.'));
+    } finally {
+      setDocBusy(false);
+    }
+  }, [
+    currentSharedDocId,
+    isPremiumRoom,
+    meName,
+    meUid,
+    myRtcUid,
+    roomChannel,
+    roomHostUid,
+    roomId,
+    upsertParticipant,
+  ]);
+
   const handleCloseSharedPresentation = useCallback(async () => {
     if (!roomId) return;
     try {
@@ -1172,6 +1373,15 @@ const FreshDriftExpoModal = ({
             {
               status: 'ended',
               endedAt: firestore.FieldValue.serverTimestamp(),
+              currentSharedDocId: null,
+              currentSharedDocStatusText: null,
+              currentSharedDocPage: 0,
+              currentSharedDocSlideShow: false,
+              currentSharedDocZoom: 1,
+              currentSharedDocPanX: 0,
+              currentSharedDocPanY: 0,
+              currentSharedDocInkPoints: [],
+              currentSharedDocMarker: null,
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
@@ -1762,6 +1972,15 @@ const FreshDriftExpoModal = ({
         setCurrentSharedDocId(currentSharedDocIdValue || null);
         setCurrentSharedDocPage(Math.max(0, Number(data.currentSharedDocPage || 0)));
         setCurrentSharedDocSlideShow(!!data.currentSharedDocSlideShow);
+        setCurrentSharedDocZoom(
+          Math.max(1, Math.min(3, Number(data.currentSharedDocZoom || 1))),
+        );
+        setCurrentSharedDocPanX(
+          Math.max(0, Math.min(1, Number(data.currentSharedDocPanX || 0))),
+        );
+        setCurrentSharedDocPanY(
+          Math.max(0, Math.min(1, Number(data.currentSharedDocPanY || 0))),
+        );
         setSharedDocStatusText(
           data.currentSharedDocStatusText ? String(data.currentSharedDocStatusText) : null,
         );
@@ -1790,6 +2009,18 @@ const FreshDriftExpoModal = ({
         } else {
           setSharedDocMarker(null);
         }
+        const inkPoints = Array.isArray(data.currentSharedDocInkPoints)
+          ? data.currentSharedDocInkPoints
+              .map((point: any) => ({
+                id: String(point?.id || `${Date.now()}`),
+                x: Math.max(0, Math.min(1, Number(point?.x || 0))),
+                y: Math.max(0, Math.min(1, Number(point?.y || 0))),
+                size: Math.max(2, Math.min(12, Number(point?.size || 4))),
+                color: String(point?.color || '#EF4444'),
+              }))
+              .slice(-240)
+          : [];
+        setSharedDocInkPoints(inkPoints);
         if (currentSharedDocIdValue) {
           setTimeout(() => {
             autoOpenSharedPdf(currentSharedDocIdValue).catch(() => {});
@@ -1945,6 +2176,10 @@ const FreshDriftExpoModal = ({
     setPdfPreviewWidth(0);
     setPdfPreviewHeight(0);
     setPdfZoomLevel(1);
+    setCurrentSharedDocZoom(1);
+    setCurrentSharedDocPanX(0);
+    setCurrentSharedDocPanY(0);
+    setSharedDocInkPoints([]);
     setCurrentSharedDocSlideShow(false);
     setCurrentPresentationTool(null);
     setSharedDocMarker(null);
@@ -1968,6 +2203,33 @@ const FreshDriftExpoModal = ({
     pdfLocalPath,
     pdfPageIndex,
     renderActivePdfPage,
+  ]);
+
+  useEffect(() => {
+    if (!activeDoc || activeDoc.id !== currentSharedDocId) return;
+    if (Math.abs(pdfZoomLevel - currentSharedDocZoom) < 0.01) return;
+    setPdfZoomLevel(currentSharedDocZoom);
+  }, [activeDoc, currentSharedDocId, currentSharedDocZoom, pdfZoomLevel]);
+
+  useEffect(() => {
+    if (!activeDoc || activeDoc.id !== currentSharedDocId) return;
+    const maxX = Math.max(0, pdfDisplayMetrics.width - pdfFrameWidth);
+    const maxY = Math.max(0, pdfDisplayMetrics.height - pdfFrameHeight);
+    const targetX = maxX * currentSharedDocPanX;
+    const targetY = maxY * currentSharedDocPanY;
+    try {
+      pdfHorizontalScrollRef.current?.scrollTo({ x: targetX, animated: false });
+      pdfVerticalScrollRef.current?.scrollTo({ y: targetY, animated: false });
+    } catch {}
+  }, [
+    activeDoc,
+    currentSharedDocId,
+    currentSharedDocPanX,
+    currentSharedDocPanY,
+    pdfDisplayMetrics.height,
+    pdfDisplayMetrics.width,
+    pdfFrameHeight,
+    pdfFrameWidth,
   ]);
 
   useEffect(() => {
@@ -2431,6 +2693,14 @@ const FreshDriftExpoModal = ({
     setRemoteUids(prev => Array.from(new Set([...participantRemoteUids, ...prev])));
   }, [joined, myRtcUid, participants, roomId]);
 
+  useEffect(() => {
+    if (joined) return;
+    if (!roomId || !roomChannel || !myRtcUid) return;
+    if (remoteRenderUids.length === 0) return;
+    setJoined(true);
+    setStatusText('Live');
+  }, [joined, myRtcUid, remoteRenderUids.length, roomChannel, roomId]);
+
   const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
@@ -2484,8 +2754,8 @@ const FreshDriftExpoModal = ({
                 <View style={styles.topBarTitleWrap}>
                   {isPremiumRoom ? null : <Text style={styles.livePill}>LIVE</Text>}
                   <Text
-                    numberOfLines={1}
-                    ellipsizeMode="tail"
+                    numberOfLines={isPremiumRoom ? 2 : 1}
+                    ellipsizeMode={isPremiumRoom ? 'clip' : 'tail'}
                     style={[styles.roomTitle, isPremiumRoom ? styles.premiumRoomTitle : null]}
                   >
                     {roomTitle}
@@ -2677,21 +2947,26 @@ const FreshDriftExpoModal = ({
                 <View style={[styles.docsPanel, { top: insets.top + 114, left: insets.left + 6 }]}>
                   <Text style={styles.docsPanelTitle}>Shared Files</Text>
                   {!activeDoc ? (
-                    <Animated.View
-                      style={[
-                        styles.docsShareButtonWrap,
-                        {
-                          borderColor: docsStatusPulseAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: ['rgba(255,255,255,0.14)', '#FFD7D7'],
-                          }),
-                        },
-                      ]}
-                    >
-                      <Pressable style={styles.docsShareButton} onPress={() => void handleShareFile()}>
-                        <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share File'}</Text>
+                    <>
+                      <Animated.View
+                        style={[
+                          styles.docsShareButtonWrap,
+                          {
+                            borderColor: docsStatusPulseAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: ['rgba(255,255,255,0.14)', '#FFD7D7'],
+                            }),
+                          },
+                        ]}
+                      >
+                        <Pressable style={styles.docsShareButton} onPress={() => void handleShareFile()}>
+                          <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share File'}</Text>
+                        </Pressable>
+                      </Animated.View>
+                      <Pressable style={[styles.docsShareButton, { marginTop: 8, backgroundColor: '#2563EB' }]} onPress={() => void handleShareBlankDoc()}>
+                        <Text style={styles.docsShareButtonText}>Share Blank PDF</Text>
                       </Pressable>
-                    </Animated.View>
+                    </>
                   ) : null}
                   <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
                     {sharedDocs.length === 0 ? (
@@ -3059,7 +3334,7 @@ const FreshDriftExpoModal = ({
                   {activeDoc?.title || 'Shared PDF'}
                 </Text>
                 <Pressable style={styles.pdfCloseButton} onPress={closePdfViewer}>
-                  <Text style={styles.pdfCloseButtonText}>X</Text>
+                  <Text style={styles.pdfCloseButtonText}>Close</Text>
                 </Pressable>
               </View>
               <View
@@ -3071,36 +3346,87 @@ const FreshDriftExpoModal = ({
                 }}
               >
                 {docBusy ? <ActivityIndicator color="#8D0000" size="large" /> : null}
-                {!docBusy && pdfPreviewUri ? (
+                {!docBusy && (pdfPreviewUri || String(activeDoc?.sourceKind || '').toLowerCase() === 'blank') ? (
                   <ScrollView
+                    ref={ref => {
+                      pdfVerticalScrollRef.current = ref;
+                    }}
                     style={styles.pdfPreviewScroll}
                     contentContainerStyle={styles.pdfPreviewScrollContent}
                     maximumZoomScale={1}
                     minimumZoomScale={1}
                     showsVerticalScrollIndicator={false}
                     showsHorizontalScrollIndicator={false}
+                    scrollEventThrottle={16}
+                    onScroll={event => {
+                      if (!canControlCurrentSharedDoc) return;
+                      const maxY = Math.max(0, pdfDisplayMetrics.height - pdfFrameHeight);
+                      const nextY = maxY > 0 ? event.nativeEvent.contentOffset.y / maxY : 0;
+                      queueSharedViewportSync(currentSharedDocPanX, nextY, pdfZoomLevel);
+                    }}
                   >
                     <ScrollView
+                      ref={ref => {
+                        pdfHorizontalScrollRef.current = ref;
+                      }}
                       horizontal
                       contentContainerStyle={styles.pdfPreviewScrollContent}
                       showsHorizontalScrollIndicator={false}
+                      scrollEventThrottle={16}
+                      onScroll={event => {
+                        if (!canControlCurrentSharedDoc) return;
+                        const maxX = Math.max(0, pdfDisplayMetrics.width - pdfFrameWidth);
+                        const nextX = maxX > 0 ? event.nativeEvent.contentOffset.x / maxX : 0;
+                        queueSharedViewportSync(nextX, currentSharedDocPanY, pdfZoomLevel);
+                      }}
                     >
-                      <Image
-                        source={{ uri: pdfPreviewUri }}
-                        style={[
-                          styles.pdfPreviewImage,
-                          {
-                            width: pdfDisplayMetrics.width,
-                            height: pdfDisplayMetrics.height,
-                          },
-                        ]}
-                        resizeMode="contain"
-                      />
+                      {String(activeDoc?.sourceKind || '').toLowerCase() === 'blank' ? (
+                        <View
+                          style={[
+                            styles.pdfPreviewImage,
+                            {
+                              width: pdfDisplayMetrics.width,
+                              height: pdfDisplayMetrics.height,
+                              backgroundColor: '#FFFFFF',
+                              borderRadius: 14,
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <Image
+                          source={{ uri: pdfPreviewUri || '' }}
+                          style={[
+                            styles.pdfPreviewImage,
+                            {
+                              width: pdfDisplayMetrics.width,
+                              height: pdfDisplayMetrics.height,
+                            },
+                          ]}
+                          resizeMode="contain"
+                        />
+                      )}
                     </ScrollView>
                   </ScrollView>
                 ) : !docBusy ? (
                   <Text style={styles.docsEmptyText}>PDF preview unavailable.</Text>
                 ) : null}
+                {sharedDocInkPoints.map(point => (
+                  <View
+                    key={point.id}
+                    pointerEvents="none"
+                    style={[
+                      styles.pdfInkPoint,
+                      {
+                        left: Math.max(8, Math.min(Math.max(8, pdfFrameWidth - 20), point.x * pdfFrameWidth - point.size / 2)),
+                        top: Math.max(8, Math.min(Math.max(8, pdfFrameHeight - 20), point.y * pdfFrameHeight - point.size / 2)),
+                        width: point.size,
+                        height: point.size,
+                        borderRadius: point.size / 2,
+                        backgroundColor: point.color,
+                      },
+                    ]}
+                  />
+                ))}
                 {sharedDocMarker ? (
                   <View
                     pointerEvents="none"
@@ -3122,9 +3448,17 @@ const FreshDriftExpoModal = ({
                   />
                 ) : null}
                 {canControlCurrentSharedDoc && currentPresentationTool ? (
-                  <Pressable
+                  <View
                     style={StyleSheet.absoluteFill}
-                    onPress={event => {
+                    onStartShouldSetResponder={() => true}
+                    onMoveShouldSetResponder={() => true}
+                    onResponderGrant={event => {
+                      placePresentationMarker(
+                        event.nativeEvent.locationX,
+                        event.nativeEvent.locationY,
+                      );
+                    }}
+                    onResponderMove={event => {
                       placePresentationMarker(
                         event.nativeEvent.locationX,
                         event.nativeEvent.locationY,
@@ -3210,15 +3544,27 @@ const FreshDriftExpoModal = ({
                 </Pressable>
                 <Pressable
                   style={[styles.pdfPagerButton, isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null]}
-                  onPress={() => setPdfZoomLevel(level => Math.max(1, Number((level - 0.25).toFixed(2))))}
+                  onPress={() => {
+                    const nextZoom = Math.max(1, Number((pdfZoomLevel - 0.25).toFixed(2)));
+                    setPdfZoomLevel(nextZoom);
+                    if (canControlCurrentSharedDoc) {
+                      void pushSharedDocState({ zoom: nextZoom });
+                    }
+                  }}
                   disabled={docBusy || pdfZoomLevel <= 1 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>−</Text>
                 </Pressable>
                 <Pressable
                   style={[styles.pdfPagerButton, isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null]}
-                  onPress={() => setPdfZoomLevel(level => Math.min(2.5, Number((level + 0.25).toFixed(2))))}
-                  disabled={docBusy || pdfZoomLevel >= 2.5 || isGuestViewingSharedDoc}
+                  onPress={() => {
+                    const nextZoom = Math.min(3, Number((pdfZoomLevel + 0.25).toFixed(2)));
+                    setPdfZoomLevel(nextZoom);
+                    if (canControlCurrentSharedDoc) {
+                      void pushSharedDocState({ zoom: nextZoom });
+                    }
+                  }}
+                  disabled={docBusy || pdfZoomLevel >= 3 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>+</Text>
                 </Pressable>
@@ -3243,6 +3589,28 @@ const FreshDriftExpoModal = ({
                   disabled={!canControlCurrentSharedDoc || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'✎'}</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.pdfPagerButton,
+                    currentPresentationTool === 'pen' ? styles.pdfPagerButtonActive : null,
+                    isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null,
+                  ]}
+                  onPress={() => togglePresentationTool('pen')}
+                  disabled={!canControlCurrentSharedDoc || isGuestViewingSharedDoc}
+                >
+                  <Text style={styles.pdfPagerButtonText}>{'🖊'}</Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.pdfPagerButton,
+                    currentPresentationTool === 'eraser' ? styles.pdfPagerButtonActive : null,
+                    isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null,
+                  ]}
+                  onPress={() => togglePresentationTool('eraser')}
+                  disabled={!canControlCurrentSharedDoc || isGuestViewingSharedDoc}
+                >
+                  <Text style={styles.pdfPagerButtonText}>{'⌫'}</Text>
                 </Pressable>
                 <Text style={styles.pdfPageCounterText}>
                   {Math.min(pdfPageCount || 0, pdfPageIndex + 1)} / {pdfPageCount || 0}
@@ -3334,29 +3702,30 @@ const styles = StyleSheet.create({
   },
   premiumRoomTitle: {
     color: '#B30000',
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '900',
+    lineHeight: 16,
   },
   premiumCountdownPill: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: 'rgba(141,0,0,0.14)',
+    paddingVertical: 9,
+    borderRadius: 18,
+    backgroundColor: '#0EA5D9',
     borderWidth: 1,
-    borderColor: 'rgba(179,0,0,0.58)',
+    borderColor: '#0EA5D9',
   },
   premiumCountdownText: {
-    color: '#FFD9D9',
+    color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '900',
   },
   closeChip: {
-    backgroundColor: '#0EA5D9',
+    backgroundColor: '#8D0000',
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#0EA5D9',
+    borderColor: '#8D0000',
     marginLeft: 12,
   },
   closeChipText: {
@@ -3408,7 +3777,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 18,
     right: 18,
-    top: 96,
+    top: 104,
     alignItems: 'center',
     backgroundColor: 'rgba(141,0,0,0.92)',
     borderRadius: 16,
@@ -3948,7 +4317,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   secondaryStartButton: {
-    backgroundColor: '#0EA5D9',
+    backgroundColor: '#8D0000',
     borderRadius: 18,
     alignItems: 'center',
     paddingVertical: 16,
@@ -4036,8 +4405,8 @@ const styles = StyleSheet.create({
   },
   pdfCloseButton: {
     backgroundColor: '#8D0000',
-    width: 34,
-    height: 34,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
@@ -4045,7 +4414,7 @@ const styles = StyleSheet.create({
   pdfCloseButtonText: {
     color: '#FFFFFF',
     fontWeight: '900',
-    fontSize: 16,
+    fontSize: 12,
   },
   pdfPreviewFrame: {
     flex: 1,
@@ -4140,6 +4509,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 230, 0, 0.34)',
     borderWidth: 1,
     borderColor: 'rgba(255, 204, 0, 0.72)',
+  },
+  pdfInkPoint: {
+    position: 'absolute',
+    shadowColor: '#000000',
+    shadowOpacity: 0.14,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
   },
   replayTitle: {
     color: 'white',
