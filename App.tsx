@@ -1445,19 +1445,30 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   logbookAction: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderRadius: 20,
-    marginBottom: 8,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: 'rgba(0,194,255,0.45)',
     backgroundColor: 'rgba(0,194,255,0.12)',
+    minHeight: 58,
+    justifyContent: 'center',
   },
   logbookActionText: {
     color: 'rgba(220,220,240,0.9)',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  logbookActionLabelStrong: {
+    fontSize: 19,
+    fontWeight: '800',
+  },
+  logbookActionIconText: {
+    fontSize: 23,
+    fontWeight: '900',
+    lineHeight: 26,
   },
   textComposerContainer: {
     padding: 10,
@@ -18144,8 +18155,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       justifyContent: 'space-between',
                     }}
                   >
-                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>Say Something</Text>
-                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>✍️</Text>
+                    <Text style={[styles.logbookActionText, styles.logbookActionLabelStrong, { color: '#FFFFFF' }]}>Say Something</Text>
+                    <Text style={[styles.logbookActionIconText, { color: '#FFFFFF' }]}>✍️</Text>
                   </View>
                 </Pressable>
                 <Pressable style={[styles.logbookAction, styles.makeWavesSecondaryAction]} onPress={goDrift}
@@ -18170,8 +18181,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         backgroundColor: '#00C2FF',
                       }}
                     />
-                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>Drift Expo</Text>
-                    <Text style={[styles.logbookActionText, { color: '#FFFFFF', fontWeight: '800' }]}>🎥</Text>
+                    <Text style={[styles.logbookActionText, styles.logbookActionLabelStrong, { color: '#FFFFFF' }]}>Drift Expo</Text>
+                    <Text style={[styles.logbookActionIconText, { color: '#FFFFFF' }]}>🎥</Text>
                   </View>
                 </Pressable>
                 <CharteredSeaDriftButton

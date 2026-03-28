@@ -47,6 +47,7 @@ type Props = {
     title: string;
     channel?: string | null;
     hostName?: string | null;
+    skipPremiumValidation?: boolean;
   }) => void;
   onEndPaidDrift?: () => void;
   onViewPasses?: () => void;
@@ -288,6 +289,7 @@ export default function CharteredSeaDriftButton(props: Props) {
           title: liveRoom.title || result.showTitle,
           channel: liveRoom.channel,
           hostName: liveRoom.hostName,
+          skipPremiumValidation: true,
         });
         setOpen(false);
         return;
@@ -325,6 +327,7 @@ export default function CharteredSeaDriftButton(props: Props) {
           title: liveRoom.title || item.showTitle || 'Aqua Premium Show',
           channel: liveRoom.channel,
           hostName: liveRoom.hostName,
+          skipPremiumValidation: true,
         });
         setOpen(false);
       } catch (error: any) {
@@ -411,9 +414,9 @@ export default function CharteredSeaDriftButton(props: Props) {
         hitSlop={hitSlop || { top: 200, left: 200, bottom: 200, right: 200 }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: 'red' }} />
-          <Text style={[styles.logbookActionText, buttonTextStyle]}>Aqua Premium</Text>
-          <Text style={[styles.logbookActionText, buttonTextStyle]}>🎟️</Text>
+          <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: '#FFF2D8' }} />
+          <Text style={[styles.logbookActionText, styles.logbookActionLabelStrong, buttonTextStyle]}>Aqua Premium</Text>
+          <Text style={[styles.logbookActionText, { color: '#FFF2D8', fontWeight: '900', fontSize: 15 }]}>VIP</Text>
         </View>
       </Pressable>
 
@@ -718,15 +721,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   logbookAction: {
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.2)',
   },
   logbookActionText: {
     color: 'rgba(220,220,240,0.9)',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
+  },
+  logbookActionLabelStrong: {
+    fontSize: 19,
+    fontWeight: '800',
   },
   buttonPressed: {
     backgroundColor: 'rgba(255,255,255,0.04)',

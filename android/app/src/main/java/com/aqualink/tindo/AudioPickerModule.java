@@ -8,6 +8,9 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import com.facebook.react.bridge.ActivityEventListener;
@@ -116,6 +119,9 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
             result.putString("type", mimeType);
         }
 
+        String displayName = null;
+        Double sizeValue = null;
+
         Cursor cursor = null;
         try {
             cursor = resolver.query(uri, null, null, null, null);
@@ -124,12 +130,14 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
                 if (nameIndex >= 0) {
                     String name = cursor.getString(nameIndex);
                     if (name != null) {
+                        displayName = name;
                         result.putString("name", name);
                     }
                 }
                 int sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE);
                 if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                    result.putDouble("size", cursor.getDouble(sizeIndex));
+                    sizeValue = cursor.getDouble(sizeIndex);
+                    result.putDouble("size", sizeValue);
                 }
             }
         } catch (Exception ignored) {
@@ -138,7 +146,70 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
                 cursor.close();
             }
         }
+        String localPath = cacheDocumentLocally(activity, uri, displayName, mimeType);
+        if (localPath != null) {
+            result.putString("filePath", localPath);
+            result.putString("fileCopyUri", "file://" + localPath);
+        }
         return result;
+    }
+
+    @Nullable
+    private String cacheDocumentLocally(Activity activity, Uri uri, @Nullable String fileName, @Nullable String mimeType) {
+        InputStream inputStream = null;
+        FileOutputStream outputStream = null;
+        try {
+            String safeName = sanitizeFileName(fileName, mimeType);
+            File cacheFile = new File(activity.getCacheDir(), "picked_" + System.currentTimeMillis() + "_" + safeName);
+            inputStream = activity.getContentResolver().openInputStream(uri);
+            if (inputStream == null) {
+                return null;
+            }
+            outputStream = new FileOutputStream(cacheFile);
+            byte[] buffer = new byte[64 * 1024];
+            int bytesRead;
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+            outputStream.flush();
+            return cacheFile.getAbsolutePath();
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            try {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+            } catch (Exception ignored) {}
+            try {
+                if (outputStream != null) {
+                    outputStream.close();
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    @NonNull
+    private String sanitizeFileName(@Nullable String fileName, @Nullable String mimeType) {
+        String fallback = "shared_file";
+        String safe = fileName != null ? fileName.replaceAll("[^A-Za-z0-9._-]", "_") : fallback;
+        if (safe.isEmpty()) {
+            safe = fallback;
+        }
+        if (!safe.contains(".") && mimeType != null) {
+            if ("application/pdf".equalsIgnoreCase(mimeType)) {
+                safe += ".pdf";
+            } else if ("application/vnd.openxmlformats-officedocument.presentationml.presentation".equalsIgnoreCase(mimeType)) {
+                safe += ".pptx";
+            } else if ("application/vnd.ms-powerpoint".equalsIgnoreCase(mimeType)) {
+                safe += ".ppt";
+            } else if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document".equalsIgnoreCase(mimeType)) {
+                safe += ".docx";
+            } else if ("application/msword".equalsIgnoreCase(mimeType)) {
+                safe += ".doc";
+            }
+        }
+        return safe;
     }
 
     @Override

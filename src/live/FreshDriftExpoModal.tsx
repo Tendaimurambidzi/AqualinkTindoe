@@ -88,6 +88,7 @@ type InviteJoinPreset = {
   title?: string | null;
   fromName?: string | null;
   requireApproval?: boolean;
+  skipPremiumValidation?: boolean;
   nonce?: number;
 };
 
@@ -136,11 +137,21 @@ type SharedPdfDoc = {
   fileName: string;
   downloadUrl: string;
   storagePath: string;
+  sharedByUid?: string | null;
   sharedByName: string;
   createdAtMs: number;
   status?: string;
   sourceKind?: string | null;
   errorMessage?: string | null;
+};
+
+type PickedFileEntry = {
+  uri?: string | null;
+  filePath?: string | null;
+  fileCopyUri?: string | null;
+  name?: string | null;
+  type?: string | null;
+  size?: number | null;
 };
 
 type PresentationToolMode = 'pointer' | 'highlight' | null;
@@ -201,9 +212,6 @@ const formatTimestamp = (value: number): string => {
 };
 
 const DEFAULT_PRESENTATION_SLIDE_SECONDS = 10;
-const AGORA_WARNING_LABELS: Record<number, string> = {
-  1052: 'Audio device warning',
-};
 
 const formatCountdown = (diffMs: number): string => {
   const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
@@ -299,6 +307,7 @@ const FreshDriftExpoModal = ({
   const engineRef = useRef<any>(null);
   const joinedChannelRef = useRef<string | null>(null);
   const joiningChannelRef = useRef<string | null>(null);
+  const premiumValidationBypassShowIdRef = useRef<string | null>(null);
   const reactionTrayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roomRef = useRef<{ id: string; channel: string; title: string; hostUid: string | null } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -378,6 +387,7 @@ const FreshDriftExpoModal = ({
   const seenReactionIdsRef = useRef<Set<string>>(new Set());
   const handledSoundEventIdsRef = useRef<Set<string>>(new Set());
   const soundBadgeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const docsStatusPulseAnim = useRef(new Animated.Value(0)).current;
   const lastAutoOpenedDocIdRef = useRef<string | null>(null);
   const slideshowTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const openingPdfDocIdRef = useRef<string | null>(null);
@@ -388,15 +398,19 @@ const FreshDriftExpoModal = ({
   const mePhoto = me?.photoURL || null;
   const isPremiumRoom = !!roomPremiumShowId;
   const isPremiumHost = !!(roomPremiumShowId && roomHostUid && meUid && roomHostUid === meUid);
+  const canControlCurrentSharedDoc = useMemo(
+    () =>
+      !!(
+        meUid &&
+        currentSharedDocId &&
+        activeDoc &&
+        activeDoc.id === currentSharedDocId &&
+        activeDoc.sharedByUid &&
+        activeDoc.sharedByUid === meUid
+      ),
+    [activeDoc, currentSharedDocId, meUid],
+  );
 
-  const handleAgoraWarning = useCallback((code: number) => {
-    const next = Number(code || 0);
-    if (!next) return;
-    const label = AGORA_WARNING_LABELS[next];
-    if (label) {
-      setStatusText(label);
-    }
-  }, []);
   const premiumCountdownLabel = useMemo(() => {
     if (!premiumMeta) return null;
     if (premiumMeta.status === 'scheduled' && premiumMeta.startsAtMs > clockNowMs) {
@@ -427,6 +441,10 @@ const FreshDriftExpoModal = ({
     [participantTicketLabels, participants, roomHostUid],
   );
   const premiumChatRows = useMemo(() => comments.slice(-12), [comments]);
+  const isGuestViewingSharedDoc = useMemo(
+    () => !!currentSharedDocId && !canControlCurrentSharedDoc,
+    [canControlCurrentSharedDoc, currentSharedDocId],
+  );
   const pdfDisplayMetrics = useMemo(() => {
     const frameWidth = Math.max(0, pdfFrameWidth - 20);
     const frameHeight = Math.max(0, pdfFrameHeight - 20);
@@ -606,8 +624,8 @@ const FreshDriftExpoModal = ({
     return `${RNFS.CachesDirectoryPath}/${roomId || 'live'}_${doc.id}_${safeName}`;
   }, [roomId]);
 
-  const normalizePdfUploadPath = useCallback(async (rawUri: string, fileName: string) => {
-    let localPath = String(rawUri || '').trim();
+  const normalizePdfUploadPath = useCallback(async (rawUri: string, fileName: string, localFilePath?: string | null) => {
+    let localPath = String(localFilePath || rawUri || '').trim();
     try {
       localPath = decodeURI(localPath);
     } catch {}
@@ -728,7 +746,16 @@ const FreshDriftExpoModal = ({
     setCurrentSharedDocSlideShow(false);
     setCurrentPresentationTool(null);
     setSharedDocMarker(null);
-  }, []);
+    if (canControlCurrentSharedDoc && activeDoc && currentSharedDocId && activeDoc.id === currentSharedDocId) {
+      void pushSharedDocState({
+        docId: null,
+        slideShow: false,
+        marker: null,
+        statusText: null,
+      });
+      lastAutoOpenedDocIdRef.current = null;
+    }
+  }, [activeDoc, canControlCurrentSharedDoc, currentSharedDocId, pushSharedDocState]);
 
   const pushSharedDocState = useCallback(
     async (next: {
@@ -737,6 +764,7 @@ const FreshDriftExpoModal = ({
       slideShow?: boolean;
       slideSeconds?: number;
       marker?: SharedDocMarker | null;
+      statusText?: string | null;
     }) => {
       if (!roomId) return;
       const payload: Record<string, any> = {
@@ -764,6 +792,9 @@ const FreshDriftExpoModal = ({
             }
           : firestore.FieldValue.delete();
       }
+      if (typeof next.statusText !== 'undefined') {
+        payload.currentSharedDocStatusText = next.statusText;
+      }
       await firestore()
         .collection('live')
         .doc(roomId)
@@ -777,7 +808,7 @@ const FreshDriftExpoModal = ({
       if (!pdfLocalPath) return;
       const nextIndex = pdfPageIndex + direction;
       if (nextIndex < 0 || nextIndex >= pdfPageCount) return;
-      if (isPremiumHost) {
+      if (canControlCurrentSharedDoc) {
         try {
           await pushSharedDocState({ page: nextIndex });
         } catch (error: any) {
@@ -794,7 +825,7 @@ const FreshDriftExpoModal = ({
         }
       }
     },
-    [isPremiumHost, pdfLocalPath, pdfPageCount, pdfPageIndex, pushSharedDocState, renderActivePdfPage],
+    [canControlCurrentSharedDoc, pdfLocalPath, pdfPageCount, pdfPageIndex, pushSharedDocState, renderActivePdfPage],
   );
 
   const pauseSharedDocSlideShow = useCallback(() => {
@@ -802,19 +833,19 @@ const FreshDriftExpoModal = ({
       clearInterval(slideshowTimerRef.current);
       slideshowTimerRef.current = null;
     }
-    if (isPremiumHost) {
+    if (canControlCurrentSharedDoc) {
       void pushSharedDocState({ slideShow: false });
     }
-  }, [isPremiumHost, pushSharedDocState]);
+  }, [canControlCurrentSharedDoc, pushSharedDocState]);
 
   const startSharedDocSlideShow = useCallback(() => {
-    if (!isPremiumHost || pdfPageCount <= 1) return;
+    if (!canControlCurrentSharedDoc || pdfPageCount <= 1) return;
     void pushSharedDocState({ slideShow: true });
-  }, [isPremiumHost, pdfPageCount, pushSharedDocState]);
+  }, [canControlCurrentSharedDoc, pdfPageCount, pushSharedDocState]);
 
   const togglePresentationTool = useCallback(
     (mode: Exclude<PresentationToolMode, null>) => {
-      if (!isPremiumHost) return;
+      if (!canControlCurrentSharedDoc) return;
       setCurrentPresentationTool(prev => {
         const nextMode = prev === mode ? null : mode;
         if (!nextMode) {
@@ -823,12 +854,12 @@ const FreshDriftExpoModal = ({
         return nextMode;
       });
     },
-    [isPremiumHost, pushSharedDocState],
+    [canControlCurrentSharedDoc, pushSharedDocState],
   );
 
   const placePresentationMarker = useCallback(
     (x: number, y: number) => {
-      if (!isPremiumHost || !currentPresentationTool || pdfFrameWidth <= 0 || pdfFrameHeight <= 0) {
+      if (!canControlCurrentSharedDoc || !currentPresentationTool || pdfFrameWidth <= 0 || pdfFrameHeight <= 0) {
         return;
       }
       const normalizedX = Math.max(0, Math.min(1, x / pdfFrameWidth));
@@ -841,17 +872,31 @@ const FreshDriftExpoModal = ({
       setSharedDocMarker(marker);
       void pushSharedDocState({ marker });
     },
-    [currentPresentationTool, isPremiumHost, pdfFrameHeight, pdfFrameWidth, pushSharedDocState],
+    [canControlCurrentSharedDoc, currentPresentationTool, pdfFrameHeight, pdfFrameWidth, pushSharedDocState],
   );
 
   const handleShareFile = useCallback(async () => {
     if (!roomId || !isPremiumRoom) return;
+    if (currentSharedDocId) {
+      Alert.alert(
+        'Presentation in progress',
+        'Another file is already being presented. Close that file before sharing a new one.',
+      );
+      return;
+    }
     if (!AudioPicker?.pickFiles) {
       Alert.alert('File picker unavailable', 'This build cannot pick PDF files yet.');
       return;
     }
     setDocBusy(true);
     try {
+      const participantRtcUid = myRtcUid || mapRtcUidFromUserId(meUid);
+      await upsertParticipant(
+        roomId,
+        roomChannel || 'premium_room',
+        participantRtcUid,
+        !!(roomHostUid && meUid && roomHostUid === meUid),
+      );
       await firestore()
         .collection('live')
         .doc(roomId)
@@ -863,8 +908,8 @@ const FreshDriftExpoModal = ({
           { merge: true },
         );
       const result = await AudioPicker.pickFiles();
-      const pickedItems = Array.isArray(result) ? result : result ? [result] : [];
-      const selectedEntry = pickedItems.find((entry: any) => {
+      const pickedItems = (Array.isArray(result) ? result : result ? [result] : []) as PickedFileEntry[];
+      const selectedEntry = pickedItems.find((entry: PickedFileEntry) => {
         const name = String(entry?.name || entry?.uri || '').trim();
         const type = String(entry?.type || '').trim().toLowerCase();
         return (
@@ -892,7 +937,11 @@ const FreshDriftExpoModal = ({
         : /\.doc$/i.test(fileName)
         ? 'doc'
         : 'pdf';
-      const uploadPath = await normalizePdfUploadPath(localUri, fileName);
+      const uploadPath = await normalizePdfUploadPath(
+        localUri,
+        fileName,
+        selectedEntry.filePath || selectedEntry.fileCopyUri || null,
+      );
       const storagePath = isPdf
         ? `premium_docs/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`
         : `premium_presentations/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`;
@@ -933,7 +982,7 @@ const FreshDriftExpoModal = ({
             currentSharedDocPage: 0,
             currentSharedDocSlideShow: false,
             currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
-            currentSharedDocStatusText: `${meName} is sharing ${sharedDocPayload.title}`,
+            currentSharedDocStatusText: `${meName} is uploading ${sharedDocPayload.title}`,
             currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
@@ -984,7 +1033,23 @@ const FreshDriftExpoModal = ({
           },
           { merge: true },
         );
+        await firestore()
+          .collection('live')
+          .doc(roomId)
+          .set(
+            {
+              currentSharedDocStatusText: `${meName} is converting ${sharedDocPayload.title}`,
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
         const requestConversion = functions().httpsCallable('requestPresentationConversion');
+        await upsertParticipant(
+          roomId,
+          roomChannel || 'premium_room',
+          participantRtcUid,
+          !!(roomHostUid && meUid && roomHostUid === meUid),
+        );
         requestConversion({
           roomId,
           docId: docRef.id,
@@ -1034,12 +1099,46 @@ const FreshDriftExpoModal = ({
     }
   }, [
     AudioPicker,
+    currentSharedDocId,
     isPremiumRoom,
     meName,
     meUid,
+    myRtcUid,
     normalizePdfUploadPath,
     roomId,
+    roomChannel,
+    roomHostUid,
+    upsertParticipant,
   ]);
+
+  const handleCloseSharedPresentation = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      setDocBusy(true);
+      setActiveDoc(null);
+      setPdfLocalPath(null);
+      setPdfPageCount(0);
+      setPdfPageIndex(0);
+      setPdfPreviewUri(null);
+      setPdfPreviewWidth(0);
+      setPdfPreviewHeight(0);
+      setPdfZoomLevel(1);
+      setCurrentSharedDocSlideShow(false);
+      setCurrentPresentationTool(null);
+      setSharedDocMarker(null);
+      lastAutoOpenedDocIdRef.current = null;
+      await pushSharedDocState({
+        docId: null,
+        slideShow: false,
+        marker: null,
+        statusText: null,
+      });
+    } catch (error: any) {
+      Alert.alert('Could not close shared file', String(error?.message || 'Try again.'));
+    } finally {
+      setDocBusy(false);
+    }
+  }, [pushSharedDocState, roomId]);
 
   const autoOpenSharedPdf = useCallback(
     async (docId: string | null | undefined) => {
@@ -1167,7 +1266,11 @@ const FreshDriftExpoModal = ({
       const premiumRequired = !!data.premiumRequired;
       const nextPremiumShowId = data.premiumShowId ? String(data.premiumShowId) : null;
       const nextHostUid = String(data.hostUid || '');
-      if (premiumRequired && nextPremiumShowId) {
+      const skipPremiumValidation =
+        inviteJoinPreset?.skipPremiumValidation ||
+        (nextPremiumShowId &&
+          premiumValidationBypassShowIdRef.current === nextPremiumShowId);
+      if (premiumRequired && nextPremiumShowId && !skipPremiumValidation) {
         const access = await canCurrentUserJoinPremiumShow(nextPremiumShowId, nextHostUid || null);
         if (!access.allowed) {
           setPendingPremiumJoin({ liveId, showId: nextPremiumShowId });
@@ -1193,23 +1296,34 @@ const FreshDriftExpoModal = ({
       setRoomHostName(String(data.hostName || inviteJoinPreset?.fromName || 'Host'));
       setMyRtcUid(uid);
       setJoined(false);
-      try {
-        const participantSnap = await firestore()
-          .collection(`live/${liveId}/participants`)
-          .limit(12)
-          .get();
-        const seededRemoteUids = (participantSnap?.docs || [])
-          .map((doc: any) => Number((doc.data() || {}).rtcUid || 0))
-          .filter((rtcUid: number) => Number.isFinite(rtcUid) && rtcUid > 0 && rtcUid !== uid);
-        setRemoteUids(Array.from(new Set(seededRemoteUids)));
-      } catch {
-        setRemoteUids([]);
-      }
+      setRemoteUids([]);
+      firestore()
+        .collection(`live/${liveId}/participants`)
+        .limit(12)
+        .get()
+        .then(participantSnap => {
+          const seededRemoteUids = (participantSnap?.docs || [])
+            .map((doc: any) => Number((doc.data() || {}).rtcUid || 0))
+            .filter((rtcUid: number) => Number.isFinite(rtcUid) && rtcUid > 0 && rtcUid !== uid);
+          setRemoteUids(Array.from(new Set(seededRemoteUids)));
+        })
+        .catch(() => {
+          setRemoteUids([]);
+        });
       joinedChannelRef.current = null;
       joiningChannelRef.current = null;
+      if (nextPremiumShowId && premiumValidationBypassShowIdRef.current === nextPremiumShowId) {
+        premiumValidationBypassShowIdRef.current = null;
+      }
       setStatusText('Joining room');
     },
-    [defaultChannel, inviteJoinPreset?.fromName, inviteJoinPreset?.title, meUid],
+    [
+      defaultChannel,
+      inviteJoinPreset?.fromName,
+      inviteJoinPreset?.skipPremiumValidation,
+      inviteJoinPreset?.title,
+      meUid,
+    ],
   );
 
   useEffect(() => {
@@ -1219,7 +1333,8 @@ const FreshDriftExpoModal = ({
       const data = snap?.data?.() || {};
       if (!snap.exists) return;
       if (String(data.status || 'active') !== 'active') return;
-      setStatusText('Access granted. Opening camera...');
+      setStatusText('Access granted');
+      premiumValidationBypassShowIdRef.current = String(pendingPremiumJoin.showId);
       setPendingPremiumJoin(null);
       hydrateRoom(String(pendingPremiumJoin.liveId)).catch(error => {
         setStatusText(String(error?.message || 'Could not open room'));
@@ -1489,6 +1604,8 @@ const FreshDriftExpoModal = ({
           });
           engine.enableVideo?.();
           engine.enableAudio?.();
+          engine.setDefaultAudioRouteToSpeakerphone?.(true);
+          engine.setEnableSpeakerphone?.(true);
           engine.enableLocalVideo?.(true);
           engine.setClientRole?.(broadcasterRole);
           engine.registerEventHandler?.({
@@ -1514,10 +1631,10 @@ const FreshDriftExpoModal = ({
               setRemoteUids(prev => prev.filter(item => item !== next));
             },
             onError: (err: number) => {
+              if (Number(err) === 1052) {
+                return;
+              }
               setStatusText(`Agora error ${err}`);
-            },
-            onWarning: (warn: number) => {
-              handleAgoraWarning(warn);
             },
           });
           engineRef.current = engine;
@@ -1526,6 +1643,8 @@ const FreshDriftExpoModal = ({
           const engine = await Agora.RtcEngine.create(appId);
           engine.enableVideo?.();
           engine.enableAudio?.();
+          engine.setDefaultAudioRouteToSpeakerphone?.(true);
+          engine.setEnableSpeakerphone?.(true);
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
           engine.setChannelProfile?.(
@@ -1563,7 +1682,7 @@ const FreshDriftExpoModal = ({
     return () => {
       cancelled = true;
     };
-  }, [Agora, appId, ensurePermissions, handleAgoraWarning, myRtcUid, visible]);
+  }, [Agora, appId, ensurePermissions, myRtcUid, visible]);
 
   useEffect(() => {
     if (!visible || !roomId || !roomChannel || !myRtcUid || !engineRef.current) return;
@@ -1591,10 +1710,12 @@ const FreshDriftExpoModal = ({
           engine.startPreview?.();
           engine.updateChannelMediaOptions?.(mediaOptions);
           await engine.joinChannel(null, roomChannel, myRtcUid, mediaOptions);
+          engine.muteAllRemoteAudioStreams?.(false);
         } else {
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
           await engine.joinChannel(null, roomChannel, myRtcUid);
+          engine.muteAllRemoteAudioStreams?.(false);
         }
         if (cancelled) return;
         joinedChannelRef.current = roomChannel;
@@ -1779,6 +1900,7 @@ const FreshDriftExpoModal = ({
             fileName: String(data.fileName || 'shared.pdf'),
             downloadUrl: String(data.downloadUrl || ''),
             storagePath: String(data.storagePath || ''),
+            sharedByUid: data.sharedByUid ? String(data.sharedByUid) : null,
             sharedByName: String(data.sharedByName || 'Host'),
             createdAtMs: toMillis(data.createdAt) || Number(data.createdAtMs || 0) || 0,
             status: String(data.status || 'ready'),
@@ -1813,6 +1935,23 @@ const FreshDriftExpoModal = ({
   }, [autoOpenSharedPdf, currentSharedDocId, sharedDocs]);
 
   useEffect(() => {
+    if (currentSharedDocId) return;
+    if (!activeDoc) return;
+    setActiveDoc(null);
+    setPdfLocalPath(null);
+    setPdfPageCount(0);
+    setPdfPageIndex(0);
+    setPdfPreviewUri(null);
+    setPdfPreviewWidth(0);
+    setPdfPreviewHeight(0);
+    setPdfZoomLevel(1);
+    setCurrentSharedDocSlideShow(false);
+    setCurrentPresentationTool(null);
+    setSharedDocMarker(null);
+    lastAutoOpenedDocIdRef.current = null;
+  }, [activeDoc, currentSharedDocId]);
+
+  useEffect(() => {
     if (!activeDoc || !pdfLocalPath) return;
     if (!currentSharedDocId || activeDoc.id !== currentSharedDocId) return;
     if (pdfPageIndex === currentSharedDocPage) return;
@@ -1839,6 +1978,34 @@ const FreshDriftExpoModal = ({
   }, [isPremiumRoom]);
 
   useEffect(() => {
+    if (!sharedDocStatusText || !!activeDoc) {
+      docsStatusPulseAnim.stopAnimation();
+      docsStatusPulseAnim.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(docsStatusPulseAnim, {
+          toValue: 1,
+          duration: 650,
+          useNativeDriver: false,
+        }),
+        Animated.timing(docsStatusPulseAnim, {
+          toValue: 0,
+          duration: 650,
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => {
+      loop.stop();
+      docsStatusPulseAnim.stopAnimation();
+      docsStatusPulseAnim.setValue(0);
+    };
+  }, [activeDoc, docsStatusPulseAnim, sharedDocStatusText]);
+
+  useEffect(() => {
     const shouldHideCamera = !!activeDoc;
     try {
       engineRef.current?.muteLocalVideoStream?.(shouldHideCamera || cameraOff);
@@ -1847,7 +2014,7 @@ const FreshDriftExpoModal = ({
   }, [activeDoc, cameraOff]);
 
   useEffect(() => {
-    if (!isPremiumHost || !activeDoc || activeDoc.id !== currentSharedDocId) {
+    if (!canControlCurrentSharedDoc || !activeDoc || activeDoc.id !== currentSharedDocId) {
       if (slideshowTimerRef.current) {
         clearInterval(slideshowTimerRef.current);
         slideshowTimerRef.current = null;
@@ -1884,7 +2051,7 @@ const FreshDriftExpoModal = ({
     currentSharedDocPage,
     currentSharedDocSlideSeconds,
     currentSharedDocSlideShow,
-    isPremiumHost,
+    canControlCurrentSharedDoc,
     pdfPageCount,
     pushSharedDocState,
   ]);
@@ -2210,6 +2377,14 @@ const FreshDriftExpoModal = ({
       const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
       const RtcTextureView = (Agora as any)?.RtcTextureView;
       const VideoRenderMode = Agora?.VideoRenderMode;
+      if (RtcRemoteView?.SurfaceView) {
+        return React.createElement(RtcRemoteView.SurfaceView, {
+          style: styles.videoFill,
+          uid,
+          channelId: roomChannel || undefined,
+          renderMode: VideoRenderMode?.Fit ?? 2,
+        });
+      }
       if (RtcSurfaceView) {
         return React.createElement(RtcSurfaceView, {
           style: styles.videoFill,
@@ -2226,14 +2401,6 @@ const FreshDriftExpoModal = ({
             uid,
             renderMode: VideoRenderMode?.Fit ?? 2,
           },
-        });
-      }
-      if (RtcRemoteView?.SurfaceView) {
-        return React.createElement(RtcRemoteView.SurfaceView, {
-          style: styles.videoFill,
-          uid,
-          channelId: roomChannel || undefined,
-          renderMode: VideoRenderMode?.Fit ?? 2,
         });
       }
       return (
@@ -2273,7 +2440,7 @@ const FreshDriftExpoModal = ({
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={handleClose}>
       <View style={styles.root}>
-        {roomId && joined ? (
+        {roomId ? (
           <>
             <View style={styles.videoStage}>
               {remoteRenderUids.length > 0 ? (
@@ -2286,7 +2453,15 @@ const FreshDriftExpoModal = ({
                 renderLocalView(true)
               )}
               {remoteRenderUids.length > 0 ? (
-                <View style={styles.pictureInPicture}>
+                <View
+                  style={[
+                    styles.pictureInPicture,
+                    {
+                      right: insets.right + 4,
+                      bottom: insets.bottom + 316,
+                    },
+                  ]}
+                >
                   {cameraOff ? (
                     <View style={[styles.pictureInPictureVideo, styles.cameraOffStage]}>
                       <Text style={styles.cameraOffText}>Camera off</Text>
@@ -2329,7 +2504,7 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.closeChipText}>Close</Text>
                 </Pressable>
               </View>
-              <View style={styles.rightRail}>
+              <View style={[styles.rightRail, { right: insets.right + 8, bottom: insets.bottom + 78 }]}>
                 {!isPremiumRoom ? <Pressable style={styles.railButton} onPress={() => setShowInvitePanel(true)}>
                   <Text style={styles.railIcon}>Invite</Text>
                 </Pressable> : <Pressable style={styles.railButton} onPress={() => setShowComments(v => !v)}>
@@ -2391,13 +2566,27 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.soundBadgeText}>{soundBadgeLabel}</Text>
                 </View>
               ) : null}
-              {isPremiumRoom && sharedDocStatusText && !activeDoc ? (
-                <View style={styles.sharedDocStatusBadge}>
+              {isPremiumRoom && showDocsPanel && sharedDocStatusText && !activeDoc ? (
+                <Animated.View
+                  style={[
+                    styles.sharedDocStatusBadge,
+                    {
+                      borderColor: docsStatusPulseAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: ['rgba(255,255,255,0.18)', '#FFD7D7'],
+                      }),
+                      shadowOpacity: docsStatusPulseAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.14, 0.42],
+                      }) as any,
+                    },
+                  ]}
+                >
                   <Text style={styles.sharedDocStatusBadgeText}>{sharedDocStatusText}</Text>
-                </View>
+                </Animated.View>
               ) : null}
               {showAudiencePanel ? (
-                <View style={[styles.audiencePanel, { top: insets.top + 78, right: insets.right + 14 }]}>
+                <View style={[styles.audiencePanel, { top: insets.top + 132, right: insets.right + 14 }]}>
                   <Text style={styles.audiencePanelTitle}>In The Room</Text>
                   {premiumStatusLine ? (
                     <Text style={styles.audiencePanelMeta}>{premiumStatusLine}</Text>
@@ -2485,14 +2674,25 @@ const FreshDriftExpoModal = ({
                 </View>
               ) : null}
               {showDocsPanel && isPremiumRoom ? (
-                <View style={[styles.docsPanel, { top: insets.top + 78, right: insets.right + 14 }]}>
+                <View style={[styles.docsPanel, { top: insets.top + 114, left: insets.left + 6 }]}>
                   <Text style={styles.docsPanelTitle}>Shared Files</Text>
-                  {sharedDocStatusText ? (
-                    <Text style={styles.docsPanelStatusText}>{sharedDocStatusText}</Text>
+                  {!activeDoc ? (
+                    <Animated.View
+                      style={[
+                        styles.docsShareButtonWrap,
+                        {
+                          borderColor: docsStatusPulseAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ['rgba(255,255,255,0.14)', '#FFD7D7'],
+                          }),
+                        },
+                      ]}
+                    >
+                      <Pressable style={styles.docsShareButton} onPress={() => void handleShareFile()}>
+                        <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share File'}</Text>
+                      </Pressable>
+                    </Animated.View>
                   ) : null}
-                  <Pressable style={styles.docsShareButton} onPress={() => void handleShareFile()}>
-                    <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share File'}</Text>
-                  </Pressable>
                   <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
                     {sharedDocs.length === 0 ? (
                       <Text style={styles.docsEmptyText}>No shared files yet.</Text>
@@ -2622,6 +2822,11 @@ const FreshDriftExpoModal = ({
                   {item.emoji}
                 </Animated.Text>
               )) : null}
+              {!joined ? (
+                <View style={styles.roomJoiningOverlay}>
+                  <ActivityIndicator color="#10c9ff" />
+                </View>
+              ) : null}
               <View style={[styles.bottomComposer, { paddingBottom: insets.bottom + 14 }]}>
                 {replyTarget ? (
                   <View style={styles.replyPill}>
@@ -2854,7 +3059,7 @@ const FreshDriftExpoModal = ({
                   {activeDoc?.title || 'Shared PDF'}
                 </Text>
                 <Pressable style={styles.pdfCloseButton} onPress={closePdfViewer}>
-                  <Text style={styles.pdfCloseButtonText}>Close</Text>
+                  <Text style={styles.pdfCloseButtonText}>X</Text>
                 </Pressable>
               </View>
               <View
@@ -2916,7 +3121,7 @@ const FreshDriftExpoModal = ({
                     ]}
                   />
                 ) : null}
-                {isPremiumHost && currentPresentationTool ? (
+                {canControlCurrentSharedDoc && currentPresentationTool ? (
                   <Pressable
                     style={StyleSheet.absoluteFill}
                     onPress={event => {
@@ -2928,83 +3133,92 @@ const FreshDriftExpoModal = ({
                   />
                 ) : null}
               </View>
-              <View style={styles.pdfPagerRow}>
+              <View style={[styles.pdfPagerRow, isGuestViewingSharedDoc ? styles.pdfPagerRowDisabled : null]}>
                 <Pressable
                   style={[
                     styles.pdfPagerButton,
-                    (!isPremiumHost || pdfPageIndex <= 0) ? styles.pdfPagerButtonDisabled : null,
+                    (!canControlCurrentSharedDoc || pdfPageIndex <= 0 || isGuestViewingSharedDoc)
+                      ? styles.pdfPagerButtonDisabled
+                      : null,
                   ]}
                   onPress={() => {
-                    if (isPremiumHost) {
+                    if (canControlCurrentSharedDoc) {
                       void pushSharedDocState({ page: 0, slideShow: false });
                     }
                   }}
-                  disabled={!isPremiumHost || docBusy || pdfPageIndex <= 0}
+                  disabled={!canControlCurrentSharedDoc || docBusy || pdfPageIndex <= 0 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'|<'}</Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.pdfPagerButton, pdfPageIndex <= 0 ? styles.pdfPagerButtonDisabled : null]}
+                  style={[
+                    styles.pdfPagerButton,
+                    pdfPageIndex <= 0 || isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null,
+                  ]}
                   onPress={() => void changePdfPage(-1)}
-                  disabled={docBusy || pdfPageIndex <= 0 || (!isPremiumHost && !!currentSharedDocId)}
+                  disabled={docBusy || pdfPageIndex <= 0 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'<'}</Text>
                 </Pressable>
                 <Pressable
                   style={[
                     styles.pdfPagerButton,
-                    !isPremiumHost ? styles.pdfPagerButtonDisabled : null,
+                    !canControlCurrentSharedDoc || isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null,
                   ]}
                   onPress={startSharedDocSlideShow}
-                  disabled={!isPremiumHost || docBusy || pdfPageCount <= 1 || currentSharedDocSlideShow}
+                  disabled={!canControlCurrentSharedDoc || docBusy || pdfPageCount <= 1 || currentSharedDocSlideShow || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'▶'}</Text>
                 </Pressable>
                 <Pressable
                   style={[
                     styles.pdfPagerButton,
-                    (!isPremiumHost || !currentSharedDocSlideShow) ? styles.pdfPagerButtonDisabled : null,
+                    (!canControlCurrentSharedDoc || !currentSharedDocSlideShow || isGuestViewingSharedDoc)
+                      ? styles.pdfPagerButtonDisabled
+                      : null,
                   ]}
                   onPress={pauseSharedDocSlideShow}
-                  disabled={!isPremiumHost || !currentSharedDocSlideShow}
+                  disabled={!canControlCurrentSharedDoc || !currentSharedDocSlideShow || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'⏸'}</Text>
                 </Pressable>
                 <Pressable
                   style={[
                     styles.pdfPagerButton,
-                    pdfPageIndex >= pdfPageCount - 1 ? styles.pdfPagerButtonDisabled : null,
+                    pdfPageIndex >= pdfPageCount - 1 || isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null,
                   ]}
                   onPress={() => void changePdfPage(1)}
-                  disabled={docBusy || pdfPageIndex >= pdfPageCount - 1 || (!isPremiumHost && !!currentSharedDocId)}
+                  disabled={docBusy || pdfPageIndex >= pdfPageCount - 1 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'>'}</Text>
                 </Pressable>
                 <Pressable
                   style={[
                     styles.pdfPagerButton,
-                    (!isPremiumHost || pdfPageIndex >= pdfPageCount - 1) ? styles.pdfPagerButtonDisabled : null,
+                    (!canControlCurrentSharedDoc || pdfPageIndex >= pdfPageCount - 1 || isGuestViewingSharedDoc)
+                      ? styles.pdfPagerButtonDisabled
+                      : null,
                   ]}
                   onPress={() => {
-                    if (isPremiumHost && pdfPageCount > 0) {
+                    if (canControlCurrentSharedDoc && pdfPageCount > 0) {
                       void pushSharedDocState({ page: Math.max(0, pdfPageCount - 1), slideShow: false });
                     }
                   }}
-                  disabled={!isPremiumHost || docBusy || pdfPageIndex >= pdfPageCount - 1}
+                  disabled={!canControlCurrentSharedDoc || docBusy || pdfPageIndex >= pdfPageCount - 1 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'>|'}</Text>
                 </Pressable>
                 <Pressable
-                  style={styles.pdfPagerButton}
+                  style={[styles.pdfPagerButton, isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null]}
                   onPress={() => setPdfZoomLevel(level => Math.max(1, Number((level - 0.25).toFixed(2))))}
-                  disabled={docBusy || pdfZoomLevel <= 1}
+                  disabled={docBusy || pdfZoomLevel <= 1 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>−</Text>
                 </Pressable>
                 <Pressable
-                  style={styles.pdfPagerButton}
+                  style={[styles.pdfPagerButton, isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null]}
                   onPress={() => setPdfZoomLevel(level => Math.min(2.5, Number((level + 0.25).toFixed(2))))}
-                  disabled={docBusy || pdfZoomLevel >= 2.5}
+                  disabled={docBusy || pdfZoomLevel >= 2.5 || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>+</Text>
                 </Pressable>
@@ -3012,9 +3226,10 @@ const FreshDriftExpoModal = ({
                   style={[
                     styles.pdfPagerButton,
                     currentPresentationTool === 'pointer' ? styles.pdfPagerButtonActive : null,
+                    isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null,
                   ]}
                   onPress={() => togglePresentationTool('pointer')}
-                  disabled={!isPremiumHost}
+                  disabled={!canControlCurrentSharedDoc || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'⌖'}</Text>
                 </Pressable>
@@ -3022,9 +3237,10 @@ const FreshDriftExpoModal = ({
                   style={[
                     styles.pdfPagerButton,
                     currentPresentationTool === 'highlight' ? styles.pdfPagerButtonActive : null,
+                    isGuestViewingSharedDoc ? styles.pdfPagerButtonDisabled : null,
                   ]}
                   onPress={() => togglePresentationTool('highlight')}
-                  disabled={!isPremiumHost}
+                  disabled={!canControlCurrentSharedDoc || isGuestViewingSharedDoc}
                 >
                   <Text style={styles.pdfPagerButtonText}>{'✎'}</Text>
                 </Pressable>
@@ -3033,8 +3249,8 @@ const FreshDriftExpoModal = ({
                 </Text>
                 <Text style={styles.pdfSlideSpeedText}>{currentSharedDocSlideSeconds}s</Text>
               </View>
-              {!isPremiumHost && currentSharedDocId ? (
-                <Text style={styles.pdfGuestHint}>Host is controlling the shared document.</Text>
+              {!canControlCurrentSharedDoc && currentSharedDocId ? (
+                <Text style={styles.pdfGuestHint}>The current presenter is controlling the shared document.</Text>
               ) : null}
             </View>
           </View>
@@ -3058,8 +3274,6 @@ const styles = StyleSheet.create({
   },
   pictureInPicture: {
     position: 'absolute',
-    right: 14,
-    top: 150,
     width: 110,
     height: 168,
     borderRadius: 16,
@@ -3151,8 +3365,6 @@ const styles = StyleSheet.create({
   },
   rightRail: {
     position: 'absolute',
-    right: 10,
-    bottom: 160,
     gap: 8,
   },
   railButton: {
@@ -3196,12 +3408,17 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 18,
     right: 18,
-    top: 104,
+    top: 96,
     alignItems: 'center',
-    backgroundColor: 'rgba(141,0,0,0.9)',
+    backgroundColor: 'rgba(141,0,0,0.92)',
     borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 10,
+    borderWidth: 1,
+    shadowColor: '#8D0000',
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
   sharedDocStatusBadgeText: {
     color: '#FFFFFF',
@@ -3255,10 +3472,29 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   docsPanelStatusText: {
-    color: 'rgba(255,255,255,0.78)',
+    color: '#FFFFFF',
     fontSize: 12,
     lineHeight: 16,
+    textAlign: 'center',
+  },
+  docsShareButtonWrap: {
+    borderRadius: 14,
+    borderWidth: 1,
     marginBottom: 10,
+  },
+  roomJoiningOverlay: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 58,
+    height: 58,
+    marginLeft: -29,
+    marginTop: -29,
+    borderRadius: 29,
+    backgroundColor: 'rgba(6,13,22,0.58)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 8,
   },
   docsShareButton: {
     backgroundColor: '#8D0000',
@@ -3800,13 +4036,16 @@ const styles = StyleSheet.create({
   },
   pdfCloseButton: {
     backgroundColor: '#8D0000',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pdfCloseButtonText: {
     color: '#FFFFFF',
     fontWeight: '900',
+    fontSize: 16,
   },
   pdfPreviewFrame: {
     flex: 1,
@@ -3837,6 +4076,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     flexWrap: 'wrap',
+  },
+  pdfPagerRowDisabled: {
+    opacity: 0.46,
   },
   pdfPagerButton: {
     backgroundColor: '#8D0000',

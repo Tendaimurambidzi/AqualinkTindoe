@@ -94,6 +94,21 @@ const toMillis = (value: any): number => {
   }
 };
 
+const getPremiumShowAccessEndsAtMs = (showData: any): number => {
+  const endsAtMs = toMillis(showData?.endsAt);
+  const redeemCloseAtMs = toMillis(showData?.redeemCloseAt);
+  const entryCloseAtMs = toMillis(showData?.entryCloseAt);
+  const graceEndsAtMs = endsAtMs ? endsAtMs + PREMIUM_TOKEN_GRACE_MS : 0;
+  return Math.max(endsAtMs, redeemCloseAtMs, entryCloseAtMs, graceEndsAtMs);
+};
+
+const getPremiumAccessValidUntilMs = (accessOrTicketData: any, showData?: any): number => {
+  return Math.max(
+    toMillis(accessOrTicketData?.validUntil),
+    getPremiumShowAccessEndsAtMs(showData),
+  );
+};
+
 const hashToken = (input: string): string => {
   let hash = 2166136261;
   for (let i = 0; i < input.length; i += 1) {
@@ -144,7 +159,7 @@ export async function findReusablePremiumShowForCurrentHost(): Promise<{
     .find(doc => {
     const data = doc.data() || {};
     const status = String(data.status || 'scheduled') as PremiumShowStatus;
-    const endsAtMs = toMillis(data.endsAt);
+    const endsAtMs = getPremiumShowAccessEndsAtMs(data);
     return status !== 'ended' && status !== 'cancelled' && (!endsAtMs || endsAtMs > nowMs());
   });
   if (!candidate) return null;
@@ -345,7 +360,7 @@ export async function redeemPremiumCode(rawCode: string) {
   }
 
   const showData = showSnap.data() || {};
-  const validUntilMs = toMillis(ticketData.validUntil) || toMillis(showData.endsAt);
+  const validUntilMs = getPremiumAccessValidUntilMs(ticketData, showData);
   const validFromMs = toMillis(ticketData.validFrom) || toMillis(showData.startsAt);
   const status = String(ticketData.status || 'generated') as PremiumTicketStatus;
   if (status === 'revoked' || status === 'expired') {
@@ -361,6 +376,7 @@ export async function redeemPremiumCode(rawCode: string) {
     throw new Error('This token has expired');
   }
 
+  const resolvedValidUntilMs = validUntilMs || nowMs() + PREMIUM_TOKEN_GRACE_MS;
   const batch = firestore().batch();
   batch.set(
     match.ref,
@@ -379,7 +395,7 @@ export async function redeemPremiumCode(rawCode: string) {
       ticketId: match.id,
       grantedAt: firestore.FieldValue.serverTimestamp(),
       validFrom: ticketData.validFrom || showData.startsAt || new Date(),
-      validUntil: ticketData.validUntil || showData.endsAt || new Date(),
+      validUntil: new Date(resolvedValidUntilMs),
       status: 'active',
       hostUid: String(showData.hostUid || ''),
       showTitle: String(showData.title || 'Aqua Premium'),
@@ -479,12 +495,29 @@ export async function canCurrentUserJoinPremiumShow(showId: string, hostUid?: st
     }
     const accessData = accessSnap.data() || {};
     const status = String(accessData.status || 'active');
-    const validUntilMs = toMillis(accessData.validUntil);
     if (status !== 'active') {
       return { allowed: false, reason: 'Your Aqua Premium access is not active.' };
     }
+    let showData: any = null;
+    try {
+      const showSnap = await firestore().doc(`premium_shows/${showId}`).get();
+      showData = showSnap.data() || null;
+    } catch {}
+    const validUntilMs = getPremiumAccessValidUntilMs(accessData, showData);
     if (validUntilMs && nowMs() > validUntilMs) {
       return { allowed: false, reason: 'Your Aqua Premium access has expired.' };
+    }
+    if (validUntilMs && validUntilMs > toMillis(accessData.validUntil)) {
+      firestore()
+        .doc(`users/${me.uid}/premium_access/${showId}`)
+        .set(
+          {
+            validUntil: new Date(validUntilMs),
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        )
+        .catch(() => {});
     }
     return {
       allowed: true,

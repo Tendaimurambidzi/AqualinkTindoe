@@ -1,8 +1,8 @@
-// Deploy this as a one-time callable function to migrate usernames
-const functions = require('firebase-functions');
+// Deploy this as a one-time HTTP function to migrate usernames
+const { onRequest } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
 
-exports.migrateUsernames = functions.https.onRequest(async (req, res) => {
+exports.migrateUsernames = onRequest({ region: 'us-central1' }, async (req, res) => {
   try {
     const db = admin.firestore();
     console.log('Fetching all users...');

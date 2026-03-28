@@ -13,7 +13,6 @@ const { VertexAI } = require('@google-cloud/vertexai');
  *
  * You can also add FCM/Pings in the onCreate handlers where indicated.
  */
-const functions = require('firebase-functions');
 const { onDocumentCreated, onDocumentDeleted, onDocumentWritten } = require('firebase-functions/v2/firestore');
 // Already imported at the top
 const admin = require('firebase-admin');
@@ -1647,8 +1646,23 @@ exports.requestPresentationConversion = onCall({ region: 'us-central1' }, async 
     throw new HttpsError('not-found', 'Live room not found.');
   }
 
-  if (String(liveData.hostUid || '') !== req.auth.uid) {
-    throw new HttpsError('permission-denied', 'Only the room host can convert presentations.');
+  let participantSnap = await liveRef.collection('participants').doc(req.auth.uid).get();
+  if (!participantSnap.exists) {
+    await new Promise(resolve => setTimeout(resolve, 400));
+    participantSnap = await liveRef.collection('participants').doc(req.auth.uid).get();
+  }
+  const participantData = participantSnap.exists ? participantSnap.data() || {} : {};
+
+  if (!participantSnap.exists || participantData.purged === true) {
+    throw new HttpsError('permission-denied', 'Only active Aqua Premium participants can convert presentations right now.');
+  }
+
+  const activeSharedDocId = String(liveData.currentSharedDocId || '').trim();
+  if (activeSharedDocId && activeSharedDocId !== docId) {
+    throw new HttpsError(
+      'failed-precondition',
+      'Another participant is already presenting. Wait for that file to close first.',
+    );
   }
 
   const converterUrl = String(
