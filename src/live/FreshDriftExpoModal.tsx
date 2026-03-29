@@ -220,6 +220,9 @@ const formatTimestamp = (value: number): string => {
 };
 
 const DEFAULT_PRESENTATION_SLIDE_SECONDS = 10;
+const SHARED_DOC_MAX_INK_POINTS = 480;
+const SHARED_DOC_INK_POINT_SPACING_PX = 6;
+const SHARED_DOC_ERASER_RADIUS_PX = 52;
 
 const formatCountdown = (diffMs: number): string => {
   const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
@@ -318,6 +321,7 @@ const FreshDriftExpoModal = ({
   const premiumValidationBypassShowIdRef = useRef<string | null>(null);
   const reactionTrayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roomRef = useRef<{ id: string; channel: string; title: string; hostUid: string | null } | null>(null);
+  const activeInkPointRef = useRef<{ x: number; y: number } | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState<string>('Ready');
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -854,7 +858,7 @@ const FreshDriftExpoModal = ({
       }
       if (typeof next.inkPoints !== 'undefined') {
         payload.currentSharedDocInkPoints = Array.isArray(next.inkPoints)
-          ? next.inkPoints.slice(-240).map(point => ({
+          ? next.inkPoints.slice(-SHARED_DOC_MAX_INK_POINTS).map(point => ({
               id: String(point.id || `${Date.now()}`),
               x: Math.max(0, Math.min(1, Number(point.x))),
               y: Math.max(0, Math.min(1, Number(point.y))),
@@ -938,26 +942,42 @@ const FreshDriftExpoModal = ({
         return;
       }
       if (currentPresentationTool === 'pen') {
-        const nextPoints = [
-          ...sharedDocInkPoints,
-          {
-            id: `${Date.now()}_${Math.random()}`,
-            x: normalizedX,
-            y: normalizedY,
-            size: 4,
+        const lastPoint = activeInkPointRef.current;
+        const distancePx = lastPoint
+          ? Math.sqrt(
+              Math.pow((normalizedX - lastPoint.x) * pdfFrameWidth, 2) +
+                Math.pow((normalizedY - lastPoint.y) * pdfFrameHeight, 2),
+            )
+          : 0;
+        const steps = lastPoint
+          ? Math.max(1, Math.ceil(distancePx / SHARED_DOC_INK_POINT_SPACING_PX))
+          : 1;
+        const appendedPoints: SharedDocInkPoint[] = [];
+        for (let step = 1; step <= steps; step += 1) {
+          const ratio = step / steps;
+          const pointX = lastPoint ? lastPoint.x + (normalizedX - lastPoint.x) * ratio : normalizedX;
+          const pointY = lastPoint ? lastPoint.y + (normalizedY - lastPoint.y) * ratio : normalizedY;
+          appendedPoints.push({
+            id: `${Date.now()}_${step}_${Math.random()}`,
+            x: pointX,
+            y: pointY,
+            size: 6,
             color: '#E11D48',
-          },
-        ].slice(-240);
+          });
+        }
+        const nextPoints = [...sharedDocInkPoints, ...appendedPoints].slice(-SHARED_DOC_MAX_INK_POINTS);
+        activeInkPointRef.current = { x: normalizedX, y: normalizedY };
         setSharedDocInkPoints(nextPoints);
         void pushSharedDocState({ inkPoints: nextPoints });
         return;
       }
       if (currentPresentationTool === 'eraser') {
         const nextPoints = sharedDocInkPoints.filter(point => {
-          const dx = point.x - normalizedX;
-          const dy = point.y - normalizedY;
-          return Math.sqrt(dx * dx + dy * dy) > 0.03;
+          const dx = (point.x - normalizedX) * pdfFrameWidth;
+          const dy = (point.y - normalizedY) * pdfFrameHeight;
+          return Math.sqrt(dx * dx + dy * dy) > SHARED_DOC_ERASER_RADIUS_PX;
         });
+        activeInkPointRef.current = { x: normalizedX, y: normalizedY };
         setSharedDocInkPoints(nextPoints);
         void pushSharedDocState({ inkPoints: nextPoints });
       }
@@ -971,6 +991,10 @@ const FreshDriftExpoModal = ({
       sharedDocInkPoints,
     ],
   );
+
+  useEffect(() => {
+    activeInkPointRef.current = null;
+  }, [currentPresentationTool, currentSharedDocId]);
 
   const pauseSharedDocSlideShow = useCallback(() => {
     if (slideshowTimerRef.current) {
@@ -1816,6 +1840,9 @@ const FreshDriftExpoModal = ({
           engine.enableAudio?.();
           engine.setDefaultAudioRouteToSpeakerphone?.(true);
           engine.setEnableSpeakerphone?.(true);
+          engine.setDefaultMuteAllRemoteAudioStreams?.(false);
+          engine.setDefaultMuteAllRemoteVideoStreams?.(false);
+          engine.adjustPlaybackSignalVolume?.(100);
           engine.enableLocalVideo?.(true);
           engine.setClientRole?.(broadcasterRole);
           engine.registerEventHandler?.({
@@ -1834,6 +1861,13 @@ const FreshDriftExpoModal = ({
               if (connection?.localUid) {
                 setMyRtcUid(prev => prev || Number(connection.localUid) || 0);
               }
+              try {
+                engineRef.current?.muteRemoteAudioStream?.(next, false);
+                engineRef.current?.muteRemoteVideoStream?.(next, false);
+                (engineRef.current as any)?.subscribeRemoteAudioStream?.(next, true);
+                (engineRef.current as any)?.subscribeRemoteVideoStream?.(next, true);
+                engineRef.current?.setRemoteVideoStreamType?.(next, 0);
+              } catch {}
               setRemoteUids(prev => (prev.includes(next) ? prev : [...prev, next]));
             },
             onUserOffline: (_conn: any, uid: number) => {
@@ -1855,6 +1889,7 @@ const FreshDriftExpoModal = ({
           engine.enableAudio?.();
           engine.setDefaultAudioRouteToSpeakerphone?.(true);
           engine.setEnableSpeakerphone?.(true);
+          engine.adjustPlaybackSignalVolume?.(100);
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
           engine.setChannelProfile?.(
@@ -1874,6 +1909,11 @@ const FreshDriftExpoModal = ({
           engine.addListener?.('UserJoined', (uid: number) => {
             const next = Number(uid);
             if (!Number.isFinite(next) || next <= 0) return;
+            try {
+              engineRef.current?.muteRemoteAudioStream?.(next, false);
+              engineRef.current?.muteRemoteVideoStream?.(next, false);
+              engineRef.current?.setRemoteVideoStreamType?.(next, 0);
+            } catch {}
             setRemoteUids(prev => (prev.includes(next) ? prev : [...prev, next]));
           });
           engine.addListener?.('UserOffline', (uid: number) => {
@@ -2018,7 +2058,7 @@ const FreshDriftExpoModal = ({
                 size: Math.max(2, Math.min(12, Number(point?.size || 4))),
                 color: String(point?.color || '#EF4444'),
               }))
-              .slice(-240)
+              .slice(-SHARED_DOC_MAX_INK_POINTS)
           : [];
         setSharedDocInkPoints(inkPoints);
         if (currentSharedDocIdValue) {
@@ -2245,6 +2285,9 @@ const FreshDriftExpoModal = ({
       docsStatusPulseAnim.setValue(0);
       return;
     }
+    if (isPremiumRoom) {
+      setShowDocsPanel(true);
+    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(docsStatusPulseAnim, {
@@ -2265,7 +2308,7 @@ const FreshDriftExpoModal = ({
       docsStatusPulseAnim.stopAnimation();
       docsStatusPulseAnim.setValue(0);
     };
-  }, [activeDoc, docsStatusPulseAnim, sharedDocStatusText]);
+  }, [activeDoc, docsStatusPulseAnim, isPremiumRoom, sharedDocStatusText]);
 
   useEffect(() => {
     const shouldHideCamera = !!activeDoc;
@@ -2836,25 +2879,11 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.soundBadgeText}>{soundBadgeLabel}</Text>
                 </View>
               ) : null}
-              {isPremiumRoom && showDocsPanel && sharedDocStatusText && !activeDoc ? (
-                <Animated.View
-                  style={[
-                    styles.sharedDocStatusBadge,
-                    {
-                      borderColor: docsStatusPulseAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ['rgba(255,255,255,0.18)', '#FFD7D7'],
-                      }),
-                      shadowOpacity: docsStatusPulseAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.14, 0.42],
-                      }) as any,
-                    },
-                  ]}
-                >
-                  <Text style={styles.sharedDocStatusBadgeText}>{sharedDocStatusText}</Text>
-                </Animated.View>
-              ) : null}
+                {isPremiumRoom && sharedDocStatusText && !activeDoc ? (
+                  <View style={styles.sharedDocStatusOverlay}>
+                    <Text style={styles.sharedDocStatusOverlayText}>{sharedDocStatusText}</Text>
+                  </View>
+                ) : null}
               {showAudiencePanel ? (
                 <View style={[styles.audiencePanel, { top: insets.top + 132, right: insets.right + 14 }]}>
                   <Text style={styles.audiencePanelTitle}>In The Room</Text>
@@ -3464,6 +3493,12 @@ const FreshDriftExpoModal = ({
                         event.nativeEvent.locationY,
                       );
                     }}
+                    onResponderRelease={() => {
+                      activeInkPointRef.current = null;
+                    }}
+                    onResponderTerminate={() => {
+                      activeInkPointRef.current = null;
+                    }}
                   />
                 ) : null}
               </View>
@@ -3773,26 +3808,22 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
-  sharedDocStatusBadge: {
+  sharedDocStatusOverlay: {
     position: 'absolute',
     left: 18,
     right: 18,
-    top: 104,
-    alignItems: 'center',
-    backgroundColor: 'rgba(141,0,0,0.92)',
-    borderRadius: 16,
-    paddingHorizontal: 14,
+    bottom: 132,
     paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(10,10,12,0.72)',
     borderWidth: 1,
-    shadowColor: '#8D0000',
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 6,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
-  sharedDocStatusBadgeText: {
+  sharedDocStatusOverlayText: {
     color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 14,
+    fontWeight: '700',
     textAlign: 'center',
   },
   audiencePanel: {
