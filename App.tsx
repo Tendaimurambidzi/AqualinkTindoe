@@ -5644,6 +5644,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       let mediaPath: string | null = null;
 
       if (noticeAdMedia?.uri) {
+        if (!ensureNetworkActionAllowed('upload', { label: 'upload this advert' })) {
+          return;
+        }
         let localPath = String(noticeAdMedia.uri);
         if (Platform.OS === 'android' && localPath.startsWith('file://')) {
           localPath = localPath.replace('file://', '');
@@ -5716,6 +5719,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setNoticePosting(false);
     }
   }, [
+    ensureNetworkActionAllowed,
     loadNoticeBoardData,
     noticeAdMedia,
     noticeAdText,
@@ -5833,6 +5837,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const uid = auth().currentUser?.uid;
       if (!uid) {
         throw new Error('Please sign in to upload a profile photo.');
+      }
+      if (!ensureNetworkActionAllowed('upload', { label: 'upload your profile photo' })) {
+        throw new Error('Please use Wi-Fi to upload your profile photo.');
       }
 
       // Upload to Firebase Storage
@@ -5972,6 +5979,78 @@ type CommandCentreSection =
       setStormEffectsEnabled(bridge.rainEffectsEnabled);
     }
   }, [bridge.rainEffectsEnabled]);
+  const performancePolicy = useMemo(() => {
+    const cellularMode = !isWifi || dataSaver.cellular;
+    const mappedResolution =
+      bridge.thumbQuality === 'high'
+        ? 'high'
+        : bridge.thumbQuality === 'standard'
+        ? 'med'
+        : 'low';
+    const effectiveDataSaver = dataSaver.enabled || (cellularMode && bridge.dataSaverDefaultOnCell);
+    return {
+      cellularMode,
+      effectiveDataSaver,
+      wifiOnlyDownloads: dataSaver.wifiOnlyDownloads || bridge.wifiOnlyHD,
+      autoplayOnWifiOnly: dataSaver.autoplayOnWifiOnly || bridge.autoplayCellular !== 'full',
+      thumbnailsOnlyInFeed:
+        dataSaver.thumbnailsOnlyInFeed || bridge.autoplayCellular === 'off',
+      maxResolution: dataSaver.maxResolution || mappedResolution,
+      restrictHeavyTransfers:
+        effectiveDataSaver && cellularMode && !bridge.backgroundDataCell,
+      liveVideoBitrate: cellularMode
+        ? Math.min(bridge.liveCellularMaxBitrate || 700000, effectiveDataSaver ? 420000 : 700000)
+        : 1400000,
+      liveDimensions: cellularMode && effectiveDataSaver
+        ? { width: 640, height: 360 }
+        : { width: 960, height: 540 },
+      liveFrameRate: cellularMode && effectiveDataSaver ? 15 : 24,
+      audioOnlyFallback: !!(bridge.audioOnlyFallback && cellularMode && effectiveDataSaver),
+    };
+  }, [bridge, dataSaver, isWifi]);
+
+  const shouldUseLightVideoUpload = useMemo(
+    () => !!(performancePolicy.cellularMode && performancePolicy.effectiveDataSaver),
+    [performancePolicy.cellularMode, performancePolicy.effectiveDataSaver],
+  );
+
+  const buildMediaPickerOptions = useCallback(
+    (mediaType: 'photo' | 'video' | 'mixed', extra: Record<string, any> = {}) => ({
+      mediaType,
+      quality: mediaType === 'photo' ? 0.8 : 1,
+      presentationStyle: 'fullScreen',
+      videoQuality:
+        mediaType === 'video' || mediaType === 'mixed'
+          ? shouldUseLightVideoUpload
+            ? 'low'
+            : 'high'
+          : undefined,
+      formatAsMp4: shouldUseLightVideoUpload,
+      assetRepresentationMode: shouldUseLightVideoUpload ? 'compatible' : 'auto',
+      ...extra,
+    }),
+    [shouldUseLightVideoUpload],
+  );
+
+  useEffect(() => {
+    dataSaver.setState({
+      enabled: bridge.dataSaverDefaultOnCell,
+      wifiOnlyDownloads: bridge.wifiOnlyHD,
+      autoplayOnWifiOnly: bridge.autoplayCellular !== 'full',
+      thumbnailsOnlyInFeed: bridge.autoplayCellular === 'off',
+      maxResolution:
+        bridge.thumbQuality === 'high'
+          ? 'high'
+          : bridge.thumbQuality === 'standard'
+          ? 'med'
+          : 'low',
+    });
+  }, [
+    bridge.dataSaverDefaultOnCell,
+    bridge.wifiOnlyHD,
+    bridge.autoplayCellular,
+    bridge.thumbQuality,
+  ]);
   const [showPearls, setShowPearls] = useState<boolean>(false);
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
   const [echoWaveId, setEchoWaveId] = useState<string | null>(null);
@@ -8235,6 +8314,9 @@ type CommandCentreSection =
               .replace(/^_+|_+$/g, '')
               .slice(0, 42) || 'splashline';
             const fileName = `SplashLine_${safeBase}_${Date.now()}.${inferredExt}`;
+            if (!ensureNetworkActionAllowed('download', { label: 'save this post' })) {
+              return;
+            }
             const ok = await downloadWave(
               String(waveOptionsTarget.id),
               String(downloadUrl),
@@ -9783,6 +9865,7 @@ type CommandCentreSection =
   ) => {
     const sourceUrl = String(attachmentUrl || '').trim();
     if (!sourceUrl) return;
+    if (!ensureNetworkActionAllowed('download', { label: 'save this file' })) return;
     const key = String(progressKey || sourceUrl);
     if (activeAttachmentDownloads[key]) return;
     setActiveAttachmentDownloads(prev => ({ ...prev, [key]: true }));
@@ -9956,6 +10039,9 @@ type CommandCentreSection =
     let attachmentName: string | null = null;
 
     if (normalizedAttachment?.uri && storageMod) {
+      if (!ensureNetworkActionAllowed('upload', { label: 'upload this file' })) {
+        throw new Error('Please use Wi-Fi to upload this file.');
+      }
       const nameGuessRaw = normalizedAttachment.fileName || 'attachment';
       const type = String(normalizedAttachment.type || '').toLowerCase();
       const sanitizedBase = nameGuessRaw
@@ -12249,6 +12335,30 @@ type CommandCentreSection =
         .set(updated, { merge: true });
     } catch {}
   };
+  const ensureNetworkActionAllowed = useCallback(
+    (
+      mode: 'upload' | 'download',
+      options?: { allowOnCellular?: boolean; label?: string },
+    ) => {
+      const label = options?.label || (mode === 'upload' ? 'upload this' : 'download this');
+      if (isOffline) {
+        Alert.alert('No Internet', 'No internet right now. Please try again.');
+        return false;
+      }
+      if (
+        performancePolicy.restrictHeavyTransfers &&
+        !options?.allowOnCellular
+      ) {
+        Alert.alert(
+          mode === 'upload' ? 'Upload Paused' : 'Download Paused',
+          `To save your data, please use Wi-Fi to ${label}.`,
+        );
+        return false;
+      }
+      return true;
+    },
+    [isOffline, performancePolicy.restrictHeavyTransfers],
+  );
                     
   const shareProfile = async () => {
     try {
@@ -12553,6 +12663,9 @@ type CommandCentreSection =
         // Proceed to save Firestore profile with the same URI (may be local-only)
       } else if (storageMod && finalPhotoUrl && !isHttp(finalPhotoUrl)) {
         // Upload local file to Firebase Storage and use a public download URL so others can view it
+        if (!ensureNetworkActionAllowed('upload', { label: 'upload your profile photo' })) {
+          return;
+        }
         let localPath = String(finalPhotoUrl);
         try {
           localPath = decodeURI(localPath);
@@ -12698,12 +12811,12 @@ type CommandCentreSection =
         {
           text: 'Take Photo',
           onPress: () =>
-            handleCameraLaunch({ mediaType: 'photo', quality: 0.8 }),
+            handleCameraLaunch(buildMediaPickerOptions('photo')),
         },
         {
           text: 'Record Video',
           onPress: () =>
-            handleCameraLaunch({ mediaType: 'video', videoQuality: 'high' }),
+            handleCameraLaunch(buildMediaPickerOptions('video')),
         },
         { text: 'Cancel', style: 'cancel' },
       ],
@@ -12712,11 +12825,10 @@ type CommandCentreSection =
   };
                     
   const fromGallery = () => {
-    launchImageLibrary({ 
-      mediaType: 'mixed', 
-      quality: 0.8,
-      presentationStyle: 'fullScreen',
-    }, handleMediaSelect);
+    launchImageLibrary(
+      buildMediaPickerOptions('mixed'),
+      handleMediaSelect,
+    );
   };
                     
   const pickAudioFromDevice = () => {
@@ -12858,7 +12970,7 @@ type CommandCentreSection =
         {
           text: 'Take Photo',
           onPress: () =>
-            launchCamera({ mediaType: 'photo', quality: 0.8 }, response => {
+            launchCamera(buildMediaPickerOptions('photo'), response => {
               if (response.assets && response.assets.length > 0) {
                 appendUnifiedPostMediaAssets(response.assets);
               }
@@ -12867,7 +12979,7 @@ type CommandCentreSection =
         {
           text: 'Record Video',
           onPress: () =>
-            launchCamera({ mediaType: 'video', videoQuality: 'high' }, response => {
+            launchCamera(buildMediaPickerOptions('video'), response => {
               if (response.assets && response.assets.length > 0) {
                 appendUnifiedPostMediaAssets(response.assets);
               }
@@ -12943,12 +13055,7 @@ type CommandCentreSection =
     }
     
     console.log('[SD Card Access] Opening image library with fullScreen presentation');
-    launchImageLibrary({ 
-      mediaType: 'mixed', 
-      quality: 0.8,
-      presentationStyle: 'fullScreen',
-      selectionLimit: 10,
-    }, response => {
+    launchImageLibrary(buildMediaPickerOptions('mixed', { selectionLimit: 10 }), response => {
       console.log('[SD Card Access] Response:', JSON.stringify(response, null, 2));
       if (response.assets && response.assets.length > 0) {
         console.log('[SD Card Access] Media selected count:', response.assets.length);
@@ -13083,6 +13190,15 @@ type CommandCentreSection =
       uid: string,
     ) => {
       const mimeType = String(asset.type || 'application/octet-stream');
+      const isVideoUpload = mimeType.startsWith('video/');
+      if (
+        !ensureNetworkActionAllowed('upload', {
+          label: 'upload this post',
+          allowOnCellular: isVideoUpload,
+        })
+      ) {
+        throw new Error('Please use Wi-Fi to upload this post.');
+      }
       const nameGuessRaw =
         asset.fileName || String(asset.uri || '').split('/').pop() || 'file';
       const sanitizedBase = String(nameGuessRaw)
@@ -13138,7 +13254,7 @@ type CommandCentreSection =
           : 'document',
       };
     },
-    [],
+    [ensureNetworkActionAllowed],
   );
 
   const handleUnifiedPost = async () => {
@@ -13243,6 +13359,9 @@ type CommandCentreSection =
 
         if (!mediaIsVisual || mediaIsAudio) {
           // Handle document/generic file post directly (without media editor).
+          if (!ensureNetworkActionAllowed('upload', { label: 'upload this file' })) {
+            return;
+          }
           let storageMod: any = null;
           let firestoreMod: any = null;
           let authMod: any = null;
@@ -13398,6 +13517,9 @@ type CommandCentreSection =
         const uid = a.currentUser?.uid;
         if (!uid) {
           Alert.alert('Sign in required', 'Please sign in to post audio.');
+          return;
+        }
+        if (!ensureNetworkActionAllowed('upload', { label: 'upload this audio post' })) {
           return;
         }
 
@@ -15348,6 +15470,15 @@ type CommandCentreSection =
             : isVideoAsset(capturedMedia)
             ? 'video/mp4'
             : 'image/jpeg';
+        if (
+          !ensureNetworkActionAllowed('upload', {
+            label: 'upload this post',
+            allowOnCellular: uploadContentType.startsWith('video/'),
+          })
+        ) {
+          setReleasing(false);
+          return;
+        }
                     
         await storageMod()
           .ref(filePath)
@@ -15396,6 +15527,10 @@ type CommandCentreSection =
             if (!audioLocal) {
               console.warn('Skipping audio upload: empty local audio path');
             } else {
+              if (!ensureNetworkActionAllowed('upload', { label: 'upload this audio track' })) {
+                setReleasing(false);
+                return;
+              }
               const audioNameGuess = (attachedAudio.name || 'track').replace(
                 /[^A-Za-z0-9._-]/g,
                 '_',
@@ -23162,9 +23297,53 @@ const DirectCallModal = ({
     return (hash % 2147483646) + 1;
   }, [call?.calleeUid, call?.callerUid, role]);
 
-  const applyRtcQualityProfile = useCallback((_engine: any, _mode: DirectCallMode) => {
-    // Keep direct call preview/render sizing untouched.
-  }, []);
+  const performancePolicy = useMemo(() => {
+    const cellularMode = !isWifi || !!dataSaver?.cellular;
+    const bridgeBitrate = Number(bridge?.liveCellularMaxBitrate || 700000);
+    const effectiveDataSaver =
+      !!dataSaver?.enabled || (cellularMode && !!bridge?.dataSaverDefaultOnCell);
+    return {
+      liveVideoBitrate: cellularMode
+        ? Math.min(bridgeBitrate, effectiveDataSaver ? 420000 : 700000)
+        : 1400000,
+      liveDimensions:
+        cellularMode && effectiveDataSaver
+          ? { width: 640, height: 360 }
+          : { width: 960, height: 540 },
+      liveFrameRate: cellularMode && effectiveDataSaver ? 15 : 24,
+    };
+  }, [
+    bridge?.dataSaverDefaultOnCell,
+    bridge?.liveCellularMaxBitrate,
+    dataSaver?.cellular,
+    dataSaver?.enabled,
+    isWifi,
+  ]);
+
+  const applyRtcQualityProfile = useCallback((engine: any, mode: DirectCallMode) => {
+    if (!engine || mode !== 'video') return;
+    const config = {
+      dimensions: performancePolicy.liveDimensions,
+      frameRate: performancePolicy.liveFrameRate,
+      minFrameRate: Math.max(10, performancePolicy.liveFrameRate - 5),
+      bitrate: performancePolicy.liveVideoBitrate,
+      minBitrate: Math.max(160000, Math.floor(performancePolicy.liveVideoBitrate * 0.55)),
+      orientationMode: Agora?.OrientationMode?.OrientationModeAdaptive ?? 0,
+      degradationPreference:
+        Agora?.DegradationPreference?.MaintainBalanced ??
+        Agora?.DegradationPreference?.MaintainQuality ??
+        2,
+    };
+    try {
+      engine.setVideoEncoderConfiguration?.(config);
+    } catch {}
+  }, [
+    Agora?.DegradationPreference,
+    Agora?.OrientationMode,
+    performancePolicy.liveDimensions,
+    performancePolicy.liveFrameRate,
+    performancePolicy.liveVideoBitrate,
+  ]);
 
   useEffect(() => {
     if (!visible || !call?.id || !Agora || !appId) return;
@@ -24391,6 +24570,28 @@ const LiveStreamModal = ({
   const [registeredParticipantRtcUids, setRegisteredParticipantRtcUids] =
     useState<number[]>([]);
   const MAX_HERE_NOW_SCAN = 200;
+  const performancePolicy = useMemo(() => {
+    const cellularMode = !isWifi || !!dataSaver?.cellular;
+    const bridgeBitrate = Number(bridge?.liveCellularMaxBitrate || 700000);
+    const effectiveDataSaver =
+      !!dataSaver?.enabled || (cellularMode && !!bridge?.dataSaverDefaultOnCell);
+    return {
+      liveVideoBitrate: cellularMode
+        ? Math.min(bridgeBitrate, effectiveDataSaver ? 420000 : 700000)
+        : 1400000,
+      liveDimensions:
+        cellularMode && effectiveDataSaver
+          ? { width: 640, height: 360 }
+          : { width: 960, height: 540 },
+      liveFrameRate: cellularMode && effectiveDataSaver ? 15 : 24,
+    };
+  }, [
+    bridge?.dataSaverDefaultOnCell,
+    bridge?.liveCellularMaxBitrate,
+    dataSaver?.cellular,
+    dataSaver?.enabled,
+    isWifi,
+  ]);
   const fetchJsonFromCandidateUrls = useCallback(
     async (
       rawUrl: string,
@@ -24464,9 +24665,30 @@ const LiveStreamModal = ({
         .delete();
     } catch {}
   }, [liveDocId]);
-  const applyLiveQualityProfile = useCallback((_engine: any) => {
-    // Keep Drift camera at SDK defaults to avoid zoom/crop-like framing.
-  }, []);
+  const applyLiveQualityProfile = useCallback((engine: any) => {
+    if (!engine) return;
+    const config = {
+      dimensions: performancePolicy.liveDimensions,
+      frameRate: performancePolicy.liveFrameRate,
+      minFrameRate: Math.max(10, performancePolicy.liveFrameRate - 5),
+      bitrate: performancePolicy.liveVideoBitrate,
+      minBitrate: Math.max(180000, Math.floor(performancePolicy.liveVideoBitrate * 0.55)),
+      orientationMode: Agora?.OrientationMode?.OrientationModeAdaptive ?? 0,
+      degradationPreference:
+        Agora?.DegradationPreference?.MaintainBalanced ??
+        Agora?.DegradationPreference?.MaintainQuality ??
+        2,
+    };
+    try {
+      engine.setVideoEncoderConfiguration?.(config);
+    } catch {}
+  }, [
+    Agora?.DegradationPreference,
+    Agora?.OrientationMode,
+    performancePolicy.liveDimensions,
+    performancePolicy.liveFrameRate,
+    performancePolicy.liveVideoBitrate,
+  ]);
   const ensureDriftJoinPermissions = useCallback(async () => {
     if (Platform.OS !== 'android') return true;
     try {
