@@ -5644,7 +5644,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       let mediaPath: string | null = null;
 
       if (noticeAdMedia?.uri) {
-        if (!ensureNetworkActionAllowed('upload', { label: 'upload this advert' })) {
+        if (
+          !(await ensureNetworkActionAllowed('upload', {
+            label: 'upload this advert',
+            kind: inferTransferKind({
+              mimeType: noticeAdMedia.type,
+              fileName: noticeAdMedia.fileName,
+              url: noticeAdMedia.uri,
+            }),
+            localPath: noticeAdMedia.uri,
+          }))
+        ) {
           return;
         }
         let localPath = String(noticeAdMedia.uri);
@@ -5838,7 +5848,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (!uid) {
         throw new Error('Please sign in to upload a profile photo.');
       }
-      if (!ensureNetworkActionAllowed('upload', { label: 'upload your profile photo' })) {
+      if (
+        !(await ensureNetworkActionAllowed('upload', {
+          label: 'upload your profile photo',
+          kind: 'photos',
+          localPath: uri,
+        }))
+      ) {
         throw new Error('Please use Wi-Fi to upload your profile photo.');
       }
 
@@ -6038,6 +6054,20 @@ type CommandCentreSection =
       wifiOnlyDownloads: bridge.wifiOnlyHD,
       autoplayOnWifiOnly: bridge.autoplayCellular !== 'full',
       thumbnailsOnlyInFeed: bridge.autoplayCellular === 'off',
+      downloadOnWifi:
+        dataSaver.downloadOnWifi || {
+          photos: true,
+          videos: true,
+          audio: true,
+          documents: true,
+        },
+      downloadOnCellular:
+        dataSaver.downloadOnCellular || {
+          photos: true,
+          videos: false,
+          audio: true,
+          documents: false,
+        },
       maxResolution:
         bridge.thumbQuality === 'high'
           ? 'high'
@@ -8314,7 +8344,17 @@ type CommandCentreSection =
               .replace(/^_+|_+$/g, '')
               .slice(0, 42) || 'splashline';
             const fileName = `SplashLine_${safeBase}_${Date.now()}.${inferredExt}`;
-            if (!ensureNetworkActionAllowed('download', { label: 'save this post' })) {
+            if (
+              !(await ensureNetworkActionAllowed('download', {
+                label: 'save this post',
+                kind: inferTransferKind({
+                  mimeType: waveOptionsTarget.mediaType,
+                  fileName,
+                  url: downloadUrl,
+                }),
+                allowOnCellular: true,
+              }))
+            ) {
               return;
             }
             const ok = await downloadWave(
@@ -9858,6 +9898,20 @@ type CommandCentreSection =
     };
   };
 
+  const inferTransferKind = useCallback(
+    (input?: { mimeType?: string | null; fileName?: string | null; url?: string | null }) => {
+      const mime = String(input?.mimeType || '').toLowerCase();
+      const fileName = String(input?.fileName || '').toLowerCase();
+      const url = String(input?.url || '').toLowerCase();
+      const raw = `${mime} ${fileName} ${url}`;
+      if (mime.startsWith('image/') || /\.(jpg|jpeg|png|gif|webp|heic)\b/.test(raw)) return 'photos';
+      if (mime.startsWith('video/') || /\.(mp4|mov|m4v|mkv|avi|webm|3gp)\b/.test(raw)) return 'videos';
+      if (mime.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|flac)\b/.test(raw)) return 'audio';
+      return 'documents';
+    },
+    [],
+  );
+
   const downloadMessageAttachment = async (
     attachmentUrl: string,
     attachmentName?: string | null,
@@ -9865,7 +9919,14 @@ type CommandCentreSection =
   ) => {
     const sourceUrl = String(attachmentUrl || '').trim();
     if (!sourceUrl) return;
-    if (!ensureNetworkActionAllowed('download', { label: 'save this file' })) return;
+    if (
+      !(await ensureNetworkActionAllowed('download', {
+        label: 'save this file',
+        kind: inferTransferKind({ fileName: attachmentName, url: sourceUrl }),
+        allowOnCellular: true,
+      }))
+    )
+      return;
     const key = String(progressKey || sourceUrl);
     if (activeAttachmentDownloads[key]) return;
     setActiveAttachmentDownloads(prev => ({ ...prev, [key]: true }));
@@ -10039,7 +10100,17 @@ type CommandCentreSection =
     let attachmentName: string | null = null;
 
     if (normalizedAttachment?.uri && storageMod) {
-      if (!ensureNetworkActionAllowed('upload', { label: 'upload this file' })) {
+      if (
+        !(await ensureNetworkActionAllowed('upload', {
+          label: 'upload this file',
+          kind: inferTransferKind({
+            mimeType: normalizedAttachment.type,
+            fileName: normalizedAttachment.fileName,
+            url: normalizedAttachment.uri,
+          }),
+          localPath: normalizedAttachment.uri,
+        }))
+      ) {
         throw new Error('Please use Wi-Fi to upload this file.');
       }
       const nameGuessRaw = normalizedAttachment.fileName || 'attachment';
@@ -12335,29 +12406,93 @@ type CommandCentreSection =
         .set(updated, { merge: true });
     } catch {}
   };
-  const ensureNetworkActionAllowed = useCallback(
+  const showNetworkOverridePrompt = useCallback(
     (
+      title: string,
+      message: string,
+      proceedText: string = 'Continue',
+    ) =>
+      new Promise<boolean>(resolve => {
+        Alert.alert(title, message, [
+          { text: 'Use Wi-Fi', style: 'cancel', onPress: () => resolve(false) },
+          { text: proceedText, onPress: () => resolve(true) },
+        ]);
+      }),
+    [],
+  );
+  const ensureNetworkActionAllowed = useCallback(
+    async (
       mode: 'upload' | 'download',
-      options?: { allowOnCellular?: boolean; label?: string },
+      options?: {
+        allowOnCellular?: boolean;
+        label?: string;
+        kind?: 'photos' | 'videos' | 'audio' | 'documents';
+        localPath?: string | null;
+      },
     ) => {
       const label = options?.label || (mode === 'upload' ? 'upload this' : 'download this');
       if (isOffline) {
         Alert.alert('No Internet', 'No internet right now. Please try again.');
         return false;
       }
+      const kind = options?.kind || 'documents';
+      const onCellular = performancePolicy.cellularMode;
+      if (mode === 'download') {
+        const rules = onCellular ? dataSaver.downloadOnCellular : dataSaver.downloadOnWifi;
+        if (!rules?.[kind]) {
+          return showNetworkOverridePrompt(
+            'Download on mobile data?',
+            `Your settings are set to avoid ${kind} downloads on ${onCellular ? 'mobile data' : 'Wi-Fi'}. Continue anyway?`,
+            'Download now',
+          );
+        }
+      }
       if (
+        onCellular &&
         performancePolicy.restrictHeavyTransfers &&
         !options?.allowOnCellular
       ) {
-        Alert.alert(
-          mode === 'upload' ? 'Upload Paused' : 'Download Paused',
-          `To save your data, please use Wi-Fi to ${label}.`,
+        return showNetworkOverridePrompt(
+          mode === 'upload' ? 'Use mobile data?' : 'Download on mobile data?',
+          `To save your data, we recommend Wi-Fi to ${label}. Continue anyway?`,
+          mode === 'upload' ? 'Upload now' : 'Download now',
         );
-        return false;
+      }
+      if (mode === 'upload' && onCellular && options?.localPath) {
+        try {
+          const fsMod = RNFS || require('react-native-fs');
+          const stat = await fsMod.stat(String(options.localPath).replace(/^file:\/\//, ''));
+          const bytes = Number(stat?.size || 0);
+          const sizeMb = bytes / (1024 * 1024);
+          const dangerLimitMb =
+            kind === 'videos'
+              ? 25
+              : kind === 'documents'
+              ? 15
+              : kind === 'audio'
+              ? 12
+              : 8;
+          if (sizeMb >= dangerLimitMb) {
+            return showNetworkOverridePrompt(
+              'Large file on mobile data',
+              `This ${kind === 'photos' ? 'photo' : kind.slice(0, -1)} is about ${Math.round(
+                sizeMb,
+              )} MB. Wi-Fi is safer, but you can still continue.`,
+              mode === 'upload' ? 'Upload now' : 'Continue',
+            );
+          }
+        } catch {}
       }
       return true;
     },
-    [isOffline, performancePolicy.restrictHeavyTransfers],
+    [
+      dataSaver.downloadOnCellular,
+      dataSaver.downloadOnWifi,
+      isOffline,
+      performancePolicy.cellularMode,
+      performancePolicy.restrictHeavyTransfers,
+      showNetworkOverridePrompt,
+    ],
   );
                     
   const shareProfile = async () => {
@@ -12663,7 +12798,13 @@ type CommandCentreSection =
         // Proceed to save Firestore profile with the same URI (may be local-only)
       } else if (storageMod && finalPhotoUrl && !isHttp(finalPhotoUrl)) {
         // Upload local file to Firebase Storage and use a public download URL so others can view it
-        if (!ensureNetworkActionAllowed('upload', { label: 'upload your profile photo' })) {
+        if (
+          !(await ensureNetworkActionAllowed('upload', {
+            label: 'upload your profile photo',
+            kind: 'photos',
+            localPath: finalPhotoUrl,
+          }))
+        ) {
           return;
         }
         let localPath = String(finalPhotoUrl);
@@ -13192,10 +13333,16 @@ type CommandCentreSection =
       const mimeType = String(asset.type || 'application/octet-stream');
       const isVideoUpload = mimeType.startsWith('video/');
       if (
-        !ensureNetworkActionAllowed('upload', {
+        !(await ensureNetworkActionAllowed('upload', {
           label: 'upload this post',
           allowOnCellular: isVideoUpload,
-        })
+          kind: inferTransferKind({
+            mimeType,
+            fileName: asset.fileName,
+            url: asset.uri,
+          }),
+          localPath: asset.uri,
+        }))
       ) {
         throw new Error('Please use Wi-Fi to upload this post.');
       }
@@ -13359,7 +13506,17 @@ type CommandCentreSection =
 
         if (!mediaIsVisual || mediaIsAudio) {
           // Handle document/generic file post directly (without media editor).
-          if (!ensureNetworkActionAllowed('upload', { label: 'upload this file' })) {
+          if (
+            !(await ensureNetworkActionAllowed('upload', {
+              label: 'upload this file',
+              kind: inferTransferKind({
+                mimeType: singleMedia.type,
+                fileName: singleMedia.fileName,
+                url: singleMedia.uri,
+              }),
+              localPath: singleMedia.uri,
+            }))
+          ) {
             return;
           }
           let storageMod: any = null;
@@ -13519,7 +13676,13 @@ type CommandCentreSection =
           Alert.alert('Sign in required', 'Please sign in to post audio.');
           return;
         }
-        if (!ensureNetworkActionAllowed('upload', { label: 'upload this audio post' })) {
+        if (
+          !(await ensureNetworkActionAllowed('upload', {
+            label: 'upload this audio post',
+            kind: 'audio',
+            localPath: unifiedPostAudio.uri,
+          }))
+        ) {
           return;
         }
 
@@ -15471,10 +15634,16 @@ type CommandCentreSection =
             ? 'video/mp4'
             : 'image/jpeg';
         if (
-          !ensureNetworkActionAllowed('upload', {
+          !(await ensureNetworkActionAllowed('upload', {
             label: 'upload this post',
             allowOnCellular: uploadContentType.startsWith('video/'),
-          })
+            kind: inferTransferKind({
+              mimeType: uploadContentType,
+              fileName: capturedMedia.fileName,
+              url: capturedMedia.uri,
+            }),
+            localPath: uploadPath,
+          }))
         ) {
           setReleasing(false);
           return;
@@ -15527,7 +15696,13 @@ type CommandCentreSection =
             if (!audioLocal) {
               console.warn('Skipping audio upload: empty local audio path');
             } else {
-              if (!ensureNetworkActionAllowed('upload', { label: 'upload this audio track' })) {
+              if (
+                !(await ensureNetworkActionAllowed('upload', {
+                  label: 'upload this audio track',
+                  kind: 'audio',
+                  localPath: audioLocal,
+                }))
+              ) {
                 setReleasing(false);
                 return;
               }

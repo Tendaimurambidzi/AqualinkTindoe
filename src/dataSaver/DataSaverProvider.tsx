@@ -8,6 +8,18 @@ type DataSaverState = {
   thumbnailsOnlyInFeed: boolean;
   maxResolution: 'low'|'med'|'high';
   wifiOnlyDownloads: boolean;
+  downloadOnWifi: {
+    photos: boolean;
+    videos: boolean;
+    audio: boolean;
+    documents: boolean;
+  };
+  downloadOnCellular: {
+    photos: boolean;
+    videos: boolean;
+    audio: boolean;
+    documents: boolean;
+  };
   mobileDataCapMB: number;
   preferModernCodec: boolean;
   cellular: boolean;
@@ -24,6 +36,18 @@ export function DataSaverProvider({ children }: { children: React.ReactNode }) {
     thumbnailsOnlyInFeed: true,
     maxResolution: 'low',
     wifiOnlyDownloads: true,
+    downloadOnWifi: {
+      photos: true,
+      videos: true,
+      audio: true,
+      documents: true,
+    },
+    downloadOnCellular: {
+      photos: true,
+      videos: false,
+      audio: true,
+      documents: false,
+    },
     mobileDataCapMB: 25,
     preferModernCodec: true,
     cellular: false,
@@ -51,6 +75,8 @@ export function DataSaverProvider({ children }: { children: React.ReactNode }) {
         thumbnailsOnlyInFeed: state.thumbnailsOnlyInFeed,
         maxResolution: state.maxResolution,
         wifiOnlyDownloads: state.wifiOnlyDownloads,
+        downloadOnWifi: state.downloadOnWifi,
+        downloadOnCellular: state.downloadOnCellular,
         mobileDataCapMB: state.mobileDataCapMB,
         preferModernCodec: state.preferModernCodec,
       })
@@ -61,6 +87,8 @@ export function DataSaverProvider({ children }: { children: React.ReactNode }) {
     state.thumbnailsOnlyInFeed,
     state.maxResolution,
     state.wifiOnlyDownloads,
+    state.downloadOnWifi,
+    state.downloadOnCellular,
     state.mobileDataCapMB,
     state.preferModernCodec,
   ]);
