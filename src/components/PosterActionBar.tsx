@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
   },
   actionIcon: {
     fontSize: 18,
-    color: '#7A0008',
+    color: '#8D0000',
     fontWeight: 'bold',
     textShadowColor: 'rgba(0,0,0,0.72)',
     textShadowOffset: { width: 0, height: 1 },
@@ -525,7 +525,7 @@ const styles = StyleSheet.create({
   },
   actionLabel: {
     fontSize: 13,
-    color: '#7A0008',
+    color: '#8D0000',
     marginRight: 2,
     fontWeight: '800',
     textShadowColor: 'rgba(0,0,0,0.82)',
@@ -542,11 +542,11 @@ const styles = StyleSheet.create({
     color: '#6FD6FF',
   },
   whiteCount: {
-    color: '#7A0008',
+    color: '#8D0000',
   },
   actionIconSmall: {
     fontSize: 16,
-    color: '#7A0008',
+    color: '#8D0000',
     marginRight: 2,
     textShadowColor: 'rgba(0,0,0,0.72)',
     textShadowOffset: { width: 0, height: 1 },
@@ -681,7 +681,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#333',
   },
   hugButton: {
-    backgroundColor: '#ff4444',
+    backgroundColor: '#8D0000',
     borderRadius: 8,
     padding: 12,
     alignItems: 'center',

@@ -168,7 +168,17 @@ type SharedDocInkPoint = {
   y: number;
   size: number;
   color: string;
+  strokeId?: string;
 };
+
+type SharedDocShareStage =
+  | 'choosing'
+  | 'selected'
+  | 'uploading'
+  | 'converting'
+  | 'ready'
+  | 'error'
+  | null;
 
 type PremiumRoomMeta = {
   title: string;
@@ -221,7 +231,7 @@ const formatTimestamp = (value: number): string => {
 
 const DEFAULT_PRESENTATION_SLIDE_SECONDS = 10;
 const SHARED_DOC_MAX_INK_POINTS = 480;
-const SHARED_DOC_INK_POINT_SPACING_PX = 6;
+const SHARED_DOC_INK_POINT_SPACING_PX = 3;
 const SHARED_DOC_ERASER_RADIUS_PX = 52;
 
 const formatCountdown = (diffMs: number): string => {
@@ -322,6 +332,7 @@ const FreshDriftExpoModal = ({
   const reactionTrayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const roomRef = useRef<{ id: string; channel: string; title: string; hostUid: string | null } | null>(null);
   const activeInkPointRef = useRef<{ x: number; y: number } | null>(null);
+  const activeInkStrokeIdRef = useRef<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState<string>('Ready');
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -359,6 +370,9 @@ const FreshDriftExpoModal = ({
   const [showDocsPanel, setShowDocsPanel] = useState(false);
   const [sharedDocs, setSharedDocs] = useState<SharedPdfDoc[]>([]);
   const [currentSharedDocId, setCurrentSharedDocId] = useState<string | null>(null);
+  const [currentSharedDocStage, setCurrentSharedDocStage] = useState<SharedDocShareStage>(null);
+  const [currentSharedDocPreviewTitle, setCurrentSharedDocPreviewTitle] = useState<string | null>(null);
+  const [currentSharedDocPreviewKind, setCurrentSharedDocPreviewKind] = useState<string | null>(null);
   const [currentSharedDocPage, setCurrentSharedDocPage] = useState(0);
   const [currentSharedDocSlideShow, setCurrentSharedDocSlideShow] = useState(false);
   const [currentSharedDocSlideSeconds, setCurrentSharedDocSlideSeconds] = useState(
@@ -418,6 +432,7 @@ const FreshDriftExpoModal = ({
   const mePhoto = me?.photoURL || null;
   const isPremiumRoom = !!roomPremiumShowId;
   const isPremiumHost = !!(roomPremiumShowId && roomHostUid && meUid && roomHostUid === meUid);
+  const resolvedPremiumShowId = roomPremiumShowId || premiumShowId || null;
   const canControlCurrentSharedDoc = useMemo(
     () =>
       !!(
@@ -465,6 +480,71 @@ const FreshDriftExpoModal = ({
     () => !!currentSharedDocId && !canControlCurrentSharedDoc,
     [canControlCurrentSharedDoc, currentSharedDocId],
   );
+  const sharedDocProgressCard = useMemo(() => {
+    if (!sharedDocStatusText || activeDoc) return null;
+    const stage = currentSharedDocStage || (currentSharedDocId ? 'uploading' : 'selected');
+    const title = String(currentSharedDocPreviewTitle || '').trim();
+    const kind = String(currentSharedDocPreviewKind || '').trim().toUpperCase();
+    let detail = sharedDocStatusText;
+    if (stage === 'choosing') detail = `${meUid === roomHostUid ? 'Choosing a file...' : sharedDocStatusText}`;
+    if (stage === 'selected' && title) detail = `Selected ${title}${kind ? ` (${kind})` : ''}`;
+    if (stage === 'uploading' && title) detail = `Uploading ${title}${kind ? ` (${kind})` : ''}`;
+    if (stage === 'converting' && title) detail = `Converting ${title}${kind ? ` (${kind})` : ''}`;
+    if (stage === 'ready' && title) detail = `${title} is ready to open`;
+    return {
+      title: title || 'Shared file',
+      detail,
+    };
+  }, [
+    activeDoc,
+    currentSharedDocId,
+    currentSharedDocPreviewKind,
+    currentSharedDocPreviewTitle,
+    currentSharedDocStage,
+    meUid,
+    roomHostUid,
+    sharedDocStatusText,
+  ]);
+  const sharedDocInkSegments = useMemo(() => {
+    const segments: Array<{
+      id: string;
+      left: number;
+      top: number;
+      width: number;
+      angle: string;
+      color: string;
+      thickness: number;
+    }> = [];
+    for (let index = 1; index < sharedDocInkPoints.length; index += 1) {
+      const previous = sharedDocInkPoints[index - 1];
+      const current = sharedDocInkPoints[index];
+      const sameStroke =
+        previous?.strokeId && current?.strokeId
+          ? previous.strokeId === current.strokeId
+          : Math.abs(previous.x - current.x) * pdfFrameWidth <= 18 &&
+            Math.abs(previous.y - current.y) * pdfFrameHeight <= 18;
+      if (!sameStroke) continue;
+      const fromX = previous.x * pdfFrameWidth;
+      const fromY = previous.y * pdfFrameHeight;
+      const toX = current.x * pdfFrameWidth;
+      const toY = current.y * pdfFrameHeight;
+      const deltaX = toX - fromX;
+      const deltaY = toY - fromY;
+      const width = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      if (width < 1) continue;
+      const thickness = Math.max(previous.size, current.size);
+      segments.push({
+        id: `${previous.id}_${current.id}`,
+        left: (fromX + toX) / 2 - width / 2,
+        top: (fromY + toY) / 2 - thickness / 2,
+        width,
+        angle: `${(Math.atan2(deltaY, deltaX) * 180) / Math.PI}deg`,
+        color: current.color || previous.color || '#E11D48',
+        thickness,
+      });
+    }
+    return segments;
+  }, [pdfFrameHeight, pdfFrameWidth, sharedDocInkPoints]);
   const pdfDisplayMetrics = useMemo(() => {
     const frameWidth = Math.max(0, pdfFrameWidth - 20);
     const frameHeight = Math.max(0, pdfFrameHeight - 20);
@@ -524,6 +604,9 @@ const FreshDriftExpoModal = ({
     setSharedDocs([]);
     setSharedDocStatusText(null);
     setCurrentSharedDocId(null);
+    setCurrentSharedDocStage(null);
+    setCurrentSharedDocPreviewTitle(null);
+    setCurrentSharedDocPreviewKind(null);
     setCurrentSharedDocPage(0);
     setCurrentSharedDocSlideShow(false);
     setDocBusy(false);
@@ -552,6 +635,8 @@ const FreshDriftExpoModal = ({
     seenReactionIdsRef.current = new Set();
     handledSoundEventIdsRef.current = new Set();
     lastAutoOpenedDocIdRef.current = null;
+    activeInkPointRef.current = null;
+    activeInkStrokeIdRef.current = null;
     if (reactionTrayTimerRef.current) {
       clearTimeout(reactionTrayTimerRef.current);
       reactionTrayTimerRef.current = null;
@@ -796,6 +881,9 @@ const FreshDriftExpoModal = ({
     if (canControlCurrentSharedDoc && activeDoc && currentSharedDocId && activeDoc.id === currentSharedDocId) {
       void pushSharedDocState({
         docId: null,
+        shareStage: null,
+        shareTitle: null,
+        shareKind: null,
         slideShow: false,
         marker: null,
         zoom: 1,
@@ -811,6 +899,9 @@ const FreshDriftExpoModal = ({
   const pushSharedDocState = useCallback(
     async (next: {
       docId?: string | null;
+      shareStage?: SharedDocShareStage;
+      shareTitle?: string | null;
+      shareKind?: string | null;
       page?: number;
       slideShow?: boolean;
       slideSeconds?: number;
@@ -828,6 +919,15 @@ const FreshDriftExpoModal = ({
       };
       if (typeof next.docId !== 'undefined') {
         payload.currentSharedDocId = next.docId;
+      }
+      if (typeof next.shareStage !== 'undefined') {
+        payload.currentSharedDocStage = next.shareStage || firestore.FieldValue.delete();
+      }
+      if (typeof next.shareTitle !== 'undefined') {
+        payload.currentSharedDocPreviewTitle = next.shareTitle || firestore.FieldValue.delete();
+      }
+      if (typeof next.shareKind !== 'undefined') {
+        payload.currentSharedDocPreviewKind = next.shareKind || firestore.FieldValue.delete();
       }
       if (typeof next.page === 'number') {
         payload.currentSharedDocPage = Math.max(0, next.page);
@@ -864,6 +964,7 @@ const FreshDriftExpoModal = ({
               y: Math.max(0, Math.min(1, Number(point.y))),
               size: Math.max(2, Math.min(12, Number(point.size || 4))),
               color: String(point.color || '#EF4444'),
+              strokeId: point.strokeId ? String(point.strokeId) : null,
             }))
           : [];
       }
@@ -943,6 +1044,10 @@ const FreshDriftExpoModal = ({
       }
       if (currentPresentationTool === 'pen') {
         const lastPoint = activeInkPointRef.current;
+        const strokeId =
+          activeInkStrokeIdRef.current ||
+          `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+        activeInkStrokeIdRef.current = strokeId;
         const distancePx = lastPoint
           ? Math.sqrt(
               Math.pow((normalizedX - lastPoint.x) * pdfFrameWidth, 2) +
@@ -963,6 +1068,7 @@ const FreshDriftExpoModal = ({
             y: pointY,
             size: 6,
             color: '#E11D48',
+            strokeId,
           });
         }
         const nextPoints = [...sharedDocInkPoints, ...appendedPoints].slice(-SHARED_DOC_MAX_INK_POINTS);
@@ -994,6 +1100,7 @@ const FreshDriftExpoModal = ({
 
   useEffect(() => {
     activeInkPointRef.current = null;
+    activeInkStrokeIdRef.current = null;
   }, [currentPresentationTool, currentSharedDocId]);
 
   const pauseSharedDocSlideShow = useCallback(() => {
@@ -1059,6 +1166,9 @@ const FreshDriftExpoModal = ({
         .doc(roomId)
         .set(
           {
+            currentSharedDocStage: 'choosing',
+            currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
+            currentSharedDocPreviewKind: firestore.FieldValue.delete(),
             currentSharedDocStatusText: `${meName} is choosing a file...`,
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
@@ -1094,6 +1204,20 @@ const FreshDriftExpoModal = ({
         : /\.doc$/i.test(fileName)
         ? 'doc'
         : 'pdf';
+      const previewTitle = fileName.replace(/\.(pdf|ppt|pptx|doc|docx)$/i, '');
+      await firestore()
+        .collection('live')
+        .doc(roomId)
+        .set(
+          {
+            currentSharedDocStage: 'selected',
+            currentSharedDocPreviewTitle: previewTitle,
+            currentSharedDocPreviewKind: sourceKind,
+            currentSharedDocStatusText: `${meName} selected ${previewTitle}`,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
       const uploadPath = await normalizePdfUploadPath(
         localUri,
         fileName,
@@ -1105,7 +1229,7 @@ const FreshDriftExpoModal = ({
       const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
       const sharedDocPayload = {
         id: docRef.id,
-        title: fileName.replace(/\.(pdf|ppt|pptx|doc|docx)$/i, ''),
+        title: previewTitle,
         fileName,
         downloadUrl: '',
         storagePath: isPdf ? storagePath : '',
@@ -1136,6 +1260,9 @@ const FreshDriftExpoModal = ({
         .set(
           {
             currentSharedDocId: docRef.id,
+            currentSharedDocStage: 'uploading',
+            currentSharedDocPreviewTitle: sharedDocPayload.title,
+            currentSharedDocPreviewKind: sourceKind,
             currentSharedDocPage: 0,
             currentSharedDocSlideShow: false,
             currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
@@ -1180,6 +1307,9 @@ const FreshDriftExpoModal = ({
           .doc(roomId)
           .set(
             {
+              currentSharedDocStage: 'ready',
+              currentSharedDocPreviewTitle: sharedDocPayload.title,
+              currentSharedDocPreviewKind: sourceKind,
               currentSharedDocStatusText: `${meName} shared ${sharedDocPayload.title}`,
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
@@ -1199,6 +1329,9 @@ const FreshDriftExpoModal = ({
           .doc(roomId)
           .set(
             {
+              currentSharedDocStage: 'converting',
+              currentSharedDocPreviewTitle: sharedDocPayload.title,
+              currentSharedDocPreviewKind: sourceKind,
               currentSharedDocStatusText: `${meName} is converting ${sharedDocPayload.title}`,
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
@@ -1232,6 +1365,9 @@ const FreshDriftExpoModal = ({
             .doc(roomId)
             .set(
               {
+                currentSharedDocStage: 'error',
+                currentSharedDocPreviewTitle: sharedDocPayload.title,
+                currentSharedDocPreviewKind: sourceKind,
                 currentSharedDocStatusText: `${meName}'s file could not be converted`,
                 updatedAt: firestore.FieldValue.serverTimestamp(),
               },
@@ -1249,6 +1385,9 @@ const FreshDriftExpoModal = ({
         .doc(roomId)
         .set(
           {
+            currentSharedDocStage: firestore.FieldValue.delete(),
+            currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
+            currentSharedDocPreviewKind: firestore.FieldValue.delete(),
             currentSharedDocStatusText: null,
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
@@ -1305,6 +1444,9 @@ const FreshDriftExpoModal = ({
         .set(
           {
             currentSharedDocId: docRef.id,
+            currentSharedDocStage: 'ready',
+            currentSharedDocPreviewTitle: title,
+            currentSharedDocPreviewKind: 'blank',
             currentSharedDocPage: 0,
             currentSharedDocSlideShow: false,
             currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
@@ -1354,6 +1496,9 @@ const FreshDriftExpoModal = ({
       lastAutoOpenedDocIdRef.current = null;
       await pushSharedDocState({
         docId: null,
+        shareStage: null,
+        shareTitle: null,
+        shareKind: null,
         slideShow: false,
         marker: null,
         statusText: null,
@@ -1398,6 +1543,9 @@ const FreshDriftExpoModal = ({
               status: 'ended',
               endedAt: firestore.FieldValue.serverTimestamp(),
               currentSharedDocId: null,
+              currentSharedDocStage: firestore.FieldValue.delete(),
+              currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
+              currentSharedDocPreviewKind: firestore.FieldValue.delete(),
               currentSharedDocStatusText: null,
               currentSharedDocPage: 0,
               currentSharedDocSlideShow: false,
@@ -1582,7 +1730,7 @@ const FreshDriftExpoModal = ({
   }, [hydrateRoom, meUid, pendingPremiumJoin, visible]);
 
   useEffect(() => {
-    if (!visible || !roomPremiumShowId) return;
+    if (!visible || !resolvedPremiumShowId) return;
     setClockNowMs(Date.now());
     const timer = setInterval(() => {
       setClockNowMs(Date.now());
@@ -1590,16 +1738,16 @@ const FreshDriftExpoModal = ({
     return () => {
       clearInterval(timer);
     };
-  }, [roomPremiumShowId, visible]);
+  }, [resolvedPremiumShowId, visible]);
 
   useEffect(() => {
-    if (!visible || !roomPremiumShowId) {
+    if (!visible || !resolvedPremiumShowId) {
       setPremiumMeta(null);
       return;
     }
     const unsub = firestore()
       .collection('premium_shows')
-      .doc(roomPremiumShowId)
+      .doc(resolvedPremiumShowId)
       .onSnapshot(snap => {
         const data = snap?.data?.() || {};
         const nextTitle = String(data.title || 'Aqua Premium Show');
@@ -1625,15 +1773,67 @@ const FreshDriftExpoModal = ({
         unsub();
       } catch {}
     };
-  }, [roomPremiumShowId, visible]);
+  }, [resolvedPremiumShowId, visible]);
 
   useEffect(() => {
-    if (!visible || !roomPremiumShowId) {
+    if (!visible || !resolvedPremiumShowId || inviteJoinPreset?.liveId || roomId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const premiumSnap = await firestore()
+          .collection('premium_shows')
+          .doc(resolvedPremiumShowId)
+          .get();
+        if (cancelled) return;
+        const premiumData = premiumSnap?.data?.() || {};
+        const premiumHostUid = String(premiumData.hostUid || '').trim();
+        if (premiumHostUid && premiumHostUid === meUid) {
+          return;
+        }
+        const liveSnap = await firestore()
+          .collection('live')
+          .where('premiumShowId', '==', resolvedPremiumShowId)
+          .limit(8)
+          .get();
+        if (cancelled) return;
+        const liveRows = (liveSnap?.docs || []).map(doc => {
+          const data = doc.data() || {};
+          return {
+            liveId: doc.id,
+            status: String(data.status || '').toLowerCase(),
+            updatedAtMs:
+              toMillis(data.updatedAt) || toMillis(data.createdAt) || Date.now(),
+          };
+        });
+        const activeLive =
+          liveRows.find(item => item.status === 'live') ||
+          liveRows
+            .filter(item => item.status !== 'ended' && item.status !== 'cancelled')
+            .sort((a, b) => b.updatedAtMs - a.updatedAtMs)[0] ||
+          null;
+        if (activeLive?.liveId) {
+          await hydrateRoom(activeLive.liveId);
+        } else {
+          setStatusText('Waiting for the host to open Aqua Premium.');
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setStatusText(String(error?.message || 'Could not find the Aqua Premium room.'));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateRoom, inviteJoinPreset?.liveId, meUid, resolvedPremiumShowId, roomId, visible]);
+
+  useEffect(() => {
+    if (!visible || !resolvedPremiumShowId) {
       setParticipantTicketLabels({});
       return;
     }
     const unsub = firestore()
-      .collection(`premium_shows/${roomPremiumShowId}/tickets`)
+      .collection(`premium_shows/${resolvedPremiumShowId}/tickets`)
       .onSnapshot(snap => {
         const nextLabels: Record<string, string> = {};
         (snap?.docs || []).forEach(doc => {
@@ -1655,7 +1855,7 @@ const FreshDriftExpoModal = ({
         unsub();
       } catch {}
     };
-  }, [roomPremiumShowId, visible]);
+  }, [resolvedPremiumShowId, visible]);
 
   const startFreshRoom = useCallback(async () => {
     if (!meUid) {
@@ -2010,6 +2210,27 @@ const FreshDriftExpoModal = ({
         setRoomPremiumShowId(data.premiumShowId ? String(data.premiumShowId) : null);
         const currentSharedDocIdValue = String(data.currentSharedDocId || '').trim();
         setCurrentSharedDocId(currentSharedDocIdValue || null);
+        const nextSharedDocStage = String(data.currentSharedDocStage || '').trim().toLowerCase();
+        setCurrentSharedDocStage(
+          nextSharedDocStage === 'choosing' ||
+            nextSharedDocStage === 'selected' ||
+            nextSharedDocStage === 'uploading' ||
+            nextSharedDocStage === 'converting' ||
+            nextSharedDocStage === 'ready' ||
+            nextSharedDocStage === 'error'
+            ? (nextSharedDocStage as SharedDocShareStage)
+            : null,
+        );
+        setCurrentSharedDocPreviewTitle(
+          data.currentSharedDocPreviewTitle
+            ? String(data.currentSharedDocPreviewTitle)
+            : null,
+        );
+        setCurrentSharedDocPreviewKind(
+          data.currentSharedDocPreviewKind
+            ? String(data.currentSharedDocPreviewKind)
+            : null,
+        );
         setCurrentSharedDocPage(Math.max(0, Number(data.currentSharedDocPage || 0)));
         setCurrentSharedDocSlideShow(!!data.currentSharedDocSlideShow);
         setCurrentSharedDocZoom(
@@ -2057,6 +2278,7 @@ const FreshDriftExpoModal = ({
                 y: Math.max(0, Math.min(1, Number(point?.y || 0))),
                 size: Math.max(2, Math.min(12, Number(point?.size || 4))),
                 color: String(point?.color || '#EF4444'),
+                strokeId: point?.strokeId ? String(point.strokeId) : undefined,
               }))
               .slice(-SHARED_DOC_MAX_INK_POINTS)
           : [];
@@ -2695,6 +2917,7 @@ const FreshDriftExpoModal = ({
           style: styles.videoFill,
           canvas: {
             uid,
+            channelId: roomChannel || undefined,
             renderMode: VideoRenderMode?.Fit ?? 2,
           },
         });
@@ -2704,6 +2927,7 @@ const FreshDriftExpoModal = ({
           style: styles.videoFill,
           canvas: {
             uid,
+            channelId: roomChannel || undefined,
             renderMode: VideoRenderMode?.Fit ?? 2,
           },
         });
@@ -2995,6 +3219,16 @@ const FreshDriftExpoModal = ({
                       <Pressable style={[styles.docsShareButton, { marginTop: 8, backgroundColor: '#2563EB' }]} onPress={() => void handleShareBlankDoc()}>
                         <Text style={styles.docsShareButtonText}>Share Blank PDF</Text>
                       </Pressable>
+                      {sharedDocProgressCard ? (
+                        <View style={styles.docsProgressCard}>
+                          <Text style={styles.docsProgressTitle} numberOfLines={1}>
+                            {sharedDocProgressCard.title}
+                          </Text>
+                          <Text style={styles.docsProgressMeta} numberOfLines={2}>
+                            {sharedDocProgressCard.detail}
+                          </Text>
+                        </View>
+                      ) : null}
                     </>
                   ) : null}
                   <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
@@ -3439,6 +3673,24 @@ const FreshDriftExpoModal = ({
                 ) : !docBusy ? (
                   <Text style={styles.docsEmptyText}>PDF preview unavailable.</Text>
                 ) : null}
+                {sharedDocInkSegments.map(segment => (
+                  <View
+                    key={segment.id}
+                    pointerEvents="none"
+                    style={[
+                      styles.pdfInkSegment,
+                      {
+                        left: segment.left,
+                        top: segment.top,
+                        width: segment.width,
+                        height: segment.thickness,
+                        borderRadius: segment.thickness / 2,
+                        backgroundColor: segment.color,
+                        transform: [{ rotate: segment.angle }],
+                      },
+                    ]}
+                  />
+                ))}
                 {sharedDocInkPoints.map(point => (
                   <View
                     key={point.id}
@@ -3482,6 +3734,11 @@ const FreshDriftExpoModal = ({
                     onStartShouldSetResponder={() => true}
                     onMoveShouldSetResponder={() => true}
                     onResponderGrant={event => {
+                      if (currentPresentationTool === 'pen') {
+                        activeInkStrokeIdRef.current = `${Date.now()}_${Math.random()
+                          .toString(36)
+                          .slice(2, 10)}`;
+                      }
                       placePresentationMarker(
                         event.nativeEvent.locationX,
                         event.nativeEvent.locationY,
@@ -3495,9 +3752,11 @@ const FreshDriftExpoModal = ({
                     }}
                     onResponderRelease={() => {
                       activeInkPointRef.current = null;
+                      activeInkStrokeIdRef.current = null;
                     }}
                     onResponderTerminate={() => {
                       activeInkPointRef.current = null;
+                      activeInkStrokeIdRef.current = null;
                     }}
                   />
                 ) : null}
@@ -3907,6 +4166,26 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '900',
+  },
+  docsProgressCard: {
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  docsProgressTitle: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  docsProgressMeta: {
+    color: 'rgba(255,255,255,0.72)',
+    fontSize: 11,
+    marginTop: 4,
+    lineHeight: 15,
   },
   docsEmptyText: {
     color: 'rgba(255,255,255,0.68)',
@@ -4540,6 +4819,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 230, 0, 0.34)',
     borderWidth: 1,
     borderColor: 'rgba(255, 204, 0, 0.72)',
+  },
+  pdfInkSegment: {
+    position: 'absolute',
+    shadowColor: '#000000',
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   pdfInkPoint: {
     position: 'absolute',

@@ -1697,17 +1697,19 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     minHeight: 44,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 14,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: 'center',
   },
   auraVibesBtn: {
-    backgroundColor: '#0A4D7A',
-    borderColor: '#0A4D7A',
+    backgroundColor: '#0EA5D9',
+    borderColor: '#0EA5D9',
   },
   auraCollectionBtn: {
-    backgroundColor: '#7B4A00',
-    borderColor: '#7B4A00',
+    backgroundColor: '#8D0000',
+    borderColor: '#8D0000',
   },
   auraNotificationsBtn: {
     backgroundColor: '#5B2788',
@@ -15993,122 +15995,6 @@ type CommandCentreSection =
           style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
         />
       )}
-      {hereNowFeedAlert && !vibeAlert && (
-        <Animated.View
-          pointerEvents="box-none"
-          style={[
-            styles.driftAlertContainer,
-            {
-              top: (insets.top || 0) + 18,
-              opacity: flickerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.45, 1],
-              }),
-            },
-          ]}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable
-              style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
-              onPress={() =>
-                openMessageThread(hereNowFeedAlert.uid, hereNowFeedAlert.name)
-              }
-            >
-              <Animated.View
-                style={[
-                  styles.driftAlertSignal,
-                  {
-                    backgroundColor: '#00D56A',
-                    opacity: flickerAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.35, 1],
-                    }),
-                  },
-                ]}
-              />
-              <View style={styles.driftAlertAvatar}>
-                {hereNowFeedAlert.photo ? (
-                  <Image
-                    source={{ uri: hereNowFeedAlert.photo }}
-                    style={styles.driftAlertAvatarImage}
-                  />
-                ) : (
-                  <Text style={styles.driftAlertInitials}>
-                    {hereNowFeedAlert.name.charAt(0).toUpperCase()}
-                  </Text>
-                )}
-              </View>
-              <Text style={styles.driftAlertText}>
-                Here Now! {hereNowFeedAlert.name}
-              </Text>
-            </Pressable>
-          </View>
-        </Animated.View>
-      )}
-      {vibeAlert && (
-        <Animated.View
-          pointerEvents="box-none"
-          style={[
-            styles.driftAlertContainer,
-            {
-              opacity: flickerAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.4, 1],
-              }),
-            },
-          ]}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Pressable
-              style={[styles.driftAlertButton, { flex: 1, marginRight: 8 }]}
-              onPress={async () => {
-                await openLiveRequestFlow(
-                  vibeAlert.liveId,
-                  vibeAlert.hostName,
-                  'Drift Expo',
-                );
-                setVibeAlert(null);
-                lastDriftHostRef.current = null;
-                if (driftAlertTimerRef.current) {
-                  clearTimeout(driftAlertTimerRef.current);
-                  driftAlertTimerRef.current = null;
-                }
-              }}
-              hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-              pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
-              android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-            >
-              <Animated.View
-                style={[
-                  styles.driftAlertSignal,
-                  {
-                    backgroundColor: '#00D56A',
-                    opacity: flickerAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.3, 1],
-                    }),
-                  },
-                ]}
-              />
-              <View style={styles.driftAlertAvatar}>
-                {vibeAlert.hostPhoto ? (
-                  <Image
-                    source={{ uri: vibeAlert.hostPhoto }}
-                    style={styles.driftAlertAvatarImage}
-                  />
-                ) : (
-                  <Text style={styles.driftAlertInitials}>
-                    {vibeAlert.hostName.charAt(0).toUpperCase()}
-                  </Text>
-                )}
-              </View>
-              <Text style={styles.driftAlertText}>
-                Open Sea Vibe - {vibeAlert.hostName}
-              </Text>
-            </Pressable>
-          </View>
-        </Animated.View>
-      )}
       {incomingLiveInvite && (
         <Modal
           visible
@@ -16871,12 +16757,16 @@ type CommandCentreSection =
                 <Pressable
                   style={({ pressed }) => [
                     {
-                      backgroundColor: '#00C2FF',
-                      paddingVertical: 12,
-                      paddingHorizontal: 24,
-                      borderRadius: 10,
+                      backgroundColor: '#0EA5D9',
+                      borderColor: '#0EA5D9',
+                      borderWidth: 1,
+                      paddingVertical: 10,
+                      paddingHorizontal: 18,
+                      borderRadius: 999,
                       marginTop: 16,
                       alignSelf: 'center',
+                      minHeight: 42,
+                      justifyContent: 'center',
                     },
                     pressed && {
                       opacity: 0.8,
@@ -16921,7 +16811,7 @@ type CommandCentreSection =
                     }
                   }}
                 >
-                  <Text style={{ color: '#001529', fontWeight: 'bold', fontSize: 16 }}>Save Profile</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>Save Profile</Text>
                 </Pressable>
               </View>
               {/* My Vibes and My Treasure */}
@@ -16950,7 +16840,7 @@ type CommandCentreSection =
                       }}
                     />
                     <Text
-                      style={[styles.logbookActionText, { fontSize: 14, flexShrink: 1 }]}
+                      style={[styles.logbookActionText, { fontSize: 13, flexShrink: 1 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                     >
@@ -16982,7 +16872,7 @@ type CommandCentreSection =
                       }}
                     />
                     <Text
-                      style={[styles.logbookActionText, { fontSize: 14, flexShrink: 1 }]}
+                      style={[styles.logbookActionText, { fontSize: 13, flexShrink: 1 }]}
                       numberOfLines={1}
                       adjustsFontSizeToFit
                     >
@@ -17040,7 +16930,7 @@ type CommandCentreSection =
                   VIBE ALERTS
                 </Text>
                 <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
-                  <Text style={{ color: '#FF4444' }}>NOTIFICATIONS</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + callHistory.length})</Text>
+                  <Text style={{ color: '#8D0000' }}>NOTIFICATIONS</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + callHistory.length})</Text>
                 </Text>
               </View>
 
@@ -17179,7 +17069,6 @@ type CommandCentreSection =
 
                   const messageCount = unifiedNotifications.filter(item => item.type === 'thread').length;
                   const activityCount = unifiedNotifications.filter(item => item.type === 'notification').length;
-                  const callsCount = unifiedNotifications.filter(item => item.type === 'call').length;
                   const query = inboxSearchQuery.trim().toLowerCase();
                   const filteredNotifications = unifiedNotifications.filter(item => {
                     const matchesFilter =
@@ -17223,7 +17112,7 @@ type CommandCentreSection =
                               paddingHorizontal: 10,
                               paddingVertical: 6,
                               borderRadius: 14,
-                              backgroundColor: inboxFilter === 'all' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
+                              backgroundColor: inboxFilter === 'all' ? '#0EA5D9' : 'rgba(14,165,217,0.28)',
                             }}
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
@@ -17236,7 +17125,7 @@ type CommandCentreSection =
                               paddingHorizontal: 10,
                               paddingVertical: 6,
                               borderRadius: 14,
-                              backgroundColor: inboxFilter === 'messages' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
+                              backgroundColor: inboxFilter === 'messages' ? '#8D0000' : 'rgba(141,0,0,0.28)',
                             }}
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
@@ -17249,24 +17138,11 @@ type CommandCentreSection =
                               paddingHorizontal: 10,
                               paddingVertical: 6,
                               borderRadius: 14,
-                              backgroundColor: inboxFilter === 'activity' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
+                              backgroundColor: inboxFilter === 'activity' ? '#0EA5D9' : 'rgba(14,165,217,0.28)',
                             }}
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
                               Activity ({activityCount})
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => setInboxFilter('calls')}
-                            style={{
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              borderRadius: 14,
-                              backgroundColor: inboxFilter === 'calls' ? '#00C2FF' : 'rgba(255,255,255,0.12)',
-                            }}
-                          >
-                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
-                              Calls ({callsCount})
                             </Text>
                           </Pressable>
                         </ScrollView>
@@ -17699,7 +17575,7 @@ type CommandCentreSection =
                           {/* Delete */}
                           <Pressable
                             style={{
-                              backgroundColor: '#FF4444',
+                              backgroundColor: '#8D0000',
                               borderRadius: 6,
                               paddingHorizontal: 10,
                               paddingVertical: 6,
@@ -18828,7 +18704,7 @@ type CommandCentreSection =
                           alignSelf: 'flex-start',
                           paddingHorizontal: 8,
                           paddingVertical: 4,
-                          backgroundColor: '#ff4444',
+                          backgroundColor: '#8D0000',
                           borderRadius: 4,
                         }}
                       >
@@ -19163,7 +19039,7 @@ type CommandCentreSection =
                             </Text>
                           </Pressable>
                           <Pressable
-                            style={[styles.pingButton, { flex: 1, marginLeft: 4, backgroundColor: '#ff4444' }]}
+                            style={[styles.pingButton, { flex: 1, marginLeft: 4, backgroundColor: '#8D0000' }]}
                             onPress={() => {
                               // Reject: remove from crew
                               Alert.alert(
@@ -21652,7 +21528,7 @@ type CommandCentreSection =
                       style={{ 
                         marginTop: 8, 
                         padding: 4, 
-                        backgroundColor: '#ff4444', 
+                        backgroundColor: '#8D0000', 
                         borderRadius: 4 
                       }}
                       android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
