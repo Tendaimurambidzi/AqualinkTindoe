@@ -41,7 +41,7 @@ export async function registerNoticeBoard(data: {
     }
   } catch (error) {
     console.error('Notice Board registration error:', error);
-    Alert.alert('Error', 'Could not submit registration. Please check your connection.');
+    Alert.alert('Error', 'No internet right now. Please try again.');
     return { ok: false, message: 'Network error' };
   }
 }
@@ -94,7 +94,7 @@ export async function registerSchool(data: {
     }
   } catch (error) {
     console.error('School registration error:', error);
-    Alert.alert('Error', 'Could not submit registration. Please check your connection.');
+    Alert.alert('Error', 'No internet right now. Please try again.');
     return { ok: false, message: 'Network error' };
   }
 }
@@ -166,7 +166,7 @@ export async function registerTeacher(data: {
     }
   } catch (error) {
     console.error('Teacher registration error:', error);
-    Alert.alert('Error', 'Could not submit registration. Please check your connection.');
+    Alert.alert('Error', 'No internet right now. Please try again.');
     return { ok: false, message: 'Network error' };
   }
 }
@@ -211,7 +211,7 @@ export async function createLesson(data: {
     }
   } catch (error) {
     console.error('Create lesson error:', error);
-    Alert.alert('Error', 'Could not create lesson. Please check your connection.');
+    Alert.alert('Error', 'No internet right now. Please try again.');
     return { ok: false, message: 'Network error' };
   }
 }

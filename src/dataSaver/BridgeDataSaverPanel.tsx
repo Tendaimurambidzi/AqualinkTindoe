@@ -33,7 +33,7 @@ export default function BridgeDataSaverPanel() {
       <Row label="Wi‑Fi‑only downloads" value={s.wifiOnlyDownloads} onChange={(v) => s.setState({ wifiOnlyDownloads: v })} />
       <Row label="Prefer AV1/HEVC if available" value={s.preferModernCodec} onChange={(v) => s.setState({ preferModernCodec: v })} />
 
-      <Text style={{ color: '#9cc', marginTop: 6 }}>Max streaming resolution</Text>
+      <Text style={{ color: '#9cc', marginTop: 6 }}>Video quality</Text>
       <View style={{ flexDirection: 'row', backgroundColor: '#0c2136', borderRadius: 12, padding: 4, alignSelf: 'flex-start' }}>
         <Seg opt="low" />
         <Seg opt="med" />
@@ -41,7 +41,7 @@ export default function BridgeDataSaverPanel() {
       </View>
 
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ color: '#9cc' }}>Mobile session data cap: {s.mobileDataCapMB} MB</Text>
+        <Text style={{ color: '#9cc' }}>Mobile data limit: {s.mobileDataCapMB} MB</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <ChangeCap delta={-5} />
           <ChangeCap delta={+5} />
