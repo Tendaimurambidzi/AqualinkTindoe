@@ -3,6 +3,12 @@
 
 import { Platform } from 'react-native';
 
+// Optional local overrides from liveConfig.local.ts (ignored by git).
+let localSecrets: Record<string, any> = {};
+try {
+  localSecrets = require('./liveConfig.local');
+} catch {}
+
 // Provided App ID
 export const AGORA_APP_ID = '7381413158e74dfbaae26cbc727b4d18';
 
@@ -18,8 +24,8 @@ export const AGORA_APP_CERTIFICATE = '';
 
 // Runtime backend host depends on the emulator/simulator
 const BACKEND_HOST = Platform.select({
-  android: '10.2.25.213',  // Updated to user's actual local IP for physical device
-  ios: '10.2.25.213',      // Updated for iOS devices
+  android: String(localSecrets?.BACKEND_HOST_ANDROID || '192.168.1.103'),
+  ios: String(localSecrets?.BACKEND_HOST_IOS || localSecrets?.BACKEND_HOST_ANDROID || '192.168.1.103'),
   default: 'localhost',
 });
 
@@ -36,12 +42,6 @@ export const LIVE_RECENT_ENDPOINT = `${BACKEND_BASE_URL}/live/recent`;
 // Toggle backend registration for chartered / private drifts.
 // Set to true once the backend is running and can respond.
 export const ENABLE_CHARTERED_BACKEND = true;
-
-// Optional local overrides from liveConfig.local.ts (ignored by git).
-let localSecrets: Record<string, any> = {};
-try {
-  localSecrets = require('./liveConfig.local');
-} catch {}
 
 // xAI key for in-app AI responses.
 export const XAI_API_KEY = String(localSecrets?.XAI_API_KEY || '');

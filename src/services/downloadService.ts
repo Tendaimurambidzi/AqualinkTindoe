@@ -1,19 +1,10 @@
-import { Platform, PermissionsAndroid, Alert } from 'react-native';
+import { Platform, Alert } from 'react-native';
 
 /**
  * Downloads a wave (video/image) to external storage
  */
 export async function downloadWave(waveId: string, mediaUrl: string, fileName?: string): Promise<boolean> {
   try {
-    // Request storage permission on Android
-    if (Platform.OS === 'android') {
-      const granted = await requestStoragePermission();
-      if (!granted) {
-        Alert.alert('Permission Denied', 'Storage permission is required to download SplashLines.');
-        return false;
-      }
-    }
-
     // Dynamic import of RNFS to avoid build errors if not installed
     let RNFS: any;
     try {
@@ -23,28 +14,50 @@ export async function downloadWave(waveId: string, mediaUrl: string, fileName?: 
       return false;
     }
 
-    // Determine download path
-    const downloadDir = Platform.OS === 'ios' 
-      ? RNFS.DocumentDirectoryPath 
-      : RNFS.DownloadDirectoryPath || RNFS.ExternalDirectoryPath;
-
     // Generate filename
     const timestamp = Date.now();
     const extension = getFileExtension(mediaUrl);
     const finalFileName = fileName || `Drift_Wave_${waveId}_${timestamp}.${extension}`;
-    const downloadPath = `${downloadDir}/${finalFileName}`;
+    let downloadResult: any;
 
-    // Download the file
-    const downloadResult = await RNFS.downloadFile({
-      fromUrl: mediaUrl,
-      toFile: downloadPath,
-      background: true,
-      discretionary: true,
-      progress: (res: any) => {
-        const progress = (res.bytesWritten / res.contentLength) * 100;
-        console.log(`Download progress: ${progress.toFixed(0)}%`);
-      },
-    }).promise;
+    if (Platform.OS === 'android') {
+      const downloadDir = RNFS.DownloadDirectoryPath || RNFS.ExternalDirectoryPath;
+      const downloadPath = `${downloadDir}/${finalFileName}`;
+      downloadResult = await RNFS.downloadFile({
+        fromUrl: mediaUrl,
+        toFile: downloadPath,
+        background: true,
+        discretionary: true,
+        progress: (res: any) => {
+          const total = Number(res.contentLength || 0);
+          if (!total) return;
+          const progress = (Number(res.bytesWritten || 0) / total) * 100;
+          console.log(`Download progress: ${progress.toFixed(0)}%`);
+        },
+        addAndroidDownloads: {
+          useDownloadManager: true,
+          notification: true,
+          mediaScannable: true,
+          title: finalFileName,
+          description: 'Downloading SplashLine',
+          path: downloadPath,
+        },
+      }).promise;
+    } else {
+      const downloadPath = `${RNFS.DocumentDirectoryPath}/${finalFileName}`;
+      downloadResult = await RNFS.downloadFile({
+        fromUrl: mediaUrl,
+        toFile: downloadPath,
+        background: true,
+        discretionary: true,
+        progress: (res: any) => {
+          const total = Number(res.contentLength || 0);
+          if (!total) return;
+          const progress = (Number(res.bytesWritten || 0) / total) * 100;
+          console.log(`Download progress: ${progress.toFixed(0)}%`);
+        },
+      }).promise;
+    }
 
     if (downloadResult.statusCode === 200) {
       // Notify backend of download
@@ -63,9 +76,7 @@ export async function downloadWave(waveId: string, mediaUrl: string, fileName?: 
       }
 
       // Show success message with file location
-      const locationMsg = Platform.OS === 'ios' 
-        ? 'Files app' 
-        : 'Downloads folder';
+      const locationMsg = Platform.OS === 'ios' ? 'Files app' : 'Downloads folder';
       
       Alert.alert(
         'Download Complete',
@@ -80,41 +91,6 @@ export async function downloadWave(waveId: string, mediaUrl: string, fileName?: 
   } catch (error) {
     console.error('Download wave error:', error);
     Alert.alert('Download Failed', 'Could not download wave. Please try again.');
-    return false;
-  }
-}
-
-/**
- * Request storage permission on Android
- */
-async function requestStoragePermission(): Promise<boolean> {
-  if (Platform.OS !== 'android') {
-    return true;
-  }
-
-  try {
-    // Android 13+ uses different permissions
-    const androidVersion = Platform.Version;
-    
-    if (androidVersion >= 33) {
-      // Android 13+: No permission needed for app-scoped storage
-      return true;
-    } else {
-      // Android 12 and below
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-        {
-          title: 'Storage Permission',
-          message: 'Drift needs access to your storage to download SplashLines.',
-          buttonNeutral: 'Ask Me Later',
-          buttonNegative: 'Cancel',
-          buttonPositive: 'OK',
-        }
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    }
-  } catch (err) {
-    console.warn('Permission request error:', err);
     return false;
   }
 }

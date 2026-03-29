@@ -231,7 +231,7 @@ const formatTimestamp = (value: number): string => {
 
 const DEFAULT_PRESENTATION_SLIDE_SECONDS = 10;
 const SHARED_DOC_MAX_INK_POINTS = 480;
-const SHARED_DOC_INK_POINT_SPACING_PX = 3;
+const SHARED_DOC_INK_POINT_SPACING_PX = 2;
 const SHARED_DOC_ERASER_RADIUS_PX = 52;
 
 const formatCountdown = (diffMs: number): string => {
@@ -333,7 +333,6 @@ const FreshDriftExpoModal = ({
   const roomRef = useRef<{ id: string; channel: string; title: string; hostUid: string | null } | null>(null);
   const activeInkPointRef = useRef<{ x: number; y: number } | null>(null);
   const activeInkStrokeIdRef = useRef<string | null>(null);
-  const previousRoomIdRef = useRef<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [statusText, setStatusText] = useState<string>('Ready');
   const [roomId, setRoomId] = useState<string | null>(null);
@@ -546,35 +545,6 @@ const FreshDriftExpoModal = ({
     }
     return segments;
   }, [pdfFrameHeight, pdfFrameWidth, sharedDocInkPoints]);
-  const clearRoomSharedDocState = useCallback(() => {
-    setShowDocsPanel(false);
-    setSharedDocs([]);
-    setSharedDocStatusText(null);
-    setCurrentSharedDocId(null);
-    setCurrentSharedDocStage(null);
-    setCurrentSharedDocPreviewTitle(null);
-    setCurrentSharedDocPreviewKind(null);
-    setCurrentSharedDocPage(0);
-    setCurrentSharedDocSlideShow(false);
-    setCurrentSharedDocSlideSeconds(DEFAULT_PRESENTATION_SLIDE_SECONDS);
-    setActiveDoc(null);
-    setPdfLocalPath(null);
-    setPdfPageCount(0);
-    setPdfPageIndex(0);
-    setPdfPreviewUri(null);
-    setPdfPreviewWidth(0);
-    setPdfPreviewHeight(0);
-    setPdfZoomLevel(1);
-    setCurrentSharedDocZoom(1);
-    setCurrentSharedDocPanX(0);
-    setCurrentSharedDocPanY(0);
-    setSharedDocInkPoints([]);
-    setCurrentPresentationTool(null);
-    setSharedDocMarker(null);
-    activeInkPointRef.current = null;
-    activeInkStrokeIdRef.current = null;
-    lastAutoOpenedDocIdRef.current = null;
-  }, []);
   const visibleSharedDocs = useMemo(
     () =>
       sharedDocs.filter(doc => {
@@ -1104,7 +1074,7 @@ const FreshDriftExpoModal = ({
             id: `${Date.now()}_${step}_${Math.random()}`,
             x: pointX,
             y: pointY,
-            size: 6,
+            size: 4,
             color: '#E11D48',
             strokeId,
           });
@@ -1708,7 +1678,6 @@ const FreshDriftExpoModal = ({
       }
       const uid = mapRtcUidFromUserId(meUid);
       const fallbackTitle = nextPremiumShowId ? 'Aqua Premium Show' : 'Drift Expo';
-      clearRoomSharedDocState();
       setRoomId(liveId);
       setRoomChannel(channel);
       setRoomTitle(String(data.title || data.liveTitle || inviteJoinPreset?.title || fallbackTitle));
@@ -1739,7 +1708,6 @@ const FreshDriftExpoModal = ({
       setStatusText('Joining room');
     },
     [
-      clearRoomSharedDocState,
       defaultChannel,
       inviteJoinPreset?.fromName,
       inviteJoinPreset?.skipPremiumValidation,
@@ -1868,16 +1836,6 @@ const FreshDriftExpoModal = ({
   }, [hydrateRoom, inviteJoinPreset?.liveId, meUid, resolvedPremiumShowId, roomId, visible]);
 
   useEffect(() => {
-    if (!visible) return;
-    const previousRoomId = previousRoomIdRef.current;
-    const nextRoomId = roomId || null;
-    if (previousRoomId !== nextRoomId) {
-      clearRoomSharedDocState();
-      previousRoomIdRef.current = nextRoomId;
-    }
-  }, [clearRoomSharedDocState, roomId, visible]);
-
-  useEffect(() => {
     if (!visible || !resolvedPremiumShowId) {
       setParticipantTicketLabels({});
       return;
@@ -1953,25 +1911,11 @@ const FreshDriftExpoModal = ({
         roomKind: isChartered && premiumShowId ? 'aqua-premium' : 'drift-expo',
         premiumRequired: !!(isChartered && premiumShowId),
         premiumShowId: isChartered ? premiumShowId || null : null,
-        currentSharedDocId: null,
-        currentSharedDocStage: null,
-        currentSharedDocPreviewTitle: null,
-        currentSharedDocPreviewKind: null,
-        currentSharedDocStatusText: null,
-        currentSharedDocPage: 0,
-        currentSharedDocSlideShow: false,
-        currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
-        currentSharedDocZoom: 1,
-        currentSharedDocPanX: 0,
-        currentSharedDocPanY: 0,
-        currentSharedDocInkPoints: [],
-        currentSharedDocMarker: null,
         status: 'live',
         appId,
         createdAt: firestore.FieldValue.serverTimestamp(),
         updatedAt: firestore.FieldValue.serverTimestamp(),
       });
-      clearRoomSharedDocState();
       setRoomId(ref.id);
       setRoomChannel(channel);
       setRoomTitle(title);
@@ -1996,7 +1940,7 @@ const FreshDriftExpoModal = ({
     } finally {
       setIsBusy(false);
     }
-  }, [appId, clearRoomSharedDocState, engineReady, isChartered, meName, mePhoto, meUid, premiumShowId, upsertParticipant]);
+  }, [appId, engineReady, isChartered, meName, mePhoto, meUid, premiumShowId, upsertParticipant]);
 
   useEffect(() => {
     if (!visible) return;
