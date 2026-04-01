@@ -211,7 +211,7 @@ const UserSearch: React.FC<UserSearchProps> = ({
               }}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Text style={styles.userActionText}>Connect SplashLine</Text>
+              <Text style={styles.userActionText}>Connect MoMo</Text>
             </Pressable>
           )}
           {onInviteToDrift && (
@@ -283,7 +283,7 @@ function InviteButton({ item, onInviteToDrift }) {
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search SplashLiners..."
+          placeholder="Search MoMo users..."
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={searchQuery}
           onChangeText={handleSearch}

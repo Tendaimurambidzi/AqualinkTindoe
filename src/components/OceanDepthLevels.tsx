@@ -27,7 +27,7 @@ const DEPTH_LEVELS: DepthLevelInfo[] = [
     maxSplashes: 99,
     emoji: '🏖️',
     color: '#FFFF00',
-    benefits: ['Basic filters', 'Post SplashLines', 'Connect SplashLines'],
+    benefits: ['Basic filters', 'Post MoMos', 'Connect MoMos'],
   },
   {
     level: 'snorkeler',

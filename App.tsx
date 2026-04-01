@@ -1039,17 +1039,17 @@ const getWaveOptionMenu = (isOwnPost: boolean) =>
           label: 'Copy link',
           description: 'Copy your post link for quick sharing.',
         },
-        { label: 'Share', description: 'Share the splashline link with friends.' },
+        { label: 'Share', description: 'Share the MoMo link with friends.' },
       ]
     : [
         {
           label: 'Save to device',
-          description: 'Download a copy of this splashline for offline viewing.',
+          description: 'Download a copy of this MoMo for offline viewing.',
         },
-        { label: 'Share', description: 'Share the splashline link with friends.' },
+        { label: 'Share', description: 'Share the MoMo link with friends.' },
         {
           label: 'Report',
-          description: 'Let us know if this splashline violates guidelines.',
+          description: 'Let us know if this MoMo violates guidelines.',
         },
       ];
                     
@@ -1979,6 +1979,39 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.75)',
     fontSize: 11,
     marginTop: 4,
+  },
+  sectionSubtle: {
+    color: 'rgba(215,240,255,0.85)',
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  primaryStartButton: {
+    minHeight: 46,
+    borderRadius: 16,
+    backgroundColor: '#8D0000',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#8D0000',
+  },
+  primaryStartButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  secondaryStartButton: {
+    minHeight: 46,
+    borderRadius: 16,
+    backgroundColor: '#0EA5D9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#0EA5D9',
+  },
+  secondaryStartButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
   },
                     
   // Old sheet styles, kept for reference or other modals if needed
@@ -4674,8 +4707,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Clear captured media after successful posting
       setCapturedMedia(null);
       setCapturedMediaEdits(defaultMediaEdits);
-      // Show success message for posting a splashline
-      notifySuccess('You dropped a splashline!');
+      // Show success message for posting a MoMo
+      notifySuccess('You dropped a MoMo!');
     },
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
   );
@@ -4762,6 +4795,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     createdAt?: any;
   }>>([]);
   const [showBridge, setShowBridge] = useState<boolean>(false);
+  const [showMinuteFame, setShowMinuteFame] = useState<boolean>(false);
+  const [minuteFamePhase, setMinuteFamePhase] = useState<'home' | 'queue' | 'countdown' | 'live' | 'results'>('home');
+  const [minuteFameQueueSpot, setMinuteFameQueueSpot] = useState<number>(4);
+  const [minuteFameSeconds, setMinuteFameSeconds] = useState<number>(10);
+  const [minuteFameLiveSeconds, setMinuteFameLiveSeconds] = useState<number>(60);
+  const [minuteFameCategory, setMinuteFameCategory] =
+    useState<'Talent' | 'Funny' | 'Hustle' | 'Real Life' | 'Sports'>('Talent');
+  const [minuteFameMode, setMinuteFameMode] =
+    useState<'queue' | 'silent' | 'flash'>('queue');
+  const [minuteFameResults, setMinuteFameResults] = useState<{ views: number; splashes: number; echoes: number; level: string } | null>(null);
   const [commandCentreSection, setCommandCentreSection] =
     useState<CommandCentreSection>('home');
   const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
@@ -4780,6 +4823,53 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCommandCentreSection('home');
     }
   }, [showBridge, stopTonePreview]);
+
+  useEffect(() => {
+    if (!showMinuteFame) {
+      setMinuteFamePhase('home');
+      setMinuteFameSeconds(10);
+      setMinuteFameLiveSeconds(minuteFameMode === 'flash' ? 30 : 60);
+      return;
+    }
+    if (minuteFamePhase !== 'queue') return;
+    const timer = setTimeout(() => {
+      setMinuteFameQueueSpot(prev => {
+        const next = Math.max(1, prev - 1);
+        if (next === 1) {
+          setMinuteFamePhase('countdown');
+        }
+        return next;
+      });
+    }, 1800);
+    return () => clearTimeout(timer);
+  }, [minuteFameMode, minuteFamePhase, showMinuteFame]);
+
+  useEffect(() => {
+    if (!showMinuteFame || minuteFamePhase !== 'countdown') return;
+    if (minuteFameSeconds <= 0) {
+      setMinuteFamePhase('live');
+      setMinuteFameLiveSeconds(minuteFameMode === 'flash' ? 30 : 60);
+      return;
+    }
+    const timer = setTimeout(() => setMinuteFameSeconds(prev => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [minuteFameMode, minuteFamePhase, minuteFameSeconds, showMinuteFame]);
+
+  useEffect(() => {
+    if (!showMinuteFame || minuteFamePhase !== 'live') return;
+    if (minuteFameLiveSeconds <= 0) {
+      const views = 600 + Math.floor(Math.random() * 2400);
+      const splashes = 25 + Math.floor(Math.random() * 240);
+      const echoes = 8 + Math.floor(Math.random() * 90);
+      const level =
+        views >= 2200 ? 'Wave King 🌊' : views >= 1400 ? 'Crowd Favorite 🔥' : 'Rising Star 🌟';
+      setMinuteFameResults({ views, splashes, echoes, level });
+      setMinuteFamePhase('results');
+      return;
+    }
+    const timer = setTimeout(() => setMinuteFameLiveSeconds(prev => prev - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [minuteFameLiveSeconds, minuteFamePhase, showMinuteFame]);
                     
   // Crew (follow/unfollow) state
   const [myCrewCount, setMyCrewCount] = useState<number>(0);
@@ -6178,7 +6268,7 @@ type CommandCentreSection =
       results.push({
         kind: 'user',
         id: uid,
-        label: String(data.displayName || data.userName || data.username || '@splashliner'),
+        label: String(data.displayName || data.userName || data.username || '@momo'),
         extra: {
           bio: typeof data.bio === 'string' ? data.bio : '',
           photoURL: data.userPhoto || data.photoURL || null,
@@ -6238,7 +6328,7 @@ type CommandCentreSection =
         results.push({
           kind: 'vibe',
           id,
-          label: String(data.captionText || data.caption || data.authorName || 'SplashLine'),
+          label: String(data.captionText || data.caption || data.authorName || 'MoMo'),
           extra: {
             caption: data.captionText || data.caption || '',
             authorName: data.authorName || data.ownerName || '',
@@ -6299,7 +6389,7 @@ type CommandCentreSection =
             results.push({
               kind: 'user',
               id: uid,
-              label: String(user.displayName || user.name || user.userName || user.username || '@splashliner'),
+              label: String(user.displayName || user.name || user.userName || user.username || '@momo'),
               extra: { ...user },
             });
           });
@@ -8339,13 +8429,13 @@ type CommandCentreSection =
               waveOptionsTarget.captionText ||
                 waveOptionsTarget.authorName ||
                 waveOptionsTarget.id ||
-                'splashline',
+                'momo',
             )
               .trim()
               .replace(/[^A-Za-z0-9._-]+/g, '_')
               .replace(/^_+|_+$/g, '')
-              .slice(0, 42) || 'splashline';
-            const fileName = `SplashLine_${safeBase}_${Date.now()}.${inferredExt}`;
+              .slice(0, 42) || 'momo';
+            const fileName = `MoMo_${safeBase}_${Date.now()}.${inferredExt}`;
             if (
               !(await ensureNetworkActionAllowed('download', {
                 label: 'save this post',
@@ -8386,8 +8476,8 @@ type CommandCentreSection =
       if (label === 'Share') {
         try {
           await Share.share({
-            title: 'Cast SplashLine',
-            message: `Cast SplashLine - Check out ${waveOptionsTarget.captionText ? `"${waveOptionsTarget.captionText}"` : 'this splashline'}\n\n${waveLink}`,
+            title: 'Cast MoMo',
+            message: `Cast MoMo - Check out ${waveOptionsTarget.captionText ? `"${waveOptionsTarget.captionText}"` : 'this MoMo'}\n\n${waveLink}`,
           });
         } catch {}
         return;
@@ -8426,6 +8516,16 @@ type CommandCentreSection =
   const handleDropWave = useCallback(() => {
     showTopBar();
     setShowMakeWaves(true);
+  }, [showTopBar]);
+
+  const handleMinuteFame = useCallback(() => {
+    showTopBar();
+    setMinuteFamePhase('home');
+    setMinuteFameQueueSpot(4);
+    setMinuteFameSeconds(10);
+    setMinuteFameLiveSeconds(60);
+    setMinuteFameResults(null);
+    setShowMinuteFame(true);
   }, [showTopBar]);
                     
   const handleVibeAlerts = useCallback(() => {
@@ -11192,9 +11292,9 @@ type CommandCentreSection =
     try {
       const waveId = wave.id;
       const link = `aqualink://wave/${encodeURIComponent(waveId)}`;
-      const caption = wave.captionText ? `"${wave.captionText}"` : 'my splashline';
-      const msg = `Cast SplashLine - Check out ${caption}\n\n${link}`;
-      await Share.share({ title: 'Cast SplashLine', message: msg });
+      const caption = wave.captionText ? `"${wave.captionText}"` : 'my MoMo';
+      const msg = `Cast MoMo - Check out ${caption}\n\n${link}`;
+      await Share.share({ title: 'Cast MoMo', message: msg });
     } catch {
       showOceanDialog(
         'Share Failed',
@@ -16310,6 +16410,25 @@ type CommandCentreSection =
                     <Text style={styles.topLabel}>DROP A WAVE</Text>
                   </View>
                 </Pressable>
+                <Pressable
+                  style={styles.topItem}
+                  onPress={handleMinuteFame}
+                  accessibilityRole="button"
+                  accessibilityLabel="Open 1 Minute Fame"
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                >
+                  <View style={styles.topArtWrap}>
+                    <View style={styles.topArtBody} />
+                    <View style={styles.topArtRagLeft} />
+                    <View style={styles.topArtRagRight} />
+                    <View style={styles.topArtFuse} />
+                    <View style={styles.topArtCap} />
+                    <Text style={styles.dolphinIcon}>🔥</Text>
+                    <Text style={styles.topLabel}>1 MINUTE FAME</Text>
+                  </View>
+                </Pressable>
                 {/* ALERTS - Placeholder */}
                 <Pressable
                   style={styles.topItem}
@@ -19644,6 +19763,203 @@ type CommandCentreSection =
           >
             <Text style={styles.dismissText}>Close</Text>
           </Pressable>
+        </View>
+      </Modal>
+                    
+      <Modal
+        visible={showMinuteFame}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMinuteFame(false)}
+      >
+        <View style={styles.sheetOverlay}>
+          <View
+            style={[
+              styles.sheet,
+              {
+                width: '92%',
+                maxHeight: '86%',
+                alignSelf: 'center',
+                backgroundColor: '#08131F',
+                borderColor: 'rgba(255,255,255,0.14)',
+              },
+            ]}
+          >
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View
+                style={{
+                  borderRadius: 22,
+                  padding: 18,
+                  backgroundColor: 'rgba(11,47,74,0.55)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(14,165,233,0.26)',
+                }}
+              >
+                <Text style={{ color: '#8DD8FF', fontSize: 12, fontWeight: '900', letterSpacing: 1.1 }}>
+                  MOMO
+                </Text>
+                <Text style={{ color: '#FFFFFF', fontSize: 26, fontWeight: '900', marginTop: 8 }}>
+                  1 Minute Fame
+                </Text>
+                <Text style={{ color: '#D7F0FF', fontSize: 14, lineHeight: 20, marginTop: 10 }}>
+                  Everyone deserves their moment.
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+                {(['Talent', 'Funny', 'Hustle', 'Real Life', 'Sports'] as const).map(item => (
+                  <Pressable
+                    key={item}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 9,
+                      borderRadius: 999,
+                      backgroundColor: minuteFameCategory === item ? '#8D0000' : '#133047',
+                    }}
+                    onPress={() => setMinuteFameCategory(item)}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>{item}</Text>
+                  </Pressable>
+                ))}
+              </View>
+
+              {minuteFamePhase === 'home' ? (
+                <View style={{ marginTop: 16, gap: 12 }}>
+                  <View style={[styles.logbookAction, { borderRadius: 18 }]}>
+                    <Text style={styles.sectionHeader}>Your next moment</Text>
+                    <Text style={styles.sectionSubtle}>
+                      Fame Queue, countdown, one intense minute of reach, then your results.
+                    </Text>
+                  </View>
+                  <View style={styles.toolGrid}>
+                    <Pressable
+                      style={[styles.toolButton, { backgroundColor: '#8D0000' }]}
+                      onPress={() => {
+                        setMinuteFameMode('queue');
+                        setMinuteFameQueueSpot(4);
+                        setMinuteFameSeconds(10);
+                        setMinuteFameLiveSeconds(60);
+                        setMinuteFamePhase('queue');
+                      }}
+                    >
+                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Join Fame Queue</Text>
+                      <Text style={[styles.toolButtonHint, { color: '#FFD7D7' }]}>Wait in line for a full minute</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.toolButton, { backgroundColor: '#0EA5D9' }]}
+                      onPress={() => {
+                        setMinuteFameMode('silent');
+                        setMinuteFameQueueSpot(2);
+                        setMinuteFameSeconds(5);
+                        setMinuteFameLiveSeconds(60);
+                        setMinuteFamePhase('queue');
+                      }}
+                    >
+                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Silent Fame</Text>
+                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>A surprise push without noise</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.toolButton, { backgroundColor: '#133047' }]}
+                      onPress={() => {
+                        setMinuteFameMode('flash');
+                        setMinuteFameQueueSpot(2);
+                        setMinuteFameSeconds(5);
+                        setMinuteFameLiveSeconds(30);
+                        setMinuteFamePhase('queue');
+                      }}
+                    >
+                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Flash Fame</Text>
+                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>30 seconds of faster reach</Text>
+                    </Pressable>
+                  </View>
+                  <View style={[styles.logbookAction, { borderRadius: 18 }]}>
+                    <Text style={styles.sectionHeader}>Today's Stars</Text>
+                    <Text style={styles.sectionSubtle}>Top category: {minuteFameCategory}</Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 6 }]}>Rising Star 🌟  Crowd Favorite 🔥  Wave King 🌊</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {minuteFamePhase === 'queue' ? (
+                <View style={{ marginTop: 18, gap: 12 }}>
+                  <View style={[styles.logbookAction, { borderRadius: 18, backgroundColor: 'rgba(14,165,233,0.14)' }]}>
+                    <Text style={styles.sectionHeader}>Fame Queue</Text>
+                    <Text style={styles.sectionSubtle}>You are in line for your moment…</Text>
+                    <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 10 }}>
+                      #{minuteFameQueueSpot}
+                    </Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {minuteFamePhase === 'countdown' ? (
+                <View style={{ marginTop: 18, alignItems: 'center' }}>
+                  <Text style={{ color: '#D7F0FF', fontSize: 15, fontWeight: '700' }}>Your moment starts in</Text>
+                  <Text style={{ color: '#FFFFFF', fontSize: 74, fontWeight: '900', marginTop: 10 }}>
+                    {minuteFameSeconds}
+                  </Text>
+                </View>
+              ) : null}
+
+              {minuteFamePhase === 'live' ? (
+                <View style={{ marginTop: 18, gap: 12 }}>
+                  <View style={[styles.logbookAction, { borderRadius: 18, backgroundColor: 'rgba(141,0,0,0.18)' }]}>
+                    <Text style={styles.sectionHeader}>🔥 You are LIVE now!</Text>
+                    <Text style={styles.sectionSubtle}>Your {minuteFameCategory} moment is being pushed wider.</Text>
+                    <Text style={{ color: '#FFFFFF', fontSize: 36, fontWeight: '900', marginTop: 12 }}>
+                      00:{String(minuteFameLiveSeconds).padStart(2, '0')}
+                    </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>Friends can hype boost you with fast splashes and echoes.</Text>
+                  </View>
+                </View>
+              ) : null}
+
+              {minuteFamePhase === 'results' && minuteFameResults ? (
+                <View style={{ marginTop: 18, gap: 12 }}>
+                  <View style={[styles.logbookAction, { borderRadius: 18, backgroundColor: 'rgba(34,197,94,0.12)' }]}>
+                    <Text style={styles.sectionHeader}>Your Fame Results</Text>
+                    <Text style={styles.sectionSubtle}>You reached {minuteFameResults.views.toLocaleString()} people 🚀</Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>👁 Views: {minuteFameResults.views}</Text>
+                    <Text style={styles.sectionSubtle}>💧 Splashes: {minuteFameResults.splashes}</Text>
+                    <Text style={styles.sectionSubtle}>💬 Echoes: {minuteFameResults.echoes}</Text>
+                    <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 12 }}>
+                      {minuteFameResults.level}
+                    </Text>
+                  </View>
+                  <View style={styles.toolGrid}>
+                    <Pressable
+                      style={[styles.toolButton, { backgroundColor: '#0EA5D9' }]}
+                      onPress={() => {
+                        setMinuteFamePhase('home');
+                        setMinuteFameResults(null);
+                      }}
+                    >
+                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Second Chance</Text>
+                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Try again tomorrow</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+            </ScrollView>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
+              <Pressable
+                style={[styles.secondaryStartButton, { flex: 1 }]}
+                onPress={() => {
+                  setMinuteFamePhase('home');
+                  setMinuteFameResults(null);
+                }}
+              >
+                <Text style={styles.secondaryStartButtonText}>Reset</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.primaryStartButton, { flex: 1 }]}
+                onPress={() => setShowMinuteFame(false)}
+              >
+                <Text style={styles.primaryStartButtonText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
         </View>
       </Modal>
                     
@@ -29761,28 +30077,32 @@ function SignInScreen({ navigation }: any) {
 function WelcomeAnimationScreen({ navigation }: any) {
   const isMounted = React.useRef(true);
   const bounceAnim = React.useRef(new Animated.Value(0)).current;
+  const fadeAnim = React.useRef(new Animated.Value(0)).current;
                     
   React.useEffect(() => {
-    // Gentle bounce animation
     Animated.spring(bounceAnim, {
       toValue: 1,
       friction: 3,
       tension: 40,
       useNativeDriver: true,
     }).start();
-                    
-    // Auto navigate after 4 seconds
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 650,
+      useNativeDriver: true,
+    }).start();
+
     const timer = setTimeout(() => {
       if (isMounted.current) {
         navigation.replace('AppHome');
       }
-    }, 4000);
+    }, 4600);
                     
     return () => {
       isMounted.current = false;
       clearTimeout(timer);
     };
-  }, [navigation, bounceAnim]);
+  }, [bounceAnim, fadeAnim, navigation]);
                     
   const bounceTranslateY = bounceAnim.interpolate({
     inputRange: [0, 0.5, 1],
@@ -29799,29 +30119,56 @@ function WelcomeAnimationScreen({ navigation }: any) {
     <Pressable
       style={{
         flex: 1,
-        backgroundColor: '#0A1929',
+        backgroundColor: '#07111B',
         justifyContent: 'center',
         alignItems: 'center',
+        paddingHorizontal: 26,
       }}
       onPress={handleSkip}
     >
       <Animated.View
         style={{
           transform: [{ translateY: bounceTranslateY }],
+          opacity: fadeAnim,
+          alignItems: 'center',
         }}
       >
-        {myLogo && (
-          <Animated.Image
-            source={myLogo}
-            style={{
-              width: 150,
-              height: 150,
-              borderRadius: 75,
-              opacity: 1,
-            }}
-            resizeMode="contain"
-          />
-        )}
+        <View
+          style={{
+            paddingHorizontal: 18,
+            paddingVertical: 10,
+            borderRadius: 999,
+            backgroundColor: 'rgba(14,165,233,0.16)',
+            borderWidth: 1,
+            borderColor: 'rgba(14,165,233,0.42)',
+            marginBottom: 18,
+          }}
+        >
+          <Text style={{ color: '#8DD8FF', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 }}>
+            MOMO
+          </Text>
+        </View>
+        <Text
+          style={{
+            color: '#FFFFFF',
+            fontSize: 34,
+            lineHeight: 42,
+            fontWeight: '900',
+            textAlign: 'center',
+          }}
+        >
+          Everyone deserves their moment.
+        </Text>
+        <Text
+          style={{
+            marginTop: 14,
+            color: '#C7EAFE',
+            fontSize: 14,
+            textAlign: 'center',
+          }}
+        >
+          Fast visibility. Real people. Real moments.
+        </Text>
       </Animated.View>
     </Pressable>
   );
@@ -30219,7 +30566,7 @@ function PostDetailScreen({ route, navigation }: any) {
           }}
         >
           <Text style={{ color: 'white', fontSize: 16 }}>
-            {isFollowing ? '✓ Connected' : '+ Connect SplashLine'}
+            {isFollowing ? '✓ Connected' : '+ Connect MoMo'}
           </Text>
         </Pressable>
       )}
@@ -30747,12 +31094,13 @@ const App: React.FC = () => {
                       <Text
                         style={{
                           marginTop: 16,
-                          color: '#00C2FF',
-                          fontSize: 16,
-                          fontStyle: 'italic',
+                          color: '#D8F5FF',
+                          fontSize: 20,
+                          fontWeight: '900',
+                          textAlign: 'center',
                         }}
                       >
-                        Navigating the seas...
+                        Everyone deserves their moment.
                       </Text>
                     </View>
                   ) : user ? (

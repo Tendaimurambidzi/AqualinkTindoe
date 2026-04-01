@@ -81,6 +81,12 @@ const LIVE_SOUND_EFFECTS = [
   },
 ] as const;
 
+const PREMIUM_LIVE_VIDEO_DIMENSIONS = { width: 854, height: 480 };
+const PREMIUM_LIVE_VIDEO_BITRATE = 950000;
+const PREMIUM_LIVE_VIDEO_MIN_BITRATE = 480000;
+const PREMIUM_LIVE_VIDEO_FRAME_RATE = 20;
+const PREMIUM_LIVE_VIDEO_MIN_FRAME_RATE = 12;
+
 type InviteJoinPreset = {
   liveId?: string | null;
   channel?: string | null;
@@ -112,6 +118,9 @@ type ParticipantRow = {
   isHost?: boolean;
   muted?: boolean;
   purged?: boolean;
+  raisedHand?: boolean;
+  cameraOff?: boolean;
+  screenSharing?: boolean;
 };
 
 type SearchResultItem = {
@@ -324,7 +333,7 @@ const FreshDriftExpoModal = ({
     }
   }, []);
   const appId = String(cfg?.AGORA_APP_ID || '').trim();
-  const defaultChannel = String(cfg?.AGORA_CHANNEL_NAME || 'SplashlineDrift').trim();
+  const defaultChannel = String(cfg?.AGORA_CHANNEL_NAME || 'MoMoDrift').trim();
   const engineRef = useRef<any>(null);
   const joinedChannelRef = useRef<string | null>(null);
   const joiningChannelRef = useRef<string | null>(null);
@@ -358,6 +367,8 @@ const FreshDriftExpoModal = ({
   const [replyTarget, setReplyTarget] = useState<CommentRow | null>(null);
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
+  const [handRaised, setHandRaised] = useState(false);
+  const [screenShareEnabled, setScreenShareEnabled] = useState(false);
   const [showComments, setShowComments] = useState(true);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteQuery, setInviteQuery] = useState('');
@@ -476,6 +487,14 @@ const FreshDriftExpoModal = ({
     [participantTicketLabels, participants, roomHostUid],
   );
   const premiumChatRows = useMemo(() => comments.slice(-12), [comments]);
+  const raisedHandParticipants = useMemo(
+    () => participants.filter(item => item.raisedHand && item.uid !== meUid),
+    [meUid, participants],
+  );
+  const activePresenter = useMemo(
+    () => participants.find(item => item.screenSharing && item.uid !== meUid) || null,
+    [meUid, participants],
+  );
   const isGuestViewingSharedDoc = useMemo(
     () => !!currentSharedDocId && !canControlCurrentSharedDoc,
     [canControlCurrentSharedDoc, currentSharedDocId],
@@ -505,6 +524,78 @@ const FreshDriftExpoModal = ({
     roomHostUid,
     sharedDocStatusText,
   ]);
+  const applyPremiumRtcProfile = useCallback(
+    (engine: any) => {
+      if (!engine) return;
+      const config = {
+        dimensions: PREMIUM_LIVE_VIDEO_DIMENSIONS,
+        frameRate: PREMIUM_LIVE_VIDEO_FRAME_RATE,
+        minFrameRate: PREMIUM_LIVE_VIDEO_MIN_FRAME_RATE,
+        bitrate: PREMIUM_LIVE_VIDEO_BITRATE,
+        minBitrate: PREMIUM_LIVE_VIDEO_MIN_BITRATE,
+        orientationMode: Agora?.OrientationMode?.OrientationModeAdaptive ?? 0,
+        degradationPreference:
+          Agora?.DegradationPreference?.MaintainQuality ??
+          Agora?.DegradationPreference?.MaintainBalanced ??
+          0,
+      };
+      const audioProfile =
+        Agora?.AudioProfileType?.AudioProfileMusicHighQuality ??
+        Agora?.AudioProfileType?.AudioProfileDefault ??
+        Agora?.AudioProfile?.MusicHighQuality ??
+        Agora?.AudioProfile?.Default ??
+        0;
+      const audioScenario =
+        Agora?.AudioScenarioType?.AudioScenarioDefault ??
+        Agora?.AudioScenarioType?.AudioScenarioDefault ??
+        Agora?.AudioScenario?.Default ??
+        Agora?.AudioScenario?.Default ??
+        0;
+      try {
+        engine.setVideoEncoderConfiguration?.(config);
+      } catch {}
+      try {
+        engine.enableDualStreamMode?.(true, {
+          width: 320,
+          height: 180,
+          framerate: 10,
+          bitrate: 180,
+        });
+      } catch {}
+      try {
+        engine.setRemoteSubscribeFallbackOption?.(
+          Agora?.StreamFallbackOptions?.StreamFallbackOptionAudioOnly ?? 2,
+        );
+      } catch {}
+      try {
+        engine.setLocalPublishFallbackOption?.(
+          Agora?.StreamFallbackOptions?.StreamFallbackOptionAudioOnly ?? 2,
+        );
+      } catch {}
+      try {
+        engine.setAudioProfile?.(audioProfile, audioScenario);
+      } catch {}
+      try {
+        engine.setAudioScenario?.(audioScenario);
+      } catch {}
+      try {
+        engine.setAINSMode?.(true, Agora?.AudioAinsMode?.AINSModeAggressive ?? 2);
+      } catch {}
+      try {
+        engine.setParameters?.('{"che.video.adaptive_bitrate":true}');
+      } catch {}
+    },
+    [
+      Agora?.AudioAinsMode,
+      Agora?.AudioProfile,
+      Agora?.AudioProfileType,
+      Agora?.AudioScenario,
+      Agora?.AudioScenarioType,
+      Agora?.DegradationPreference,
+      Agora?.OrientationMode,
+      Agora?.StreamFallbackOptions,
+    ],
+  );
   const sharedDocInkSegments = useMemo(() => {
     const segments: Array<{
       id: string;
@@ -757,6 +848,16 @@ const FreshDriftExpoModal = ({
       localPath = localPath.replace('file://', '');
     }
     if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+      try {
+        const stats = await RNFS.stat(String(rawUri || localPath));
+        const originalPath = String((stats as any)?.originalFilepath || '').trim();
+        if (originalPath) {
+          localPath = originalPath.startsWith('file://')
+            ? originalPath.replace('file://', '')
+            : originalPath;
+          return localPath;
+        }
+      } catch {}
       const safeName = (fileName || 'shared.pdf').replace(/[^A-Za-z0-9._-]/g, '_');
       const copyDest = `${RNFS.CachesDirectoryPath}/premium_pdf_${Date.now()}_${safeName}`;
       await RNFS.copyFile(String(rawUri), copyDest);
@@ -1161,6 +1262,9 @@ const FreshDriftExpoModal = ({
       return;
     }
     setDocBusy(true);
+    let docRef: any = null;
+    let sharedDocPayload: SharedPdfDoc | null = null;
+    let sourceKind: string = 'pdf';
     try {
       const participantRtcUid = myRtcUid || mapRtcUidFromUserId(meUid);
       await upsertParticipant(
@@ -1203,7 +1307,7 @@ const FreshDriftExpoModal = ({
       const localUri = String(selectedEntry.uri);
       const fileName = String(selectedEntry.name || 'shared_file').trim() || 'shared_file';
       const isPdf = /\.pdf$/i.test(fileName) || String(selectedEntry.type || '').toLowerCase() === 'application/pdf';
-      const sourceKind = /\.pptx$/i.test(fileName)
+      sourceKind = /\.pptx$/i.test(fileName)
         ? 'pptx'
         : /\.ppt$/i.test(fileName)
         ? 'ppt'
@@ -1213,29 +1317,11 @@ const FreshDriftExpoModal = ({
         ? 'doc'
         : 'pdf';
       const previewTitle = fileName.replace(/\.(pdf|ppt|pptx|doc|docx)$/i, '');
-      await firestore()
-        .collection('live')
-        .doc(roomId)
-        .set(
-          {
-            currentSharedDocStage: 'selected',
-            currentSharedDocPreviewTitle: previewTitle,
-            currentSharedDocPreviewKind: sourceKind,
-            currentSharedDocStatusText: `${meName} selected ${previewTitle}`,
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
-      const uploadPath = await normalizePdfUploadPath(
-        localUri,
-        fileName,
-        selectedEntry.filePath || selectedEntry.fileCopyUri || null,
-      );
       const storagePath = isPdf
         ? `premium_docs/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`
         : `premium_presentations/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`;
-      const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
-      const sharedDocPayload = {
+      docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
+      sharedDocPayload = {
         id: docRef.id,
         title: previewTitle,
         fileName,
@@ -1243,7 +1329,7 @@ const FreshDriftExpoModal = ({
         storagePath: isPdf ? storagePath : '',
         sharedByName: meName,
         createdAtMs: Date.now(),
-        status: 'uploading',
+        status: 'selected',
         sourceKind,
         errorMessage: null,
       } as SharedPdfDoc;
@@ -1254,7 +1340,7 @@ const FreshDriftExpoModal = ({
         storagePath: isPdf ? storagePath : '',
         sourcePath: !isPdf ? storagePath : '',
         sourceKind,
-        status: 'uploading',
+        status: 'selected',
         sharedByUid: meUid,
         sharedByName: meName,
         createdAt: firestore.FieldValue.serverTimestamp(),
@@ -1262,6 +1348,39 @@ const FreshDriftExpoModal = ({
         updatedAt: firestore.FieldValue.serverTimestamp(),
         updatedAtMs: Date.now(),
       });
+      await firestore()
+        .collection('live')
+        .doc(roomId)
+        .set(
+          {
+            currentSharedDocId: docRef.id,
+            currentSharedDocStage: 'selected',
+            currentSharedDocPreviewTitle: previewTitle,
+            currentSharedDocPreviewKind: sourceKind,
+            currentSharedDocPage: 0,
+            currentSharedDocSlideShow: false,
+            currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
+            currentSharedDocZoom: 1,
+            currentSharedDocPanX: 0,
+            currentSharedDocPanY: 0,
+            currentSharedDocInkPoints: [],
+            currentSharedDocStatusText: `${meName} selected ${previewTitle}`,
+            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      setShowDocsPanel(true);
+      const uploadPath = await normalizePdfUploadPath(
+        localUri,
+        fileName,
+        selectedEntry.filePath || selectedEntry.fileCopyUri || null,
+      );
+      await docRef.set({
+        status: 'uploading',
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAtMs: Date.now(),
+      }, { merge: true });
       await firestore()
         .collection('live')
         .doc(roomId)
@@ -1284,7 +1403,6 @@ const FreshDriftExpoModal = ({
           },
           { merge: true },
         );
-      setShowDocsPanel(true);
       const uploadRef = storage().ref(storagePath);
       await uploadRef.putFile(uploadPath, {
         contentType: isPdf
@@ -1385,6 +1503,22 @@ const FreshDriftExpoModal = ({
       }
     } catch (error: any) {
       const message = String(error?.message || error || '');
+      if (docRef && /cancel/i.test(message)) {
+        await docRef.delete().catch(() => {});
+      }
+      if (docRef && sharedDocPayload && !/cancel/i.test(message)) {
+        await docRef
+          .set(
+            {
+              status: 'error',
+              errorMessage: message || 'Could not share this file.',
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAtMs: Date.now(),
+            },
+            { merge: true },
+          )
+          .catch(() => {});
+      }
       if (!/cancel/i.test(message)) {
         Alert.alert('Share failed', message || 'Could not share the PDF.');
       }
@@ -1393,10 +1527,19 @@ const FreshDriftExpoModal = ({
         .doc(roomId)
         .set(
           {
-            currentSharedDocStage: firestore.FieldValue.delete(),
-            currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
-            currentSharedDocPreviewKind: firestore.FieldValue.delete(),
-            currentSharedDocStatusText: null,
+            currentSharedDocId: /cancel/i.test(message) ? null : docRef?.id || null,
+            currentSharedDocStage: /cancel/i.test(message)
+              ? firestore.FieldValue.delete()
+              : 'error',
+            currentSharedDocPreviewTitle: /cancel/i.test(message)
+              ? firestore.FieldValue.delete()
+              : sharedDocPayload?.title || firestore.FieldValue.delete(),
+            currentSharedDocPreviewKind: /cancel/i.test(message)
+              ? firestore.FieldValue.delete()
+              : sourceKind,
+            currentSharedDocStatusText: /cancel/i.test(message)
+              ? null
+              : `${meName}'s file could not be shared`,
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -1638,6 +1781,9 @@ const FreshDriftExpoModal = ({
               isHost,
               muted: false,
               purged: false,
+              raisedHand: false,
+              cameraOff: false,
+              screenSharing: false,
               channel,
               joinedAt: firestore.FieldValue.serverTimestamp(),
               updatedAt: firestore.FieldValue.serverTimestamp(),
@@ -1648,6 +1794,97 @@ const FreshDriftExpoModal = ({
     },
     [meName, mePhoto, meUid],
   );
+
+  const updateMyParticipantState = useCallback(
+    async (patch: Record<string, any>) => {
+      if (!roomId || !meUid) return;
+      try {
+        await firestore()
+          .doc(`live/${roomId}/participants/${meUid}`)
+          .set(
+            {
+              ...patch,
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+      } catch {}
+    },
+    [meUid, roomId],
+  );
+
+  const requestScreenCapturePermission = useCallback(async (): Promise<boolean> => {
+    try {
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const toggleRaisedHand = useCallback(async () => {
+    const next = !handRaised;
+    setHandRaised(next);
+    await updateMyParticipantState({ raisedHand: next });
+  }, [handRaised, updateMyParticipantState]);
+
+  const toggleScreenShare = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine || !joined) return;
+    try {
+      if (!screenShareEnabled) {
+        if (Platform.OS === 'android') {
+          const ok = await requestScreenCapturePermission();
+          if (!ok) {
+            Alert.alert('Screen share unavailable', 'Allow screen sharing and try again.');
+            return;
+          }
+        } else {
+          Alert.alert('Screen share unavailable', 'This build needs extra iOS broadcast setup.');
+          return;
+        }
+        engine.startScreenCapture?.({
+          dimensions: { width: 1280, height: 720 },
+          frameRate: 12,
+          bitrate: 1100,
+        });
+        engine.updateChannelMediaOptions?.({
+          publishCameraTrack: false,
+          publishMicrophoneTrack: !micMuted,
+          publishScreenCaptureVideo: true,
+          publishScreenCaptureAudio: false,
+          publishScreenTrack: true,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+        });
+        setScreenShareEnabled(true);
+        setStatusText('Sharing screen');
+        await updateMyParticipantState({ screenSharing: true });
+        return;
+      }
+      engine.stopScreenCapture?.();
+      engine.updateChannelMediaOptions?.({
+        publishCameraTrack: !cameraOff,
+        publishMicrophoneTrack: !micMuted,
+        publishScreenCaptureVideo: false,
+        publishScreenCaptureAudio: false,
+        publishScreenTrack: false,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: true,
+      });
+      setScreenShareEnabled(false);
+      setStatusText('Live');
+      await updateMyParticipantState({ screenSharing: false });
+    } catch (error: any) {
+      Alert.alert('Screen share failed', String(error?.message || 'Try again.'));
+    }
+  }, [
+    cameraOff,
+    joined,
+    micMuted,
+    requestScreenCapturePermission,
+    screenShareEnabled,
+    updateMyParticipantState,
+  ]);
 
   const hydrateRoom = useCallback(
     async (liveId: string) => {
@@ -2051,8 +2288,10 @@ const FreshDriftExpoModal = ({
           engine.setDefaultMuteAllRemoteAudioStreams?.(false);
           engine.setDefaultMuteAllRemoteVideoStreams?.(false);
           engine.adjustPlaybackSignalVolume?.(100);
+          engine.enableAudioVolumeIndication?.(300, 3, false);
           engine.enableLocalVideo?.(true);
           engine.setClientRole?.(broadcasterRole);
+          applyPremiumRtcProfile(engine);
           engine.registerEventHandler?.({
             onJoinChannelSuccess: (connection: any) => {
               if (!cancelled) {
@@ -2082,6 +2321,37 @@ const FreshDriftExpoModal = ({
               const next = Number(uid);
               setRemoteUids(prev => prev.filter(item => item !== next));
             },
+            onNetworkQuality: (_conn: any, _uid: number, txQuality: number, rxQuality: number) => {
+              if (Math.max(Number(txQuality), Number(rxQuality)) >= 4) {
+                setStatusText('Connection is unstable. Keeping audio on.');
+              }
+            },
+            onRemoteVideoStateChanged: (_conn: any, remoteUid: number, state: number, reason: number) => {
+              if (Number(state) === 3 || Number(state) === 4) {
+                try {
+                  engineRef.current?.setRemoteVideoStreamType?.(Number(remoteUid), 0);
+                  (engineRef.current as any)?.subscribeRemoteVideoStream?.(Number(remoteUid), true);
+                } catch {}
+                setStatusText(
+                  Number(reason) === 1 ? 'Video is recovering from network strain.' : 'Refreshing remote video...',
+                );
+              } else if (Number(state) === 2) {
+                setStatusText('Live');
+              }
+            },
+            onRemoteAudioStateChanged: (_conn: any, _remoteUid: number, state: number) => {
+              if (Number(state) === 3 || Number(state) === 4) {
+                setStatusText('Audio is recovering...');
+              }
+            },
+            onConnectionStateChanged: (_connection: any, state: number) => {
+              const next = Number(state);
+              if (next === 2) {
+                setStatusText('Live');
+              } else if (next === 3 || next === 4) {
+                setStatusText('Reconnecting video...');
+              }
+            },
             onError: (err: number) => {
               if (Number(err) === 1052) {
                 return;
@@ -2098,8 +2368,10 @@ const FreshDriftExpoModal = ({
           engine.setDefaultAudioRouteToSpeakerphone?.(true);
           engine.setEnableSpeakerphone?.(true);
           engine.adjustPlaybackSignalVolume?.(100);
+          engine.enableAudioVolumeIndication?.(300, 3, false);
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
+          applyPremiumRtcProfile(engine);
           engine.setChannelProfile?.(
             Agora.ChannelProfile?.LiveBroadcasting ??
               Agora.ChannelProfile?.Communication ??
@@ -2128,6 +2400,36 @@ const FreshDriftExpoModal = ({
             const next = Number(uid);
             setRemoteUids(prev => prev.filter(item => item !== next));
           });
+          engine.addListener?.('NetworkQuality', (_uid: number, txQuality: number, rxQuality: number) => {
+            if (Math.max(Number(txQuality), Number(rxQuality)) >= 4) {
+              setStatusText('Connection is unstable. Keeping audio on.');
+            }
+          });
+          engine.addListener?.('RemoteVideoStateChanged', (uid: number, state: number, reason: number) => {
+            if (Number(state) === 3 || Number(state) === 4) {
+              try {
+                engineRef.current?.setRemoteVideoStreamType?.(Number(uid), 0);
+              } catch {}
+              setStatusText(
+                Number(reason) === 1 ? 'Video is recovering from network strain.' : 'Refreshing remote video...',
+              );
+            } else if (Number(state) === 2) {
+              setStatusText('Live');
+            }
+          });
+          engine.addListener?.('RemoteAudioStateChanged', (_uid: number, state: number) => {
+            if (Number(state) === 3 || Number(state) === 4) {
+              setStatusText('Audio is recovering...');
+            }
+          });
+          engine.addListener?.('ConnectionStateChanged', (state: number) => {
+            const next = Number(state);
+            if (next === 2) {
+              setStatusText('Live');
+            } else if (next === 3 || next === 4) {
+              setStatusText('Reconnecting video...');
+            }
+          });
           engineRef.current = engine;
           if (!cancelled) setEngineReady(true);
         }
@@ -2140,7 +2442,7 @@ const FreshDriftExpoModal = ({
     return () => {
       cancelled = true;
     };
-  }, [Agora, appId, ensurePermissions, myRtcUid, visible]);
+  }, [Agora, appId, applyPremiumRtcProfile, ensurePermissions, myRtcUid, visible]);
 
   useEffect(() => {
     if (!visible || !roomId || !roomChannel || !myRtcUid || !engineRef.current) return;
@@ -2166,12 +2468,14 @@ const FreshDriftExpoModal = ({
           };
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
+          applyPremiumRtcProfile(engine);
           engine.updateChannelMediaOptions?.(mediaOptions);
           await engine.joinChannel(null, roomChannel, myRtcUid, mediaOptions);
           engine.muteAllRemoteAudioStreams?.(false);
         } else {
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
+          applyPremiumRtcProfile(engine);
           await engine.joinChannel(null, roomChannel, myRtcUid);
           engine.muteAllRemoteAudioStreams?.(false);
         }
@@ -2197,7 +2501,7 @@ const FreshDriftExpoModal = ({
         joiningChannelRef.current = null;
       }
     };
-  }, [Agora, meUid, myRtcUid, roomChannel, roomHostUid, roomId, roomPremiumShowId, upsertParticipant, visible]);
+  }, [Agora, applyPremiumRtcProfile, meUid, myRtcUid, roomChannel, roomHostUid, roomId, roomPremiumShowId, upsertParticipant, visible]);
 
   useEffect(() => {
     if (!visible || !roomId) return;
@@ -2324,6 +2628,9 @@ const FreshDriftExpoModal = ({
             isHost: !!data.isHost,
             muted: !!data.muted,
             purged: !!data.purged,
+            raisedHand: !!data.raisedHand,
+            cameraOff: !!data.cameraOff,
+            screenSharing: !!data.screenSharing,
           } as ParticipantRow;
         });
         setParticipants(rows);
@@ -2332,6 +2639,10 @@ const FreshDriftExpoModal = ({
           Alert.alert('Removed by host', 'The host removed you from this Aqua Premium room.');
           onClose();
           return;
+        }
+        if (meRow) {
+          setHandRaised(!!meRow.raisedHand);
+          setScreenShareEnabled(!!meRow.screenSharing);
         }
         if (meRow && !meRow.isHost) {
           const shouldMute = !!meRow.muted;
@@ -2547,6 +2858,75 @@ const FreshDriftExpoModal = ({
       engineRef.current?.enableLocalVideo?.(!(shouldHideCamera || cameraOff));
     } catch {}
   }, [activeDoc, cameraOff]);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !joined) return;
+    const isPresentationHeavy =
+      currentSharedDocStage === 'uploading' ||
+      currentSharedDocStage === 'converting' ||
+      !!activeDoc;
+    if (!isPresentationHeavy) {
+      applyPremiumRtcProfile(engine);
+      return;
+    }
+    try {
+      engine.setVideoEncoderConfiguration?.({
+        dimensions: { width: 640, height: 360 },
+        frameRate: 15,
+        minFrameRate: 10,
+        bitrate: 520000,
+        minBitrate: 260000,
+        orientationMode: Agora?.OrientationMode?.OrientationModeAdaptive ?? 0,
+        degradationPreference:
+          Agora?.DegradationPreference?.MaintainBalanced ??
+          Agora?.DegradationPreference?.MaintainQuality ??
+          0,
+      });
+    } catch {}
+    try {
+      engine.setAudioProfile?.(
+        Agora?.AudioProfileType?.AudioProfileMusicHighQuality ??
+          Agora?.AudioProfile?.MusicHighQuality ??
+          4,
+        Agora?.AudioScenarioType?.AudioScenarioDefault ??
+          Agora?.AudioScenario?.Default ??
+          0,
+      );
+    } catch {}
+  }, [
+    activeDoc,
+    Agora?.AudioProfile,
+    Agora?.AudioProfileType,
+    Agora?.AudioScenario,
+    Agora?.AudioScenarioType,
+    Agora?.DegradationPreference,
+    Agora?.OrientationMode,
+    applyPremiumRtcProfile,
+    currentSharedDocStage,
+    joined,
+  ]);
+
+  useEffect(() => {
+    if (!roomId || !meUid) return;
+    updateMyParticipantState({
+      muted: !!micMuted,
+      cameraOff: !!cameraOff || !!activeDoc,
+      screenSharing: !!screenShareEnabled,
+      raisedHand: !!handRaised,
+      rtcUid: myRtcUid || 0,
+    });
+  }, [
+    activeDoc,
+    cameraOff,
+    handRaised,
+    meUid,
+    micMuted,
+    myRtcUid,
+    roomId,
+    screenShareEnabled,
+    updateMyParticipantState,
+  ]);
 
   useEffect(() => {
     if (!canControlCurrentSharedDoc || !activeDoc || activeDoc.id !== currentSharedDocId) {
@@ -3062,6 +3442,11 @@ const FreshDriftExpoModal = ({
                 <Pressable style={styles.railButton} onPress={() => setShowAudiencePanel(v => !v)}>
                   <Text style={styles.railIcon}>👥 ({participants.length})</Text>
                 </Pressable>
+                {isPremiumRoom ? (
+                  <Pressable style={styles.railButton} onPress={() => void toggleRaisedHand()}>
+                    <Text style={styles.railIcon}>{handRaised ? 'Lower Hand' : 'Raise Hand'}</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   style={styles.railButton}
                   onPress={() => {
@@ -3072,7 +3457,7 @@ const FreshDriftExpoModal = ({
                     } catch {}
                   }}
                 >
-                  <Text style={styles.railIcon}>{micMuted ? 'Unmute' : 'Mute'}</Text>
+                  <Text style={styles.railIcon}>{micMuted ? 'Join Audio' : 'Mute Audio'}</Text>
                 </Pressable>
                 <Pressable
                   style={styles.railButton}
@@ -3085,8 +3470,13 @@ const FreshDriftExpoModal = ({
                     } catch {}
                   }}
                 >
-                  <Text style={styles.railIcon}>{cameraOff ? 'Show' : 'Hide'}</Text>
+                  <Text style={styles.railIcon}>{cameraOff ? 'Start Video' : 'Stop Video'}</Text>
                 </Pressable>
+                {isPremiumRoom ? (
+                  <Pressable style={styles.railButton} onPress={() => void toggleScreenShare()}>
+                    <Text style={styles.railIcon}>{screenShareEnabled ? 'Stop Share' : 'Share Screen'}</Text>
+                  </Pressable>
+                ) : null}
                 <Pressable
                   style={styles.railButton}
                   onPress={() => {
@@ -3109,6 +3499,20 @@ const FreshDriftExpoModal = ({
               {soundBadgeLabel && !isPremiumRoom ? (
                 <View style={styles.soundBadge}>
                   <Text style={styles.soundBadgeText}>{soundBadgeLabel}</Text>
+                </View>
+              ) : null}
+              {isPremiumRoom && (activePresenter || raisedHandParticipants.length > 0) ? (
+                <View style={styles.meetingStatusOverlay}>
+                  {activePresenter ? (
+                    <Text style={styles.meetingStatusText}>
+                      {activePresenter.name || 'Guest'} is presenting
+                    </Text>
+                  ) : null}
+                  {raisedHandParticipants.length > 0 ? (
+                    <Text style={styles.meetingStatusText}>
+                      {raisedHandParticipants.length} hand{raisedHandParticipants.length === 1 ? '' : 's'} raised
+                    </Text>
+                  ) : null}
                 </View>
               ) : null}
                 {isPremiumRoom && sharedDocStatusText && !activeDoc ? (
@@ -3142,6 +3546,24 @@ const FreshDriftExpoModal = ({
                                   void moderateParticipant(participant, participant.muted ? 'unmute' : 'mute');
                                 },
                               },
+                              ...(participant.raisedHand
+                                ? [
+                                    {
+                                      text: 'Lower Hand',
+                                      onPress: () => {
+                                        void firestore()
+                                          .doc(`live/${roomId}/participants/${participant.uid}`)
+                                          .set(
+                                            {
+                                              raisedHand: false,
+                                              updatedAt: firestore.FieldValue.serverTimestamp(),
+                                            },
+                                            { merge: true },
+                                          );
+                                      },
+                                    },
+                                  ]
+                                : []),
                               {
                                 text: 'Purge',
                                 style: 'destructive',
@@ -3158,6 +3580,16 @@ const FreshDriftExpoModal = ({
                       </Pressable>
                     ))}
                   </ScrollView>
+                  {raisedHandParticipants.length > 0 ? (
+                    <View style={styles.raisedHandsWrap}>
+                      <Text style={styles.raisedHandsTitle}>Raised Hands</Text>
+                      {raisedHandParticipants.slice(0, 4).map(item => (
+                        <Text key={item.uid} style={styles.raisedHandsText}>
+                          {item.name || 'Guest'} wants to speak
+                        </Text>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
               ) : null}
               {showComments && isPremiumRoom ? (
@@ -4075,6 +4507,25 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
+  meetingStatusOverlay: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 182,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: 'rgba(4,18,32,0.82)',
+    borderWidth: 1,
+    borderColor: 'rgba(14,165,233,0.4)',
+    gap: 4,
+  },
+  meetingStatusText: {
+    color: '#E0F2FE',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   sharedDocStatusOverlay: {
     position: 'absolute',
     left: 18,
@@ -4121,6 +4572,23 @@ const styles = StyleSheet.create({
   audienceRowText: {
     color: '#FFDADA',
     fontSize: 13,
+    fontWeight: '700',
+  },
+  raisedHandsWrap: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255,255,255,0.1)',
+    gap: 6,
+  },
+  raisedHandsTitle: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
+  raisedHandsText: {
+    color: '#BAE6FD',
+    fontSize: 12,
     fontWeight: '700',
   },
   docsPanel: {

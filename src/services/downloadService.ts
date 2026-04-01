@@ -39,7 +39,7 @@ export async function downloadWave(waveId: string, mediaUrl: string, fileName?: 
           notification: true,
           mediaScannable: true,
           title: finalFileName,
-          description: 'Downloading SplashLine',
+          description: 'Downloading MoMo',
           path: downloadPath,
         },
       }).promise;
