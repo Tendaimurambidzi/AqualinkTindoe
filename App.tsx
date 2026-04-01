@@ -436,10 +436,28 @@ type Vibe = {
     bio?: string | null;
   } | null; // author user data
   image?: string | null;
+  link?: string | null;
+  fameBadge?: boolean;
   counts?: {
     splashes?: number;
     echoes?: number;
+    hugs?: number;
   };
+};
+
+type MinuteFameSession = {
+  waveId: string;
+  ownerUid: string;
+  ownerName: string;
+  category: string;
+  mode: string;
+  startsAtMs: number;
+  endsAtMs: number;
+  baseViews: number;
+  baseSplashes: number;
+  baseEchoes: number;
+  baseHugs: number;
+  preview?: Partial<Vibe> | null;
 };
                     
 type SearchResult = {
@@ -4804,7 +4822,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     useState<'Talent' | 'Funny' | 'Hustle' | 'Real Life' | 'Sports'>('Talent');
   const [minuteFameMode, setMinuteFameMode] =
     useState<'queue' | 'silent' | 'flash'>('queue');
-  const [minuteFameResults, setMinuteFameResults] = useState<{ views: number; splashes: number; echoes: number; level: string } | null>(null);
+  const [minuteFameChoices, setMinuteFameChoices] = useState<Vibe[]>([]);
+  const [minuteFameSelectedWaveId, setMinuteFameSelectedWaveId] = useState<string | null>(null);
+  const [minuteFameResults, setMinuteFameResults] = useState<{ views: number; hugs: number; echoes: number; level: string } | null>(null);
+  const [activeMinuteFameSession, setActiveMinuteFameSession] = useState<MinuteFameSession | null>(null);
+  const [activeMinuteFameWave, setActiveMinuteFameWave] = useState<Vibe | null>(null);
   const [commandCentreSection, setCommandCentreSection] =
     useState<CommandCentreSection>('home');
   const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
@@ -4816,6 +4838,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(true);
   const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
+  const minuteFameSessionStartedRef = useRef(false);
 
   useEffect(() => {
     if (!showBridge) {
@@ -4826,6 +4849,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   useEffect(() => {
     if (!showMinuteFame) {
+      minuteFameSessionStartedRef.current = false;
       setMinuteFamePhase('home');
       setMinuteFameSeconds(10);
       setMinuteFameLiveSeconds(minuteFameMode === 'flash' ? 30 : 60);
@@ -4857,19 +4881,209 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   useEffect(() => {
     if (!showMinuteFame || minuteFamePhase !== 'live') return;
+    const selectedWaveId = minuteFameSelectedWaveId;
+    if (!selectedWaveId) return;
+    const selectedWave = minuteFameChoices.find(item => item.id === selectedWaveId) || null;
+    if (!minuteFameSessionStartedRef.current && selectedWave) {
+      minuteFameSessionStartedRef.current = true;
+      (async () => {
+        try {
+          const waveSnap = await firestore().collection('waves').doc(selectedWaveId).get();
+          const waveData = waveSnap?.data?.() || {};
+          const baseViews = Number(waveData?.reachCount || waveData?.reach || 0);
+          const baseHugs = Number(waveData?.counts?.hugs || waveData?.counts?.splashes || 0);
+          const baseEchoes = Number(waveData?.counts?.echoes || 0);
+          const durationSeconds = minuteFameMode === 'flash' ? 30 : 60;
+          await firestore()
+            .collection('minute_fame')
+            .doc('active')
+            .set({
+              waveId: selectedWaveId,
+              ownerUid: myUid || '',
+              ownerName: selectedWave.authorName || profileName || 'User',
+              category: minuteFameCategory,
+              mode: minuteFameMode,
+              startsAtMs: Date.now(),
+              endsAtMs: Date.now() + durationSeconds * 1000,
+              baseViews,
+              baseSplashes: baseHugs,
+              baseEchoes,
+              baseHugs,
+              preview: {
+                id: selectedWave.id,
+                captionText: selectedWave.captionText || '',
+                authorName: selectedWave.authorName || profileName || 'User',
+                ownerUid: selectedWave.ownerUid || myUid || '',
+                media: selectedWave.media || null,
+                mediaItems: selectedWave.mediaItems || null,
+                audio: selectedWave.audio || null,
+                postType: selectedWave.postType || null,
+                playbackUrl: selectedWave.playbackUrl || null,
+                link: selectedWave.link || null,
+                image: selectedWave.image || null,
+                counts: {
+                  hugs: Number(selectedWave.counts?.hugs || selectedWave.counts?.splashes || 0),
+                  echoes: Number(selectedWave.counts?.echoes || 0),
+                  splashes: Number(selectedWave.counts?.hugs || selectedWave.counts?.splashes || 0),
+                },
+              },
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            });
+        } catch {}
+      })();
+    }
     if (minuteFameLiveSeconds <= 0) {
-      const views = 600 + Math.floor(Math.random() * 2400);
-      const splashes = 25 + Math.floor(Math.random() * 240);
-      const echoes = 8 + Math.floor(Math.random() * 90);
-      const level =
-        views >= 2200 ? 'Wave King 🌊' : views >= 1400 ? 'Crowd Favorite 🔥' : 'Rising Star 🌟';
-      setMinuteFameResults({ views, splashes, echoes, level });
-      setMinuteFamePhase('results');
+      (async () => {
+        try {
+          const snap = await firestore().collection('waves').doc(selectedWaveId).get();
+          const data = snap?.data?.() || {};
+          const currentViews = Number(data?.reachCount || data?.reach || 0);
+          const currentHugs = Number(data?.counts?.hugs || data?.counts?.splashes || 0);
+          const currentEchoes = Number(data?.counts?.echoes || 0);
+          const base = activeMinuteFameSession?.waveId === selectedWaveId ? activeMinuteFameSession : null;
+          const hugs = Math.max(0, currentHugs - Number(base?.baseHugs || base?.baseSplashes || 0));
+          const echoes = Math.max(0, currentEchoes - Number(base?.baseEchoes || 0));
+          const views = Math.max(0, Math.max(currentViews - Number(base?.baseViews || 0), hugs + echoes));
+          const score = views + hugs * 8 + echoes * 12;
+          const level =
+            score >= 1800 ? 'Wave King 🌊' : score >= 900 ? 'Crowd Favorite 🔥' : 'Rising Star 🌟';
+          setMinuteFameResults({ views, hugs, echoes, level });
+          setMinuteFamePhase('results');
+          if (base?.ownerUid === myUid || !base) {
+            await firestore().collection('minute_fame').doc('active').delete().catch(() => {});
+          }
+        } catch {
+          setMinuteFameResults({ views: 0, hugs: 0, echoes: 0, level: 'Rising Star 🌟' });
+          setMinuteFamePhase('results');
+        }
+      })();
       return;
     }
     const timer = setTimeout(() => setMinuteFameLiveSeconds(prev => prev - 1), 1000);
     return () => clearTimeout(timer);
-  }, [minuteFameLiveSeconds, minuteFamePhase, showMinuteFame]);
+  }, [
+    activeMinuteFameSession,
+    minuteFameCategory,
+    minuteFameChoices,
+    minuteFameLiveSeconds,
+    minuteFameMode,
+    minuteFamePhase,
+    minuteFameSelectedWaveId,
+    myUid,
+    profileName,
+    showMinuteFame,
+  ]);
+
+  useEffect(() => {
+    if (!showMinuteFame || !myUid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const localChoices = [...vibesFeed]
+          .filter(item => item?.id && item.ownerUid === myUid)
+          .slice(0, 8);
+        const ownerSnapPromise = firestore()
+          .collection('waves')
+          .where('ownerUid', '==', myUid)
+          .orderBy('createdAt', 'desc')
+          .limit(8)
+          .get()
+          .catch(() => null);
+        const authorSnapPromise = firestore()
+          .collection('waves')
+          .where('authorId', '==', myUid)
+          .orderBy('createdAt', 'desc')
+          .limit(8)
+          .get()
+          .catch(() => null);
+        const [ownerSnap, authorSnap] = await Promise.all([ownerSnapPromise, authorSnapPromise]);
+        const combinedDocs = [
+          ...((ownerSnap?.docs || []) as any[]),
+          ...((authorSnap?.docs || []) as any[]),
+        ];
+        const rows = await Promise.all(combinedDocs.map(doc => buildWaveFromDoc(doc)));
+        if (cancelled) return;
+        const seen = new Set<string>();
+        const next = [...localChoices, ...(rows.filter(Boolean) as Vibe[])]
+          .filter(item => {
+            if (!item?.id || seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          })
+          .slice(0, 8);
+        setMinuteFameChoices(next);
+        setMinuteFameSelectedWaveId(prev => prev || next[0]?.id || null);
+      } catch {
+        if (!cancelled) {
+          setMinuteFameChoices([]);
+          setMinuteFameSelectedWaveId(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [buildWaveFromDoc, myUid, showMinuteFame, vibesFeed]);
+
+  useEffect(() => {
+    const unsub = firestore()
+      .collection('minute_fame')
+      .doc('active')
+      .onSnapshot(async snap => {
+        const data = snap?.data?.() || null;
+        const now = Date.now();
+        if (!data?.waveId || Number(data?.endsAtMs || 0) <= now) {
+          setActiveMinuteFameSession(null);
+          setActiveMinuteFameWave(null);
+          return;
+        }
+        const session: MinuteFameSession = {
+          waveId: String(data.waveId),
+          ownerUid: String(data.ownerUid || ''),
+          ownerName: String(data.ownerName || 'User'),
+          category: String(data.category || 'Talent'),
+          mode: String(data.mode || 'queue'),
+          startsAtMs: Number(data.startsAtMs || now),
+          endsAtMs: Number(data.endsAtMs || now + 60000),
+          baseViews: Number(data.baseViews || 0),
+          baseSplashes: Number(data.baseSplashes || 0),
+          baseEchoes: Number(data.baseEchoes || 0),
+          baseHugs: Number(data.baseHugs || 0),
+          preview: (data.preview || null) as any,
+        };
+        setActiveMinuteFameSession(session);
+        const wave = await buildWaveFromDoc(session.waveId);
+        setActiveMinuteFameWave(
+          (wave || session.preview)
+            ? {
+                ...(wave || session.preview),
+                id: session.waveId,
+                authorName: (wave || session.preview)?.authorName || session.ownerName,
+                ownerUid: (wave || session.preview)?.ownerUid || session.ownerUid,
+                fameBadge: true,
+                captionText:
+                  (wave || session.preview)?.captionText ||
+                  `${session.ownerName}'s ${session.category} moment`,
+                counts: {
+                  hugs: Number((wave || session.preview)?.counts?.hugs || (wave || session.preview)?.counts?.splashes || 0),
+                  echoes: Number((wave || session.preview)?.counts?.echoes || 0),
+                  splashes: Number((wave || session.preview)?.counts?.hugs || (wave || session.preview)?.counts?.splashes || 0),
+                },
+              }
+            : null,
+        );
+        setCurrentIndex(0);
+        setWaveKey(Date.now());
+        try {
+          feedRef.current?.scrollToOffset({ offset: 0, animated: true });
+        } catch {}
+      });
+    return () => {
+      try {
+        unsub();
+      } catch {}
+    };
+  }, [buildWaveFromDoc]);
                     
   // Crew (follow/unfollow) state
   const [myCrewCount, setMyCrewCount] = useState<number>(0);
@@ -8122,7 +8336,9 @@ type CommandCentreSection =
                     
   // Combine all feeds (my vibes + public vibes + post feed) for unified display
   const displayFeed = useMemo(() => {
-    const combined = [...postFeed, ...vibesFeed, ...publicFeed];
+    const combined = activeMinuteFameWave
+      ? [activeMinuteFameWave, ...postFeed, ...vibesFeed, ...publicFeed]
+      : [...postFeed, ...vibesFeed, ...publicFeed];
     const seen = new Set<string>();
     return combined.filter(wave => {
       if (!wave || !wave.id) return false;
@@ -8135,6 +8351,7 @@ type CommandCentreSection =
       return true;
     });
   }, [
+    activeMinuteFameWave,
     publicFeed,
     vibesFeed,
     blockedUsers,
@@ -8156,6 +8373,87 @@ type CommandCentreSection =
     displayFeed.length > 0 && currentIndex >= 0
       ? displayFeed[currentIndex]
       : null;
+
+  const buildWaveFromDoc = useCallback(
+    async (docOrId: any): Promise<Vibe | null> => {
+      try {
+        const firestoreMod = require('@react-native-firebase/firestore').default;
+        const storageMod = require('@react-native-firebase/storage').default;
+        const doc =
+          typeof docOrId === 'string'
+            ? await firestoreMod().collection('waves').doc(docOrId).get()
+            : docOrId;
+        if (!doc?.exists) return null;
+        const data = doc.data() || {};
+        const id = doc.id;
+        const mediaType = data?.mediaType || null;
+        const isAudioPost =
+          data?.postType === 'audio' || /^audio\//i.test(String(mediaType || ''));
+        let playbackUrl: string | null = data?.playbackUrl || data?.mediaUrl || null;
+        let mediaUri: string | null = null;
+        if (!playbackUrl && storageMod && data?.mediaPath) {
+          try {
+            mediaUri = await storageMod().ref(String(data.mediaPath)).getDownloadURL();
+          } catch {}
+        }
+        const finalUri = playbackUrl || mediaUri;
+        const ownerUid = (data?.ownerUid || data?.authorId || null) as any;
+        let userInfo: { name: string; avatar: string | null; bio?: string | null } | null = null;
+        if (ownerUid) {
+          try {
+            const userDoc = await firestoreMod().collection('users').doc(ownerUid).get();
+            const userData = userDoc?.data?.() || {};
+            userInfo = {
+              name:
+                userData?.displayName ||
+                userData?.name ||
+                userData?.username ||
+                data?.authorName ||
+                'User',
+              avatar:
+                userData?.userPhoto ||
+                userData?.photoURL ||
+                userData?.avatar ||
+                userData?.profilePicture ||
+                null,
+              bio: userData?.bio || null,
+            };
+          } catch {}
+        }
+        return {
+          id,
+          media:
+            !isAudioPost && finalUri
+              ? ({ uri: finalUri, type: mediaType || undefined } as any)
+              : null,
+          mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
+          audio: data?.audioUrl
+            ? { uri: String(data.audioUrl) }
+            : isAudioPost && finalUri
+            ? { uri: String(finalUri) }
+            : null,
+          captionText: data?.mediaCaption || data?.text || '',
+          postType: data?.postType || null,
+          link: data?.link || null,
+          playbackUrl,
+          mediaEdits: data?.mediaEdits || data?.editorState || data?.edits || null,
+          muxStatus: (data?.muxStatus || null) as any,
+          authorName: data?.authorName || userInfo?.name || null,
+          ownerUid,
+          user: userInfo,
+          image: data?.image || null,
+          counts: {
+            splashes: Number(data?.counts?.splashes || 0),
+            echoes: Number(data?.counts?.echoes || 0),
+            hugs: Number(data?.counts?.hugs || 0),
+          },
+        };
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
   const wavesCountDisplay = useMemo(
     () => {
       const feedCount = uniqueMyWaves.length;
@@ -10380,11 +10678,11 @@ type CommandCentreSection =
     // Always show choice dialog first, regardless of current splash state
     if (!splashType) {
       Alert.alert(
-        'Choose Your Splash',
+        'Choose Your Reaction',
         'How would you like to show appreciation?',
         [
           {
-            text: '💦 Regular Splash',
+            text: '❤️ Hug',
             onPress: () => onSplash('regular'),
           },
           { text: 'Cancel', style: 'cancel' },
@@ -10526,7 +10824,7 @@ type CommandCentreSection =
           if (currentWave.ownerUid && currentWave.ownerUid !== user.uid) {
             const userName = profileName || user.displayName || 'Someone';
             const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💦';
-            const splashText = splashType === 'octopus_hug' ? 'sent an octopus hug' : 'glowed';
+            const splashText = splashType === 'octopus_hug' ? 'sent a hug' : 'sent a hug';
             // Always use the poster's name from the feed for notifications
             let posterName = '';
             const isOwnWave = currentWave.ownerUid === user.uid;
@@ -10553,7 +10851,7 @@ type CommandCentreSection =
           }
         } catch (err) {
           console.error('Error adding splash:', err);
-          notifyError('Could not add splash. Please try again.');
+          notifyError('Could not send your hug. Please try again.');
         }
         const message =
           splashType === 'octopus_hug'
@@ -10570,7 +10868,7 @@ type CommandCentreSection =
       console.error('Splash action failed:', e);
       setHasSplashed(hasSplashed); // Revert to original state
       setSplashes(prevCount);
-      notifyError('Could not update splash right now.');
+      notifyError('Could not update your hug right now.');
     } finally {
       setSplashBusy(false);
     }
@@ -14910,7 +15208,7 @@ type CommandCentreSection =
           if (ping.splashType === 'octopus_hug') {
             return `/${actor} hugged your vibe!`;
           }
-          return `${actor} splashed ${posterName}'s wave`;
+          return `${actor} hugged ${posterName}'s post`;
         }
         case 'echo': {
           const posterName = ping.wavePosterName || ping.wavePosterDisplayName || ping.posterName || ping.ownerName || ping.ownerDisplayName || '';
@@ -19828,13 +20126,45 @@ type CommandCentreSection =
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
                     <Text style={styles.sectionHeader}>Your next moment</Text>
                     <Text style={styles.sectionSubtle}>
-                      Fame Queue, countdown, one intense minute of reach, then your results.
+                      Pick one real post. When your minute starts, that exact post is pushed to other feeds.
                     </Text>
+                  </View>
+                  <View style={[styles.logbookAction, { borderRadius: 18 }]}>
+                    <Text style={styles.sectionHeader}>Choose content</Text>
+                    {minuteFameChoices.length === 0 ? (
+                      <Text style={styles.sectionSubtle}>Post something first to use 1 Minute Fame.</Text>
+                    ) : (
+                      minuteFameChoices.slice(0, 4).map(item => (
+                        <Pressable
+                          key={item.id}
+                          style={[
+                            styles.savedItem,
+                            {
+                              backgroundColor:
+                                minuteFameSelectedWaveId === item.id
+                                  ? 'rgba(141,0,0,0.22)'
+                                  : 'rgba(0,194,255,0.12)',
+                              borderColor:
+                                minuteFameSelectedWaveId === item.id
+                                  ? 'rgba(141,0,0,0.72)'
+                                  : 'rgba(0,194,255,0.5)',
+                            },
+                          ]}
+                          onPress={() => setMinuteFameSelectedWaveId(item.id)}
+                        >
+                          <Text style={styles.savedItemText} numberOfLines={2}>
+                            {item.captionText || item.authorName || 'Untitled MoMo'}
+                          </Text>
+                        </Pressable>
+                      ))
+                    )}
                   </View>
                   <View style={styles.toolGrid}>
                     <Pressable
                       style={[styles.toolButton, { backgroundColor: '#8D0000' }]}
+                      disabled={!minuteFameSelectedWaveId}
                       onPress={() => {
+                        minuteFameSessionStartedRef.current = false;
                         setMinuteFameMode('queue');
                         setMinuteFameQueueSpot(4);
                         setMinuteFameSeconds(10);
@@ -19847,7 +20177,9 @@ type CommandCentreSection =
                     </Pressable>
                     <Pressable
                       style={[styles.toolButton, { backgroundColor: '#0EA5D9' }]}
+                      disabled={!minuteFameSelectedWaveId}
                       onPress={() => {
+                        minuteFameSessionStartedRef.current = false;
                         setMinuteFameMode('silent');
                         setMinuteFameQueueSpot(2);
                         setMinuteFameSeconds(5);
@@ -19860,7 +20192,9 @@ type CommandCentreSection =
                     </Pressable>
                     <Pressable
                       style={[styles.toolButton, { backgroundColor: '#133047' }]}
+                      disabled={!minuteFameSelectedWaveId}
                       onPress={() => {
+                        minuteFameSessionStartedRef.current = false;
                         setMinuteFameMode('flash');
                         setMinuteFameQueueSpot(2);
                         setMinuteFameSeconds(5);
@@ -19885,6 +20219,9 @@ type CommandCentreSection =
                   <View style={[styles.logbookAction, { borderRadius: 18, backgroundColor: 'rgba(14,165,233,0.14)' }]}>
                     <Text style={styles.sectionHeader}>Fame Queue</Text>
                     <Text style={styles.sectionSubtle}>You are in line for your moment…</Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      Selected post: {minuteFameChoices.find(item => item.id === minuteFameSelectedWaveId)?.captionText || 'MoMo post'}
+                    </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 10 }}>
                       #{minuteFameQueueSpot}
                     </Text>
@@ -19905,11 +20242,15 @@ type CommandCentreSection =
                 <View style={{ marginTop: 18, gap: 12 }}>
                   <View style={[styles.logbookAction, { borderRadius: 18, backgroundColor: 'rgba(141,0,0,0.18)' }]}>
                     <Text style={styles.sectionHeader}>🔥 You are LIVE now!</Text>
-                    <Text style={styles.sectionSubtle}>Your {minuteFameCategory} moment is being pushed wider.</Text>
+                    <Text style={styles.sectionSubtle}>
+                      Your {minuteFameCategory} post is now being pushed into other feeds.
+                    </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 36, fontWeight: '900', marginTop: 12 }}>
                       00:{String(minuteFameLiveSeconds).padStart(2, '0')}
                     </Text>
-                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>Friends can hype boost you with fast splashes and echoes.</Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      People can now view, hug, and echo that post normally from the feed.
+                    </Text>
                   </View>
                 </View>
               ) : null}
@@ -19920,7 +20261,7 @@ type CommandCentreSection =
                     <Text style={styles.sectionHeader}>Your Fame Results</Text>
                     <Text style={styles.sectionSubtle}>You reached {minuteFameResults.views.toLocaleString()} people 🚀</Text>
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>👁 Views: {minuteFameResults.views}</Text>
-                    <Text style={styles.sectionSubtle}>💧 Splashes: {minuteFameResults.splashes}</Text>
+                    <Text style={styles.sectionSubtle}>❤️ Hugs: {minuteFameResults.hugs}</Text>
                     <Text style={styles.sectionSubtle}>💬 Echoes: {minuteFameResults.echoes}</Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 12 }}>
                       {minuteFameResults.level}
@@ -21551,7 +21892,7 @@ type CommandCentreSection =
                   onPress={() =>
                     Alert.alert(
                       '🐙 Octopus Bonus',
-                      'When your waves reach 10,000 octopus hugs, you earn $100!',
+                      'When your posts reach 10,000 hugs, you earn $100!',
                     )
                   }
                 >
@@ -24878,7 +25219,7 @@ const LiveStreamModal = ({
                     
   // Placeholder functions for comment interactions
   const onSplashComment = (commentId: string) => {
-    Alert.alert('Splash Comment', `Splashed comment ${commentId}`);
+    Alert.alert('Hug Comment', `Hugged comment ${commentId}`);
   };
   const onEchoBack = (comment: { id: string; from?: string; text: string }) => {
     setReplyingToLiveComment({
@@ -28254,7 +28595,7 @@ const LiveStreamModal = ({
                   onLongPress={() => {
                     Alert.alert(`Comment by ${c.from}`, `"${c.text}"`, [
                       {
-                        text: 'Splash 💦',
+                        text: 'Hug ❤️',
                         onPress: () => onSplashComment(c.id),
                       },
                       {
