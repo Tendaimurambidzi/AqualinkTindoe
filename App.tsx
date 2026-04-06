@@ -898,7 +898,11 @@ const buildLiveInviteNotice = (
 
 const buildWaveMediaItems = (data: any): Asset[] => {
   const out: Asset[] = [];
-  const rawItems = Array.isArray(data?.mediaItems) ? data.mediaItems : [];
+  const rawItems = Array.isArray(data?.galleryItems)
+    ? data.galleryItems
+    : Array.isArray(data?.mediaItems)
+    ? data.mediaItems
+    : [];
   rawItems.forEach((entry: any) => {
     const uri = String(entry?.uri || entry?.mediaUrl || '').trim();
     if (!uri) return;
@@ -913,6 +917,103 @@ const buildWaveMediaItems = (data: any): Asset[] => {
   if (!fallbackUri) return [];
   const mediaType = data?.mediaType || undefined;
   return [{ uri: fallbackUri, type: mediaType }] as Asset[];
+};
+
+const preserveExistingGridWave = (existingWave: Vibe | undefined, nextWave: Vibe): Vibe => {
+  const existingItems = Array.isArray(existingWave?.mediaItems)
+    ? existingWave.mediaItems.filter(item => !!item?.uri)
+    : [];
+  const nextItems = Array.isArray(nextWave?.mediaItems)
+    ? nextWave.mediaItems.filter(item => !!item?.uri)
+    : [];
+  if (existingItems.length > 1 && nextItems.length <= 1) {
+    return {
+      ...nextWave,
+      mediaItems: existingItems,
+      media:
+        nextWave.media ||
+        existingWave?.media ||
+        existingItems[0] ||
+        null,
+      postType: nextWave.postType || existingWave?.postType || 'gallery',
+    };
+  }
+  return nextWave;
+};
+
+const preserveExistingGridCollection = (existingWaves: Vibe[], nextWaves: Vibe[]): Vibe[] => {
+  const existingById = new Map(existingWaves.map(wave => [wave.id, wave]));
+  return nextWaves.map(nextWave =>
+    preserveExistingGridWave(existingById.get(nextWave.id), nextWave),
+  );
+};
+
+const getWaveMediaItemCount = (wave: Vibe | null | undefined): number => {
+  if (Array.isArray(wave?.mediaItems)) {
+    return wave.mediaItems.filter(item => !!item?.uri).length;
+  }
+  return wave?.media?.uri ? 1 : 0;
+};
+
+const mergeWaveVersions = (existingWave: Vibe | undefined, nextWave: Vibe): Vibe => {
+  if (!existingWave) return nextWave;
+
+  const preservedNextWave = preserveExistingGridWave(existingWave, nextWave);
+  const existingCount = getWaveMediaItemCount(existingWave);
+  const nextCount = getWaveMediaItemCount(preservedNextWave);
+  const preferredWave = nextCount >= existingCount ? preservedNextWave : existingWave;
+  const fallbackWave = preferredWave === preservedNextWave ? existingWave : preservedNextWave;
+
+  return {
+    ...fallbackWave,
+    ...preferredWave,
+    mediaItems:
+      nextCount >= existingCount
+        ? preservedNextWave.mediaItems || existingWave.mediaItems || null
+        : existingWave.mediaItems || preservedNextWave.mediaItems || null,
+    media:
+      preferredWave.media ||
+      fallbackWave.media ||
+      (nextCount > 0
+        ? (preservedNextWave.mediaItems?.find(item => !!item?.uri) as any) || null
+        : null),
+    postType:
+      nextCount > 1 || existingCount > 1
+        ? 'gallery'
+        : preferredWave.postType || fallbackWave.postType || null,
+    captionText: preferredWave.captionText || fallbackWave.captionText || '',
+    playbackUrl: preferredWave.playbackUrl || fallbackWave.playbackUrl || null,
+    authorName: preferredWave.authorName || fallbackWave.authorName || null,
+    ownerUid: preferredWave.ownerUid || fallbackWave.ownerUid || null,
+    user: preferredWave.user || fallbackWave.user || null,
+    image: preferredWave.image || fallbackWave.image || null,
+    mediaEdits: preferredWave.mediaEdits || fallbackWave.mediaEdits || null,
+    counts: preferredWave.counts || fallbackWave.counts || {},
+    createdAt: preferredWave.createdAt || fallbackWave.createdAt || null,
+  };
+};
+
+const mergeWaveCollectionsById = (...collections: Vibe[][]): Vibe[] => {
+  const merged = new Map<string, Vibe>();
+  collections.forEach(collection => {
+    collection.forEach(wave => {
+      if (!wave?.id) return;
+      const existingWave = merged.get(wave.id);
+      merged.set(wave.id, mergeWaveVersions(existingWave, wave));
+    });
+  });
+  return Array.from(merged.values());
+};
+
+const normalizeStoredGridItems = (items: any[] | null | undefined): Array<{ uri: string; type?: string; fileName?: string }> => {
+  if (!Array.isArray(items)) return [];
+  return items
+    .map(item => ({
+      uri: String(item?.uri || item?.mediaUrl || '').trim(),
+      type: item?.type || item?.mediaType || undefined,
+      fileName: item?.fileName || item?.name || undefined,
+    }))
+    .filter(item => !!item.uri);
 };
 
 const pickLatestLiveInvite = (
@@ -4512,7 +4613,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             counts: data.counts || {},
           });
         });
-        setWavesFeed(waves);
+        setWavesFeed(prev => preserveExistingGridCollection(prev, waves));
       });
 
     return () => unsub();
@@ -8337,13 +8438,10 @@ type CommandCentreSection =
   // Combine all feeds (my vibes + public vibes + post feed) for unified display
   const displayFeed = useMemo(() => {
     const combined = activeMinuteFameWave
-      ? [activeMinuteFameWave, ...postFeed, ...vibesFeed, ...publicFeed]
-      : [...postFeed, ...vibesFeed, ...publicFeed];
-    const seen = new Set<string>();
+      ? mergeWaveCollectionsById([activeMinuteFameWave], postFeed, vibesFeed, publicFeed)
+      : mergeWaveCollectionsById(postFeed, vibesFeed, publicFeed);
     return combined.filter(wave => {
       if (!wave || !wave.id) return false;
-      if (seen.has(wave.id)) return false;
-      seen.add(wave.id);
       const ownerUid = wave.ownerUid || (wave as any).authorId;
       if (!ownerUid) return true;
       if (blockedUsers.has(ownerUid)) return false;
@@ -9463,17 +9561,11 @@ type CommandCentreSection =
               const newMyWaves = myWavesInPublic.filter(
                 w => !existingMyWaveIds.has(w.id),
               );
-              // Update counts for existing waves with latest data from Firestore
+              // Merge the full Firestore wave back in so existing grids do not collapse.
               const updatedExistingWaves = prev.map(existingWave => {
                 const firestoreWave = myWavesInPublic.find(w => w.id === existingWave.id);
                 if (firestoreWave) {
-                  return {
-                    ...existingWave,
-                    counts: {
-                      splashes: Number(firestoreWave.counts?.splashes || 0),
-                      echoes: Number(firestoreWave.counts?.echoes || 0),
-                    },
-                  };
+                  return mergeWaveVersions(existingWave, firestoreWave);
                 }
                 return existingWave;
               });
@@ -9481,7 +9573,7 @@ type CommandCentreSection =
             });
             // Filter out my own waves from public feed on my device
             const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
-            setPublicFeed(publicWaves);
+            setPublicFeed(prev => preserveExistingGridCollection(prev, publicWaves));
                   
             // Load actual crew status for all users in the feed
             const currentUser = auth?.()?.currentUser;
@@ -9721,19 +9813,15 @@ type CommandCentreSection =
             
             // Add new waves to the feed with memory-safe limit
             if (lastLoadedDoc) {
-              // Append for pagination, dedupe by id, and keep a smaller cap to avoid memory pressure.
+              // Append for pagination, merging richer duplicates instead of keeping the first stale copy.
               setPublicFeed(prev => {
-                const seen = new Set<string>();
-                const combined = [...prev, ...wavesWithUserData].filter(wave => {
-                  if (!wave?.id || seen.has(wave.id)) return false;
-                  seen.add(wave.id);
-                  return true;
-                });
-                return combined.length > 35 ? combined.slice(-35) : combined;
+                const combined = mergeWaveCollectionsById(prev, wavesWithUserData);
+                const capped = combined.length > 35 ? combined.slice(-35) : combined;
+                return preserveExistingGridCollection(prev, capped);
               });
             } else {
               // Replace for initial load or refresh
-              setPublicFeed(wavesWithUserData);
+              setPublicFeed(prev => preserveExistingGridCollection(prev, wavesWithUserData));
             }
             
             // Update wave stats and load additional data
@@ -13730,8 +13818,13 @@ type CommandCentreSection =
       endPercent: number,
       uid: string,
     ) => {
+      const MAX_SAFE_POST_MEDIA_BYTES = 120 * 1024 * 1024;
       const mimeType = String(asset.type || 'application/octet-stream');
       const isVideoUpload = mimeType.startsWith('video/');
+      const declaredSize = Math.max(0, Number((asset as any)?.fileSize || 0));
+      if (declaredSize > MAX_SAFE_POST_MEDIA_BYTES) {
+        throw new Error('This media file is too large to upload safely on a phone. Keep it under 120 MB.');
+      }
       if (
         !(await ensureNetworkActionAllowed('upload', {
           label: 'upload this post',
@@ -13779,6 +13872,17 @@ type CommandCentreSection =
       }
       if (!localPath) {
         throw new Error('Could not access one of the selected files.');
+      }
+      try {
+        const stats = await RNFS.stat(localPath);
+        const resolvedSize = Math.max(0, Number((stats as any)?.size || 0));
+        if (resolvedSize > MAX_SAFE_POST_MEDIA_BYTES) {
+          throw new Error('This media file is too large to upload safely on a phone. Keep it under 120 MB.');
+        }
+      } catch (error: any) {
+        if (String(error?.message || '').includes('too large')) {
+          throw error;
+        }
       }
       const fileRef = storageMod().ref(filePath);
       await trackUploadTask(
@@ -15802,8 +15906,10 @@ type CommandCentreSection =
           );
           uploadedItems.push(uploaded);
         }
+        const storedGridItems = normalizeStoredGridItems(uploadedItems);
         const primaryItem = uploadedItems[0];
         const hasAnyVideo = uploadedItems.some(item => item.postType === 'video');
+        const gridPostType = storedGridItems.length > 1 ? 'gallery' : hasAnyVideo ? 'video' : 'image';
         const docRef = await firestoreMod()
           .collection('waves')
           .add({
@@ -15814,10 +15920,12 @@ type CommandCentreSection =
               accountCreationHandle ||
               a.currentUser?.displayName ||
               null,
-            mediaItems: uploadedItems,
+            mediaItems: storedGridItems,
+            galleryItems: storedGridItems,
+            gridItemCount: storedGridItems.length,
             mediaPath: primaryItem?.mediaPath || null,
             mediaType: primaryItem?.type || null,
-            postType: hasAnyVideo ? 'gallery' : 'image',
+            postType: gridPostType,
             text: finalCaption,
             captionText: finalCaption,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
@@ -15838,7 +15946,7 @@ type CommandCentreSection =
           media: primaryItem
             ? ({ uri: primaryItem.uri, type: primaryItem.type, fileName: primaryItem.fileName } as any)
             : null,
-          mediaItems: uploadedItems.map(item => ({ uri: item.uri, type: item.type, fileName: item.fileName } as any)),
+          mediaItems: storedGridItems.map(item => ({ uri: item.uri, type: item.type, fileName: item.fileName } as any)),
           audio: null,
           captionText: finalCaption,
           playbackUrl: null,
@@ -15849,7 +15957,7 @@ type CommandCentreSection =
             a.currentUser?.displayName ||
             null,
           ownerUid: uid,
-          postType: hasAnyVideo ? 'gallery' : 'image',
+          postType: gridPostType,
           mediaEdits: sanitizedMediaEdits,
         });
         notifySuccess('You dropped a vibe!');
@@ -15975,6 +16083,13 @@ type CommandCentreSection =
         // isHttp already defined above
         const nameGuessRaw = capturedMedia.fileName || 'wave';
         const type = (capturedMedia.type || '').toLowerCase();
+        const MAX_SAFE_POST_MEDIA_BYTES = 120 * 1024 * 1024;
+        const declaredSize = Math.max(0, Number((capturedMedia as any)?.fileSize || 0));
+        if (declaredSize > MAX_SAFE_POST_MEDIA_BYTES) {
+          Alert.alert('File too large', 'This media file is too large to upload safely on a phone. Keep it under 120 MB.');
+          setReleasing(false);
+          return;
+        }
         const sanitizedBase = nameGuessRaw
           .replace(/[^A-Za-z0-9._-]/g, '_')
           .replace(/_{2,}/g, '_');
@@ -16023,6 +16138,16 @@ type CommandCentreSection =
           setReleasing(false);
           return;
         }
+        try {
+          const RNFS = require('react-native-fs');
+          const stats = await RNFS.stat(localPath);
+          const resolvedSize = Math.max(0, Number((stats as any)?.size || 0));
+          if (resolvedSize > MAX_SAFE_POST_MEDIA_BYTES) {
+            Alert.alert('File too large', 'This media file is too large to upload safely on a phone. Keep it under 120 MB.');
+            setReleasing(false);
+            return;
+          }
+        } catch {}
         // Set contentType to help ExoPlayer/iOS pick the right pipeline
         const uploadPath = localPath;
         const uploadContentType =

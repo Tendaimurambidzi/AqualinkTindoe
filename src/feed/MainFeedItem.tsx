@@ -276,9 +276,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
   const [viewerZoom, setViewerZoom] = useState(1);
+  const [activeGridVideoIndex, setActiveGridVideoIndex] = useState<number>(-1);
   const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
   const [preferFallbackVideoSource, setPreferFallbackVideoSource] = useState(false);
+  const renderMoMoBadge = useCallback(
+    () => (
+      <View pointerEvents="none" style={styles.momoBadge}>
+        <Text style={styles.momoBadgeText}>MoMo</Text>
+      </View>
+    ),
+    [],
+  );
   const audioControlsTimerRef = useRef<any>(null);
 
   useEffect(() => {
@@ -437,6 +446,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const hasMultiMediaGrid = galleryMediaItems.length > 1;
   const previewGridItems = galleryMediaItems.slice(0, 6);
   const hiddenGridCount = Math.max(0, galleryMediaItems.length - 6);
+  const latestGridVideoIndex = useMemo(
+    () =>
+      [...galleryMediaItems]
+        .map((mediaItem, mediaIndex) => (isVideoAsset(mediaItem) ? mediaIndex : -1))
+        .filter(mediaIndex => mediaIndex >= 0)
+        .pop() ?? -1,
+    [galleryMediaItems, isVideoAsset],
+  );
   const explicitPostType = String(item.postType || '').toLowerCase();
   const isExplicitVideo = explicitPostType === 'video';
   const isExplicitImage = explicitPostType === 'image';
@@ -495,6 +512,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
     return STORY_THEMES[seed % STORY_THEMES.length];
   }, [item.id]);
+
+  useEffect(() => {
+    setActiveGridVideoIndex(latestGridVideoIndex);
+  }, [item.id, latestGridVideoIndex]);
 
   const filterOverlayStyle = (() => {
     const f = mediaEdits?.filter || 'none';
@@ -1198,9 +1219,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                           ? buildFeedTextOverlay(tileOverlay, SCREEN_WIDTH / 2 - 10, SCREEN_WIDTH / 2 - 10)
                           : null;
                       return (
-                        <Pressable
+                        <View
                           key={`${mediaItem.uri || 'media'}_${mediaIndex}`}
-                          onPress={() => openMediaViewer(mediaIndex)}
                           style={{
                             width: '50%',
                             flexBasis: '50%',
@@ -1219,19 +1239,42 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                               justifyContent: 'center',
                             }}
                           >
+                            {renderMoMoBadge()}
                             {isImage ? (
-                              <Image
+                              <Pressable onPress={() => openMediaViewer(mediaIndex)} style={{ width: '100%', height: '100%' }}>
+                                <Image
+                                  source={{ uri: String(mediaItem.uri) }}
+                                  style={{ width: '100%', height: '100%' }}
+                                  resizeMode="cover"
+                                />
+                              </Pressable>
+                            ) : isVideo ? (
+                              <VideoWithTapControls
                                 source={{ uri: String(mediaItem.uri) }}
                                 style={{ width: '100%', height: '100%' }}
                                 resizeMode="cover"
+                                paused={
+                                  !(
+                                    shouldPlay &&
+                                    item.id === activeVideoId &&
+                                    activeGridVideoIndex === mediaIndex
+                                  )
+                                }
+                                isActive={item.id === activeVideoId && activeGridVideoIndex === mediaIndex}
+                                shouldPreload={near}
+                                hideTimeout={4000}
+                                onTap={() => setActiveGridVideoIndex(mediaIndex)}
                               />
                             ) : (
-                              <View style={{ alignItems: 'center', justifyContent: 'center', padding: 10 }}>
-                                <Text style={{ fontSize: 28, color: '#fff' }}>{isVideo ? 'Video' : 'File'}</Text>
+                              <Pressable
+                                onPress={() => openMediaViewer(mediaIndex)}
+                                style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', padding: 10 }}
+                              >
+                                <Text style={{ fontSize: 28, color: '#fff' }}>File</Text>
                                 <Text style={{ color: '#fff', fontSize: 11, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
                                   {mediaItem.fileName || `Item ${mediaIndex + 1}`}
                                 </Text>
-                              </View>
+                              </Pressable>
                             )}
                             {isLastVisibleTile ? (
                               <View
@@ -1262,6 +1305,24 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                                 </Text>
                               </View>
                             ) : null}
+                            {isVideo && mediaIndex !== activeGridVideoIndex ? (
+                              <Pressable
+                                onPress={() => setActiveGridVideoIndex(mediaIndex)}
+                                style={{
+                                  position: 'absolute',
+                                  right: 8,
+                                  bottom: 8,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 4,
+                                  borderRadius: 999,
+                                  backgroundColor: 'rgba(3,7,18,0.64)',
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(255,255,255,0.14)',
+                                }}
+                              >
+                                <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>Play</Text>
+                              </Pressable>
+                            ) : null}
                             {tileOverlayRender ? (
                               <View pointerEvents="none" style={tileOverlayRender.containerStyle}>
                                 <Text style={tileOverlayRender.textStyle}>
@@ -1270,13 +1331,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                               </View>
                             ) : null}
                           </View>
-                        </Pressable>
+                        </View>
                       );
                     })}
                   </View>
                 </View>
               ) : hasVideoMedia ? (
                 <View style={{ marginHorizontal: 0, position: 'relative', backgroundColor: '#000' }}>
+                  {renderMoMoBadge()}
                   {!allowPlayback ? (
                     <View
                       style={[
@@ -1446,6 +1508,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   }}
                 >
                   <Text style={{ fontSize: 40, marginBottom: 10 }}>🎵</Text>
+                  {renderMoMoBadge()}
                   {RNVideo ? (
                     <RNVideo
                       source={{ uri: String(item.audio?.uri || item.media?.uri || '') }}
@@ -1476,6 +1539,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     paddingHorizontal: 14,
                   }}
                 >
+                  {renderMoMoBadge()}
                   <Text style={{ fontSize: 40 }}>📄</Text>
                 </View>
               ) : (
@@ -1493,6 +1557,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       backgroundColor: '#000',
                     }}
                   >
+                    {renderMoMoBadge()}
                     <Image
                       source={{ uri: mediaUri }}
                       style={[
@@ -1602,6 +1667,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 end={{ x: 1, y: 1 }}
                 style={styles.textStoryCard}
               >
+                {renderMoMoBadge()}
                 <ClickableTextWithLinks
                   text={
                     expandedPosts[item.id]
@@ -2089,6 +2155,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  momoBadge: {
+    position: 'absolute',
+    left: 12,
+    top: 12,
+    zIndex: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: '#0B2559',
+    borderWidth: 1,
+    borderColor: 'rgba(191,219,254,0.28)',
+  },
+  momoBadgeText: {
+    color: '#EFF6FF',
+    fontSize: 11,
+    fontWeight: '900',
     letterSpacing: 0.4,
   },
   posterActionWrap: {

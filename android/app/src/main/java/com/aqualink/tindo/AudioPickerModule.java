@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
+import android.content.ActivityNotFoundException;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -57,16 +58,43 @@ public class AudioPickerModule extends ReactContextBaseJavaModule implements Act
         pickerPromise = promise;
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("*/*");
+        if (requestCode == FILE_PICKER_REQUEST) {
+            intent.setType("application/*");
+            intent.putExtra(
+                Intent.EXTRA_MIME_TYPES,
+                new String[] {
+                    "application/pdf",
+                    "application/msword",
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "application/vnd.ms-powerpoint",
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                }
+            );
+        } else {
+            intent.setType("audio/*");
+        }
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
             intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, allowMultiple);
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
             intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
-            intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, android.provider.MediaStore.Files.getContentUri("external"));
+            try {
+                intent.putExtra(
+                    DocumentsContract.EXTRA_INITIAL_URI,
+                    android.provider.MediaStore.Files.getContentUri("external")
+                );
+            } catch (Exception ignored) {}
         }
-        activity.startActivityForResult(intent, requestCode);
+        try {
+            activity.startActivityForResult(
+                Intent.createChooser(intent, requestCode == FILE_PICKER_REQUEST ? "Select file" : "Select audio"),
+                requestCode
+            );
+        } catch (ActivityNotFoundException error) {
+            pickerPromise = null;
+            promise.reject("NO_PICKER", "No document picker is available on this device.");
+        }
     }
 
     @Override

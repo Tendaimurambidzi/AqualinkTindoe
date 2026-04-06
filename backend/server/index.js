@@ -6,9 +6,14 @@ import admin from 'firebase-admin';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import os from 'os';
+import { spawn } from 'child_process';
+import { Readable } from 'stream';
 import { fileURLToPath } from 'url';
 import { Mux } from '@mux/mux-node';
 import sharp from 'sharp';
+import ffmpegPath from 'ffmpeg-static';
+import ffprobe from 'ffprobe-static';
 
 const app = express();
 app.use(cors());
@@ -22,6 +27,23 @@ const GOOGLE_APPLICATION_CREDENTIALS = process.env.GOOGLE_APPLICATION_CREDENTIAL
 const MUX_TOKEN_ID = process.env.MUX_TOKEN_ID;
 const MUX_TOKEN_SECRET = process.env.MUX_TOKEN_SECRET;
 const STORAGE_BUCKET = process.env.STORAGE_BUCKET; // optional override
+
+for (const key of [
+  'HTTP_PROXY',
+  'HTTPS_PROXY',
+  'ALL_PROXY',
+  'GRPC_PROXY',
+  'http_proxy',
+  'https_proxy',
+  'all_proxy',
+  'grpc_proxy',
+]) {
+  if (process.env[key]) {
+    delete process.env[key];
+  }
+}
+process.env.NO_PROXY = process.env.NO_PROXY || '127.0.0.1,localhost,.googleapis.com,firestore.googleapis.com,storage.googleapis.com';
+process.env.no_proxy = process.env.no_proxy || process.env.NO_PROXY;
 
 let adminReady = false;
 try {
@@ -60,6 +82,18 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '..', '..');
 const androidGradlePath = path.join(repoRoot, 'android', 'app', 'build.gradle');
 const rootPackagePath = path.join(repoRoot, 'package.json');
+const waveDownloadDebugPath = path.join(__dirname, 'wave-download-debug.log');
+
+function appendWaveDownloadDebug(message, data = null) {
+  try {
+    const payload = {
+      at: new Date().toISOString(),
+      message,
+      ...(data ? { data } : {}),
+    };
+    fs.appendFileSync(waveDownloadDebugPath, `${JSON.stringify(payload)}\n`);
+  } catch {}
+}
 
 function readVersionFromGradle() {
   try {
@@ -131,15 +165,34 @@ app.get('/app-version', (_req, res) => {
 // -------------------- Mux merge helpers --------------------
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function getSignedUrlForPath(storagePath) {
+async function getSignedUrlForPath(storagePath, waveData = null) {
   if (!adminReady) throw new Error('firebase-admin not ready');
   if (!storagePath) throw new Error('storagePath missing');
-  const bucket = admin.storage().bucket(STORAGE_BUCKET);
+  const bucket = admin.storage().bucket(resolveStorageBucketName(waveData));
   const [url] = await bucket.file(String(storagePath)).getSignedUrl({
     action: 'read',
     expires: Date.now() + 60 * 60 * 1000,
   });
   return url;
+}
+
+function parseBucketFromMediaUrl(mediaUrl) {
+  const s = String(mediaUrl || '').trim();
+  const match = s.match(/\/b\/([^/]+)\/o\//i);
+  return match?.[1] || null;
+}
+
+function resolveStorageBucketName(waveData = null) {
+  if (STORAGE_BUCKET) return String(STORAGE_BUCKET);
+  const bucketFromMediaUrl = parseBucketFromMediaUrl(waveData?.mediaUrl || waveData?.playbackUrl || '');
+  if (bucketFromMediaUrl) return bucketFromMediaUrl;
+  const projectId =
+    FIREBASE_PROJECT_ID ||
+    admin?.app?.()?.options?.projectId ||
+    process.env.GCLOUD_PROJECT ||
+    process.env.GOOGLE_CLOUD_PROJECT ||
+    'aqualink-b5f7c';
+  return `${projectId}.firebasestorage.app`;
 }
 
 function looksLikeHttpUrl(value) {
@@ -174,11 +227,11 @@ function inferMediaKind(contentType, sourcePath = '') {
   return 'unknown';
 }
 
-async function resolveOpenableUrl(mediaPath) {
+async function resolveOpenableUrl(mediaPath, waveData = null) {
   if (!mediaPath) return null;
   if (looksLikeHttpUrl(mediaPath)) return String(mediaPath);
   if (isStoragePathLike(mediaPath)) {
-    return getSignedUrlForPath(String(mediaPath));
+    return getSignedUrlForPath(String(mediaPath), waveData);
   }
   return null;
 }
@@ -191,7 +244,7 @@ async function loadMediaBufferForWave(waveData) {
   }
 
   if (isStoragePathLike(sourcePath)) {
-    const bucket = admin.storage().bucket(STORAGE_BUCKET);
+    const bucket = admin.storage().bucket(resolveStorageBucketName(waveData));
     const file = bucket.file(String(sourcePath));
     const [exists] = await file.exists();
     if (!exists) {
@@ -203,7 +256,10 @@ async function loadMediaBufferForWave(waveData) {
       buffer,
       contentType: metadata?.contentType || contentTypeGuess,
       sourcePath: String(sourcePath),
-      sourceUrl: await getSignedUrlForPath(String(sourcePath)),
+      sourceUrl: await admin.storage().bucket(resolveStorageBucketName(waveData)).file(String(sourcePath)).getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000,
+      }).then(([url]) => url),
     };
   }
 
@@ -285,7 +341,10 @@ async function createCaptionMergedImage({ waveId, captionText, waveData }) {
   const trimmedCaption = String(captionText || '').trim();
   if (!trimmedCaption) {
     return {
-      downloadUrl: await resolveOpenableUrl(waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || ''),
+      downloadUrl: await resolveOpenableUrl(
+        waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || '',
+        waveData,
+      ),
       merged: false,
       reason: 'empty-caption',
     };
@@ -295,7 +354,10 @@ async function createCaptionMergedImage({ waveId, captionText, waveData }) {
   const mediaKind = inferMediaKind(media.contentType, media.sourcePath);
   if (mediaKind !== 'image') {
     return {
-      downloadUrl: await resolveOpenableUrl(waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || ''),
+      downloadUrl: await resolveOpenableUrl(
+        waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || '',
+        waveData,
+      ),
       merged: false,
       reason: 'unsupported-media-kind',
     };
@@ -309,12 +371,15 @@ async function createCaptionMergedImage({ waveId, captionText, waveData }) {
   const format = inferImageFormat(media.contentType, media.sourcePath);
   const ext = format === 'jpeg' ? 'jpg' : format;
   const mergedStoragePath = `wave_downloads/${waveId}/caption_${hash}.${ext}`;
-  const bucket = admin.storage().bucket(STORAGE_BUCKET);
+  const bucket = admin.storage().bucket(resolveStorageBucketName(waveData));
   const file = bucket.file(mergedStoragePath);
   const [exists] = await file.exists();
   if (exists) {
     return {
-      downloadUrl: await getSignedUrlForPath(mergedStoragePath),
+      downloadUrl: await bucket.file(mergedStoragePath).getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000,
+      }).then(([url]) => url),
       merged: true,
       storagePath: mergedStoragePath,
       cached: true,
@@ -354,11 +419,243 @@ async function createCaptionMergedImage({ waveId, captionText, waveData }) {
   });
 
   return {
-    downloadUrl: await getSignedUrlForPath(mergedStoragePath),
+    downloadUrl: await bucket.file(mergedStoragePath).getSignedUrl({
+      action: 'read',
+      expires: Date.now() + 60 * 60 * 1000,
+    }).then(([url]) => url),
     merged: true,
     storagePath: mergedStoragePath,
     cached: false,
   };
+}
+
+async function downloadUrlToFile(sourceUrl, destinationPath) {
+  const response = await fetch(sourceUrl);
+  if (!response.ok || !response.body) {
+    throw new Error(`Failed to download source media (${response.status})`);
+  }
+  await fs.promises.mkdir(path.dirname(destinationPath), { recursive: true });
+  const fileStream = fs.createWriteStream(destinationPath);
+  await new Promise((resolve, reject) => {
+    const body = response.body;
+    const nodeStream =
+      typeof body.pipe === 'function'
+        ? body
+        : Readable.fromWeb
+        ? Readable.fromWeb(body)
+        : null;
+    if (!nodeStream) {
+      reject(new Error('Readable stream conversion unavailable'));
+      return;
+    }
+    nodeStream.on('error', reject);
+    fileStream.on('error', reject);
+    fileStream.on('finish', resolve);
+    nodeStream.pipe(fileStream);
+  });
+}
+
+async function runCommand(binaryPath, args) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(binaryPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    let stdout = '';
+    child.stdout.on('data', chunk => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', chunk => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      reject(new Error(stderr || stdout || `Command failed with exit code ${code}`));
+    });
+  });
+}
+
+async function probeVideoSize(inputPath) {
+  const probePath = ffprobe?.path;
+  if (!probePath) {
+    return { width: 1280, height: 720 };
+  }
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(probePath, [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=width,height',
+      '-of',
+      'json',
+      inputPath,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', chunk => {
+      stderr += chunk.toString();
+    });
+    child.on('error', reject);
+    child.on('close', code => {
+      if (code !== 0) {
+        reject(new Error(stderr || `ffprobe failed with exit code ${code}`));
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+  const parsed = JSON.parse(String(result || '{}'));
+  const stream = Array.isArray(parsed?.streams) ? parsed.streams[0] || {} : {};
+  return {
+    width: Math.max(720, Number(stream.width) || 1280),
+    height: Math.max(720, Number(stream.height) || 720),
+  };
+}
+
+async function createCaptionMergedVideo({ waveId, captionText, waveData }) {
+  if (!adminReady) throw new Error('firebase-admin not ready');
+  if (!ffmpegPath) {
+    return {
+      downloadUrl: await resolveOpenableUrl(
+        waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || '',
+        waveData,
+      ),
+      merged: false,
+      reason: 'ffmpeg-unavailable',
+    };
+  }
+
+  const trimmedCaption = String(captionText || '').trim();
+  if (!trimmedCaption) {
+    return {
+      downloadUrl: await resolveOpenableUrl(
+        waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || '',
+        waveData,
+      ),
+      merged: false,
+      reason: 'empty-caption',
+    };
+  }
+
+  const sourcePath = waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || '';
+  const mediaKind = inferMediaKind(waveData.mediaType || waveData.mimeType || '', sourcePath);
+  if (mediaKind !== 'video') {
+    return {
+      downloadUrl: await resolveOpenableUrl(sourcePath, waveData),
+      merged: false,
+      reason: 'unsupported-media-kind',
+    };
+  }
+
+  const hash = crypto
+    .createHash('sha1')
+    .update(`${waveId}|${sourcePath}|${trimmedCaption}`)
+    .digest('hex')
+    .slice(0, 16);
+  const mergedStoragePath = `wave_downloads/${waveId}/caption_${hash}.mp4`;
+  const bucket = admin.storage().bucket(resolveStorageBucketName(waveData));
+  const file = bucket.file(mergedStoragePath);
+  const [exists] = await file.exists();
+  if (exists) {
+    return {
+      downloadUrl: await bucket.file(mergedStoragePath).getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000,
+      }).then(([url]) => url),
+      merged: true,
+      storagePath: mergedStoragePath,
+      cached: true,
+    };
+  }
+
+  const sourceUrl = await resolveOpenableUrl(sourcePath, waveData);
+  if (!sourceUrl) {
+    throw new Error('Could not resolve source video URL');
+  }
+
+  const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'wave-caption-'));
+  const sourceExt = path.extname(sourcePath).replace(/[^A-Za-z0-9.]/g, '') || '.mp4';
+  const inputPath = path.join(tempDir, `input${sourceExt}`);
+  const overlayPath = path.join(tempDir, 'overlay.png');
+  const outputPath = path.join(tempDir, 'output.mp4');
+
+  try {
+    await downloadUrlToFile(sourceUrl, inputPath);
+    const { width, height } = await probeVideoSize(inputPath);
+    const overlaySvg = buildCaptionSvg({ width, height, captionText: trimmedCaption });
+    await sharp(overlaySvg).png().toFile(overlayPath);
+
+    await runCommand(ffmpegPath, [
+      '-y',
+      '-i',
+      inputPath,
+      '-i',
+      overlayPath,
+      '-filter_complex',
+      '[1:v][0:v]scale2ref[ov][base];[base][ov]overlay=0:0[vout]',
+      '-map',
+      '[vout]',
+      '-map',
+      '0:a?',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-crf',
+      '20',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '160k',
+      '-movflags',
+      '+faststart',
+      outputPath,
+    ]);
+
+    await bucket.upload(outputPath, {
+      destination: mergedStoragePath,
+      resumable: false,
+      metadata: {
+        contentType: 'video/mp4',
+        cacheControl: 'public,max-age=31536000',
+        metadata: {
+          waveId: String(waveId),
+          captionMerged: 'true',
+          mediaKind: 'video',
+        },
+      },
+    });
+
+    return {
+      downloadUrl: await bucket.file(mergedStoragePath).getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 60 * 60 * 1000,
+      }).then(([url]) => url),
+      merged: true,
+      storagePath: mergedStoragePath,
+      cached: false,
+    };
+  } finally {
+    await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+async function createCaptionMergedMedia({ waveId, captionText, waveData }) {
+  const sourcePath = waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl || '';
+  const mediaKind = inferMediaKind(waveData.mediaType || waveData.mimeType || '', sourcePath);
+  if (mediaKind === 'video') {
+    return createCaptionMergedVideo({ waveId, captionText, waveData });
+  }
+  return createCaptionMergedImage({ waveId, captionText, waveData });
 }
 
 async function startMuxMerge({ waveId, sourceVideoPath, overlayAudioPath, ownerUid, authorName }) {
@@ -1514,6 +1811,7 @@ app.post('/wave/download', async (req, res) => {
   
   try {
     if (!adminReady) {
+      appendWaveDownloadDebug('admin-not-ready', { waveId });
       console.log('Wave download (stub):', { waveId, uid });
       return res.json({ 
         ok: true, 
@@ -1525,6 +1823,7 @@ app.post('/wave/download', async (req, res) => {
     
     // Get wave document
     const waveDoc = await admin.firestore().collection('waves').doc(waveId).get();
+    appendWaveDownloadDebug('wave-doc-fetched', { waveId, exists: waveDoc.exists });
     
     if (!waveDoc.exists) {
       return bad(res, 'Wave not found', 404);
@@ -1532,6 +1831,12 @@ app.post('/wave/download', async (req, res) => {
     
     const waveData = waveDoc.data() || {};
     const mediaPath = waveData.mediaPath || waveData.playbackUrl || waveData.mediaUrl;
+    appendWaveDownloadDebug('wave-media-path', {
+      waveId,
+      mediaPath,
+      mediaUrl: waveData.mediaUrl || null,
+      playbackUrl: waveData.playbackUrl || null,
+    });
     
     if (!mediaPath) {
       return bad(res, 'No media found for this wave', 404);
@@ -1542,14 +1847,20 @@ app.post('/wave/download', async (req, res) => {
       downloadCount: admin.firestore.FieldValue.increment(1),
       lastDownloadedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    appendWaveDownloadDebug('wave-download-tracked', { waveId });
     
-    let downloadUrl = await resolveOpenableUrl(mediaPath);
+    let downloadUrl = await resolveOpenableUrl(mediaPath, waveData);
+    appendWaveDownloadDebug('wave-download-url-resolved', {
+      waveId,
+      hasDownloadUrl: Boolean(downloadUrl),
+      downloadUrlPreview: downloadUrl ? String(downloadUrl).slice(0, 120) : null,
+    });
     let captionMerged = false;
     let mergeReason = null;
 
     if (mergeCaption && String(captionText || '').trim()) {
       try {
-        const merged = await createCaptionMergedImage({
+        const merged = await createCaptionMergedMedia({
           waveId: String(waveId),
           captionText: String(captionText || ''),
           waveData,
@@ -1557,8 +1868,18 @@ app.post('/wave/download', async (req, res) => {
         downloadUrl = merged.downloadUrl || downloadUrl;
         captionMerged = Boolean(merged.merged);
         mergeReason = merged.reason || null;
+        appendWaveDownloadDebug('wave-caption-merge-result', {
+          waveId,
+          captionMerged,
+          mergeReason,
+          downloadUrlPreview: downloadUrl ? String(downloadUrl).slice(0, 120) : null,
+        });
       } catch (mergeError) {
         console.warn('Caption merge skipped for wave', waveId, mergeError?.message || mergeError);
+        appendWaveDownloadDebug('wave-caption-merge-error', {
+          waveId,
+          error: String(mergeError?.message || mergeError),
+        });
         mergeReason = 'merge-failed';
       }
     }
@@ -1579,7 +1900,15 @@ app.post('/wave/download', async (req, res) => {
     });
   } catch (e) {
     console.error('Wave download error:', e);
-    return bad(res, 'Failed to prepare download', 500);
+    appendWaveDownloadDebug('wave-download-error', {
+      waveId,
+      error: String(e?.message || e),
+      stack: String(e?.stack || ''),
+    });
+    return res.status(500).json({
+      error: 'Failed to prepare download',
+      detail: String(e?.message || e),
+    });
   }
 });
 

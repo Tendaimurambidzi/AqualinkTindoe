@@ -102,6 +102,7 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
   const [suppressAutoPlayUntilInactive, setSuppressAutoPlayUntilInactive] = useState<boolean>(false);
+  const [manualPauseRequested, setManualPauseRequested] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(typeof muted === 'boolean' ? muted : true);
   const [isLoading, setIsLoading] = useState<boolean>(true); // internal readiness gate
   const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
@@ -112,6 +113,11 @@ const VideoWithTapControls: React.FC<Props> = ({
 
   useEffect(() => {
     setIsLoading(true);
+    setCurrentTime(0);
+    setDuration(0);
+    setVideoCompleted(false);
+    setManualPauseRequested(false);
+    setSuppressAutoPlayUntilInactive(false);
   }, [resolvedUri]);
 
   // Keep mute state controlled by props when provided (e.g. overlay audio mode),
@@ -176,6 +182,10 @@ const VideoWithTapControls: React.FC<Props> = ({
     wasActiveRef.current = isActive;
 
     if (isActive && !paused) {
+      if (manualPauseRequested) {
+        setInternalPaused(true);
+        return;
+      }
       // Keep video paused on the same active item after completion/reset.
       // Once user leaves and comes back (becameActive), autoplay again.
       if (suppressAutoPlayUntilInactive) {
@@ -198,8 +208,12 @@ const VideoWithTapControls: React.FC<Props> = ({
     }
     setInternalPaused(true);
     setIsMuted(true);
+    if (!isActive) {
+      setManualPauseRequested(false);
+    }
     hideControls();
   }, [
+    manualPauseRequested,
     isActive,
     paused,
     internalPaused,
@@ -252,11 +266,16 @@ const VideoWithTapControls: React.FC<Props> = ({
       safeSeek(0);
       setVideoCompleted(false);
       setInternalPaused(true);
+      setManualPauseRequested(true);
       setSuppressAutoPlayUntilInactive(true);
       showControls();
     } else {
       setSuppressAutoPlayUntilInactive(false);
-      setInternalPaused(prev => !prev);
+      setInternalPaused(prev => {
+        const nextPaused = !prev;
+        setManualPauseRequested(nextPaused);
+        return nextPaused;
+      });
       if (!forceMuted) {
         setIsMuted(false);
       }
@@ -453,19 +472,15 @@ const VideoWithTapControls: React.FC<Props> = ({
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
       {/* Show poster overlay when video is paused or completed */}
-      {(internalPaused || videoCompleted) && (
+      {((internalPaused || videoCompleted) && posterUri) ? (
         <View style={styles.posterContainer}>
-          {posterUri ? (
-            <Image
-              source={{ uri: posterUri }}
-              style={styles.posterImage}
-              resizeMode={posterResizeMode || 'contain'}
-            />
-          ) : (
-            <View style={styles.posterImage} />
-          )}
+          <Image
+            source={{ uri: posterUri }}
+            style={styles.posterImage}
+            resizeMode={posterResizeMode || 'contain'}
+          />
         </View>
-      )}
+      ) : null}
       {videoCompleted && (
         <View style={styles.replayContainer}>
           <Pressable

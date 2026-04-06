@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Alert,
   Animated,
   Dimensions,
@@ -81,11 +82,24 @@ const LIVE_SOUND_EFFECTS = [
   },
 ] as const;
 
-const PREMIUM_LIVE_VIDEO_DIMENSIONS = { width: 854, height: 480 };
-const PREMIUM_LIVE_VIDEO_BITRATE = 950000;
-const PREMIUM_LIVE_VIDEO_MIN_BITRATE = 480000;
-const PREMIUM_LIVE_VIDEO_FRAME_RATE = 20;
+const PREMIUM_LIVE_VIDEO_DIMENSIONS = { width: 960, height: 540 };
+const PREMIUM_LIVE_VIDEO_BITRATE = 1000000;
+const PREMIUM_LIVE_VIDEO_MIN_BITRATE = 450000;
+const PREMIUM_LIVE_VIDEO_FRAME_RATE = 24;
 const PREMIUM_LIVE_VIDEO_MIN_FRAME_RATE = 12;
+const PREMIUM_SCREEN_SHARE_DIMENSIONS = { width: 1280, height: 720 };
+const PREMIUM_SCREEN_SHARE_BITRATE = 2200;
+const PREMIUM_SCREEN_SHARE_FRAME_RATE = 15;
+const DRIFT_EXPO_VIDEO_DIMENSIONS = { width: 854, height: 480 };
+const DRIFT_EXPO_VIDEO_BITRATE = 1100000;
+const DRIFT_EXPO_VIDEO_MIN_BITRATE = 650000;
+const DRIFT_EXPO_VIDEO_FRAME_RATE = 20;
+const DRIFT_EXPO_VIDEO_MIN_FRAME_RATE = 15;
+const LARGE_SHARED_FILE_BYTES = 24 * 1024 * 1024;
+const VERY_LARGE_SHARED_FILE_BYTES = 80 * 1024 * 1024;
+const MAX_SHARED_FILE_BYTES = 180 * 1024 * 1024;
+const MAX_CONVERTIBLE_FILE_BYTES = 48 * 1024 * 1024;
+const MAX_VISIBLE_PREMIUM_GALLERY_TILES = 4;
 
 type InviteJoinPreset = {
   liveId?: string | null;
@@ -120,7 +134,6 @@ type ParticipantRow = {
   purged?: boolean;
   raisedHand?: boolean;
   cameraOff?: boolean;
-  screenSharing?: boolean;
 };
 
 type SearchResultItem = {
@@ -146,6 +159,7 @@ type SharedPdfDoc = {
   fileName: string;
   downloadUrl: string;
   storagePath: string;
+  fileSizeBytes?: number | null;
   sharedByUid?: string | null;
   sharedByName: string;
   createdAtMs: number;
@@ -297,7 +311,7 @@ const FreshDriftExpoModal = ({
   inviteJoinPreset,
   searchOceanEntities,
 }: Props) => {
-  const { AudioPicker, PdfRenderer } = NativeModules as {
+  const { AudioPicker, PdfRenderer, AgoraRtcNg } = NativeModules as {
     AudioPicker?: {
       pickFiles?: () => Promise<any[] | any>;
     };
@@ -308,6 +322,9 @@ const FreshDriftExpoModal = ({
         pageIndex: number,
         targetWidth: number,
       ) => Promise<{ uri: string; pageCount: number; pageIndex: number }>;
+    };
+    AgoraRtcNg?: {
+      requestAndroidScreenProjection?: () => Promise<string>;
     };
   };
   const insets = useSafeAreaInsets();
@@ -359,6 +376,7 @@ const FreshDriftExpoModal = ({
   const [myRtcUid, setMyRtcUid] = useState<number>(0);
   const [joined, setJoined] = useState(false);
   const [remoteUids, setRemoteUids] = useState<number[]>([]);
+  const [recentSpeakerAt, setRecentSpeakerAt] = useState<Record<number, number>>({});
   const [participants, setParticipants] = useState<ParticipantRow[]>([]);
   const [showAudiencePanel, setShowAudiencePanel] = useState(false);
   const [participantTicketLabels, setParticipantTicketLabels] = useState<Record<string, string>>({});
@@ -368,7 +386,7 @@ const FreshDriftExpoModal = ({
   const [micMuted, setMicMuted] = useState(false);
   const [cameraOff, setCameraOff] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
-  const [screenShareEnabled, setScreenShareEnabled] = useState(false);
+  const [networkWarning, setNetworkWarning] = useState<string | null>(null);
   const [showComments, setShowComments] = useState(true);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [inviteQuery, setInviteQuery] = useState('');
@@ -384,6 +402,10 @@ const FreshDriftExpoModal = ({
   const [currentSharedDocStage, setCurrentSharedDocStage] = useState<SharedDocShareStage>(null);
   const [currentSharedDocPreviewTitle, setCurrentSharedDocPreviewTitle] = useState<string | null>(null);
   const [currentSharedDocPreviewKind, setCurrentSharedDocPreviewKind] = useState<string | null>(null);
+  const [currentSharedDocDownloadUrl, setCurrentSharedDocDownloadUrl] = useState<string | null>(null);
+  const [currentSharedDocStoragePath, setCurrentSharedDocStoragePath] = useState<string | null>(null);
+  const [currentSharedDocFileName, setCurrentSharedDocFileName] = useState<string | null>(null);
+  const [currentSharedDocFileSizeBytes, setCurrentSharedDocFileSizeBytes] = useState<number | null>(null);
   const [currentSharedDocPage, setCurrentSharedDocPage] = useState(0);
   const [currentSharedDocSlideShow, setCurrentSharedDocSlideShow] = useState(false);
   const [currentSharedDocSlideSeconds, setCurrentSharedDocSlideSeconds] = useState(
@@ -394,6 +416,13 @@ const FreshDriftExpoModal = ({
   const [sharedDocStatusText, setSharedDocStatusText] = useState<string | null>(null);
   const [docBusy, setDocBusy] = useState(false);
   const [activeDoc, setActiveDoc] = useState<SharedPdfDoc | null>(null);
+  const [isDocMinimized, setIsDocMinimized] = useState(false);
+  const [screenShareActive, setScreenShareActive] = useState(false);
+  const [screenShareOwnerUid, setScreenShareOwnerUid] = useState<string | null>(null);
+  const [screenShareOwnerName, setScreenShareOwnerName] = useState<string | null>(null);
+  const [screenShareOwnerRtcUid, setScreenShareOwnerRtcUid] = useState<number>(0);
+  const [screenShareStarting, setScreenShareStarting] = useState(false);
+  const [localScreenShareActive, setLocalScreenShareActive] = useState(false);
   const [pdfLocalPath, setPdfLocalPath] = useState<string | null>(null);
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfPageIndex, setPdfPageIndex] = useState(0);
@@ -432,6 +461,25 @@ const FreshDriftExpoModal = ({
   const lastAutoOpenedDocIdRef = useRef<string | null>(null);
   const slideshowTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const openingPdfDocIdRef = useRef<string | null>(null);
+  const currentShareUploadTaskRef = useRef<any>(null);
+  const currentShareAttemptIdRef = useRef(0);
+  const docsPanelAutoOpenedRef = useRef(false);
+  const localSharedDocPathRef = useRef<Record<string, string>>({});
+  const primedPdfDocIdsRef = useRef<Set<string>>(new Set());
+  const pdfPageCacheRef = useRef<
+    Record<
+      string,
+      {
+        uri: string;
+        pageCount: number;
+        pageIndex: number;
+        width: number;
+        height: number;
+      }
+    >
+  >({});
+  const pdfPagePrefetchingRef = useRef<Record<string, boolean>>({});
+  const pendingScreenShareStartRef = useRef(false);
   const pdfVerticalScrollRef = useRef<ScrollView | null>(null);
   const pdfHorizontalScrollRef = useRef<ScrollView | null>(null);
   const pendingViewportRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -444,6 +492,29 @@ const FreshDriftExpoModal = ({
   const isPremiumRoom = !!roomPremiumShowId;
   const isPremiumHost = !!(roomPremiumShowId && roomHostUid && meUid && roomHostUid === meUid);
   const resolvedPremiumShowId = roomPremiumShowId || premiumShowId || null;
+  const isCurrentUserScreenSharer = useMemo(
+    () => !!(screenShareActive && screenShareOwnerUid && meUid && screenShareOwnerUid === meUid),
+    [meUid, screenShareActive, screenShareOwnerUid],
+  );
+  const screenShareRenderRtcUid = useMemo(() => {
+    if (screenShareOwnerRtcUid > 0) return screenShareOwnerRtcUid;
+    if (!screenShareOwnerUid) return 0;
+    return Number(
+      participants.find(item => item.uid === screenShareOwnerUid)?.rtcUid ||
+        mapRtcUidFromUserId(screenShareOwnerUid) ||
+        0,
+    );
+  }, [participants, screenShareOwnerRtcUid, screenShareOwnerUid]);
+  const rtcConnection = useMemo(
+    () =>
+      roomChannel
+        ? {
+            channelId: roomChannel,
+            localUid: myRtcUid || 0,
+          }
+        : undefined,
+    [myRtcUid, roomChannel],
+  );
   const canControlCurrentSharedDoc = useMemo(
     () =>
       !!(
@@ -460,10 +531,10 @@ const FreshDriftExpoModal = ({
   const premiumCountdownLabel = useMemo(() => {
     if (!premiumMeta) return null;
     if (premiumMeta.status === 'scheduled' && premiumMeta.startsAtMs > clockNowMs) {
-      return `Starts in ${formatCountdown(premiumMeta.startsAtMs - clockNowMs)}`;
+      return `Starts ${formatCountdown(premiumMeta.startsAtMs - clockNowMs)}`;
     }
     if (premiumMeta.endsAtMs > clockNowMs) {
-      return `Ends in ${formatCountdown(premiumMeta.endsAtMs - clockNowMs)}`;
+      return `Ends ${formatCountdown(premiumMeta.endsAtMs - clockNowMs)}`;
     }
     return premiumMeta.status === 'ended' ? 'Show ended' : 'Closing soon';
   }, [clockNowMs, premiumMeta]);
@@ -489,10 +560,6 @@ const FreshDriftExpoModal = ({
   const premiumChatRows = useMemo(() => comments.slice(-12), [comments]);
   const raisedHandParticipants = useMemo(
     () => participants.filter(item => item.raisedHand && item.uid !== meUid),
-    [meUid, participants],
-  );
-  const activePresenter = useMemo(
-    () => participants.find(item => item.screenSharing && item.uid !== meUid) || null,
     [meUid, participants],
   );
   const isGuestViewingSharedDoc = useMemo(
@@ -524,31 +591,54 @@ const FreshDriftExpoModal = ({
     roomHostUid,
     sharedDocStatusText,
   ]);
-  const applyPremiumRtcProfile = useCallback(
-    (engine: any) => {
+  const applyStrongRtcProfile = useCallback(
+    (engine: any, opts?: { presentationAudioOnly?: boolean }) => {
       if (!engine) return;
+      const isPremiumProfile = isPremiumRoom;
+      const presentationAudioOnly = !!opts?.presentationAudioOnly;
+      const videoDimensions = isPremiumProfile
+        ? PREMIUM_LIVE_VIDEO_DIMENSIONS
+        : DRIFT_EXPO_VIDEO_DIMENSIONS;
+      const videoBitrate = isPremiumProfile
+        ? PREMIUM_LIVE_VIDEO_BITRATE
+        : DRIFT_EXPO_VIDEO_BITRATE;
+      const videoMinBitrate = isPremiumProfile
+        ? PREMIUM_LIVE_VIDEO_MIN_BITRATE
+        : DRIFT_EXPO_VIDEO_MIN_BITRATE;
+      const videoFrameRate = isPremiumProfile
+        ? PREMIUM_LIVE_VIDEO_FRAME_RATE
+        : DRIFT_EXPO_VIDEO_FRAME_RATE;
+      const videoMinFrameRate = isPremiumProfile
+        ? PREMIUM_LIVE_VIDEO_MIN_FRAME_RATE
+        : DRIFT_EXPO_VIDEO_MIN_FRAME_RATE;
       const config = {
-        dimensions: PREMIUM_LIVE_VIDEO_DIMENSIONS,
-        frameRate: PREMIUM_LIVE_VIDEO_FRAME_RATE,
-        minFrameRate: PREMIUM_LIVE_VIDEO_MIN_FRAME_RATE,
-        bitrate: PREMIUM_LIVE_VIDEO_BITRATE,
-        minBitrate: PREMIUM_LIVE_VIDEO_MIN_BITRATE,
+        dimensions: videoDimensions,
+        frameRate: videoFrameRate,
+        minFrameRate: videoMinFrameRate,
+        bitrate: videoBitrate,
+        minBitrate: videoMinBitrate,
         orientationMode: Agora?.OrientationMode?.OrientationModeAdaptive ?? 0,
         degradationPreference:
-          Agora?.DegradationPreference?.MaintainQuality ??
           Agora?.DegradationPreference?.MaintainBalanced ??
+          Agora?.DegradationPreference?.MaintainQuality ??
           0,
       };
       const audioProfile =
+        Agora?.AudioProfileType?.AudioProfileMusicHighQualityStereo ??
         Agora?.AudioProfileType?.AudioProfileMusicHighQuality ??
         Agora?.AudioProfileType?.AudioProfileDefault ??
+        Agora?.AudioProfile?.MusicHighQualityStereo ??
         Agora?.AudioProfile?.MusicHighQuality ??
         Agora?.AudioProfile?.Default ??
         0;
       const audioScenario =
+        (isPremiumProfile
+          ? Agora?.AudioScenarioType?.AudioScenarioMeeting
+          : Agora?.AudioScenarioType?.AudioScenarioChatroom) ??
         Agora?.AudioScenarioType?.AudioScenarioDefault ??
-        Agora?.AudioScenarioType?.AudioScenarioDefault ??
-        Agora?.AudioScenario?.Default ??
+        (isPremiumProfile
+          ? Agora?.AudioScenario?.Meeting
+          : Agora?.AudioScenario?.Chatroom) ??
         Agora?.AudioScenario?.Default ??
         0;
       try {
@@ -556,20 +646,25 @@ const FreshDriftExpoModal = ({
       } catch {}
       try {
         engine.enableDualStreamMode?.(true, {
-          width: 320,
-          height: 180,
-          framerate: 10,
-          bitrate: 180,
+          width: isPremiumProfile ? 480 : 360,
+          height: isPremiumProfile ? 270 : 202,
+          framerate: 12,
+          bitrate: isPremiumProfile ? 320 : 240,
         });
       } catch {}
       try {
         engine.setRemoteSubscribeFallbackOption?.(
-          Agora?.StreamFallbackOptions?.StreamFallbackOptionAudioOnly ?? 2,
+          Agora?.StreamFallbackOptions?.StreamFallbackOptionVideoStreamLow ?? 1,
         );
       } catch {}
       try {
+        engine.setRemoteDefaultVideoStreamType?.(1);
+      } catch {}
+      try {
         engine.setLocalPublishFallbackOption?.(
-          Agora?.StreamFallbackOptions?.StreamFallbackOptionAudioOnly ?? 2,
+          presentationAudioOnly
+            ? Agora?.StreamFallbackOptions?.StreamFallbackOptionDisabled ?? 0
+            : Agora?.StreamFallbackOptions?.StreamFallbackOptionVideoStreamLow ?? 1,
         );
       } catch {}
       try {
@@ -584,6 +679,15 @@ const FreshDriftExpoModal = ({
       try {
         engine.setParameters?.('{"che.video.adaptive_bitrate":true}');
       } catch {}
+      try {
+        engine.setParameters?.('{"rtc.video.enable_hw_encoder":true}');
+      } catch {}
+      try {
+        engine.setParameters?.('{"rtc.video.enable_hw_decoder":true}');
+      } catch {}
+      try {
+        engine.setParameters?.('{"che.audio.force_bluetooth_a2dp":false}');
+      } catch {}
     },
     [
       Agora?.AudioAinsMode,
@@ -594,6 +698,7 @@ const FreshDriftExpoModal = ({
       Agora?.DegradationPreference,
       Agora?.OrientationMode,
       Agora?.StreamFallbackOptions,
+      isPremiumRoom,
     ],
   );
   const sharedDocInkSegments = useMemo(() => {
@@ -636,14 +741,39 @@ const FreshDriftExpoModal = ({
     }
     return segments;
   }, [pdfFrameHeight, pdfFrameWidth, sharedDocInkPoints]);
-  const visibleSharedDocs = useMemo(
-    () =>
-      sharedDocs.filter(doc => {
-        if (!currentSharedDocId || doc.id !== currentSharedDocId) return true;
-        return doc.status === 'ready' || doc.status === 'error';
-      }),
-    [currentSharedDocId, sharedDocs],
+  const currentSharedDocEntry = useMemo(
+    () => {
+      if (!currentSharedDocId) return null;
+      const fromList = sharedDocs.find(doc => doc.id === currentSharedDocId) || null;
+      if (fromList) return fromList;
+      if (!currentSharedDocPreviewTitle && !currentSharedDocFileName) return null;
+      return {
+        id: currentSharedDocId,
+        title: String(currentSharedDocPreviewTitle || currentSharedDocFileName || 'Shared PDF'),
+        fileName: String(currentSharedDocFileName || 'shared.pdf'),
+        downloadUrl: String(currentSharedDocDownloadUrl || ''),
+        storagePath: String(currentSharedDocStoragePath || ''),
+        fileSizeBytes: currentSharedDocFileSizeBytes,
+        sharedByName: 'Host',
+        createdAtMs: Date.now(),
+        status: String(currentSharedDocStage || 'uploading'),
+        sourceKind: currentSharedDocPreviewKind,
+        errorMessage: null,
+      } as SharedPdfDoc;
+    },
+    [
+      currentSharedDocDownloadUrl,
+      currentSharedDocFileName,
+      currentSharedDocFileSizeBytes,
+      currentSharedDocId,
+      currentSharedDocPreviewKind,
+      currentSharedDocPreviewTitle,
+      currentSharedDocStage,
+      currentSharedDocStoragePath,
+      sharedDocs,
+    ],
   );
+  const visibleSharedDocs = useMemo(() => [], []);
   const pdfDisplayMetrics = useMemo(() => {
     const frameWidth = Math.max(0, pdfFrameWidth - 20);
     const frameHeight = Math.max(0, pdfFrameHeight - 20);
@@ -690,6 +820,7 @@ const FreshDriftExpoModal = ({
     setReplyTarget(null);
     setMicMuted(false);
     setCameraOff(false);
+    setNetworkWarning(null);
     setShowComments(true);
     setShowInvitePanel(false);
     setInviteQuery('');
@@ -702,6 +833,13 @@ const FreshDriftExpoModal = ({
     setShowDocsPanel(false);
     setSharedDocs([]);
     setSharedDocStatusText(null);
+    setScreenShareActive(false);
+    setScreenShareOwnerUid(null);
+    setScreenShareOwnerName(null);
+    setScreenShareOwnerRtcUid(0);
+    setScreenShareStarting(false);
+    setLocalScreenShareActive(false);
+    pendingScreenShareStartRef.current = false;
     setCurrentSharedDocId(null);
     setCurrentSharedDocStage(null);
     setCurrentSharedDocPreviewTitle(null);
@@ -730,6 +868,7 @@ const FreshDriftExpoModal = ({
     setEngineReady(false);
     setFloatingComments([]);
     setFloatingReactions([]);
+    docsPanelAutoOpenedRef.current = false;
     seenCommentIdsRef.current = new Set();
     seenReactionIdsRef.current = new Set();
     handledSoundEventIdsRef.current = new Set();
@@ -752,6 +891,8 @@ const FreshDriftExpoModal = ({
       clearTimeout(viewportSyncTimerRef.current);
       viewportSyncTimerRef.current = null;
     }
+    pdfPageCacheRef.current = {};
+    pdfPagePrefetchingRef.current = {};
     joinedChannelRef.current = null;
     joiningChannelRef.current = null;
   }, []);
@@ -773,14 +914,7 @@ const FreshDriftExpoModal = ({
         player.release();
       });
     });
-    setSoundBadgeLabel(`${effect.icon} ${effect.label}`);
-    if (soundBadgeTimerRef.current) {
-      clearTimeout(soundBadgeTimerRef.current);
-    }
-    soundBadgeTimerRef.current = setTimeout(() => {
-      setSoundBadgeLabel(null);
-      soundBadgeTimerRef.current = null;
-    }, 2800);
+    setSoundBadgeLabel(null);
   }, []);
 
   const triggerRoomSoundEffect = useCallback(
@@ -839,6 +973,12 @@ const FreshDriftExpoModal = ({
     return `${RNFS.CachesDirectoryPath}/${roomId || 'live'}_${doc.id}_${safeName}`;
   }, [roomId]);
 
+  const getPdfPageCacheKey = useCallback(
+    (docId: string | null | undefined, localPath: string, pageIndex: number) =>
+      `${String(docId || 'doc')}::${String(localPath || '')}::${Math.max(0, Number(pageIndex || 0))}`,
+    [],
+  );
+
   const normalizePdfUploadPath = useCallback(async (rawUri: string, fileName: string, localFilePath?: string | null) => {
     let localPath = String(localFilePath || rawUri || '').trim();
     try {
@@ -866,19 +1006,138 @@ const FreshDriftExpoModal = ({
     return localPath;
   }, []);
 
+  const getSharedFileSizeBytes = useCallback(async (filePath: string | null | undefined) => {
+    const normalizedPath = String(filePath || '').trim();
+    if (!normalizedPath) return 0;
+    try {
+      const stats = await RNFS.stat(normalizedPath);
+      return Math.max(0, Number((stats as any)?.size || 0));
+    } catch {
+      return 0;
+    }
+  }, []);
+
+  const getPdfRenderSize = useCallback((sizeBytes?: number | null) => {
+    const normalizedSize = Math.max(0, Number(sizeBytes || 0));
+    if (normalizedSize >= VERY_LARGE_SHARED_FILE_BYTES) return 980;
+    if (normalizedSize >= LARGE_SHARED_FILE_BYTES) return 1160;
+    return 1440;
+  }, []);
+
+  const markSpeakerActivity = useCallback((uids: Array<number | string | null | undefined>) => {
+    const normalizedUids = Array.from(
+      new Set(
+        uids
+          .map(uid => Number(uid || 0))
+          .filter(uid => Number.isFinite(uid) && uid > 0),
+      ),
+    );
+    if (normalizedUids.length === 0) return;
+    const now = Date.now();
+    setRecentSpeakerAt(prev => {
+      const next = { ...prev };
+      normalizedUids.forEach(uid => {
+        next[uid] = now;
+      });
+      return next;
+    });
+  }, []);
+
+  const ensureSharedPdfCached = useCallback(
+    async (doc: SharedPdfDoc) => {
+      const localPath = resolvePdfCachePath(doc);
+      const exists = await RNFS.exists(localPath);
+      if (!exists) {
+        const download = RNFS.downloadFile({
+          fromUrl: doc.downloadUrl,
+          toFile: localPath,
+          background: true,
+        });
+        const result = await download.promise;
+        if (Number(result?.statusCode || 0) >= 400) {
+          throw new Error('Could not download PDF.');
+        }
+      }
+      return localPath;
+    },
+    [resolvePdfCachePath],
+  );
+
   const renderActivePdfPage = useCallback(
-    async (localPath: string, pageIndex: number) => {
+    async (
+      localPath: string,
+      pageIndex: number,
+      options?: {
+        docId?: string | null;
+        preferCache?: boolean;
+        prefetchAdjacent?: boolean;
+        renderSize?: number;
+      },
+    ) => {
       if (!PdfRenderer?.renderPage) {
         throw new Error('PDF renderer is not available on this device.');
       }
-      const page = await PdfRenderer.renderPage(localPath, pageIndex, 1440);
-      setPdfPreviewUri(String(page?.uri || ''));
-      setPdfPageCount(Number(page?.pageCount || 0));
-      setPdfPageIndex(Number(page?.pageIndex || pageIndex));
-      setPdfPreviewWidth(Number(page?.width || 0));
-      setPdfPreviewHeight(Number(page?.height || 0));
+      const normalizedPageIndex = Math.max(0, Number(pageIndex || 0));
+      const cacheKey = getPdfPageCacheKey(options?.docId, localPath, normalizedPageIndex);
+      const cachedPage = options?.preferCache ? pdfPageCacheRef.current[cacheKey] : null;
+      const applyPage = (page: {
+        uri?: string;
+        pageCount?: number;
+        pageIndex?: number;
+        width?: number;
+        height?: number;
+      }) => {
+        setPdfPreviewUri(String(page?.uri || ''));
+        setPdfPageCount(Number(page?.pageCount || 0));
+        setPdfPageIndex(Number(page?.pageIndex || normalizedPageIndex));
+        setPdfPreviewWidth(Number(page?.width || 0));
+        setPdfPreviewHeight(Number(page?.height || 0));
+      };
+      if (cachedPage) {
+        applyPage(cachedPage);
+        return;
+      }
+      const renderSize = Math.max(920, Math.min(1560, Number(options?.renderSize || 1440)));
+      const page: any = await PdfRenderer.renderPage(localPath, normalizedPageIndex, renderSize);
+      const normalizedPage = {
+        uri: String(page?.uri || ''),
+        pageCount: Number(page?.pageCount || 0),
+        pageIndex: Number(page?.pageIndex || normalizedPageIndex),
+        width: Number(page?.width || 0),
+        height: Number(page?.height || 0),
+      };
+      pdfPageCacheRef.current[cacheKey] = normalizedPage;
+      applyPage(normalizedPage);
+      if (options?.prefetchAdjacent && options?.docId) {
+        const totalPages = Math.max(0, normalizedPage.pageCount || 0);
+        const neighbors = [normalizedPage.pageIndex - 1, normalizedPage.pageIndex + 1].filter(
+          candidate => candidate >= 0 && candidate < totalPages,
+        );
+        neighbors.forEach(candidate => {
+          const neighborKey = getPdfPageCacheKey(options.docId, localPath, candidate);
+          if (pdfPageCacheRef.current[neighborKey] || pdfPagePrefetchingRef.current[neighborKey]) {
+            return;
+          }
+          pdfPagePrefetchingRef.current[neighborKey] = true;
+          Promise.resolve()
+            .then(async () => {
+               const prefetched: any = await PdfRenderer.renderPage(localPath, candidate, renderSize);
+              pdfPageCacheRef.current[neighborKey] = {
+                uri: String(prefetched?.uri || ''),
+                pageCount: Number(prefetched?.pageCount || normalizedPage.pageCount || 0),
+                pageIndex: Number(prefetched?.pageIndex || candidate),
+                width: Number(prefetched?.width || normalizedPage.width || 0),
+                height: Number(prefetched?.height || normalizedPage.height || 0),
+              };
+            })
+            .catch(() => {})
+            .finally(() => {
+              delete pdfPagePrefetchingRef.current[neighborKey];
+            });
+        });
+      }
     },
-    [PdfRenderer],
+    [PdfRenderer, getPdfPageCacheKey],
   );
 
   const isBenignPdfOpenError = useCallback((error: any) => {
@@ -899,7 +1158,9 @@ const FreshDriftExpoModal = ({
         silentIfPending?: boolean;
       },
     ) => {
-      if (String(doc.sourceKind || '').toLowerCase() === 'blank') {
+      const normalizedSourceKind = String(doc.sourceKind || '').toLowerCase();
+      if (normalizedSourceKind === 'blank') {
+        setIsDocMinimized(false);
         setActiveDoc(doc);
         setPdfLocalPath(null);
         setPdfPreviewUri(null);
@@ -926,31 +1187,37 @@ const FreshDriftExpoModal = ({
       openingPdfDocIdRef.current = doc.id;
       setDocBusy(true);
       try {
-        const localPath = resolvePdfCachePath(doc);
-        const exists = await RNFS.exists(localPath);
-        if (!exists) {
-          const download = RNFS.downloadFile({
-            fromUrl: doc.downloadUrl,
-            toFile: localPath,
-            background: true,
-          });
-          const result = await download.promise;
-          if (Number(result?.statusCode || 0) >= 400) {
-            throw new Error('Could not download PDF.');
-          }
+        const localPath = await ensureSharedPdfCached(doc);
+        const localBytes =
+          Math.max(Number(doc.fileSizeBytes || 0), await getSharedFileSizeBytes(localPath));
+        if (localBytes > MAX_SHARED_FILE_BYTES) {
+          throw new Error('This file is too large to render safely on this device.');
         }
+        const renderSize = getPdfRenderSize(localBytes);
         const meta = await PdfRenderer.getPageCount(localPath);
         const targetPage =
           currentSharedDocId && currentSharedDocId === doc.id
             ? Math.max(0, Math.min(currentSharedDocPage, Math.max(0, Number(meta?.pageCount || 1) - 1)))
             : 0;
-        setActiveDoc(doc);
+        await renderActivePdfPage(localPath, targetPage, {
+          docId: doc.id,
+          preferCache: true,
+          prefetchAdjacent: localBytes < VERY_LARGE_SHARED_FILE_BYTES,
+          renderSize,
+        });
+        setIsDocMinimized(false);
+        setActiveDoc({
+          ...doc,
+          sourceKind: 'pdf',
+        });
         setPdfLocalPath(localPath);
-        setPdfZoomLevel(currentSharedDocZoom || 1);
+        setPdfZoomLevel(1);
         setPdfPageCount(Number(meta?.pageCount || 0));
-        await renderActivePdfPage(localPath, targetPage);
         return true;
       } catch (error: any) {
+        setActiveDoc(null);
+        setPdfLocalPath(null);
+        setPdfPreviewUri(null);
         if (!isBenignPdfOpenError(error)) {
           Alert.alert('PDF open failed', String(error?.message || 'Could not open PDF.'));
         }
@@ -964,14 +1231,331 @@ const FreshDriftExpoModal = ({
       PdfRenderer,
       currentSharedDocId,
       currentSharedDocPage,
-      currentSharedDocZoom,
+      ensureSharedPdfCached,
+      getPdfRenderSize,
+      getSharedFileSizeBytes,
       isBenignPdfOpenError,
-      resolvePdfCachePath,
       renderActivePdfPage,
     ],
   );
 
+  const resetSharedDocLocalState = useCallback(() => {
+    setIsDocMinimized(false);
+    setActiveDoc(null);
+    setPdfLocalPath(null);
+    setPdfPageCount(0);
+    setPdfPageIndex(0);
+    setPdfPreviewUri(null);
+    setPdfPreviewWidth(0);
+    setPdfPreviewHeight(0);
+    setPdfZoomLevel(1);
+    setCurrentSharedDocId(null);
+    setCurrentSharedDocStage(null);
+    setCurrentSharedDocPreviewTitle(null);
+    setCurrentSharedDocPreviewKind(null);
+    setCurrentSharedDocPage(0);
+    setCurrentSharedDocSlideShow(false);
+    setCurrentSharedDocSlideSeconds(DEFAULT_PRESENTATION_SLIDE_SECONDS);
+    setCurrentSharedDocZoom(1);
+    setCurrentSharedDocPanX(0);
+    setCurrentSharedDocPanY(0);
+    setSharedDocInkPoints([]);
+    setCurrentPresentationTool(null);
+    setSharedDocMarker(null);
+    setSharedDocStatusText(null);
+  }, []);
+
+  const clearCurrentSharedDocSession = useCallback(
+    async (options?: { keepPanelOpen?: boolean; deleteCurrentDoc?: boolean }) => {
+      const activeDocId = String(currentSharedDocId || '').trim();
+      const shouldDeleteCurrentDoc =
+        options?.deleteCurrentDoc ?? !!activeDocId;
+      try {
+        setDocBusy(true);
+        const uploadTask = currentShareUploadTaskRef.current;
+        currentShareUploadTaskRef.current = null;
+        currentShareAttemptIdRef.current += 1;
+        if (uploadTask && typeof uploadTask.cancel === 'function') {
+          try {
+            await uploadTask.cancel();
+          } catch {}
+        }
+        openingPdfDocIdRef.current = null;
+        lastAutoOpenedDocIdRef.current = null;
+        if (activeDocId) {
+          delete localSharedDocPathRef.current[activeDocId];
+        }
+        resetSharedDocLocalState();
+        setShowDocsPanel(!!options?.keepPanelOpen);
+        if (!roomId) return;
+        await firestore()
+          .collection('live')
+          .doc(roomId)
+          .set(
+            {
+              currentSharedDocId: null,
+              currentSharedDocStage: firestore.FieldValue.delete(),
+              currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
+              currentSharedDocPreviewKind: firestore.FieldValue.delete(),
+              currentSharedDocDownloadUrl: firestore.FieldValue.delete(),
+              currentSharedDocStoragePath: firestore.FieldValue.delete(),
+              currentSharedDocFileName: firestore.FieldValue.delete(),
+              currentSharedDocFileSizeBytes: firestore.FieldValue.delete(),
+              currentSharedDocStatusText: null,
+              currentSharedDocPage: 0,
+              currentSharedDocSlideShow: false,
+              currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
+              currentSharedDocZoom: 1,
+              currentSharedDocPanX: 0,
+              currentSharedDocPanY: 0,
+              currentSharedDocInkPoints: [],
+              currentSharedDocMarker: null,
+              currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        if (activeDocId && shouldDeleteCurrentDoc) {
+          await firestore()
+            .collection(`live/${roomId}/shared_docs`)
+            .doc(activeDocId)
+            .delete()
+            .catch(() => {});
+        }
+      } finally {
+        setDocBusy(false);
+      }
+    },
+    [currentSharedDocId, currentSharedDocStage, resetSharedDocLocalState, roomId],
+  );
+
+  const syncScreenShareRoomState = useCallback(
+    async (active: boolean, ownerRtcUid?: number) => {
+      if (!roomId) return;
+      await firestore()
+        .collection('live')
+        .doc(roomId)
+        .set(
+          active
+            ? {
+                currentScreenShareActive: true,
+                currentScreenShareOwnerUid: meUid,
+                currentScreenShareOwnerName: meName,
+                currentScreenShareOwnerRtcUid: Number(ownerRtcUid || myRtcUid || mapRtcUidFromUserId(meUid)),
+                currentScreenShareStartedAt: firestore.FieldValue.serverTimestamp(),
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              }
+            : {
+                currentScreenShareActive: false,
+                currentScreenShareOwnerUid: firestore.FieldValue.delete(),
+                currentScreenShareOwnerName: firestore.FieldValue.delete(),
+                currentScreenShareOwnerRtcUid: firestore.FieldValue.delete(),
+                currentScreenShareStartedAt: firestore.FieldValue.delete(),
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+          { merge: true },
+        );
+    },
+    [meName, meUid, myRtcUid, roomId],
+  );
+
+  const handleLocalScreenShareReady = useCallback(() => {
+    if (!pendingScreenShareStartRef.current) return;
+    pendingScreenShareStartRef.current = false;
+    try {
+      engineRef.current?.updateChannelMediaOptions?.({
+        publishCameraTrack: false,
+        publishMicrophoneTrack: !micMuted,
+        publishScreenCaptureVideo: true,
+        publishScreenCaptureAudio: false,
+        publishScreenTrack: true,
+        publishSecondaryScreenTrack: false,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: true,
+      });
+    } catch {}
+    setScreenShareActive(true);
+    setScreenShareOwnerUid(meUid);
+    setScreenShareOwnerName(meName);
+    setScreenShareOwnerRtcUid(myRtcUid || mapRtcUidFromUserId(meUid));
+    setStatusText('Screen sharing is live');
+    void syncScreenShareRoomState(true, myRtcUid || mapRtcUidFromUserId(meUid));
+  }, [meName, meUid, micMuted, myRtcUid, syncScreenShareRoomState]);
+
+  const handleLocalScreenShareFailure = useCallback(
+    (reason?: number) => {
+      if (!pendingScreenShareStartRef.current && !localScreenShareActive) return;
+      pendingScreenShareStartRef.current = false;
+      setLocalScreenShareActive(false);
+      setScreenShareActive(false);
+      setScreenShareOwnerUid(null);
+      setScreenShareOwnerName(null);
+      setScreenShareOwnerRtcUid(0);
+      setStatusText('Screen share failed');
+      void syncScreenShareRoomState(false);
+      Alert.alert(
+        'Screen share failed',
+        reason === 22
+          ? 'MoMo could not start screen sharing after permission was granted. Please try again.'
+          : 'MoMo could not start screen sharing on this device. Please try again.',
+      );
+    },
+    [localScreenShareActive, syncScreenShareRoomState],
+  );
+
+  const stopScreenShare = useCallback(
+    async (options?: { syncRoom?: boolean }) => {
+      const engine = engineRef.current;
+      try {
+        engine?.stopScreenCapture?.();
+      } catch {}
+      try {
+        engine?.stopPreview?.(Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2);
+      } catch {}
+      try {
+        engine?.updateChannelMediaOptions?.({
+          publishCameraTrack: !(!!activeDoc || cameraOff),
+          publishMicrophoneTrack: !micMuted,
+          publishScreenCaptureVideo: false,
+          publishScreenCaptureAudio: false,
+          publishScreenTrack: false,
+          publishSecondaryScreenTrack: false,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+        });
+      } catch {}
+      setLocalScreenShareActive(false);
+      pendingScreenShareStartRef.current = false;
+      if (options?.syncRoom !== false && isCurrentUserScreenSharer) {
+        await syncScreenShareRoomState(false).catch(() => {});
+      }
+      if (!activeDoc && !cameraOff) {
+        try {
+          engine?.enableLocalVideo?.(true);
+          engine?.startPreview?.();
+        } catch {}
+      }
+      setStatusText('Live');
+    },
+    [Agora?.VideoSourceType, activeDoc, cameraOff, isCurrentUserScreenSharer, micMuted, syncScreenShareRoomState],
+  );
+
+  const startScreenShare = useCallback(async () => {
+    if (!isPremiumRoom || !joined) return;
+    if (Platform.OS !== 'android') {
+      Alert.alert('Screen sharing unavailable', 'Aqua Premium screen sharing is currently available on Android only.');
+      return;
+    }
+    if (activeDoc || currentSharedDocId) {
+      Alert.alert('Close shared file first', 'Stop the current shared file before starting screen sharing.');
+      return;
+    }
+    if (screenShareActive && !isCurrentUserScreenSharer) {
+      Alert.alert(
+        'Screen already shared',
+        `${screenShareOwnerName || 'Another guest'} is already sharing a screen in this Aqua Premium room.`,
+      );
+      return;
+    }
+    const engine = engineRef.current;
+    if (!engine) {
+      Alert.alert('Screen sharing unavailable', 'The live engine is not ready yet.');
+      return;
+    }
+    setScreenShareStarting(true);
+    try {
+      pendingScreenShareStartRef.current = true;
+      const projectionResult = await AgoraRtcNg?.requestAndroidScreenProjection?.();
+      if (typeof projectionResult === 'string' && projectionResult.trim()) {
+        try {
+          const parsedProjectionResult = JSON.parse(projectionResult);
+          if (typeof parsedProjectionResult?.result === 'number' && parsedProjectionResult.result < 0) {
+            throw new Error(
+              `Screen projection could not attach (${parsedProjectionResult.result}).`,
+            );
+          }
+        } catch (parseError) {
+          if (parseError instanceof Error) {
+            throw parseError;
+          }
+        }
+      }
+      const captureResult = engine.startScreenCapture?.({
+        captureAudio: false,
+        captureVideo: true,
+        videoParams: {
+          dimensions: PREMIUM_SCREEN_SHARE_DIMENSIONS,
+          frameRate: PREMIUM_SCREEN_SHARE_FRAME_RATE,
+          bitrate: PREMIUM_SCREEN_SHARE_BITRATE,
+        },
+      });
+      if (typeof captureResult === 'number' && captureResult < 0) {
+        throw new Error('Screen capture could not start (' + captureResult + ').');
+      }
+      try {
+        engine.setScreenCaptureOrientation?.(
+          Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2,
+          Agora?.VideoOrientation?.VideoOrientationPortrait ?? 0,
+        );
+      } catch {}
+      try {
+        engine.startPreview?.(Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2);
+      } catch {}
+      try {
+        engine.updateChannelMediaOptions?.({
+          publishCameraTrack: false,
+          publishMicrophoneTrack: !micMuted,
+          publishScreenCaptureVideo: true,
+          publishScreenCaptureAudio: false,
+          publishScreenTrack: true,
+          publishSecondaryScreenTrack: false,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+        });
+      } catch {}
+      setLocalScreenShareActive(true);
+      setScreenShareActive(true);
+      setScreenShareOwnerUid(meUid);
+      setScreenShareOwnerName(meName);
+      setScreenShareOwnerRtcUid(myRtcUid || mapRtcUidFromUserId(meUid));
+      void syncScreenShareRoomState(true, myRtcUid || mapRtcUidFromUserId(meUid));
+      setStatusText('Waiting for screen share...');
+      Alert.alert(
+        'Screen sharing started',
+        'Open any app on your phone. Everyone in Aqua Premium will see your screen.',
+      );
+    } catch (error) {
+      pendingScreenShareStartRef.current = false;
+      try {
+        engine.stopScreenCapture?.();
+      } catch {}
+      setLocalScreenShareActive(false);
+      setScreenShareActive(false);
+      setStatusText('Live');
+      Alert.alert('Screen share failed', String(error?.message || 'Could not start screen sharing.'));
+    } finally {
+      setScreenShareStarting(false);
+    }
+  }, [
+    Agora?.VideoOrientation,
+    Agora?.VideoSourceType,
+    AgoraRtcNg,
+    activeDoc,
+    currentSharedDocId,
+    isCurrentUserScreenSharer,
+    isPremiumRoom,
+    joined,
+    meName,
+    meUid,
+    micMuted,
+    myRtcUid,
+    screenShareActive,
+    screenShareOwnerName,
+    syncScreenShareRoomState,
+  ]);
+
   const closePdfViewer = useCallback(() => {
+    setIsDocMinimized(false);
     setActiveDoc(null);
     setPdfLocalPath(null);
     setPdfPageCount(0);
@@ -988,22 +1572,9 @@ const FreshDriftExpoModal = ({
     setCurrentPresentationTool(null);
     setSharedDocMarker(null);
     if (canControlCurrentSharedDoc && activeDoc && currentSharedDocId && activeDoc.id === currentSharedDocId) {
-      void pushSharedDocState({
-        docId: null,
-        shareStage: null,
-        shareTitle: null,
-        shareKind: null,
-        slideShow: false,
-        marker: null,
-        zoom: 1,
-        panX: 0,
-        panY: 0,
-        inkPoints: [],
-        statusText: null,
-      });
-      lastAutoOpenedDocIdRef.current = null;
+      void clearCurrentSharedDocSession({ keepPanelOpen: true, deleteCurrentDoc: true });
     }
-  }, [activeDoc, canControlCurrentSharedDoc, currentSharedDocId, pushSharedDocState]);
+  }, [activeDoc, canControlCurrentSharedDoc, clearCurrentSharedDocSession, currentSharedDocId]);
 
   const pushSharedDocState = useCallback(
     async (next: {
@@ -1102,7 +1673,12 @@ const FreshDriftExpoModal = ({
       } else {
         setDocBusy(true);
         try {
-          await renderActivePdfPage(pdfLocalPath, nextIndex);
+          await renderActivePdfPage(pdfLocalPath, nextIndex, {
+            docId: activeDoc?.id || currentSharedDocId,
+            preferCache: true,
+            prefetchAdjacent: true,
+            renderSize: getPdfRenderSize(activeDoc?.fileSizeBytes),
+          });
         } catch (error: any) {
           Alert.alert('PDF page failed', String(error?.message || 'Could not turn page.'));
         } finally {
@@ -1110,7 +1686,17 @@ const FreshDriftExpoModal = ({
         }
       }
     },
-    [canControlCurrentSharedDoc, pdfLocalPath, pdfPageCount, pdfPageIndex, pushSharedDocState, renderActivePdfPage],
+    [
+      activeDoc?.id,
+      canControlCurrentSharedDoc,
+      currentSharedDocId,
+      pdfLocalPath,
+      pdfPageCount,
+      pdfPageIndex,
+      pushSharedDocState,
+      renderActivePdfPage,
+      getPdfRenderSize,
+    ],
   );
 
   const queueSharedViewportSync = useCallback(
@@ -1248,40 +1834,74 @@ const FreshDriftExpoModal = ({
     [applySharedInkAtPoint],
   );
 
+  const ensureParticipantPresenceForShare = useCallback(
+    async (rtcUid: number) => {
+      if (!roomId || !meUid) return;
+      try {
+        await firestore()
+          .collection(`live/${roomId}/participants`)
+          .doc(meUid)
+          .set(
+            {
+              uid: meUid,
+              name: meName,
+              photo: mePhoto,
+              rtcUid,
+              isHost: !!(roomHostUid && meUid && roomHostUid === meUid),
+              muted: false,
+              purged: false,
+              raisedHand: false,
+              cameraOff: false,
+              channel: roomChannel || 'premium_room',
+              joinedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+      } catch {}
+    },
+    [meName, mePhoto, meUid, roomChannel, roomHostUid, roomId],
+  );
+
   const handleShareFile = useCallback(async () => {
     if (!roomId || !isPremiumRoom) return;
-    if (currentSharedDocId) {
-      Alert.alert(
-        'Presentation in progress',
-        'Another file is already being presented. Close that file before sharing a new one.',
-      );
+    if (currentSharedDocId || currentSharedDocStage) {
+      Alert.alert('File already sharing', 'Close the current shared file before sharing another one.');
       return;
     }
     if (!AudioPicker?.pickFiles) {
       Alert.alert('File picker unavailable', 'This build cannot pick PDF files yet.');
       return;
     }
+    const shareAttemptId = currentShareAttemptIdRef.current + 1;
+    currentShareAttemptIdRef.current = shareAttemptId;
+    let createdDocId: string | null = null;
     setDocBusy(true);
-    let docRef: any = null;
-    let sharedDocPayload: SharedPdfDoc | null = null;
-    let sourceKind: string = 'pdf';
+    setShowDocsPanel(true);
     try {
-      const participantRtcUid = myRtcUid || mapRtcUidFromUserId(meUid);
-      await upsertParticipant(
-        roomId,
-        roomChannel || 'premium_room',
-        participantRtcUid,
-        !!(roomHostUid && meUid && roomHostUid === meUid),
-      );
       await firestore()
         .collection('live')
         .doc(roomId)
         .set(
           {
+            currentSharedDocId: null,
             currentSharedDocStage: 'choosing',
-            currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
-            currentSharedDocPreviewKind: firestore.FieldValue.delete(),
-            currentSharedDocStatusText: `${meName} is choosing a file...`,
+            currentSharedDocPreviewTitle: null,
+            currentSharedDocPreviewKind: null,
+            currentSharedDocDownloadUrl: null,
+            currentSharedDocStoragePath: null,
+            currentSharedDocFileName: null,
+            currentSharedDocFileSizeBytes: null,
+            currentSharedDocStatusText: `${meName} is choosing a file`,
+            currentSharedDocPage: 0,
+            currentSharedDocSlideShow: false,
+            currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
+            currentSharedDocZoom: 1,
+            currentSharedDocPanX: 0,
+            currentSharedDocPanY: 0,
+            currentSharedDocInkPoints: [],
+            currentSharedDocMarker: null,
+            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -1301,13 +1921,33 @@ const FreshDriftExpoModal = ({
         );
       });
       if (!selectedEntry?.uri) {
+        await firestore()
+          .collection('live')
+          .doc(roomId)
+          .set(
+            {
+              currentSharedDocId: null,
+              currentSharedDocStage: firestore.FieldValue.delete(),
+              currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
+              currentSharedDocPreviewKind: firestore.FieldValue.delete(),
+              currentSharedDocDownloadUrl: firestore.FieldValue.delete(),
+              currentSharedDocStoragePath: firestore.FieldValue.delete(),
+              currentSharedDocFileName: firestore.FieldValue.delete(),
+              currentSharedDocFileSizeBytes: firestore.FieldValue.delete(),
+              currentSharedDocStatusText: null,
+              currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          )
+          .catch(() => {});
         Alert.alert('Supported files only', 'Choose a PDF, PPT, PPTX, DOC, or DOCX file.');
         return;
       }
       const localUri = String(selectedEntry.uri);
       const fileName = String(selectedEntry.name || 'shared_file').trim() || 'shared_file';
       const isPdf = /\.pdf$/i.test(fileName) || String(selectedEntry.type || '').toLowerCase() === 'application/pdf';
-      sourceKind = /\.pptx$/i.test(fileName)
+      const sourceKind = /\.pptx$/i.test(fileName)
         ? 'pptx'
         : /\.ppt$/i.test(fileName)
         ? 'ppt'
@@ -1316,95 +1956,103 @@ const FreshDriftExpoModal = ({
         : /\.doc$/i.test(fileName)
         ? 'doc'
         : 'pdf';
-      const previewTitle = fileName.replace(/\.(pdf|ppt|pptx|doc|docx)$/i, '');
+      const title = fileName.replace(/\.(pdf|ppt|pptx|doc|docx)$/i, '');
+      const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
+      createdDocId = docRef.id;
+      const pickedSizeBytes = Math.max(0, Number(selectedEntry.size || 0));
+      if (pickedSizeBytes > MAX_SHARED_FILE_BYTES) {
+        Alert.alert(
+          'File too large',
+          'This file is too large to open safely on phones. Choose a smaller file or split it first.',
+        );
+        return;
+      }
+      if (!isPdf && pickedSizeBytes > MAX_CONVERTIBLE_FILE_BYTES) {
+        Alert.alert(
+          'Presentation too large',
+          'Large PowerPoint and Word files can crash phones during conversion. Keep presentation files under 48 MB.',
+        );
+        return;
+      }
+      const uploadPath = await normalizePdfUploadPath(localUri, fileName);
+      const sourceSizeBytes = await getSharedFileSizeBytes(uploadPath);
+      if (sourceSizeBytes > MAX_SHARED_FILE_BYTES) {
+        Alert.alert(
+          'File too large',
+          'This file is too large to open safely on phones. Choose a smaller file or split it first.',
+        );
+        return;
+      }
+      if (!isPdf && sourceSizeBytes > MAX_CONVERTIBLE_FILE_BYTES) {
+        Alert.alert(
+          'Presentation too large',
+          'Large PowerPoint and Word files can crash phones during conversion. Keep presentation files under 48 MB.',
+        );
+        return;
+      }
+      await Promise.all([
+        docRef.set({
+          title,
+          fileName,
+          downloadUrl: '',
+          storagePath: '',
+          sourcePath: '',
+          sourceKind,
+          status: 'uploading',
+          sharedByUid: meUid,
+          sharedByName: meName,
+          fileSizeBytes: sourceSizeBytes,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          createdAtMs: Date.now(),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+          updatedAtMs: Date.now(),
+        }),
+        firestore()
+          .collection('live')
+          .doc(roomId)
+          .set(
+            {
+              currentSharedDocId: docRef.id,
+              currentSharedDocStage: 'selected',
+              currentSharedDocPreviewTitle: title,
+              currentSharedDocPreviewKind: sourceKind,
+              currentSharedDocDownloadUrl: null,
+              currentSharedDocStoragePath: null,
+              currentSharedDocFileName: fileName,
+              currentSharedDocFileSizeBytes: sourceSizeBytes,
+              currentSharedDocStatusText: `${meName} selected ${title}`,
+              currentSharedDocPage: 0,
+              currentSharedDocSlideShow: false,
+              currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
+              currentSharedDocZoom: 1,
+              currentSharedDocPanX: 0,
+              currentSharedDocPanY: 0,
+              currentSharedDocInkPoints: [],
+              currentSharedDocMarker: null,
+              currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          ),
+      ]);
+      const sharedDocPayloadBase = {
+        id: docRef.id,
+        title,
+        fileName,
+        downloadUrl: '',
+        storagePath: '',
+        sharedByName: meName,
+        createdAtMs: Date.now(),
+        status: isPdf ? 'uploading' : 'converting',
+        sourceKind,
+        fileSizeBytes: sourceSizeBytes,
+        errorMessage: null,
+      } as SharedPdfDoc;
       const storagePath = isPdf
         ? `premium_docs/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`
         : `premium_presentations/${roomId}/${Date.now()}_${fileName.replace(/[^A-Za-z0-9._-]/g, '_')}`;
-      docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
-      sharedDocPayload = {
-        id: docRef.id,
-        title: previewTitle,
-        fileName,
-        downloadUrl: '',
-        storagePath: isPdf ? storagePath : '',
-        sharedByName: meName,
-        createdAtMs: Date.now(),
-        status: 'selected',
-        sourceKind,
-        errorMessage: null,
-      } as SharedPdfDoc;
-      await docRef.set({
-        title: sharedDocPayload.title,
-        fileName,
-        downloadUrl: '',
-        storagePath: isPdf ? storagePath : '',
-        sourcePath: !isPdf ? storagePath : '',
-        sourceKind,
-        status: 'selected',
-        sharedByUid: meUid,
-        sharedByName: meName,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        createdAtMs: Date.now(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-        updatedAtMs: Date.now(),
-      });
-      await firestore()
-        .collection('live')
-        .doc(roomId)
-        .set(
-          {
-            currentSharedDocId: docRef.id,
-            currentSharedDocStage: 'selected',
-            currentSharedDocPreviewTitle: previewTitle,
-            currentSharedDocPreviewKind: sourceKind,
-            currentSharedDocPage: 0,
-            currentSharedDocSlideShow: false,
-            currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
-            currentSharedDocZoom: 1,
-            currentSharedDocPanX: 0,
-            currentSharedDocPanY: 0,
-            currentSharedDocInkPoints: [],
-            currentSharedDocStatusText: `${meName} selected ${previewTitle}`,
-            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
-      setShowDocsPanel(true);
-      const uploadPath = await normalizePdfUploadPath(
-        localUri,
-        fileName,
-        selectedEntry.filePath || selectedEntry.fileCopyUri || null,
-      );
-      await docRef.set({
-        status: 'uploading',
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-        updatedAtMs: Date.now(),
-      }, { merge: true });
-      await firestore()
-        .collection('live')
-        .doc(roomId)
-        .set(
-          {
-            currentSharedDocId: docRef.id,
-            currentSharedDocStage: 'uploading',
-            currentSharedDocPreviewTitle: sharedDocPayload.title,
-            currentSharedDocPreviewKind: sourceKind,
-            currentSharedDocPage: 0,
-            currentSharedDocSlideShow: false,
-            currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
-            currentSharedDocZoom: 1,
-            currentSharedDocPanX: 0,
-            currentSharedDocPanY: 0,
-            currentSharedDocInkPoints: [],
-            currentSharedDocStatusText: `${meName} is uploading ${sharedDocPayload.title}`,
-            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        );
       const uploadRef = storage().ref(storagePath);
-      await uploadRef.putFile(uploadPath, {
+      const uploadTask = uploadRef.putFile(uploadPath, {
         contentType: isPdf
           ? 'application/pdf'
           : /\.pptx$/i.test(fileName)
@@ -1415,61 +2063,148 @@ const FreshDriftExpoModal = ({
           ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
           : 'application/msword',
       });
-      const downloadUrl = await uploadRef.getDownloadURL();
-      if (isPdf) {
-        await docRef.set(
+      currentShareUploadTaskRef.current = uploadTask;
+      await firestore()
+        .collection('live')
+        .doc(roomId)
+        .set(
           {
-            downloadUrl,
-            storagePath,
-            status: 'ready',
-            errorMessage: null,
+            currentSharedDocId: docRef.id,
+            currentSharedDocStage: 'uploading',
+            currentSharedDocPreviewTitle: title,
+            currentSharedDocPreviewKind: sourceKind,
+            currentSharedDocDownloadUrl: null,
+            currentSharedDocStoragePath: storagePath,
+            currentSharedDocFileName: fileName,
+            currentSharedDocFileSizeBytes: sourceSizeBytes,
+            currentSharedDocStatusText: `${meName} is uploading ${title}`,
+            currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
             updatedAt: firestore.FieldValue.serverTimestamp(),
-            updatedAtMs: Date.now(),
           },
           { merge: true },
         );
+      if (isPdf) {
+        void (async () => {
+          try {
+            const localCachePath = resolvePdfCachePath(sharedDocPayloadBase);
+            const exists = await RNFS.exists(localCachePath);
+            if (!exists) {
+              await RNFS.copyFile(uploadPath, localCachePath);
+            }
+            primedPdfDocIdsRef.current.add(sharedDocPayloadBase.id);
+            const renderSize = getPdfRenderSize(sourceSizeBytes);
+            const meta = await PdfRenderer?.getPageCount?.(localCachePath);
+            await renderActivePdfPage(localCachePath, 0, {
+              docId: sharedDocPayloadBase.id,
+              preferCache: true,
+              prefetchAdjacent: sourceSizeBytes < VERY_LARGE_SHARED_FILE_BYTES,
+              renderSize,
+            });
+            setIsDocMinimized(false);
+            setActiveDoc({
+              ...sharedDocPayloadBase,
+              sourceKind: 'pdf',
+            });
+            setPdfLocalPath(localCachePath);
+            setPdfZoomLevel(1);
+            setPdfPageCount(Number(meta?.pageCount || 0));
+          } catch {}
+        })();
+      }
+      await uploadTask;
+      if (currentShareUploadTaskRef.current === uploadTask) {
+        currentShareUploadTaskRef.current = null;
+      }
+      const downloadUrl = await uploadRef.getDownloadURL();
+      const sharedDocPayload = {
+        id: docRef.id,
+        title,
+        fileName,
+        downloadUrl: isPdf ? downloadUrl : '',
+        storagePath: isPdf ? storagePath : '',
+        sharedByName: meName,
+        createdAtMs: Date.now(),
+        status: isPdf ? 'ready' : 'converting',
+        sourceKind,
+        fileSizeBytes: sourceSizeBytes,
+        errorMessage: null,
+      } as SharedPdfDoc;
+      await docRef.set({
+        title: sharedDocPayload.title,
+        fileName,
+        downloadUrl: isPdf ? downloadUrl : '',
+        storagePath: isPdf ? storagePath : '',
+        sourcePath: !isPdf ? storagePath : '',
+        sourceKind,
+        status: isPdf ? 'ready' : 'converting',
+        sharedByUid: meUid,
+        sharedByName: meName,
+        fileSizeBytes: sourceSizeBytes,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        createdAtMs: Date.now(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        updatedAtMs: Date.now(),
+      });
+      if (isPdf) {
+        try {
+          const localCachePath = resolvePdfCachePath(sharedDocPayload);
+          const exists = await RNFS.exists(localCachePath);
+          if (!exists) {
+            await RNFS.copyFile(uploadPath, localCachePath);
+          }
+          primedPdfDocIdsRef.current.add(sharedDocPayload.id);
+          await Promise.all([
+            PdfRenderer?.getPageCount?.(localCachePath),
+            renderActivePdfPage(localCachePath, 0, {
+              docId: sharedDocPayload.id,
+              preferCache: true,
+              prefetchAdjacent: sourceSizeBytes < VERY_LARGE_SHARED_FILE_BYTES,
+              renderSize: getPdfRenderSize(sourceSizeBytes),
+            }),
+          ]);
+        } catch {}
         await firestore()
           .collection('live')
           .doc(roomId)
           .set(
             {
+              currentSharedDocId: docRef.id,
               currentSharedDocStage: 'ready',
               currentSharedDocPreviewTitle: sharedDocPayload.title,
-              currentSharedDocPreviewKind: sourceKind,
+              currentSharedDocPreviewKind: 'pdf',
+              currentSharedDocDownloadUrl: downloadUrl,
+              currentSharedDocStoragePath: storagePath,
+              currentSharedDocFileName: fileName,
+              currentSharedDocFileSizeBytes: sourceSizeBytes,
               currentSharedDocStatusText: `${meName} shared ${sharedDocPayload.title}`,
+              currentSharedDocPage: 0,
+              currentSharedDocSlideShow: false,
+              currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
           );
       } else {
-        await docRef.set(
-          {
-            status: 'converting',
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-            updatedAtMs: Date.now(),
-          },
-          { merge: true },
-        );
         await firestore()
           .collection('live')
           .doc(roomId)
           .set(
             {
+              currentSharedDocId: docRef.id,
               currentSharedDocStage: 'converting',
               currentSharedDocPreviewTitle: sharedDocPayload.title,
-              currentSharedDocPreviewKind: sourceKind,
-              currentSharedDocStatusText: `${meName} is converting ${sharedDocPayload.title}`,
+              currentSharedDocPreviewKind: 'pdf',
+              currentSharedDocDownloadUrl: null,
+              currentSharedDocStoragePath: storagePath,
+              currentSharedDocFileName: fileName,
+              currentSharedDocFileSizeBytes: sourceSizeBytes,
+              currentSharedDocStatusText: `${meName} is preparing ${sharedDocPayload.title}`,
+              currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
           );
         const requestConversion = functions().httpsCallable('requestPresentationConversion');
-        await upsertParticipant(
-          roomId,
-          roomChannel || 'premium_room',
-          participantRtcUid,
-          !!(roomHostUid && meUid && roomHostUid === meUid),
-        );
         requestConversion({
           roomId,
           docId: docRef.id,
@@ -1477,102 +2212,114 @@ const FreshDriftExpoModal = ({
           fileName,
           sourceKind,
         }).catch(async (error: any) => {
-          await docRef.set(
-            {
-              status: 'error',
-              errorMessage: String(error?.message || 'Presentation conversion failed.'),
-              updatedAt: firestore.FieldValue.serverTimestamp(),
-              updatedAtMs: Date.now(),
-            },
-            { merge: true },
-          );
-          await firestore()
-            .collection('live')
-            .doc(roomId)
-            .set(
+          await Promise.all([
+            docRef.set(
               {
-                currentSharedDocStage: 'error',
-                currentSharedDocPreviewTitle: sharedDocPayload.title,
-                currentSharedDocPreviewKind: sourceKind,
-                currentSharedDocStatusText: `${meName}'s file could not be converted`,
+                status: 'error',
+                errorMessage: String(error?.message || 'Presentation conversion failed.'),
                 updatedAt: firestore.FieldValue.serverTimestamp(),
+                updatedAtMs: Date.now(),
               },
               { merge: true },
-            );
+            ),
+            firestore()
+              .collection('live')
+              .doc(roomId)
+              .set(
+                {
+                  currentSharedDocId: docRef.id,
+                  currentSharedDocStage: 'error',
+                  currentSharedDocPreviewTitle: sharedDocPayload.title,
+                  currentSharedDocPreviewKind: sourceKind,
+                  currentSharedDocDownloadUrl: firestore.FieldValue.delete(),
+                  currentSharedDocStoragePath: storagePath,
+                  currentSharedDocFileName: fileName,
+                  currentSharedDocFileSizeBytes: sourceSizeBytes,
+                  currentSharedDocStatusText: `${meName}'s file could not be shared`,
+                  currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
+                  updatedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              ),
+          ]);
         });
       }
+      setShowDocsPanel(true);
     } catch (error: any) {
-      const message = String(error?.message || error || '');
-      if (docRef && /cancel/i.test(message)) {
-        await docRef.delete().catch(() => {});
-      }
-      if (docRef && sharedDocPayload && !/cancel/i.test(message)) {
-        await docRef
+      currentShareUploadTaskRef.current = null;
+      if (shareAttemptId === currentShareAttemptIdRef.current && roomId) {
+        await firestore()
+          .collection('live')
+          .doc(roomId)
           .set(
             {
-              status: 'error',
-              errorMessage: message || 'Could not share this file.',
+              currentSharedDocId: null,
+              currentSharedDocStage: firestore.FieldValue.delete(),
+              currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
+              currentSharedDocPreviewKind: firestore.FieldValue.delete(),
+              currentSharedDocDownloadUrl: firestore.FieldValue.delete(),
+              currentSharedDocStoragePath: firestore.FieldValue.delete(),
+              currentSharedDocFileName: firestore.FieldValue.delete(),
+              currentSharedDocFileSizeBytes: firestore.FieldValue.delete(),
+              currentSharedDocStatusText: null,
+              currentSharedDocPage: 0,
+              currentSharedDocSlideShow: false,
+              currentSharedDocSlideSeconds: DEFAULT_PRESENTATION_SLIDE_SECONDS,
+              currentSharedDocZoom: 1,
+              currentSharedDocPanX: 0,
+              currentSharedDocPanY: 0,
+              currentSharedDocInkPoints: [],
+              currentSharedDocMarker: null,
+              currentSharedDocUpdatedAt: firestore.FieldValue.serverTimestamp(),
               updatedAt: firestore.FieldValue.serverTimestamp(),
-              updatedAtMs: Date.now(),
             },
             { merge: true },
           )
           .catch(() => {});
+        if (createdDocId) {
+          await firestore()
+            .collection(`live/${roomId}/shared_docs`)
+            .doc(createdDocId)
+            .delete()
+            .catch(() => {});
+        }
       }
+      const message = String(error?.message || error || '');
       if (!/cancel/i.test(message)) {
         Alert.alert('Share failed', message || 'Could not share the PDF.');
       }
-      await firestore()
-        .collection('live')
-        .doc(roomId)
-        .set(
-          {
-            currentSharedDocId: /cancel/i.test(message) ? null : docRef?.id || null,
-            currentSharedDocStage: /cancel/i.test(message)
-              ? firestore.FieldValue.delete()
-              : 'error',
-            currentSharedDocPreviewTitle: /cancel/i.test(message)
-              ? firestore.FieldValue.delete()
-              : sharedDocPayload?.title || firestore.FieldValue.delete(),
-            currentSharedDocPreviewKind: /cancel/i.test(message)
-              ? firestore.FieldValue.delete()
-              : sourceKind,
-            currentSharedDocStatusText: /cancel/i.test(message)
-              ? null
-              : `${meName}'s file could not be shared`,
-            updatedAt: firestore.FieldValue.serverTimestamp(),
-          },
-          { merge: true },
-        )
-        .catch(() => {});
     } finally {
       setDocBusy(false);
     }
   }, [
     AudioPicker,
-    currentSharedDocId,
+    PdfRenderer,
     isPremiumRoom,
+    currentSharedDocId,
+    currentSharedDocStage,
     meName,
     meUid,
-    myRtcUid,
     normalizePdfUploadPath,
+    renderActivePdfPage,
+    resolvePdfCachePath,
     roomId,
-    roomChannel,
-    roomHostUid,
-    upsertParticipant,
+    getPdfRenderSize,
+    getSharedFileSizeBytes,
   ]);
 
   const handleShareBlankDoc = useCallback(async () => {
-    if (!roomId || !isPremiumRoom || currentSharedDocId) return;
+    if (screenShareActive) {
+      Alert.alert(
+        'Stop screen sharing first',
+        'End the live screen share before starting the in-room file presenter.',
+      );
+      return;
+    }
+    if (!roomId || !isPremiumRoom || currentSharedDocId || currentSharedDocStage) return;
     setDocBusy(true);
     try {
       const participantRtcUid = myRtcUid || mapRtcUidFromUserId(meUid);
-      await upsertParticipant(
-        roomId,
-        roomChannel || 'premium_room',
-        participantRtcUid,
-        !!(roomHostUid && meUid && roomHostUid === meUid),
-      );
+      await ensureParticipantPresenceForShare(participantRtcUid);
       const docRef = firestore().collection(`live/${roomId}/shared_docs`).doc();
       const title = 'Blank Page';
       await docRef.set({
@@ -1619,6 +2366,8 @@ const FreshDriftExpoModal = ({
     }
   }, [
     currentSharedDocId,
+    currentSharedDocStage,
+    ensureParticipantPresenceForShare,
     isPremiumRoom,
     meName,
     meUid,
@@ -1626,47 +2375,54 @@ const FreshDriftExpoModal = ({
     roomChannel,
     roomHostUid,
     roomId,
-    upsertParticipant,
+    screenShareActive,
   ]);
 
   const handleCloseSharedPresentation = useCallback(async () => {
     if (!roomId) return;
     try {
-      setDocBusy(true);
-      setActiveDoc(null);
-      setPdfLocalPath(null);
-      setPdfPageCount(0);
-      setPdfPageIndex(0);
-      setPdfPreviewUri(null);
-      setPdfPreviewWidth(0);
-      setPdfPreviewHeight(0);
-      setPdfZoomLevel(1);
-      setCurrentSharedDocSlideShow(false);
-      setCurrentPresentationTool(null);
-      setSharedDocMarker(null);
-      lastAutoOpenedDocIdRef.current = null;
-      await pushSharedDocState({
-        docId: null,
-        shareStage: null,
-        shareTitle: null,
-        shareKind: null,
-        slideShow: false,
-        marker: null,
-        statusText: null,
-      });
+      await clearCurrentSharedDocSession({ keepPanelOpen: true, deleteCurrentDoc: false });
     } catch (error: any) {
       Alert.alert('Could not close shared file', String(error?.message || 'Try again.'));
-    } finally {
-      setDocBusy(false);
     }
-  }, [pushSharedDocState, roomId]);
+  }, [clearCurrentSharedDocSession, roomId]);
 
   const autoOpenSharedPdf = useCallback(
     async (docId: string | null | undefined) => {
       const normalizedDocId = String(docId || '').trim();
       if (!normalizedDocId) return;
       if (lastAutoOpenedDocIdRef.current === normalizedDocId) return;
-      const targetDoc = sharedDocs.find(item => item.id === normalizedDocId);
+      let targetDoc =
+        (currentSharedDocEntry && currentSharedDocEntry.id === normalizedDocId
+          ? currentSharedDocEntry
+          : null) ||
+        sharedDocs.find(item => item.id === normalizedDocId) ||
+        null;
+      if (!targetDoc && roomId) {
+        try {
+          const snap = await firestore()
+            .collection(`live/${roomId}/shared_docs`)
+            .doc(normalizedDocId)
+            .get();
+          if (snap.exists) {
+            const data = snap.data() || {};
+            targetDoc = {
+              id: snap.id,
+              title: String(data.title || data.fileName || 'Shared PDF'),
+              fileName: String(data.fileName || 'shared.pdf'),
+              downloadUrl: String(data.downloadUrl || ''),
+              storagePath: String(data.storagePath || ''),
+              fileSizeBytes: Math.max(0, Number(data.fileSizeBytes || 0)) || null,
+              sharedByUid: data.sharedByUid ? String(data.sharedByUid) : null,
+              sharedByName: String(data.sharedByName || 'Host'),
+              createdAtMs: Number(data.createdAtMs || 0) || Date.now(),
+              status: String(data.status || 'ready'),
+              sourceKind: data.sourceKind ? String(data.sourceKind) : null,
+              errorMessage: data.errorMessage ? String(data.errorMessage) : null,
+            } as SharedPdfDoc;
+          }
+        } catch {}
+      }
       if (!targetDoc) return;
       const opened = await openSharedPdf(targetDoc, { silentIfPending: true });
       if (!opened) {
@@ -1676,10 +2432,15 @@ const FreshDriftExpoModal = ({
       lastAutoOpenedDocIdRef.current = normalizedDocId;
       setShowDocsPanel(false);
     },
-    [openSharedPdf, sharedDocs],
+    [currentSharedDocEntry, openSharedPdf, roomId, sharedDocs],
   );
 
   const cleanupEngine = useCallback(async () => {
+    if (localScreenShareActive) {
+      try {
+        await stopScreenShare({ syncRoom: false });
+      } catch {}
+    }
     if (roomRef.current?.id && meUid) {
       try {
         await firestore()
@@ -1691,20 +2452,22 @@ const FreshDriftExpoModal = ({
         try {
           await firestore().collection('live').doc(roomRef.current.id).set(
             {
-              status: 'ended',
-              endedAt: firestore.FieldValue.serverTimestamp(),
-              currentSharedDocId: null,
-              currentSharedDocStage: firestore.FieldValue.delete(),
-              currentSharedDocPreviewTitle: firestore.FieldValue.delete(),
-              currentSharedDocPreviewKind: firestore.FieldValue.delete(),
-              currentSharedDocStatusText: null,
-              currentSharedDocPage: 0,
-              currentSharedDocSlideShow: false,
-              currentSharedDocZoom: 1,
-              currentSharedDocPanX: 0,
-              currentSharedDocPanY: 0,
-              currentSharedDocInkPoints: [],
-              currentSharedDocMarker: null,
+              status: 'live',
+              hostDisconnectedAt: firestore.FieldValue.serverTimestamp(),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } catch {}
+      } else if (screenShareOwnerUid === meUid) {
+        try {
+          await firestore().collection('live').doc(roomRef.current.id).set(
+            {
+              currentScreenShareActive: false,
+              currentScreenShareOwnerUid: firestore.FieldValue.delete(),
+              currentScreenShareOwnerName: firestore.FieldValue.delete(),
+              currentScreenShareOwnerRtcUid: firestore.FieldValue.delete(),
+              currentScreenShareStartedAt: firestore.FieldValue.delete(),
               updatedAt: firestore.FieldValue.serverTimestamp(),
             },
             { merge: true },
@@ -1739,7 +2502,7 @@ const FreshDriftExpoModal = ({
     }
     joinedChannelRef.current = null;
     joiningChannelRef.current = null;
-  }, [meUid, myRtcUid, roomHostUid]);
+  }, [localScreenShareActive, meUid, myRtcUid, roomHostUid, screenShareOwnerUid, stopScreenShare]);
 
   useEffect(() => {
     if (visible) return;
@@ -1765,6 +2528,11 @@ const FreshDriftExpoModal = ({
     }
   }, []);
 
+  const minimizePdfViewer = useCallback(() => {
+    if (!activeDoc) return;
+    setIsDocMinimized(true);
+  }, [activeDoc]);
+
   const upsertParticipant = useCallback(
     async (liveId: string, channel: string, rtcUid: number, isHost: boolean) => {
       if (!meUid) return;
@@ -1783,7 +2551,6 @@ const FreshDriftExpoModal = ({
               purged: false,
               raisedHand: false,
               cameraOff: false,
-              screenSharing: false,
               channel,
               joinedAt: firestore.FieldValue.serverTimestamp(),
               updatedAt: firestore.FieldValue.serverTimestamp(),
@@ -1813,78 +2580,11 @@ const FreshDriftExpoModal = ({
     [meUid, roomId],
   );
 
-  const requestScreenCapturePermission = useCallback(async (): Promise<boolean> => {
-    try {
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
   const toggleRaisedHand = useCallback(async () => {
     const next = !handRaised;
     setHandRaised(next);
     await updateMyParticipantState({ raisedHand: next });
   }, [handRaised, updateMyParticipantState]);
-
-  const toggleScreenShare = useCallback(async () => {
-    const engine = engineRef.current;
-    if (!engine || !joined) return;
-    try {
-      if (!screenShareEnabled) {
-        if (Platform.OS === 'android') {
-          const ok = await requestScreenCapturePermission();
-          if (!ok) {
-            Alert.alert('Screen share unavailable', 'Allow screen sharing and try again.');
-            return;
-          }
-        } else {
-          Alert.alert('Screen share unavailable', 'This build needs extra iOS broadcast setup.');
-          return;
-        }
-        engine.startScreenCapture?.({
-          dimensions: { width: 1280, height: 720 },
-          frameRate: 12,
-          bitrate: 1100,
-        });
-        engine.updateChannelMediaOptions?.({
-          publishCameraTrack: false,
-          publishMicrophoneTrack: !micMuted,
-          publishScreenCaptureVideo: true,
-          publishScreenCaptureAudio: false,
-          publishScreenTrack: true,
-          autoSubscribeAudio: true,
-          autoSubscribeVideo: true,
-        });
-        setScreenShareEnabled(true);
-        setStatusText('Sharing screen');
-        await updateMyParticipantState({ screenSharing: true });
-        return;
-      }
-      engine.stopScreenCapture?.();
-      engine.updateChannelMediaOptions?.({
-        publishCameraTrack: !cameraOff,
-        publishMicrophoneTrack: !micMuted,
-        publishScreenCaptureVideo: false,
-        publishScreenCaptureAudio: false,
-        publishScreenTrack: false,
-        autoSubscribeAudio: true,
-        autoSubscribeVideo: true,
-      });
-      setScreenShareEnabled(false);
-      setStatusText('Live');
-      await updateMyParticipantState({ screenSharing: false });
-    } catch (error: any) {
-      Alert.alert('Screen share failed', String(error?.message || 'Try again.'));
-    }
-  }, [
-    cameraOff,
-    joined,
-    micMuted,
-    requestScreenCapturePermission,
-    screenShareEnabled,
-    updateMyParticipantState,
-  ]);
 
   const hydrateRoom = useCallback(
     async (liveId: string) => {
@@ -2288,10 +2988,11 @@ const FreshDriftExpoModal = ({
           engine.setDefaultMuteAllRemoteAudioStreams?.(false);
           engine.setDefaultMuteAllRemoteVideoStreams?.(false);
           engine.adjustPlaybackSignalVolume?.(100);
+          engine.adjustRecordingSignalVolume?.(100);
           engine.enableAudioVolumeIndication?.(300, 3, false);
           engine.enableLocalVideo?.(true);
           engine.setClientRole?.(broadcasterRole);
-          applyPremiumRtcProfile(engine);
+          applyStrongRtcProfile(engine);
           engine.registerEventHandler?.({
             onJoinChannelSuccess: (connection: any) => {
               if (!cancelled) {
@@ -2300,6 +3001,22 @@ const FreshDriftExpoModal = ({
                 if (connection?.localUid) {
                   setMyRtcUid(Number(connection.localUid) || 0);
                 }
+              }
+            },
+            onFirstLocalVideoFrame: (source: number) => {
+              const screenSource = Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2;
+              if (Number(source) !== Number(screenSource)) return;
+              handleLocalScreenShareReady();
+            },
+            onLocalVideoStateChanged: (source: number, state: number, reason: number) => {
+              const screenSource = Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2;
+              if (Number(source) !== Number(screenSource)) return;
+              if (Number(state) === 1 || Number(state) === 2) {
+                handleLocalScreenShareReady();
+                return;
+              }
+              if (Number(state) === 3) {
+                handleLocalScreenShareFailure(Number(reason));
               }
             },
             onUserJoined: (connection: any, uid: number) => {
@@ -2314,6 +3031,11 @@ const FreshDriftExpoModal = ({
                 (engineRef.current as any)?.subscribeRemoteAudioStream?.(next, true);
                 (engineRef.current as any)?.subscribeRemoteVideoStream?.(next, true);
                 engineRef.current?.setRemoteVideoStreamType?.(next, 0);
+                // Also subscribe to screen share stream if this user is screen sharing
+                try {
+                  (engineRef.current as any)?.subscribeRemoteVideoStream?.(next, true);
+                  engineRef.current?.setRemoteVideoStreamType?.(next, 0);
+                } catch {}
               } catch {}
               setRemoteUids(prev => (prev.includes(next) ? prev : [...prev, next]));
             },
@@ -2322,7 +3044,13 @@ const FreshDriftExpoModal = ({
               setRemoteUids(prev => prev.filter(item => item !== next));
             },
             onNetworkQuality: (_conn: any, _uid: number, txQuality: number, rxQuality: number) => {
-              if (Math.max(Number(txQuality), Number(rxQuality)) >= 4) {
+              const worstQuality = Math.max(Number(txQuality), Number(rxQuality));
+              if (worstQuality >= 5) {
+                setNetworkWarning('Your network is poor to support livestreaming.');
+              } else if (worstQuality <= 3) {
+                setNetworkWarning(null);
+              }
+              if (worstQuality >= 4) {
                 setStatusText('Connection is unstable. Keeping audio on.');
               }
             },
@@ -2344,9 +3072,18 @@ const FreshDriftExpoModal = ({
                 setStatusText('Audio is recovering...');
               }
             },
+            onAudioVolumeIndication: (_conn: any, speakers: any[]) => {
+              const activeUids = Array.isArray(speakers)
+                ? speakers
+                    .filter(item => Number(item?.volume || 0) >= 8)
+                    .map(item => Number(item?.uid || 0))
+                : [];
+              markSpeakerActivity(activeUids);
+            },
             onConnectionStateChanged: (_connection: any, state: number) => {
               const next = Number(state);
               if (next === 2) {
+                setNetworkWarning(null);
                 setStatusText('Live');
               } else if (next === 3 || next === 4) {
                 setStatusText('Reconnecting video...');
@@ -2368,10 +3105,11 @@ const FreshDriftExpoModal = ({
           engine.setDefaultAudioRouteToSpeakerphone?.(true);
           engine.setEnableSpeakerphone?.(true);
           engine.adjustPlaybackSignalVolume?.(100);
+          engine.adjustRecordingSignalVolume?.(100);
           engine.enableAudioVolumeIndication?.(300, 3, false);
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
-          applyPremiumRtcProfile(engine);
+          applyStrongRtcProfile(engine);
           engine.setChannelProfile?.(
             Agora.ChannelProfile?.LiveBroadcasting ??
               Agora.ChannelProfile?.Communication ??
@@ -2384,6 +3122,29 @@ const FreshDriftExpoModal = ({
             if (!cancelled) {
               setJoined(true);
               setStatusText('Live');
+            }
+          });
+          engine.addListener?.('FirstLocalVideoFrame', (source: number) => {
+            const screenSource = Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2;
+            if (Number(source) !== Number(screenSource)) return;
+            if (!pendingScreenShareStartRef.current) return;
+            pendingScreenShareStartRef.current = false;
+            setScreenShareActive(true);
+            setScreenShareOwnerUid(meUid);
+            setScreenShareOwnerName(meName);
+            setScreenShareOwnerRtcUid(myRtcUid || mapRtcUidFromUserId(meUid));
+            setStatusText('Screen sharing is live');
+            handleLocalScreenShareReady();
+          });
+          engine.addListener?.('LocalVideoStateChanged', (source: number, state: number, reason: number) => {
+            const screenSource = Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2;
+            if (Number(source) !== Number(screenSource)) return;
+            if (Number(state) === 1 || Number(state) === 2) {
+              handleLocalScreenShareReady();
+              return;
+            }
+            if (Number(state) === 3) {
+              handleLocalScreenShareFailure(Number(reason));
             }
           });
           engine.addListener?.('UserJoined', (uid: number) => {
@@ -2401,7 +3162,13 @@ const FreshDriftExpoModal = ({
             setRemoteUids(prev => prev.filter(item => item !== next));
           });
           engine.addListener?.('NetworkQuality', (_uid: number, txQuality: number, rxQuality: number) => {
-            if (Math.max(Number(txQuality), Number(rxQuality)) >= 4) {
+            const worstQuality = Math.max(Number(txQuality), Number(rxQuality));
+            if (worstQuality >= 5) {
+              setNetworkWarning('Your network is poor to support livestreaming.');
+            } else if (worstQuality <= 3) {
+              setNetworkWarning(null);
+            }
+            if (worstQuality >= 4) {
               setStatusText('Connection is unstable. Keeping audio on.');
             }
           });
@@ -2409,6 +3176,7 @@ const FreshDriftExpoModal = ({
             if (Number(state) === 3 || Number(state) === 4) {
               try {
                 engineRef.current?.setRemoteVideoStreamType?.(Number(uid), 0);
+                (engineRef.current as any)?.subscribeRemoteVideoStream?.(Number(uid), true);
               } catch {}
               setStatusText(
                 Number(reason) === 1 ? 'Video is recovering from network strain.' : 'Refreshing remote video...',
@@ -2421,6 +3189,14 @@ const FreshDriftExpoModal = ({
             if (Number(state) === 3 || Number(state) === 4) {
               setStatusText('Audio is recovering...');
             }
+          });
+          engine.addListener?.('AudioVolumeIndication', (speakers: any[]) => {
+            const activeUids = Array.isArray(speakers)
+              ? speakers
+                  .filter(item => Number(item?.volume || 0) >= 8)
+                  .map(item => Number(item?.uid || 0))
+              : [];
+            markSpeakerActivity(activeUids);
           });
           engine.addListener?.('ConnectionStateChanged', (state: number) => {
             const next = Number(state);
@@ -2442,7 +3218,7 @@ const FreshDriftExpoModal = ({
     return () => {
       cancelled = true;
     };
-  }, [Agora, appId, applyPremiumRtcProfile, ensurePermissions, myRtcUid, visible]);
+  }, [Agora, appId, applyStrongRtcProfile, ensurePermissions, markSpeakerActivity, myRtcUid, roomChannel, visible]);
 
   useEffect(() => {
     if (!visible || !roomId || !roomChannel || !myRtcUid || !engineRef.current) return;
@@ -2468,14 +3244,14 @@ const FreshDriftExpoModal = ({
           };
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
-          applyPremiumRtcProfile(engine);
+          applyStrongRtcProfile(engine);
           engine.updateChannelMediaOptions?.(mediaOptions);
           await engine.joinChannel(null, roomChannel, myRtcUid, mediaOptions);
           engine.muteAllRemoteAudioStreams?.(false);
         } else {
           engine.enableLocalVideo?.(true);
           engine.startPreview?.();
-          applyPremiumRtcProfile(engine);
+          applyStrongRtcProfile(engine);
           await engine.joinChannel(null, roomChannel, myRtcUid);
           engine.muteAllRemoteAudioStreams?.(false);
         }
@@ -2501,7 +3277,7 @@ const FreshDriftExpoModal = ({
         joiningChannelRef.current = null;
       }
     };
-  }, [Agora, applyPremiumRtcProfile, meUid, myRtcUid, roomChannel, roomHostUid, roomId, roomPremiumShowId, upsertParticipant, visible]);
+  }, [Agora, applyStrongRtcProfile, meUid, myRtcUid, roomChannel, roomHostUid, roomId, roomPremiumShowId, upsertParticipant, visible]);
 
   useEffect(() => {
     if (!visible || !roomId) return;
@@ -2513,6 +3289,14 @@ const FreshDriftExpoModal = ({
         const nextStatus = String(data.status || 'live');
         if (nextStatus === 'ended' && roomHostUid !== meUid) {
           setStatusText('This drift has ended');
+        }
+        if (nextStatus === 'ended') {
+          setScreenShareActive(false);
+          setScreenShareOwnerUid(null);
+          setScreenShareOwnerName(null);
+          setScreenShareOwnerRtcUid(0);
+          setLocalScreenShareActive(false);
+          pendingScreenShareStartRef.current = false;
         }
         if (data.channel) {
           setRoomChannel(
@@ -2533,6 +3317,27 @@ const FreshDriftExpoModal = ({
             ? (nextSharedDocStage as SharedDocShareStage)
             : null,
         );
+        if (
+          isPremiumRoom &&
+          ((currentSharedDocIdValue &&
+          (nextSharedDocStage === 'selected' ||
+            nextSharedDocStage === 'uploading' ||
+            nextSharedDocStage === 'converting' ||
+            nextSharedDocStage === 'ready' ||
+            nextSharedDocStage === 'error')) ||
+            nextSharedDocStage === 'choosing')
+        ) {
+          docsPanelAutoOpenedRef.current = true;
+          setShowDocsPanel(true);
+        } else if (
+          isPremiumRoom &&
+          !currentSharedDocIdValue &&
+          !nextSharedDocStage &&
+          docsPanelAutoOpenedRef.current
+        ) {
+          docsPanelAutoOpenedRef.current = false;
+          setShowDocsPanel(false);
+        }
         setCurrentSharedDocPreviewTitle(
           data.currentSharedDocPreviewTitle
             ? String(data.currentSharedDocPreviewTitle)
@@ -2542,6 +3347,34 @@ const FreshDriftExpoModal = ({
           data.currentSharedDocPreviewKind
             ? String(data.currentSharedDocPreviewKind)
             : null,
+        );
+        setCurrentSharedDocDownloadUrl(
+          data.currentSharedDocDownloadUrl
+            ? String(data.currentSharedDocDownloadUrl)
+            : null,
+        );
+        setCurrentSharedDocStoragePath(
+          data.currentSharedDocStoragePath
+            ? String(data.currentSharedDocStoragePath)
+            : null,
+        );
+        setCurrentSharedDocFileName(
+          data.currentSharedDocFileName
+            ? String(data.currentSharedDocFileName)
+            : null,
+        );
+        setCurrentSharedDocFileSizeBytes(
+          Math.max(0, Number(data.currentSharedDocFileSizeBytes || 0)) || null,
+        );
+        setScreenShareActive(!!data.currentScreenShareActive);
+        setScreenShareOwnerUid(
+          data.currentScreenShareOwnerUid ? String(data.currentScreenShareOwnerUid) : null,
+        );
+        setScreenShareOwnerName(
+          data.currentScreenShareOwnerName ? String(data.currentScreenShareOwnerName) : null,
+        );
+        setScreenShareOwnerRtcUid(
+          Math.max(0, Number(data.currentScreenShareOwnerRtcUid || 0)),
         );
         setCurrentSharedDocPage(Math.max(0, Number(data.currentSharedDocPage || 0)));
         setCurrentSharedDocSlideShow(!!data.currentSharedDocSlideShow);
@@ -2595,7 +3428,8 @@ const FreshDriftExpoModal = ({
               .slice(-SHARED_DOC_MAX_INK_POINTS)
           : [];
         setSharedDocInkPoints(inkPoints);
-        if (currentSharedDocIdValue) {
+        const previewKind = String(data.currentSharedDocPreviewKind || '').trim().toLowerCase();
+        if (currentSharedDocIdValue && (nextSharedDocStage === 'ready' || previewKind === 'blank')) {
           setTimeout(() => {
             autoOpenSharedPdf(currentSharedDocIdValue).catch(() => {});
           }, 0);
@@ -2630,7 +3464,6 @@ const FreshDriftExpoModal = ({
             purged: !!data.purged,
             raisedHand: !!data.raisedHand,
             cameraOff: !!data.cameraOff,
-            screenSharing: !!data.screenSharing,
           } as ParticipantRow;
         });
         setParticipants(rows);
@@ -2642,7 +3475,6 @@ const FreshDriftExpoModal = ({
         }
         if (meRow) {
           setHandRaised(!!meRow.raisedHand);
-          setScreenShareEnabled(!!meRow.screenSharing);
         }
         if (meRow && !meRow.isHost) {
           const shouldMute = !!meRow.muted;
@@ -2712,6 +3544,7 @@ const FreshDriftExpoModal = ({
             fileName: String(data.fileName || 'shared.pdf'),
             downloadUrl: String(data.downloadUrl || ''),
             storagePath: String(data.storagePath || ''),
+            fileSizeBytes: Math.max(0, Number(data.fileSizeBytes || 0)) || null,
             sharedByUid: data.sharedByUid ? String(data.sharedByUid) : null,
             sharedByName: String(data.sharedByName || 'Host'),
             createdAtMs: toMillis(data.createdAt) || Number(data.createdAtMs || 0) || 0,
@@ -2739,16 +3572,45 @@ const FreshDriftExpoModal = ({
         unsubSharedDocs();
       } catch {}
     };
-  }, [autoOpenSharedPdf, meUid, playRoomSoundEffect, roomHostUid, roomId, visible]);
+  }, [autoOpenSharedPdf, isPremiumRoom, meUid, playRoomSoundEffect, roomHostUid, roomId, visible]);
 
   useEffect(() => {
     if (!currentSharedDocId || sharedDocs.length === 0) return;
+    const currentDoc = sharedDocs.find(item => item.id === currentSharedDocId);
+    if (!currentDoc) return;
+    const sourceKind = String(currentDoc.sourceKind || '').toLowerCase();
+    if (currentDoc.status !== 'ready' && sourceKind !== 'blank') return;
     autoOpenSharedPdf(currentSharedDocId).catch(() => {});
   }, [autoOpenSharedPdf, currentSharedDocId, sharedDocs]);
 
   useEffect(() => {
+    if (!isPremiumRoom) return;
+    if (!currentSharedDocId && !currentSharedDocStage) {
+      if (showDocsPanel && docsPanelAutoOpenedRef.current) {
+        docsPanelAutoOpenedRef.current = false;
+        setShowDocsPanel(false);
+      }
+      return;
+    }
+    if (showDocsPanel) return;
+    if (
+      ((currentSharedDocId &&
+      (currentSharedDocStage === 'selected' ||
+        currentSharedDocStage === 'uploading' ||
+        currentSharedDocStage === 'converting' ||
+        currentSharedDocStage === 'ready' ||
+        currentSharedDocStage === 'error')) ||
+        currentSharedDocStage === 'choosing')
+    ) {
+      docsPanelAutoOpenedRef.current = true;
+      setShowDocsPanel(true);
+    }
+  }, [currentSharedDocId, currentSharedDocStage, isPremiumRoom, showDocsPanel]);
+
+  useEffect(() => {
     if (currentSharedDocId) return;
     if (!activeDoc) return;
+    setIsDocMinimized(false);
     setActiveDoc(null);
     setPdfLocalPath(null);
     setPdfPageCount(0);
@@ -2772,7 +3634,12 @@ const FreshDriftExpoModal = ({
     if (!currentSharedDocId || activeDoc.id !== currentSharedDocId) return;
     if (pdfPageIndex === currentSharedDocPage) return;
     setDocBusy(true);
-    renderActivePdfPage(pdfLocalPath, currentSharedDocPage)
+    renderActivePdfPage(pdfLocalPath, currentSharedDocPage, {
+      docId: activeDoc.id,
+      preferCache: true,
+      prefetchAdjacent: true,
+      renderSize: getPdfRenderSize(activeDoc.fileSizeBytes),
+    })
       .catch(() => {})
       .finally(() => {
         setDocBusy(false);
@@ -2784,6 +3651,7 @@ const FreshDriftExpoModal = ({
     pdfLocalPath,
     pdfPageIndex,
     renderActivePdfPage,
+    getPdfRenderSize,
   ]);
 
   useEffect(() => {
@@ -2794,8 +3662,10 @@ const FreshDriftExpoModal = ({
 
   useEffect(() => {
     if (!activeDoc || activeDoc.id !== currentSharedDocId) return;
-    const maxX = Math.max(0, pdfDisplayMetrics.width - pdfFrameWidth);
-    const maxY = Math.max(0, pdfDisplayMetrics.height - pdfFrameHeight);
+    const previewWidth = typeof pdfDisplayMetrics.width === 'number' ? pdfDisplayMetrics.width : pdfFrameWidth;
+    const previewHeight = typeof pdfDisplayMetrics.height === 'number' ? pdfDisplayMetrics.height : pdfFrameHeight;
+    const maxX = Math.max(0, previewWidth - pdfFrameWidth);
+    const maxY = Math.max(0, previewHeight - pdfFrameHeight);
     const targetX = maxX * currentSharedDocPanX;
     const targetY = maxY * currentSharedDocPanY;
     try {
@@ -2826,9 +3696,6 @@ const FreshDriftExpoModal = ({
       docsStatusPulseAnim.setValue(0);
       return;
     }
-    if (isPremiumRoom) {
-      setShowDocsPanel(true);
-    }
     const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(docsStatusPulseAnim, {
@@ -2849,70 +3716,99 @@ const FreshDriftExpoModal = ({
       docsStatusPulseAnim.stopAnimation();
       docsStatusPulseAnim.setValue(0);
     };
-  }, [activeDoc, docsStatusPulseAnim, isPremiumRoom, sharedDocStatusText]);
+  }, [activeDoc, docsStatusPulseAnim, sharedDocStatusText]);
 
   useEffect(() => {
-    const shouldHideCamera = !!activeDoc;
+    const shouldHideCamera = !!activeDoc || !!localScreenShareActive;
     try {
       engineRef.current?.muteLocalVideoStream?.(shouldHideCamera || cameraOff);
       engineRef.current?.enableLocalVideo?.(!(shouldHideCamera || cameraOff));
     } catch {}
-  }, [activeDoc, cameraOff]);
+  }, [activeDoc, cameraOff, localScreenShareActive]);
 
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || !joined) return;
-    const isPresentationHeavy =
-      currentSharedDocStage === 'uploading' ||
-      currentSharedDocStage === 'converting' ||
-      !!activeDoc;
-    if (!isPresentationHeavy) {
-      applyPremiumRtcProfile(engine);
-      return;
-    }
-    try {
-      engine.setVideoEncoderConfiguration?.({
-        dimensions: { width: 640, height: 360 },
-        frameRate: 15,
-        minFrameRate: 10,
-        bitrate: 520000,
-        minBitrate: 260000,
-        orientationMode: Agora?.OrientationMode?.OrientationModeAdaptive ?? 0,
-        degradationPreference:
-          Agora?.DegradationPreference?.MaintainBalanced ??
-          Agora?.DegradationPreference?.MaintainQuality ??
-          0,
-      });
-    } catch {}
-    try {
-      engine.setAudioProfile?.(
-        Agora?.AudioProfileType?.AudioProfileMusicHighQuality ??
-          Agora?.AudioProfile?.MusicHighQuality ??
-          4,
-        Agora?.AudioScenarioType?.AudioScenarioDefault ??
-          Agora?.AudioScenario?.Default ??
-          0,
-      );
-    } catch {}
+    applyStrongRtcProfile(engine, { presentationAudioOnly: !!activeDoc });
   }, [
     activeDoc,
-    Agora?.AudioProfile,
-    Agora?.AudioProfileType,
-    Agora?.AudioScenario,
-    Agora?.AudioScenarioType,
-    Agora?.DegradationPreference,
-    Agora?.OrientationMode,
-    applyPremiumRtcProfile,
-    currentSharedDocStage,
+    applyStrongRtcProfile,
     joined,
+  ]);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !joined) return;
+    try {
+      engine.updateChannelMediaOptions?.({
+        publishCameraTrack: !(!!activeDoc || cameraOff || localScreenShareActive),
+        publishMicrophoneTrack: !micMuted,
+        publishScreenCaptureVideo: !!localScreenShareActive,
+        publishScreenCaptureAudio: false,
+        publishScreenTrack: !!localScreenShareActive,
+        publishSecondaryScreenTrack: false,
+        autoSubscribeAudio: true,
+        autoSubscribeVideo: true,
+      });
+    } catch {}
+  }, [activeDoc, cameraOff, joined, localScreenShareActive, micMuted]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!visible || !joined || !localScreenShareActive) return;
+    const subscription = AppState.addEventListener('change', nextState => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      try {
+        engine.updateChannelMediaOptions?.({
+          publishCameraTrack: false,
+          publishMicrophoneTrack: !micMuted,
+          publishScreenCaptureVideo: true,
+          publishScreenCaptureAudio: false,
+          publishScreenTrack: true,
+          publishSecondaryScreenTrack: false,
+          autoSubscribeAudio: true,
+          autoSubscribeVideo: true,
+        });
+      } catch {}
+      if (nextState === 'active') {
+        try {
+          engine.updateScreenCapture?.({
+            captureAudio: false,
+            captureVideo: true,
+            videoParams: {
+              dimensions: PREMIUM_SCREEN_SHARE_DIMENSIONS,
+              frameRate: PREMIUM_SCREEN_SHARE_FRAME_RATE,
+              bitrate: PREMIUM_SCREEN_SHARE_BITRATE,
+            },
+          });
+        } catch {}
+        try {
+          engine.startPreview?.(Agora?.VideoSourceType?.VideoSourceScreenPrimary ?? 2);
+        } catch {}
+        setStatusText('Screen sharing is live');
+        void syncScreenShareRoomState(true, myRtcUid || mapRtcUidFromUserId(meUid));
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [
+    Agora?.VideoSourceType,
+    joined,
+    localScreenShareActive,
+    meUid,
+    micMuted,
+    myRtcUid,
+    syncScreenShareRoomState,
+    visible,
   ]);
 
   useEffect(() => {
     if (!roomId || !meUid) return;
     updateMyParticipantState({
       muted: !!micMuted,
-      cameraOff: !!cameraOff || !!activeDoc,
-      screenSharing: !!screenShareEnabled,
+      cameraOff: !!cameraOff || !!activeDoc || !!localScreenShareActive,
       raisedHand: !!handRaised,
       rtcUid: myRtcUid || 0,
     });
@@ -2920,11 +3816,11 @@ const FreshDriftExpoModal = ({
     activeDoc,
     cameraOff,
     handRaised,
+    localScreenShareActive,
     meUid,
     micMuted,
     myRtcUid,
     roomId,
-    screenShareEnabled,
     updateMyParticipantState,
   ]);
 
@@ -3236,6 +4132,7 @@ const FreshDriftExpoModal = ({
       const RtcLocalView = Agora?.RtcLocalView;
       const VideoRenderMode = Agora?.VideoRenderMode;
       const VideoSourceType = Agora?.VideoSourceType;
+      const filledRenderMode = VideoRenderMode?.Hidden ?? VideoRenderMode?.Fit ?? 1;
       const style = fullScreen ? styles.videoFill : styles.pictureInPictureVideo;
       if (AVView) {
         return (
@@ -3248,7 +4145,7 @@ const FreshDriftExpoModal = ({
                   VideoSourceType.VideoSourceCamera)) ||
               0
             }
-            renderMode={(VideoRenderMode && VideoRenderMode.Fit) || 2}
+            renderMode={filledRenderMode}
           />
         );
       }
@@ -3257,7 +4154,7 @@ const FreshDriftExpoModal = ({
           style,
           canvas: {
             uid: 0,
-            renderMode: VideoRenderMode?.Fit ?? 2,
+            renderMode: filledRenderMode,
           },
           zOrderMediaOverlay: true,
         });
@@ -3267,14 +4164,14 @@ const FreshDriftExpoModal = ({
           style,
           canvas: {
             uid: 0,
-            renderMode: VideoRenderMode?.Fit ?? 2,
+            renderMode: filledRenderMode,
           },
         });
       }
       if (RtcLocalView?.SurfaceView) {
         return React.createElement(RtcLocalView.SurfaceView, {
           style,
-          renderMode: VideoRenderMode?.Fit ?? 2,
+          renderMode: filledRenderMode,
         });
       }
       return (
@@ -3292,17 +4189,72 @@ const FreshDriftExpoModal = ({
       const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
       const RtcTextureView = (Agora as any)?.RtcTextureView;
       const VideoRenderMode = Agora?.VideoRenderMode;
-      if (RtcRemoteView?.SurfaceView) {
-        return React.createElement(RtcRemoteView.SurfaceView, {
+      const filledRenderMode = VideoRenderMode?.Hidden ?? VideoRenderMode?.Fit ?? 1;
+      const remoteCanvas = {
+        uid,
+        channelId: roomChannel || undefined,
+        renderMode: filledRenderMode,
+        sourceType: Agora?.VideoSourceType?.VideoSourceRemote,
+      };
+      if (RtcTextureView) {
+        return React.createElement(RtcTextureView, {
+          key: `remote_texture_${uid}`,
           style: styles.videoFill,
-          uid,
-          channelId: roomChannel || undefined,
-          renderMode: VideoRenderMode?.Fit ?? 2,
+          connection: rtcConnection,
+          canvas: remoteCanvas,
         });
       }
       if (RtcSurfaceView) {
         return React.createElement(RtcSurfaceView, {
+          key: `remote_surface_${uid}`,
           style: styles.videoFill,
+          connection: rtcConnection,
+          canvas: remoteCanvas,
+        });
+      }
+      if (RtcRemoteView?.SurfaceView) {
+        return React.createElement(RtcRemoteView.SurfaceView, {
+          key: `remote_legacy_${uid}`,
+          style: styles.videoFill,
+          uid,
+          channelId: roomChannel || undefined,
+          renderMode: filledRenderMode,
+        });
+      }
+      return (
+        <View style={[styles.videoFill, styles.videoFallback]}>
+          <Text style={styles.videoFallbackText}>Connecting remote video...</Text>
+        </View>
+      );
+    },
+    [Agora, roomChannel, rtcConnection],
+  );
+
+  const renderLocalScreenShareView = useCallback(() => (
+    <View style={[styles.videoFill, styles.screenShareHostStage]}>
+      <Text style={styles.screenShareHostTitle}>
+        {screenShareStarting && !screenShareActive ? 'Starting screen share...' : 'Screen sharing is live'}
+      </Text>
+      <Text style={styles.screenShareHostMeta}>
+        {screenShareStarting && !screenShareActive
+          ? 'Grant permission, then open any app or file on your phone.'
+          : 'Open any app or file on your phone. Other users will see your screen.'}
+      </Text>
+    </View>
+  ), [screenShareActive, screenShareStarting]);
+
+  const renderRemoteScreenShareView = useCallback(
+    (uid: number) => {
+      const RtcRemoteView = Agora?.RtcRemoteView;
+      const RtcSurfaceView = (Agora as any)?.RtcSurfaceView;
+      const RtcTextureView = (Agora as any)?.RtcTextureView;
+      const VideoRenderMode = Agora?.VideoRenderMode;
+      // Render the sender's active published video stream directly. On Android,
+      // this screen-share path replaces the active video stream with the shared screen.
+      if (RtcSurfaceView) {
+        return React.createElement(RtcSurfaceView, {
+          style: styles.videoFill,
+          connection: rtcConnection,
           canvas: {
             uid,
             channelId: roomChannel || undefined,
@@ -3313,6 +4265,7 @@ const FreshDriftExpoModal = ({
       if (RtcTextureView) {
         return React.createElement(RtcTextureView, {
           style: styles.videoFill,
+          connection: rtcConnection,
           canvas: {
             uid,
             channelId: roomChannel || undefined,
@@ -3320,13 +4273,18 @@ const FreshDriftExpoModal = ({
           },
         });
       }
-      return (
-        <View style={[styles.videoFill, styles.videoFallback]}>
-          <Text style={styles.videoFallbackText}>Connecting remote video...</Text>
-        </View>
-      );
+      // v3 fallback - render normally
+      if (RtcRemoteView?.SurfaceView) {
+        return React.createElement(RtcRemoteView.SurfaceView, {
+          style: styles.videoFill,
+          uid,
+          channelId: roomChannel || undefined,
+          renderMode: VideoRenderMode?.Fit ?? 2,
+        });
+      }
+      return renderRemoteView(uid);
     },
-    [Agora, roomChannel],
+    [Agora, renderRemoteView, roomChannel, rtcConnection],
   );
 
   const remoteRenderUids = useMemo(
@@ -3339,6 +4297,181 @@ const FreshDriftExpoModal = ({
     [myRtcUid, remoteUids],
   );
 
+  const roomHostRtcUid = useMemo(() => {
+    if (!roomHostUid) return 0;
+    return Number(
+      participants.find(item => item.uid === roomHostUid)?.rtcUid ||
+        mapRtcUidFromUserId(roomHostUid) ||
+        0,
+    );
+  }, [participants, roomHostUid]);
+
+  const prioritizedRemoteRenderUids = useMemo(
+    () =>
+      [...remoteRenderUids].sort((a, b) => {
+        const aIsHost = a === roomHostRtcUid ? 1 : 0;
+        const bIsHost = b === roomHostRtcUid ? 1 : 0;
+        if (aIsHost !== bIsHost) return bIsHost - aIsHost;
+        const aSpeakerAt = recentSpeakerAt[a] || 0;
+        const bSpeakerAt = recentSpeakerAt[b] || 0;
+        if (aSpeakerAt !== bSpeakerAt) return bSpeakerAt - aSpeakerAt;
+        return a - b;
+      }),
+    [recentSpeakerAt, remoteRenderUids, roomHostRtcUid],
+  );
+
+  const visibleRemoteVideoUids = useMemo(() => {
+    const limit = Math.max(1, MAX_VISIBLE_PREMIUM_GALLERY_TILES - 1);
+    const visible = prioritizedRemoteRenderUids.slice(0, limit);
+    if (screenShareOwnerRtcUid > 0 && !visible.includes(screenShareOwnerRtcUid)) {
+      return [...visible, screenShareOwnerRtcUid];
+    }
+    return visible;
+  }, [prioritizedRemoteRenderUids, screenShareOwnerRtcUid]);
+
+  const premiumGalleryTiles = useMemo(() => {
+    const remoteTiles = prioritizedRemoteRenderUids.map(uid => ({ kind: 'remote' as const, uid }));
+    const localTile = { kind: 'local' as const, uid: myRtcUid || 0 };
+    return [...remoteTiles, localTile];
+  }, [myRtcUid, prioritizedRemoteRenderUids]);
+
+  const screenShareStageVisible = useMemo(
+    () =>
+      !!(
+        isPremiumRoom &&
+        ((screenShareActive && screenShareRenderRtcUid > 0) ||
+          (localScreenShareActive && isCurrentUserScreenSharer))
+      ),
+    [isCurrentUserScreenSharer, isPremiumRoom, localScreenShareActive, screenShareActive, screenShareRenderRtcUid],
+  );
+  const sharedFileStageVisible = useMemo(
+    () =>
+      !!(
+        isPremiumRoom &&
+        !activeDoc &&
+        !screenShareStageVisible &&
+        !localScreenShareStageVisible &&
+        currentSharedDocStage &&
+        (currentSharedDocId || currentSharedDocPreviewTitle || sharedDocStatusText)
+      ),
+    [
+      activeDoc,
+      currentSharedDocId,
+      currentSharedDocPreviewTitle,
+      currentSharedDocStage,
+      isPremiumRoom,
+      localScreenShareStageVisible,
+      screenShareStageVisible,
+      sharedDocStatusText,
+    ],
+  );
+
+  const screenShareInsetUid = useMemo(() => {
+    if (!screenShareStageVisible) return 0;
+    return prioritizedRemoteRenderUids.find(uid => uid !== screenShareRenderRtcUid) || 0;
+  }, [prioritizedRemoteRenderUids, screenShareRenderRtcUid, screenShareStageVisible]);
+  const localScreenShareStageVisible = useMemo(
+    () => !!(isPremiumRoom && (screenShareStarting || localScreenShareActive)),
+    [isPremiumRoom, localScreenShareActive, screenShareStarting],
+  );
+
+  const renderPremiumGallery = useCallback(() => {
+    const visibleTiles = premiumGalleryTiles.slice(0, MAX_VISIBLE_PREMIUM_GALLERY_TILES);
+    const hiddenCount = Math.max(0, premiumGalleryTiles.length - visibleTiles.length);
+    const tileCount = visibleTiles.length;
+    const columns = tileCount <= 1 ? 1 : 2;
+    const tileWidth = columns === 1 ? '100%' : '50%';
+    const tileHeight = tileCount <= 1 ? '100%' : tileCount === 2 ? '44%' : '36%';
+    return (
+      <View style={styles.galleryGrid}>
+        {visibleTiles.map((tile, index) => {
+          const isLastVisible = index === visibleTiles.length - 1 && hiddenCount > 0;
+          return (
+            <View
+              key={`${tile.kind}_${tile.uid}`}
+              style={[
+                styles.galleryTile,
+                {
+                  width: tileWidth,
+                  height: tileHeight,
+                },
+              ]}
+            >
+                <View style={styles.galleryTileInner}>
+                  {tile.kind === 'remote'
+                    ? renderRemoteView(tile.uid)
+                    : cameraOff
+                  ? (
+                    <View style={[styles.videoFill, styles.cameraOffStage]}>
+                      <Text style={styles.cameraOffText}>Camera off</Text>
+                    </View>
+                  )
+                  : renderLocalView(true)}
+                <View style={styles.galleryTileLabelWrap}>
+                  <Text style={styles.galleryTileLabel}>
+                    {tile.kind === 'remote'
+                      ? participants.find(item => Number(item.rtcUid || 0) === tile.uid)?.name || `Guest ${tile.uid}`
+                      : 'You'}
+                  </Text>
+                </View>
+                {isLastVisible ? (
+                  <View style={styles.galleryOverflowBadge}>
+                    <Text style={styles.galleryOverflowText}>+{hiddenCount}</Text>
+                  </View>
+                ) : null}
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    );
+  }, [cameraOff, participants, premiumGalleryTiles, renderLocalView, renderRemoteView]);
+
+  const renderSharedFileStage = useCallback(() => {
+    const title = String(
+      currentSharedDocPreviewTitle || currentSharedDocEntry?.title || currentSharedDocFileName || 'Shared file',
+    ).trim();
+    const stage = String(currentSharedDocStage || 'uploading').trim().toLowerCase();
+    const detail =
+      sharedDocStatusText ||
+      (stage === 'choosing'
+        ? 'Choosing file...'
+        : stage === 'selected'
+        ? 'Preparing upload...'
+        : stage === 'uploading'
+        ? 'Uploading to everyone now...'
+        : stage === 'converting'
+        ? 'Converting to PDF for all devices...'
+        : stage === 'error'
+        ? 'File share failed.'
+        : 'Opening shared file...');
+    const badgeText =
+      stage === 'error'
+        ? 'Share failed'
+        : stage === 'ready'
+        ? 'Opening file'
+        : 'File sharing live';
+    return (
+      <View style={[styles.videoFill, styles.sharedFileStage]}>
+        <View style={styles.sharedFileStageBadge}>
+          <Text style={styles.sharedFileStageBadgeText}>{badgeText}</Text>
+        </View>
+        <Text style={styles.sharedFileStageTitle} numberOfLines={2}>
+          {title || 'Shared file'}
+        </Text>
+        <Text style={styles.sharedFileStageMeta} numberOfLines={2}>
+          {detail}
+        </Text>
+      </View>
+    );
+  }, [
+    currentSharedDocEntry?.title,
+    currentSharedDocFileName,
+    currentSharedDocPreviewTitle,
+    currentSharedDocStage,
+    sharedDocStatusText,
+  ]);
+
   useEffect(() => {
     if (!roomId || !joined) return;
     const participantRemoteUids = participants
@@ -3347,6 +4480,85 @@ const FreshDriftExpoModal = ({
     if (!participantRemoteUids.length) return;
     setRemoteUids(prev => Array.from(new Set([...participantRemoteUids, ...prev])));
   }, [joined, myRtcUid, participants, roomId]);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !joined || remoteRenderUids.length === 0) return;
+    const visibleSet = new Set(visibleRemoteVideoUids);
+    remoteRenderUids.forEach(uid => {
+      try {
+        engine.muteRemoteAudioStream?.(uid, false);
+        (engine as any)?.subscribeRemoteAudioStream?.(uid, true);
+        if (visibleSet.has(uid)) {
+          engine.muteRemoteVideoStream?.(uid, false);
+          (engine as any)?.subscribeRemoteVideoStream?.(uid, true);
+          engine.setRemoteVideoStreamType?.(uid, 0);
+        } else {
+          engine.muteRemoteVideoStream?.(uid, true);
+        }
+      } catch {}
+    });
+  }, [joined, remoteRenderUids, visibleRemoteVideoUids]);
+
+  useEffect(() => {
+    if (!localScreenShareActive) return;
+    if (screenShareActive && screenShareOwnerUid === meUid) return;
+    void stopScreenShare({ syncRoom: false });
+  }, [localScreenShareActive, meUid, screenShareActive, screenShareOwnerUid, stopScreenShare]);
+
+  // When remote screen share activates, force-subscribe to that user's video stream
+  useEffect(() => {
+    if (!screenShareActive || !screenShareOwnerRtcUid || screenShareOwnerUid === meUid) return;
+    const engine = engineRef.current;
+    if (!engine) return;
+    try {
+      engine.muteRemoteVideoStream?.(screenShareOwnerRtcUid, false);
+      (engine as any)?.subscribeRemoteVideoStream?.(screenShareOwnerRtcUid, true);
+      engine.setRemoteVideoStreamType?.(screenShareOwnerRtcUid, 0);
+    } catch {}
+  }, [meUid, screenShareActive, screenShareOwnerRtcUid, screenShareOwnerUid]);
+
+  useEffect(() => {
+    if (!roomId || !screenShareActive || !screenShareOwnerUid) return;
+    if (screenShareOwnerUid === meUid) return;
+    const ownerStillPresent = participants.some(item => item.uid === screenShareOwnerUid);
+    if (ownerStillPresent) return;
+    void firestore()
+      .collection('live')
+      .doc(roomId)
+      .set(
+        {
+          currentScreenShareActive: false,
+          currentScreenShareOwnerUid: firestore.FieldValue.delete(),
+          currentScreenShareOwnerName: firestore.FieldValue.delete(),
+          currentScreenShareOwnerRtcUid: firestore.FieldValue.delete(),
+          currentScreenShareStartedAt: firestore.FieldValue.delete(),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      )
+      .catch(() => {});
+  }, [meUid, participants, roomId, screenShareActive, screenShareOwnerUid]);
+
+  useEffect(() => {
+    if (!roomId || !screenShareActive) return;
+    if (screenShareOwnerUid) return;
+    void firestore()
+      .collection('live')
+      .doc(roomId)
+      .set(
+        {
+          currentScreenShareActive: false,
+          currentScreenShareOwnerUid: firestore.FieldValue.delete(),
+          currentScreenShareOwnerName: firestore.FieldValue.delete(),
+          currentScreenShareOwnerRtcUid: firestore.FieldValue.delete(),
+          currentScreenShareStartedAt: firestore.FieldValue.delete(),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      )
+      .catch(() => {});
+  }, [roomId, screenShareActive, screenShareOwnerUid]);
 
   useEffect(() => {
     if (joined) return;
@@ -3368,8 +4580,16 @@ const FreshDriftExpoModal = ({
         {roomId ? (
           <>
             <View style={styles.videoStage}>
-              {remoteRenderUids.length > 0 ? (
-                renderRemoteView(remoteRenderUids[0])
+              {screenShareStageVisible || localScreenShareStageVisible ? (
+                isCurrentUserScreenSharer || localScreenShareStageVisible
+                  ? renderLocalScreenShareView()
+                  : renderRemoteScreenShareView(screenShareRenderRtcUid)
+              ) : sharedFileStageVisible ? (
+                renderSharedFileStage()
+              ) : !activeDoc && premiumGalleryTiles.length > 1 ? (
+                renderPremiumGallery()
+              ) : prioritizedRemoteRenderUids.length > 0 ? (
+                renderRemoteView(prioritizedRemoteRenderUids[0])
               ) : cameraOff ? (
                 <View style={[styles.videoFill, styles.cameraOffStage]}>
                   <Text style={styles.cameraOffText}>Camera off</Text>
@@ -3377,7 +4597,33 @@ const FreshDriftExpoModal = ({
               ) : (
                 renderLocalView(true)
               )}
-              {remoteRenderUids.length > 0 ? (
+              {screenShareStageVisible || localScreenShareStageVisible ? (
+                <View
+                  style={[
+                    styles.pictureInPicture,
+                    {
+                      right: insets.right + 4,
+                      bottom: insets.bottom + 316,
+                    },
+                  ]}
+                >
+                  {screenShareInsetUid > 0
+                    ? renderRemoteView(screenShareInsetUid)
+                    : cameraOff
+                    ? (
+                      <View style={[styles.pictureInPictureVideo, styles.cameraOffStage]}>
+                        <Text style={styles.cameraOffText}>Camera off</Text>
+                      </View>
+                    )
+                    : isCurrentUserScreenSharer || localScreenShareStageVisible
+                    ? (
+                      <View style={[styles.pictureInPictureVideo, styles.screenShareInsetStage]}>
+                        <Text style={styles.screenShareInsetText}>Live</Text>
+                      </View>
+                    )
+                    : renderLocalView(false)}
+                </View>
+              ) : sharedFileStageVisible ? null : prioritizedRemoteRenderUids.length > 0 && !(!activeDoc && premiumGalleryTiles.length > 1) ? (
                 <View
                   style={[
                     styles.pictureInPicture,
@@ -3407,11 +4653,13 @@ const FreshDriftExpoModal = ({
                 ]}
               >
                 <View style={styles.topBarTitleWrap}>
-                  {isPremiumRoom ? null : <Text style={styles.livePill}>LIVE</Text>}
                   <Text
-                    numberOfLines={isPremiumRoom ? 2 : 1}
-                    ellipsizeMode={isPremiumRoom ? 'clip' : 'tail'}
-                    style={[styles.roomTitle, isPremiumRoom ? styles.premiumRoomTitle : null]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                    style={[
+                      styles.roomTitle,
+                      isPremiumRoom ? styles.premiumRoomTitle : styles.driftRoomTitle,
+                    ]}
                   >
                     {roomTitle}
                   </Text>
@@ -3419,16 +4667,51 @@ const FreshDriftExpoModal = ({
                 <View style={styles.topBarCenter}>
                   {isPremiumRoom ? (
                     <View style={styles.premiumCountdownPill}>
-                      <Text style={styles.premiumCountdownText}>
-                        {premiumCountdownLabel || 'Premium stream active'}
+                      <Text numberOfLines={1} ellipsizeMode="tail" style={styles.premiumCountdownText}>
+                        {screenShareStageVisible
+                          || localScreenShareStageVisible
+                          ? 'Screen sharing live'
+                          : premiumCountdownLabel || 'Premium stream active'}
                       </Text>
                     </View>
                   ) : null}
                 </View>
-                <Pressable onPress={handleClose} style={styles.closeChip}>
-                  <Text style={styles.closeChipText}>Close</Text>
-                </Pressable>
+                <View style={styles.topBarActions}>
+                  {activeDoc && isDocMinimized ? (
+                    <Pressable onPress={() => setIsDocMinimized(false)} style={styles.topIconChip}>
+                      <Text style={styles.topIconChipText}>+</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable onPress={handleClose} style={styles.closeChip}>
+                    <Text style={styles.closeChipText}>x</Text>
+                  </Pressable>
+                </View>
               </View>
+              <View style={[styles.stageBrandChip, { left: insets.left + 12, top: insets.top + 54 }]}>
+                <Text style={styles.stageBrandChipText}>MoMo</Text>
+              </View>
+              {networkWarning ? (
+                <View
+                  style={[
+                    styles.networkWarningBanner,
+                    {
+                      top: insets.top + 88,
+                      left: insets.left + 12,
+                      right: insets.right + 12,
+                    },
+                  ]}
+                >
+                  <Text style={styles.networkWarningText}>{networkWarning}</Text>
+                </View>
+              ) : null}
+              {activeDoc && isDocMinimized ? (
+                <Pressable
+                  style={[styles.maximizeDocChip, { left: insets.left + 14, bottom: insets.bottom + 92 }]}
+                  onPress={() => setIsDocMinimized(false)}
+                >
+                  <Text style={styles.maximizeDocChipText}>Maximize File</Text>
+                </Pressable>
+              ) : null}
               <View style={[styles.rightRail, { right: insets.right + 8, bottom: insets.bottom + 78 }]}>
                 {!isPremiumRoom ? <Pressable style={styles.railButton} onPress={() => setShowInvitePanel(true)}>
                   <Text style={styles.railIcon}>Invite</Text>
@@ -3472,11 +4755,6 @@ const FreshDriftExpoModal = ({
                 >
                   <Text style={styles.railIcon}>{cameraOff ? 'Start Video' : 'Stop Video'}</Text>
                 </Pressable>
-                {isPremiumRoom ? (
-                  <Pressable style={styles.railButton} onPress={() => void toggleScreenShare()}>
-                    <Text style={styles.railIcon}>{screenShareEnabled ? 'Stop Share' : 'Share Screen'}</Text>
-                  </Pressable>
-                ) : null}
                 <Pressable
                   style={styles.railButton}
                   onPress={() => {
@@ -3491,8 +4769,34 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.railIcon}>Sounds</Text>
                 </Pressable> : null}
                 {isPremiumRoom ? (
-                  <Pressable style={styles.railButton} onPress={() => setShowDocsPanel(v => !v)}>
+                  <Pressable
+                    style={styles.railButton}
+                    onPress={() => {
+                      docsPanelAutoOpenedRef.current = false;
+                      setShowDocsPanel(true);
+                    }}
+                  >
                     <Text style={styles.railIcon}>Share Files</Text>
+                  </Pressable>
+                ) : null}
+                {isPremiumRoom ? (
+                  <Pressable
+                    style={styles.railButton}
+                    onPress={() => {
+                      if (isCurrentUserScreenSharer) {
+                        void stopScreenShare();
+                      } else {
+                        void startScreenShare();
+                      }
+                    }}
+                  >
+                    <Text style={styles.railIcon}>
+                      {screenShareStarting
+                        ? 'Starting...'
+                        : isCurrentUserScreenSharer
+                        ? 'Stop Share'
+                        : 'Share Screen'}
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -3501,13 +4805,8 @@ const FreshDriftExpoModal = ({
                   <Text style={styles.soundBadgeText}>{soundBadgeLabel}</Text>
                 </View>
               ) : null}
-              {isPremiumRoom && (activePresenter || raisedHandParticipants.length > 0) ? (
+              {isPremiumRoom && raisedHandParticipants.length > 0 ? (
                 <View style={styles.meetingStatusOverlay}>
-                  {activePresenter ? (
-                    <Text style={styles.meetingStatusText}>
-                      {activePresenter.name || 'Guest'} is presenting
-                    </Text>
-                  ) : null}
                   {raisedHandParticipants.length > 0 ? (
                     <Text style={styles.meetingStatusText}>
                       {raisedHandParticipants.length} hand{raisedHandParticipants.length === 1 ? '' : 's'} raised
@@ -3515,11 +4814,6 @@ const FreshDriftExpoModal = ({
                   ) : null}
                 </View>
               ) : null}
-                {isPremiumRoom && sharedDocStatusText && !activeDoc ? (
-                  <View style={styles.sharedDocStatusOverlay}>
-                    <Text style={styles.sharedDocStatusOverlayText}>{sharedDocStatusText}</Text>
-                  </View>
-                ) : null}
               {showAudiencePanel ? (
                 <View style={[styles.audiencePanel, { top: insets.top + 132, right: insets.right + 14 }]}>
                   <Text style={styles.audiencePanelTitle}>In The Room</Text>
@@ -3638,7 +4932,17 @@ const FreshDriftExpoModal = ({
               ) : null}
               {showDocsPanel && isPremiumRoom ? (
                 <View style={[styles.docsPanel, { top: insets.top + 114, left: insets.left + 6 }]}>
-                  <Text style={styles.docsPanelTitle}>Shared Files</Text>
+                  <View style={styles.docsPanelHeader}>
+                    <Pressable
+                      onPress={() => {
+                        docsPanelAutoOpenedRef.current = false;
+                        setShowDocsPanel(false);
+                      }}
+                      hitSlop={10}
+                    >
+                      <Text style={styles.docsPanelClose}>x</Text>
+                    </Pressable>
+                  </View>
                   {!activeDoc ? (
                     <>
                       <Animated.View
@@ -3653,12 +4957,31 @@ const FreshDriftExpoModal = ({
                         ]}
                       >
                         <Pressable style={styles.docsShareButton} onPress={() => void handleShareFile()}>
-                          <Text style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share File'}</Text>
+                          <Text numberOfLines={1} style={styles.docsShareButtonText}>{docBusy ? 'Sharing...' : 'Share File'}</Text>
                         </Pressable>
                       </Animated.View>
                       <Pressable style={[styles.docsShareButton, { marginTop: 8, backgroundColor: '#2563EB' }]} onPress={() => void handleShareBlankDoc()}>
-                        <Text style={styles.docsShareButtonText}>Share Blank PDF</Text>
+                        <Text numberOfLines={1} style={styles.docsShareButtonText}>Share Blank PDF</Text>
                       </Pressable>
+                      {currentSharedDocId ? (
+                        <Pressable
+                          style={[styles.docsShareButton, { marginTop: 8, backgroundColor: '#8D0000' }]}
+                          onPress={() =>
+                            void clearCurrentSharedDocSession({
+                              keepPanelOpen: true,
+                              deleteCurrentDoc: true,
+                            })
+                          }
+                        >
+                          <Text numberOfLines={1} style={styles.docsShareButtonText}>
+                            {currentSharedDocStage === 'uploading' || currentSharedDocStage === 'selected'
+                              ? 'Stop Current Upload'
+                              : currentSharedDocStage === 'error'
+                              ? 'Clear Failed Share'
+                              : 'Close Shared File'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
                       {sharedDocProgressCard ? (
                         <View style={styles.docsProgressCard}>
                           <Text style={styles.docsProgressTitle} numberOfLines={1}>
@@ -3669,11 +4992,27 @@ const FreshDriftExpoModal = ({
                           </Text>
                         </View>
                       ) : null}
+                      {currentSharedDocEntry ? (
+                        <View style={styles.docsProgressCard}>
+                          <Text style={styles.docsProgressTitle} numberOfLines={1}>
+                            {currentSharedDocEntry.title}
+                          </Text>
+                          <Text style={styles.docsProgressMeta} numberOfLines={2}>
+                            {currentSharedDocEntry.status === 'uploading'
+                              ? 'Uploading now...'
+                              : currentSharedDocEntry.status === 'converting'
+                              ? 'Preparing PDF...'
+                              : currentSharedDocEntry.status === 'error'
+                              ? currentSharedDocEntry.errorMessage || 'Share failed'
+                              : 'Current shared file'}
+                          </Text>
+                        </View>
+                      ) : null}
                     </>
                   ) : null}
                   <ScrollView style={{ maxHeight: 240 }} showsVerticalScrollIndicator={false}>
                     {visibleSharedDocs.length === 0 ? (
-                      <Text style={styles.docsEmptyText}>No shared files yet.</Text>
+                      <Text style={styles.docsEmptyText}>Ready to share a file.</Text>
                     ) : (
                       visibleSharedDocs.map(doc => (
                         <Pressable
@@ -3826,7 +5165,7 @@ const FreshDriftExpoModal = ({
                       style={styles.commentInput}
                     />
                     <Pressable style={styles.sendButton} onPress={sendComment}>
-                      <Text style={styles.sendButtonText}>Send</Text>
+                      <Text numberOfLines={1} style={styles.sendButtonText}>Send</Text>
                     </Pressable>
                   </View>
                 </KeyboardAvoidingView>
@@ -3846,7 +5185,7 @@ const FreshDriftExpoModal = ({
                       style={styles.inviteInput}
                     />
                     <Pressable style={styles.inviteSearchButton} onPress={searchInviteTargets}>
-                      <Text style={styles.inviteSearchButtonText}>Find</Text>
+                      <Text numberOfLines={1} style={styles.inviteSearchButtonText}>Find</Text>
                     </Pressable>
                   </View>
                   {onlineInvitees.length > 0 ? (
@@ -3897,7 +5236,7 @@ const FreshDriftExpoModal = ({
                           disabled={inviteBusyUid === item.uid}
                           onPress={() => sendInvite(item)}
                         >
-                          <Text style={styles.inviteResultButtonText}>
+                          <Text numberOfLines={1} style={styles.inviteResultButtonText}>
                             {inviteBusyUid === item.uid ? '...' : 'Invite'}
                           </Text>
                         </Pressable>
@@ -3905,7 +5244,7 @@ const FreshDriftExpoModal = ({
                     ))}
                   </ScrollView>
                   <Pressable style={styles.inviteCloseButton} onPress={() => setShowInvitePanel(false)}>
-                    <Text style={styles.inviteCloseButtonText}>Close</Text>
+                    <Text numberOfLines={1} style={styles.inviteCloseButtonText}>Close</Text>
                   </Pressable>
                 </View>
               </View>
@@ -3949,6 +5288,7 @@ const FreshDriftExpoModal = ({
               }}
             >
               <Text
+                numberOfLines={1}
                 style={[
                   styles.primaryStartButtonText,
                   premiumShowId ? styles.premiumPrimaryStartButtonText : null,
@@ -3994,7 +5334,7 @@ const FreshDriftExpoModal = ({
               </View>
             ) : null}
             <Pressable style={styles.secondaryStartButton} onPress={handleClose}>
-              <Text style={styles.secondaryStartButtonText}>Close</Text>
+              <Text numberOfLines={1} style={styles.secondaryStartButtonText}>Close</Text>
             </Pressable>
           </View>
         )}
@@ -4019,36 +5359,44 @@ const FreshDriftExpoModal = ({
                 <Text style={styles.replayEmpty}>No replay file is available for this Drift Expo.</Text>
               )}
               <Pressable style={styles.inviteCloseButton} onPress={() => setReplayItem(null)}>
-                <Text style={styles.inviteCloseButtonText}>Close</Text>
+                <Text numberOfLines={1} style={styles.inviteCloseButtonText}>Close</Text>
               </Pressable>
             </View>
           </View>
         </Modal>
         <Modal
-          visible={!!activeDoc}
+          visible={!!activeDoc && !isDocMinimized}
           transparent
           animationType="fade"
           onRequestClose={closePdfViewer}
         >
           <View style={styles.pdfBackdrop}>
-            <View style={styles.pdfCard}>
-              <View style={styles.pdfHeader}>
+              <View style={styles.pdfCard}>
+                <View style={styles.pdfHeader}>
                 <Text style={styles.pdfTitle} numberOfLines={1}>
                   {activeDoc?.title || 'Shared PDF'}
                 </Text>
-                <Pressable style={styles.pdfCloseButton} onPress={closePdfViewer}>
-                  <Text style={styles.pdfCloseButtonText}>Close</Text>
-                </Pressable>
+                <View style={styles.pdfHeaderActions}>
+                  <Pressable style={styles.pdfIconButton} onPress={minimizePdfViewer}>
+                    <Text style={styles.pdfIconButtonText}>-</Text>
+                  </Pressable>
+                  <Pressable style={styles.pdfCloseButton} onPress={closePdfViewer}>
+                    <Text style={styles.pdfCloseButtonText}>x</Text>
+                  </Pressable>
+                </View>
               </View>
-              <View
-                style={styles.pdfPreviewFrame}
+                <View
+                  style={styles.pdfPreviewFrame}
                 onLayout={event => {
                   const { width, height } = event.nativeEvent.layout;
                   setPdfFrameWidth(width);
                   setPdfFrameHeight(height);
                 }}
-              >
-                {docBusy ? <ActivityIndicator color="#8D0000" size="large" /> : null}
+                >
+                  <View style={styles.pdfBrandChip}>
+                    <Text style={styles.pdfBrandChipText}>MoMo</Text>
+                  </View>
+                  {docBusy ? <ActivityIndicator color="#8D0000" size="large" /> : null}
                 {!docBusy && (pdfPreviewUri || String(activeDoc?.sourceKind || '').toLowerCase() === 'blank') ? (
                   <ScrollView
                     ref={ref => {
@@ -4063,7 +5411,11 @@ const FreshDriftExpoModal = ({
                     scrollEventThrottle={16}
                     onScroll={event => {
                       if (!canControlCurrentSharedDoc) return;
-                      const maxY = Math.max(0, pdfDisplayMetrics.height - pdfFrameHeight);
+                      const previewHeight =
+                        typeof pdfDisplayMetrics.height === 'number'
+                          ? pdfDisplayMetrics.height
+                          : pdfFrameHeight;
+                      const maxY = Math.max(0, previewHeight - pdfFrameHeight);
                       const nextY = maxY > 0 ? event.nativeEvent.contentOffset.y / maxY : 0;
                       queueSharedViewportSync(currentSharedDocPanX, nextY, pdfZoomLevel);
                     }}
@@ -4078,7 +5430,11 @@ const FreshDriftExpoModal = ({
                       scrollEventThrottle={16}
                       onScroll={event => {
                         if (!canControlCurrentSharedDoc) return;
-                        const maxX = Math.max(0, pdfDisplayMetrics.width - pdfFrameWidth);
+                        const previewWidth =
+                          typeof pdfDisplayMetrics.width === 'number'
+                            ? pdfDisplayMetrics.width
+                            : pdfFrameWidth;
+                        const maxX = Math.max(0, previewWidth - pdfFrameWidth);
                         const nextX = maxX > 0 ? event.nativeEvent.contentOffset.x / maxX : 0;
                         queueSharedViewportSync(nextX, currentSharedDocPanY, pdfZoomLevel);
                       }}
@@ -4110,8 +5466,21 @@ const FreshDriftExpoModal = ({
                       )}
                     </ScrollView>
                   </ScrollView>
-                ) : !docBusy ? (
-                  <Text style={styles.docsEmptyText}>PDF preview unavailable.</Text>
+                ) : !docBusy && activeDoc ? (
+                  <View style={styles.sharedFileFallbackCard}>
+                    <Text style={styles.sharedFileFallbackType}>
+                      {String(activeDoc.sourceKind || 'file').toUpperCase()}
+                    </Text>
+                    <Text style={styles.sharedFileFallbackTitle} numberOfLines={2}>
+                      {activeDoc.title || activeDoc.fileName || 'Shared File'}
+                    </Text>
+                    <Text style={styles.sharedFileFallbackMeta} numberOfLines={2}>
+                      {activeDoc.fileName || 'File shared in this Aqua Premium room'}
+                    </Text>
+                    <Text style={styles.sharedFileFallbackHint}>
+                      Everyone in this show can now see this shared file on screen.
+                    </Text>
+                  </View>
                 ) : null}
                 {sharedDocInkSegments.map(segment => (
                   <View
@@ -4201,7 +5570,8 @@ const FreshDriftExpoModal = ({
                   />
                 ) : null}
               </View>
-              <View style={[styles.pdfPagerRow, isGuestViewingSharedDoc ? styles.pdfPagerRowDisabled : null]}>
+              {['pdf', 'blank', 'image'].includes(String(activeDoc?.sourceKind || '').toLowerCase()) ? (
+              <View style={styles.pdfPagerRow}>
                 <Pressable
                   style={[
                     styles.pdfPagerButton,
@@ -4351,8 +5721,25 @@ const FreshDriftExpoModal = ({
                 </Text>
                 <Text style={styles.pdfSlideSpeedText}>{currentSharedDocSlideSeconds}s</Text>
               </View>
-              {!canControlCurrentSharedDoc && currentSharedDocId ? (
-                <Text style={styles.pdfGuestHint}>The current presenter is controlling the shared document.</Text>
+              ) : null}
+              {!canControlCurrentSharedDoc && currentSharedDocId && ['pdf', 'blank', 'image'].includes(String(activeDoc?.sourceKind || '').toLowerCase()) ? (
+                <>
+                  <View style={styles.pdfGuestUtilityRow}>
+                    <Pressable
+                      style={styles.pdfGuestUtilityButton}
+                      onPress={() => {
+                        if (activeDoc) {
+                          void openSharedPdf(activeDoc, { silentIfPending: true });
+                        }
+                      }}
+                    >
+                      <Text numberOfLines={1} style={styles.pdfGuestUtilityButtonText}>Refresh</Text>
+                    </Pressable>
+                  </View>
+                  <Text style={styles.pdfGuestHint}>
+                    Live presenter controls stay with the sharer. Your view follows the live document.
+                  </Text>
+                </>
               ) : null}
             </View>
           </View>
@@ -4371,14 +5758,82 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
+  galleryGrid: {
+    ...StyleSheet.absoluteFillObject,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingTop: 92,
+    paddingHorizontal: 8,
+    paddingBottom: 132,
+    alignContent: 'flex-start',
+  },
+  galleryTile: {
+    padding: 4,
+  },
+  galleryTileInner: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#081019',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  galleryTileLabelWrap: {
+    position: 'absolute',
+    left: 8,
+    bottom: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(4,10,16,0.72)',
+  },
+  tileBrandChip: {
+    position: 'absolute',
+    left: 8,
+    top: 8,
+    zIndex: 2,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(6,16,27,0.74)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.34)',
+  },
+  tileBrandChipText: {
+    color: '#E0F2FE',
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  galleryTileLabel: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  galleryOverflowBadge: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    backgroundColor: 'rgba(8,20,36,0.92)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(80,146,255,0.28)',
+  },
+  galleryOverflowText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
+  },
   videoFill: {
     ...StyleSheet.absoluteFillObject,
   },
   pictureInPicture: {
     position: 'absolute',
-    width: 110,
-    height: 168,
-    borderRadius: 16,
+    width: 92,
+    height: 136,
+    borderRadius: 14,
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.5)',
@@ -4409,13 +5864,22 @@ const styles = StyleSheet.create({
   },
   topBarTitleWrap: {
     flex: 1,
-    paddingRight: 12,
+    paddingRight: 8,
     minWidth: 0,
   },
   topBarCenter: {
-    flex: 1,
+    flexShrink: 0,
+    minWidth: 0,
+    maxWidth: 144,
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 8,
+  },
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 12,
   },
   livePill: {
     color: '#061117',
@@ -4436,57 +5900,95 @@ const styles = StyleSheet.create({
   },
   premiumRoomTitle: {
     color: '#B30000',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '900',
-    lineHeight: 16,
+    lineHeight: 14,
+  },
+  driftRoomTitle: {
+    color: '#30e6b6',
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 18,
+    letterSpacing: 0.3,
   },
   premiumCountdownPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 18,
+    minWidth: 0,
+    maxWidth: 144,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
     backgroundColor: '#0EA5D9',
     borderWidth: 1,
     borderColor: '#0EA5D9',
   },
   premiumCountdownText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
+    lineHeight: 14,
+    flexShrink: 1,
   },
   closeChip: {
-    backgroundColor: '#8D0000',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 18,
+    backgroundColor: '#111827',
+    minWidth: 50,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#8D0000',
-    marginLeft: 12,
+    borderColor: 'rgba(248,113,113,0.28)',
+    alignItems: 'center',
   },
   closeChipText: {
     color: '#FFFFFF',
     fontWeight: '900',
+    fontSize: 18,
+    lineHeight: 18,
+  },
+  topIconChip: {
+    minWidth: 50,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.3)',
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+  },
+  topIconChipText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 18,
+    lineHeight: 18,
   },
   rightRail: {
     position: 'absolute',
     gap: 8,
   },
   railButton: {
-    paddingHorizontal: 6,
-    paddingVertical: 4,
+    minWidth: 108,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(125,211,252,0.18)',
+    backgroundColor: 'rgba(7,18,29,0.78)',
+    shadowColor: '#020617',
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
     alignItems: 'center',
   },
   railIcon: {
-    color: '#ff2a2a',
+    color: '#E2E8F0',
+    fontSize: 11,
     fontWeight: '800',
-    textShadowColor: 'rgba(75,0,0,0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    letterSpacing: 0.2,
   },
   railEmojiLine: {
-    color: '#ff7a7a',
-    fontSize: 11,
+    color: '#7DD3FC',
+    fontSize: 10,
     fontWeight: '700',
-    marginTop: 4,
+    marginTop: 3,
   },
   soundBadge: {
     position: 'absolute',
@@ -4507,6 +6009,24 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     textAlign: 'center',
   },
+  screenShareBanner: {
+    position: 'absolute',
+    left: 18,
+    right: 18,
+    bottom: 132,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    backgroundColor: 'rgba(4,18,32,0.84)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,130,246,0.45)',
+  },
+  screenShareBannerText: {
+    color: '#E0F2FE',
+    fontSize: 13,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
   meetingStatusOverlay: {
     position: 'absolute',
     left: 18,
@@ -4524,24 +6044,6 @@ const styles = StyleSheet.create({
     color: '#E0F2FE',
     fontSize: 13,
     fontWeight: '800',
-    textAlign: 'center',
-  },
-  sharedDocStatusOverlay: {
-    position: 'absolute',
-    left: 18,
-    right: 18,
-    bottom: 132,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: 'rgba(10,10,12,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  sharedDocStatusOverlayText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
     textAlign: 'center',
   },
   audiencePanel: {
@@ -4594,17 +6096,25 @@ const styles = StyleSheet.create({
   docsPanel: {
     position: 'absolute',
     width: 260,
+    zIndex: 14,
+    elevation: 14,
     borderRadius: 18,
     backgroundColor: 'rgba(10,16,24,0.95)',
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.12)',
     padding: 12,
   },
-  docsPanelTitle: {
+  docsPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginBottom: 4,
+  },
+  docsPanelClose: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 18,
     fontWeight: '900',
-    marginBottom: 8,
+    paddingHorizontal: 4,
   },
   docsPanelStatusText: {
     color: '#FFFFFF',
@@ -4632,16 +6142,21 @@ const styles = StyleSheet.create({
     zIndex: 8,
   },
   docsShareButton: {
-    backgroundColor: '#8D0000',
-    borderRadius: 12,
-    paddingVertical: 10,
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.24)',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     alignItems: 'center',
     marginBottom: 10,
   },
   docsShareButtonText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
+    letterSpacing: 0.3,
+    flexShrink: 1,
   },
   docsProgressCard: {
     borderRadius: 12,
@@ -4668,6 +6183,111 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     paddingVertical: 16,
+  },
+  screenShareHostStage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#0B1220',
+    paddingHorizontal: 28,
+  },
+  sharedFileStage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#07111D',
+    paddingHorizontal: 28,
+  },
+  sharedFileStageBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.36)',
+    backgroundColor: 'rgba(15,23,42,0.92)',
+    marginBottom: 14,
+  },
+  sharedFileStageBadgeText: {
+    color: '#BAE6FD',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  sharedFileStageTitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '900',
+    textAlign: 'center',
+    maxWidth: 340,
+  },
+  sharedFileStageMeta: {
+    color: '#CBD5E1',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 10,
+    maxWidth: 340,
+  },
+  screenShareHostTitle: {
+    color: '#FFFFFF',
+    fontSize: 24,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  screenShareHostMeta: {
+    color: '#CBD5E1',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 10,
+    maxWidth: 320,
+  },
+  screenShareInsetStage: {
+    backgroundColor: 'rgba(11,18,32,0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  screenShareInsetText: {
+    color: '#E0F2FE',
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  sharedFileFallbackCard: {
+    flex: 1,
+    borderRadius: 18,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 22,
+    paddingVertical: 28,
+    gap: 10,
+  },
+  sharedFileFallbackType: {
+    color: '#8D0000',
+    fontSize: 15,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  sharedFileFallbackTitle: {
+    color: '#0F172A',
+    fontSize: 20,
+    fontWeight: '900',
+    textAlign: 'center',
+  },
+  sharedFileFallbackMeta: {
+    color: '#334155',
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  sharedFileFallbackHint: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   docsRow: {
     borderRadius: 12,
@@ -4902,6 +6522,7 @@ const styles = StyleSheet.create({
   sendButtonText: {
     color: '#03131e',
     fontWeight: '900',
+    flexShrink: 1,
   },
   participantStrip: {
     position: 'absolute',
@@ -4963,6 +6584,7 @@ const styles = StyleSheet.create({
   inviteSearchButtonText: {
     color: '#03131e',
     fontWeight: '900',
+    flexShrink: 1,
   },
   onlineSection: {
     marginBottom: 12,
@@ -5028,6 +6650,7 @@ const styles = StyleSheet.create({
   inviteResultButtonText: {
     color: '#031313',
     fontWeight: '900',
+    flexShrink: 1,
   },
   inviteCloseButton: {
     marginTop: 14,
@@ -5039,6 +6662,7 @@ const styles = StyleSheet.create({
   inviteCloseButtonText: {
     color: 'white',
     fontWeight: '800',
+    flexShrink: 1,
   },
   lobby: {
     flex: 1,
@@ -5085,16 +6709,20 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   primaryStartButton: {
-    backgroundColor: '#8D0000',
+    backgroundColor: '#0F172A',
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
     marginBottom: 12,
   },
   primaryStartButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '900',
+    flexShrink: 1,
   },
   premiumPrimaryStartButton: {
     backgroundColor: '#8D0000',
@@ -5103,15 +6731,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   secondaryStartButton: {
-    backgroundColor: '#8D0000',
+    backgroundColor: '#111827',
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.26)',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
     marginBottom: 10,
   },
   secondaryStartButtonText: {
     color: '#FFFFFF',
     fontWeight: '800',
+    flexShrink: 1,
   },
   recentSection: {
     marginBottom: 12,
@@ -5183,24 +6815,51 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 10,
   },
+  pdfHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 12,
+  },
   pdfTitle: {
     flex: 1,
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '900',
   },
+  pdfIconButton: {
+    backgroundColor: '#0F172A',
+    minWidth: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.32)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pdfIconButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 18,
+    lineHeight: 18,
+  },
   pdfCloseButton: {
-    backgroundColor: '#8D0000',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 17,
+    backgroundColor: '#1E293B',
+    minWidth: 52,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(248,113,113,0.32)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   pdfCloseButtonText: {
     color: '#FFFFFF',
     fontWeight: '900',
-    fontSize: 12,
+    fontSize: 18,
+    lineHeight: 18,
   },
   pdfPreviewFrame: {
     flex: 1,
@@ -5211,6 +6870,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
     padding: 12,
+  },
+  pdfBrandChip: {
+    position: 'absolute',
+    left: 12,
+    top: 12,
+    zIndex: 3,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(6,16,27,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+  },
+  pdfBrandChipText: {
+    color: '#0EA5E9',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
   },
   pdfPreviewScroll: {
     width: '100%',
@@ -5236,24 +6913,28 @@ const styles = StyleSheet.create({
     opacity: 0.46,
   },
   pdfPagerButton: {
-    backgroundColor: '#8D0000',
-    borderRadius: 14,
+    backgroundColor: '#0F172A',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 52,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    minWidth: 62,
+    paddingVertical: 7,
+    paddingHorizontal: 16,
   },
   pdfPagerButtonDisabled: {
-    backgroundColor: 'rgba(141,0,0,0.35)',
+    backgroundColor: 'rgba(15,23,42,0.38)',
+    borderColor: 'rgba(148,163,184,0.14)',
   },
   pdfPagerButtonActive: {
-    backgroundColor: '#B31414',
+    backgroundColor: '#0B3B57',
+    borderColor: 'rgba(34,211,238,0.38)',
   },
   pdfPagerButtonText: {
     color: '#FFFFFF',
     fontWeight: '900',
-    fontSize: 17,
+    fontSize: 14,
   },
   pdfPageCounterText: {
     color: '#FFFFFF',
@@ -5272,6 +6953,72 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 10,
+  },
+  pdfGuestUtilityRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 10,
+  },
+  pdfGuestUtilityButton: {
+    backgroundColor: '#0F172A',
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.22)',
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+  },
+  pdfGuestUtilityButtonText: {
+    color: '#E2E8F0',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+    flexShrink: 1,
+  },
+  stageBrandChip: {
+    position: 'absolute',
+    zIndex: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(6,16,27,0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(56,189,248,0.28)',
+  },
+  stageBrandChipText: {
+    color: '#E0F2FE',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+  },
+  networkWarningBanner: {
+    position: 'absolute',
+    zIndex: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+    backgroundColor: 'rgba(127,29,29,0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(254,202,202,0.34)',
+  },
+  networkWarningText: {
+    color: '#FEE2E2',
+    fontSize: 12,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  maximizeDocChip: {
+    position: 'absolute',
+    backgroundColor: 'rgba(14,165,217,0.96)',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    zIndex: 6,
+  },
+  maximizeDocChipText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '900',
   },
   pdfPointerMarker: {
     position: 'absolute',

@@ -1654,14 +1654,9 @@ exports.requestPresentationConversion = onCall({ region: 'us-central1' }, async 
   const participantData = participantSnap.exists ? participantSnap.data() || {} : {};
 
   if (!participantSnap.exists || participantData.purged === true) {
-    throw new HttpsError('permission-denied', 'Only active Aqua Premium participants can convert presentations right now.');
-  }
-
-  const activeSharedDocId = String(liveData.currentSharedDocId || '').trim();
-  if (activeSharedDocId && activeSharedDocId !== docId) {
     throw new HttpsError(
-      'failed-precondition',
-      'Another participant is already presenting. Wait for that file to close first.',
+      'permission-denied',
+      'Only active Aqua Premium participants can convert presentations right now.',
     );
   }
 
@@ -1674,8 +1669,28 @@ exports.requestPresentationConversion = onCall({ region: 'us-central1' }, async 
 
   const bucket = admin.storage().bucket();
   const bucketName = bucket.name;
+  const MAX_CONVERTIBLE_FILE_BYTES = 48 * 1024 * 1024;
   const outputFileName = `${path.parse(fileName).name}.pdf`.replace(/[^A-Za-z0-9._-]/g, '_');
   const outputPath = `premium_docs/${roomId}/converted/${Date.now()}_${outputFileName}`;
+
+  try {
+    const [sourceMetadata] = await bucket.file(sourcePath).getMetadata();
+    const sourceBytes = Math.max(0, Number(sourceMetadata?.size || 0));
+    if (sourceBytes > MAX_CONVERTIBLE_FILE_BYTES) {
+      const errorMessage = 'Presentation is too large to convert safely on mobile right now. Keep it under 48 MB.';
+      await sharedDocRef.set({
+        status: 'error',
+        errorMessage,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAtMs: Date.now(),
+      }, { merge: true });
+      throw new HttpsError('invalid-argument', errorMessage);
+    }
+  } catch (error) {
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+  }
 
   await sharedDocRef.set({
     status: 'converting',
@@ -1744,7 +1759,8 @@ exports.requestPresentationConversion = onCall({ region: 'us-central1' }, async 
   await sharedDocRef.set({
     title: path.parse(outputFileName).name,
     status: 'ready',
-    sourceKind,
+    sourceKind: 'pdf',
+    originalSourceKind: sourceKind,
     fileName: outputFileName,
     storagePath: outputPath,
     downloadUrl,
@@ -1755,6 +1771,13 @@ exports.requestPresentationConversion = onCall({ region: 'us-central1' }, async 
 
   await liveRef.set({
     currentSharedDocId: docId,
+    currentSharedDocStage: 'ready',
+    currentSharedDocPreviewTitle: path.parse(outputFileName).name,
+    currentSharedDocPreviewKind: 'pdf',
+    currentSharedDocDownloadUrl: downloadUrl,
+    currentSharedDocStoragePath: outputPath,
+    currentSharedDocFileName: outputFileName,
+    currentSharedDocStatusText: `${path.parse(outputFileName).name} is ready`,
     currentSharedDocPage: 0,
     currentSharedDocSlideShow: false,
     currentSharedDocUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),

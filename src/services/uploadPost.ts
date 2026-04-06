@@ -19,6 +19,7 @@ interface UploadPostParams {
 }
 
 let RNFS: typeof import('react-native-fs') | null = null;
+const MAX_SAFE_POST_MEDIA_BYTES = 120 * 1024 * 1024;
 const resolveRNFS = () => {
   if (RNFS) return RNFS;
   try {
@@ -76,6 +77,10 @@ export async function uploadPost({ media, caption, link, authorName }: UploadPos
     const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
 
     let localPath = mediaUri;
+    const declaredSize = Math.max(0, Number((media as any)?.fileSize || 0));
+    if (declaredSize > MAX_SAFE_POST_MEDIA_BYTES) {
+      throw new Error('This media file is too large to upload safely on a phone. Keep it under 120 MB.');
+    }
     try {
       localPath = decodeURI(localPath);
     } catch {}
@@ -101,6 +106,19 @@ export async function uploadPost({ media, caption, link, authorName }: UploadPos
 
     if (!localPath) {
       throw new Error('Could not resolve a local path for the selected media.');
+    }
+
+    try {
+      const rnfs = resolveRNFS();
+      const stats = rnfs ? await rnfs.stat(localPath) : null;
+      const resolvedSize = Math.max(0, Number((stats as any)?.size || 0));
+      if (resolvedSize > MAX_SAFE_POST_MEDIA_BYTES) {
+        throw new Error('This media file is too large to upload safely on a phone. Keep it under 120 MB.');
+      }
+    } catch (error: any) {
+      if (String(error?.message || '').includes('too large')) {
+        throw error;
+      }
     }
 
     const uploadContentType =
