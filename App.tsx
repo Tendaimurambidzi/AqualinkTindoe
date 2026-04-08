@@ -899,6 +899,11 @@ type TranslationKey =
   | 'rewards.highestTier'
   | 'rewards.openPlayStore'
   | 'rewards.playStoreUnavailable'
+  | 'rewards.codePreparingTitle'
+  | 'rewards.codePreparingBody'
+  | 'rewards.shareFailedTitle'
+  | 'rewards.shareFailedBody'
+  | 'rewards.shareBody'
   | 'settings.languageValue'
   | 'settings.selectLanguageTitle'
   | 'settings.selectLanguageBody'
@@ -942,6 +947,11 @@ type TranslationKey =
   | 'common.on'
   | 'common.off'
   | 'common.cancel'
+  | 'common.close'
+  | 'common.back'
+  | 'common.done'
+  | 'common.clear'
+  | 'common.apply'
   | 'settings.handle'
   | 'settings.signedInAs'
   | 'settings.anonymous'
@@ -1068,7 +1078,28 @@ type TranslationKey =
   | 'myVibes.deleting'
   | 'myVibes.delete'
   | 'myVibes.share'
-  | 'myVibes.anchor';
+  | 'myVibes.anchor'
+  | 'feed.optionEdit'
+  | 'feed.optionEditDesc'
+  | 'feed.optionDelete'
+  | 'feed.optionDeleteDesc'
+  | 'feed.optionCopyLink'
+  | 'feed.optionCopyLinkDesc'
+  | 'feed.optionShare'
+  | 'feed.optionShareDesc'
+  | 'feed.optionSave'
+  | 'feed.optionSaveDesc'
+  | 'feed.optionReport'
+  | 'feed.optionReportDesc'
+  | 'feed.linkCopied'
+  | 'feed.copyLinkTitle'
+  | 'feed.saveFailedTitle'
+  | 'feed.saveFailedBody'
+  | 'feed.shareTitle'
+  | 'feed.shareBody'
+  | 'feed.defaultSubject'
+  | 'feed.reportQueued'
+  | 'feed.comingSoon';
 
 type TranslationDictionary = Record<TranslationKey, string>;
 
@@ -1530,6 +1561,14 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.openPlayStore': 'Open Play Store',
     'rewards.playStoreUnavailable':
       'We could not open the Play Store link right now.',
+    'rewards.codePreparingTitle': 'Referral Code',
+    'rewards.codePreparingBody':
+      'Your referral code is still being prepared. Please try again in a moment.',
+    'rewards.shareFailedTitle': 'Share Failed',
+    'rewards.shareFailedBody':
+      'We could not open sharing right now. Please try again.',
+    'rewards.shareBody':
+      'Join MoMo on the Play Store: {{storeUrl}}\n\nUse my referral code {{code}} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.',
     'settings.languageValue': 'Language: {{language}}',
     'settings.selectLanguageTitle': 'Select language',
     'settings.selectLanguageBody': 'Choose app language preference.',
@@ -1573,6 +1612,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.on': 'ON',
     'common.off': 'OFF',
     'common.cancel': 'Cancel',
+    'common.close': 'Close',
+    'common.back': 'Back',
+    'common.done': 'Done',
+    'common.clear': 'Clear',
+    'common.apply': 'Apply',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Signed in as {{account}}',
     'settings.anonymous': 'anonymous',
@@ -1657,6 +1701,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.saveProfile': 'Save Profile',
     'profile.myVibes': 'My Vibes',
     'profile.myTreasure': 'My Treasure',
+    'profile.myRewardsHint': 'Track referral rewards',
     'compose.editPost': 'Edit Post',
     'compose.createPost': 'Create Post',
     'compose.selectedItems': '{{count}} item{{suffix}} selected',
@@ -1704,6 +1749,27 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.delete': 'Delete',
     'myVibes.share': 'Share',
     'myVibes.anchor': 'Anchor',
+    'feed.optionEdit': 'Edit post',
+    'feed.optionEditDesc': 'Open this post in the right composer and update it.',
+    'feed.optionDelete': 'Delete post',
+    'feed.optionDeleteDesc': 'Remove this post from your feed immediately.',
+    'feed.optionCopyLink': 'Copy link',
+    'feed.optionCopyLinkDesc': 'Copy your post link for quick sharing.',
+    'feed.optionShare': 'Share',
+    'feed.optionShareDesc': 'Share the MoMo link with friends.',
+    'feed.optionSave': 'Save to device',
+    'feed.optionSaveDesc': 'Download a copy of this MoMo for offline viewing.',
+    'feed.optionReport': 'Report',
+    'feed.optionReportDesc': 'Let us know if this MoMo violates guidelines.',
+    'feed.linkCopied': 'Link copied.',
+    'feed.copyLinkTitle': 'Copy link',
+    'feed.saveFailedTitle': 'Save Failed',
+    'feed.saveFailedBody': 'The wave could not be saved to the sea.',
+    'feed.shareTitle': 'Cast MoMo',
+    'feed.shareBody': 'Cast MoMo - Check out {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'this MoMo',
+    'feed.reportQueued': 'Going to moderation.',
+    'feed.comingSoon': 'Coming soon!',
   },
   sn: {
     'language.system': 'Tevera mutauro wesystem',
@@ -1793,6 +1859,14 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.openPlayStore': 'Vhura Play Store',
     'rewards.playStoreUnavailable':
       'Hatina kukwanisa kuvhura link yePlay Store izvozvi.',
+    'rewards.codePreparingTitle': 'Kodhi yerefero',
+    'rewards.codePreparingBody':
+      'Kodhi yako yerefero ichiri kugadzirwa. Edza zvakare munguva pfupi.',
+    'rewards.shareFailedTitle': 'Kugovera kwatadza',
+    'rewards.shareFailedBody':
+      'Hatina kukwanisa kuvhura kugovera parizvino. Edza zvakare.',
+    'rewards.shareBody':
+      'Join MoMo pa Play Store: {{storeUrl}}\n\nShandisa kodhi yangu yerefero {{code}} paunonyoresa. Mibayiro inobva kuvakakodzera: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kana mumwe mubayiro wabvumidzwa.',
     'settings.languageValue': 'Mutauro: {{language}}',
     'settings.selectLanguageTitle': 'Sarudza mutauro',
     'settings.selectLanguageBody': 'Sarudza mutauro waunoda kushandisa muapp.',
@@ -1836,6 +1910,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.on': 'BATIDZA',
     'common.off': 'DZIMA',
     'common.cancel': 'Kanzura',
+    'common.close': 'Vhara',
+    'common.back': 'Dzokera',
+    'common.done': 'Zvaitwa',
+    'common.clear': 'Bvisa',
+    'common.apply': 'Isa',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Wapinda se {{account}}',
     'settings.anonymous': 'asingazivikanwe',
@@ -1919,6 +1998,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.saveProfile': 'Chengeta Profayiri',
     'profile.myVibes': 'MaVibes Angu',
     'profile.myTreasure': 'Pfuma Yangu',
+    'profile.myRewardsHint': 'Tevera mibayiro yerefero',
     'compose.editPost': 'Gadzirisa Post',
     'compose.createPost': 'Gadzira Post',
     'compose.selectedItems': '{{count}} chinhu{{suffix}} chasarudzwa',
@@ -1966,6 +2046,27 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.delete': 'Bvisa',
     'myVibes.share': 'Govera',
     'myVibes.anchor': 'Namira',
+    'feed.optionEdit': 'Gadzirisa post',
+    'feed.optionEditDesc': 'Vhura post iyi mucomposer chaiyo wobva wagadzirisa.',
+    'feed.optionDelete': 'Bvisa post',
+    'feed.optionDeleteDesc': 'Bvisa post iyi kubva kufeed yako ipapo ipapo.',
+    'feed.optionCopyLink': 'Kopa link',
+    'feed.optionCopyLinkDesc': 'Kopa link yepost yako kuitira kugovera nekukurumidza.',
+    'feed.optionShare': 'Govera',
+    'feed.optionShareDesc': 'Govera link yeMoMo kushamwari.',
+    'feed.optionSave': 'Chengeta pamudziyo',
+    'feed.optionSaveDesc': 'Dhaunirodha kopi yeMoMo iyi kuti uione pasina internet.',
+    'feed.optionReport': 'Mhanara',
+    'feed.optionReportDesc': 'Tizivise kana MoMo iyi ichityora mitemo.',
+    'feed.linkCopied': 'Link yakopiwa.',
+    'feed.copyLinkTitle': 'Kopa link',
+    'feed.saveFailedTitle': 'Kuchengeta kwatadza',
+    'feed.saveFailedBody': 'Wave yatadza kuchengetwa mugungwa.',
+    'feed.shareTitle': 'Govera MoMo',
+    'feed.shareBody': 'Govera MoMo - ona {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'MoMo iyi',
+    'feed.reportQueued': 'Yatumirwa kumoderation.',
+    'feed.comingSoon': 'Zvichauya munguva pfupi!',
   },
   nd: {
     'language.system': 'Landela ulimi lwefoni',
@@ -2055,6 +2156,14 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.openPlayStore': 'Vula iPlay Store',
     'rewards.playStoreUnavailable':
       'Sehlulekile ukuvula i-link yePlay Store khathesi.',
+    'rewards.codePreparingTitle': 'Ikhodi yereferensi',
+    'rewards.codePreparingBody':
+      'Ikhodi yakho yereferensi isalungiswa. Zama njalo maduze.',
+    'rewards.shareFailedTitle': 'Ukuyabelana kwehlulekile',
+    'rewards.shareFailedBody':
+      'Sehlulekile ukuvula ukwabelana khathesi. Zama njalo.',
+    'rewards.shareBody':
+      'Join MoMo ku Play Store: {{storeUrl}}\n\nSebenzisa ikhodi yami yereferensi {{code}} lapho ubhalisa. Imivuzo isekelwe kwabafaneleyo: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe omunye umvuzo ovunyiweyo.',
     'settings.languageValue': 'Ulimi: {{language}}',
     'settings.selectLanguageTitle': 'Khetha ulimi',
     'settings.selectLanguageBody': 'Khetha ulimi ofuna ukuthi i-app isebenzise.',
@@ -2098,6 +2207,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.on': 'VULA',
     'common.off': 'CIMA',
     'common.cancel': 'Khansela',
+    'common.close': 'Vala',
+    'common.back': 'Buyela',
+    'common.done': 'Kwenziwe',
+    'common.clear': 'Sula',
+    'common.apply': 'Sebenzisa',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Ungene njenge {{account}}',
     'settings.anonymous': 'ongaziwayo',
@@ -2181,6 +2295,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.saveProfile': 'Gcina Iphrofayili',
     'profile.myVibes': 'AmaVibes Ami',
     'profile.myTreasure': 'Ingcebo Yami',
+    'profile.myRewardsHint': 'Landela imivuzo yereferensi',
     'compose.editPost': 'Lungisa iPost',
     'compose.createPost': 'Dala iPost',
     'compose.selectedItems': '{{count}} into{{suffix}} zikhethiwe',
@@ -2228,6 +2343,27 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.delete': 'Susa',
     'myVibes.share': 'Yabelana',
     'myVibes.anchor': 'Namathisela',
+    'feed.optionEdit': 'Lungisa ipost',
+    'feed.optionEditDesc': 'Vula ipost le kucomposer ofaneleyo uyivuselele.',
+    'feed.optionDelete': 'Susa ipost',
+    'feed.optionDeleteDesc': 'Susa ipost le kufeed yakho masinyane.',
+    'feed.optionCopyLink': 'Kopisha ilink',
+    'feed.optionCopyLinkDesc': 'Kopisha ilink yepost yakho ukuze wabelane masinyane.',
+    'feed.optionShare': 'Yabelana',
+    'feed.optionShareDesc': 'Yabelana ngelink yeMoMo labangane.',
+    'feed.optionSave': 'Gcina kudivayisi',
+    'feed.optionSaveDesc': 'Landa ikhophi yeMoMo le ukuze uyibuke offline.',
+    'feed.optionReport': 'Bika',
+    'feed.optionReportDesc': 'Sitshele nxa iMoMo le isephula imilayo.',
+    'feed.linkCopied': 'Ilink ikopishiwe.',
+    'feed.copyLinkTitle': 'Kopisha ilink',
+    'feed.saveFailedTitle': 'Ukugcina kwehlulekile',
+    'feed.saveFailedBody': 'I-wave yehlulekile ukugcinwa olwandle.',
+    'feed.shareTitle': 'Yabelana ngeMoMo',
+    'feed.shareBody': 'Yabelana ngeMoMo - buka {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'iMoMo le',
+    'feed.reportQueued': 'Kusiya ku moderation.',
+    'feed.comingSoon': 'Kuyeza maduzane!',
   },
   sw: {
     'language.system': 'Fuata lugha ya simu',
@@ -2318,6 +2454,14 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.openPlayStore': 'Fungua Play Store',
     'rewards.playStoreUnavailable':
       'Hatukuweza kufungua kiungo cha Play Store kwa sasa.',
+    'rewards.codePreparingTitle': 'Msimbo wa rufaa',
+    'rewards.codePreparingBody':
+      'Msimbo wako wa rufaa bado unatengenezwa. Tafadhali jaribu tena baada ya muda mfupi.',
+    'rewards.shareFailedTitle': 'Kushiriki kumeshindikana',
+    'rewards.shareFailedBody':
+      'Hatukuweza kufungua kushiriki kwa sasa. Tafadhali jaribu tena.',
+    'rewards.shareBody':
+      'Jiunge na MoMo kwenye Play Store: {{storeUrl}}\n\nTumia msimbo wangu wa rufaa {{code}} wakati wa kujisajili. Zawadi zinategemea rufaa zilizohitimu: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi nyingine iliyoidhinishwa.',
     'settings.languageValue': 'Lugha: {{language}}',
     'settings.selectLanguageTitle': 'Chagua lugha',
     'settings.selectLanguageBody': 'Chagua lugha unayotaka app itumie.',
@@ -2361,6 +2505,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.on': 'WASHA',
     'common.off': 'ZIMA',
     'common.cancel': 'Ghairi',
+    'common.close': 'Funga',
+    'common.back': 'Rudi',
+    'common.done': 'Imekamilika',
+    'common.clear': 'Futa',
+    'common.apply': 'Tumia',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Umeingia kama {{account}}',
     'settings.anonymous': 'asiyejulikana',
@@ -2444,6 +2593,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.saveProfile': 'Hifadhi Profaili',
     'profile.myVibes': 'Vibes Zangu',
     'profile.myTreasure': 'Hazina Yangu',
+    'profile.myRewardsHint': 'Fuatilia zawadi za rufaa',
     'compose.editPost': 'Hariri Post',
     'compose.createPost': 'Tengeneza Post',
     'compose.selectedItems': 'Kitu {{count}}{{suffix}} kimechaguliwa',
@@ -2491,6 +2641,27 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.delete': 'Futa',
     'myVibes.share': 'Shiriki',
     'myVibes.anchor': 'Anika',
+    'feed.optionEdit': 'Hariri post',
+    'feed.optionEditDesc': 'Fungua post hii kwenye composer sahihi na uisasishe.',
+    'feed.optionDelete': 'Futa post',
+    'feed.optionDeleteDesc': 'Ondoa post hii kwenye feed yako mara moja.',
+    'feed.optionCopyLink': 'Nakili link',
+    'feed.optionCopyLinkDesc': 'Nakili link ya post yako kwa kushiriki haraka.',
+    'feed.optionShare': 'Shiriki',
+    'feed.optionShareDesc': 'Shiriki link ya MoMo na marafiki.',
+    'feed.optionSave': 'Hifadhi kwenye kifaa',
+    'feed.optionSaveDesc': 'Pakua nakala ya MoMo hii uione bila intaneti.',
+    'feed.optionReport': 'Ripoti',
+    'feed.optionReportDesc': 'Tujulishe kama MoMo hii inakiuka miongozo.',
+    'feed.linkCopied': 'Link imenakiliwa.',
+    'feed.copyLinkTitle': 'Nakili link',
+    'feed.saveFailedTitle': 'Kuhifadhi kumeshindikana',
+    'feed.saveFailedBody': 'Wave haikuweza kuhifadhiwa baharini.',
+    'feed.shareTitle': 'Shiriki MoMo',
+    'feed.shareBody': 'Shiriki MoMo - angalia {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'MoMo hii',
+    'feed.reportQueued': 'Inaenda kwa moderation.',
+    'feed.comingSoon': 'Inakuja karibuni!',
   },
 };
 
@@ -2742,32 +2913,54 @@ function useAppVersionInfo() {
   return info;
 }
                     
-const getWaveOptionMenu = (isOwnPost: boolean) =>
+type WaveOptionItem = {
+  key: 'edit' | 'delete' | 'copy_link' | 'share' | 'save' | 'report';
+  label: string;
+  description: string;
+};
+
+const getWaveOptionMenu = (
+  isOwnPost: boolean,
+  t: (key: TranslationKey, values?: Record<string, string | number>) => string,
+): WaveOptionItem[] =>
   isOwnPost
     ? [
         {
-          label: 'Edit post',
-          description: 'Open this post in the right composer and update it.',
+          key: 'edit',
+          label: t('feed.optionEdit'),
+          description: t('feed.optionEditDesc'),
         },
         {
-          label: 'Delete post',
-          description: 'Remove this post from your feed immediately.',
+          key: 'delete',
+          label: t('feed.optionDelete'),
+          description: t('feed.optionDeleteDesc'),
         },
         {
-          label: 'Copy link',
-          description: 'Copy your post link for quick sharing.',
+          key: 'copy_link',
+          label: t('feed.optionCopyLink'),
+          description: t('feed.optionCopyLinkDesc'),
         },
-        { label: 'Share', description: 'Share the MoMo link with friends.' },
+        {
+          key: 'share',
+          label: t('feed.optionShare'),
+          description: t('feed.optionShareDesc'),
+        },
       ]
     : [
         {
-          label: 'Save to device',
-          description: 'Download a copy of this MoMo for offline viewing.',
+          key: 'save',
+          label: t('feed.optionSave'),
+          description: t('feed.optionSaveDesc'),
         },
-        { label: 'Share', description: 'Share the MoMo link with friends.' },
         {
-          label: 'Report',
-          description: 'Let us know if this MoMo violates guidelines.',
+          key: 'share',
+          label: t('feed.optionShare'),
+          description: t('feed.optionShareDesc'),
+        },
+        {
+          key: 'report',
+          label: t('feed.optionReport'),
+          description: t('feed.optionReportDesc'),
         },
       ];
                     
@@ -3646,10 +3839,10 @@ const styles = StyleSheet.create({
     minWidth: 0,
     minHeight: 44,
     paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     borderRadius: 999,
     borderWidth: 1,
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
   auraVibesBtn: {
     backgroundColor: '#0EA5D9',
@@ -3658,6 +3851,10 @@ const styles = StyleSheet.create({
   auraCollectionBtn: {
     backgroundColor: '#8D0000',
     borderColor: '#8D0000',
+  },
+  auraRewardsBtn: {
+    backgroundColor: '#155e75',
+    borderColor: '#155e75',
   },
   auraNotificationsBtn: {
     backgroundColor: '#5B2788',
@@ -10755,7 +10952,7 @@ type CommandCentreSection =
     async (label: string) => {
       if (!waveOptionsTarget) return;
       const isOwnPost = !!waveOptionsTarget.ownerUid && waveOptionsTarget.ownerUid === myUid;
-      const entry = getWaveOptionMenu(isOwnPost).find(item => item.label === label);
+      const entry = getWaveOptionMenu(isOwnPost, t).find(item => item.label === label);
       setWaveOptionsTarget(null);
       const waveLink = `aqualink://wave/${encodeURIComponent(waveOptionsTarget.id)}`;
 
@@ -10769,11 +10966,11 @@ type CommandCentreSection =
             clipboardModule?.default?.setString || clipboardModule?.setString;
           if (typeof setString === 'function') {
             setString(waveLink);
-            notifySuccess('Link copied.');
+            notifySuccess(t('feed.linkCopied'));
             return;
           }
         } catch {}
-        Alert.alert('Copy link', waveLink);
+        Alert.alert(t('feed.copyLinkTitle'), waveLink);
       };
 
       const openEditPostComposer = () => {
@@ -10837,22 +11034,22 @@ type CommandCentreSection =
       };
                     
       // Handle other wave options
-      if (label === 'Edit post') {
+      if (entry?.key === 'edit') {
         openEditPostComposer();
         return;
       }
 
-      if (label === 'Delete post') {
+      if (entry?.key === 'delete') {
         deleteWave(waveOptionsTarget.id);
         return;
       }
 
-      if (label === 'Copy link') {
+      if (entry?.key === 'copy_link') {
         await copyWaveLink();
         return;
       }
 
-      if (label === 'Save to device') {
+      if (entry?.key === 'save') {
         if (isSavingWave) return;
         setIsSavingWave(true);
                     
@@ -10989,8 +11186,8 @@ type CommandCentreSection =
           const errorMsg =
             error?.message || 'Unable to prepare the download right now.';
           showOceanDialog(
-            'Save Failed',
-            errorMsg || 'The wave could not be saved to the sea.',
+            t('feed.saveFailedTitle'),
+            errorMsg || t('feed.saveFailedBody'),
           );
         } finally {
           setIsSavingWave(false);
@@ -10998,11 +11195,17 @@ type CommandCentreSection =
         return;
       }
                     
-      if (label === 'Share') {
+      if (entry?.key === 'share') {
         try {
+          const subject = waveOptionsTarget.captionText
+            ? `"${waveOptionsTarget.captionText}"`
+            : t('feed.defaultSubject');
           await Share.share({
-            title: 'Cast MoMo',
-            message: `Cast MoMo - Check out ${waveOptionsTarget.captionText ? `"${waveOptionsTarget.captionText}"` : 'this MoMo'}\n\n${waveLink}`,
+            title: t('feed.shareTitle'),
+            message: t('feed.shareBody', {
+              subject,
+              link: waveLink,
+            }),
           });
         } catch {}
         return;
@@ -11013,17 +11216,17 @@ type CommandCentreSection =
         return;
       }
       
-      if (label === 'Report') {
+      if (entry?.key === 'report') {
         Alert.alert(
           entry?.label || label,
-          entry?.description || 'Going to moderation.',
+          entry?.description || t('feed.reportQueued'),
         );
         return;
       }
                     
-      Alert.alert(entry?.label || label, entry?.description || 'Coming soon!');
+      Alert.alert(entry?.label || label, entry?.description || t('feed.comingSoon'));
     },
-    [waveOptionsTarget, myUid, notifySuccess, isSavingWave],
+    [waveOptionsTarget, myUid, notifySuccess, isSavingWave, t],
   );
   const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
@@ -19520,127 +19723,6 @@ type CommandCentreSection =
                     {t('profile.minuteFameTitle', { title: profileMinuteFameTitle })}
                   </Text>
                 )}
-                <View
-                  style={{
-                    width: '100%',
-                    marginTop: 14,
-                    padding: 12,
-                    borderRadius: 14,
-                    backgroundColor: 'rgba(14,165,217,0.16)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(125,211,252,0.4)',
-                  }}
-                >
-                  <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
-                    {t('profile.inviteEarn')}
-                  </Text>
-                  {(() => {
-                    const nextRewardTier = getNextReferralRewardTier(profileReferralQualifiedCount);
-                    return (
-                      <Text style={{ color: '#D7F0FF', fontSize: 12, marginTop: 6 }}>
-                        {nextRewardTier
-                          ? t('profile.reachNextReward', {
-                              count: nextRewardTier.qualifiedUsers,
-                              reward: nextRewardTier.reward,
-                            })
-                          : t('profile.topRewardUnlocked')}
-                      </Text>
-                    );
-                  })()}
-                  <Text style={{ color: '#D7F0FF', fontSize: 12, marginTop: 6 }}>
-                    Reward ladder: 5 = Visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or a special promo reward.
-                  </Text>
-                  <Text
-                    selectable
-                    style={{
-                      color: '#FFFFFF',
-                      fontSize: 14,
-                      fontWeight: '900',
-                      marginTop: 10,
-                      letterSpacing: 0.5,
-                    }}
-                  >
-                    {profileReferralCode || t('profile.generatingReferralCode')}
-                  </Text>
-                  <Text style={{ color: '#C8EFFF', fontSize: 11, marginTop: 8 }}>
-                    {t('profile.qualifiedCounts', {
-                      qualified: profileReferralQualifiedCount,
-                      pending: profileReferralPendingCount,
-                      invited: profileReferralInvitedCount,
-                    })}
-                  </Text>
-                  {!!profileReferralRewardLabel && (
-                    <Text style={{ color: '#FFFFFF', fontSize: 11, marginTop: 8, fontWeight: '800' }}>
-                      Current unlocked reward: {profileReferralRewardLabel}
-                    </Text>
-                  )}
-                  <Text style={{ color: '#B9E8FB', fontSize: 11, marginTop: 8, lineHeight: 16 }}>
-                    {t('profile.referralQualifyRule', { days: REFERRAL_MIN_ACTIVE_DAYS })}
-                  </Text>
-                  <Text style={{ color: '#B9E8FB', fontSize: 11, marginTop: 6, lineHeight: 16 }}>
-                    {t('profile.referralReviewRule')}
-                  </Text>
-                  <Pressable
-                    style={({ pressed }) => [
-                      {
-                        backgroundColor: '#0EA5D9',
-                        borderRadius: 999,
-                        paddingVertical: 9,
-                        paddingHorizontal: 16,
-                        marginTop: 10,
-                        alignSelf: 'flex-start',
-                      },
-                      pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
-                    ]}
-                    onPress={async () => {
-                      if (!profileReferralCode) {
-                        Alert.alert('Referral Code', 'Your referral code is still being prepared. Please try again in a moment.');
-                        return;
-                      }
-                      try {
-                        await Share.share({
-                          message:
-                            `Join MoMo on the Play Store: ${PLAY_STORE_URL}\n\nUse my referral code ${profileReferralCode} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.`,
-                        });
-                      } catch {
-                        Alert.alert('Share Failed', 'We could not open sharing right now. Please try again.');
-                      }
-                    }}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
-                      {t('profile.shareReferral')}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={({ pressed }) => [
-                      {
-                        backgroundColor: 'rgba(255,255,255,0.08)',
-                        borderRadius: 999,
-                        paddingVertical: 9,
-                        paddingHorizontal: 16,
-                        marginTop: 8,
-                        alignSelf: 'flex-start',
-                        borderWidth: 1,
-                        borderColor: 'rgba(255,255,255,0.12)',
-                      },
-                      pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
-                    ]}
-                    onPress={async () => {
-                      try {
-                        await Linking.openURL(PLAY_STORE_URL);
-                      } catch {
-                        Alert.alert(
-                          t('rewards.openPlayStore'),
-                          t('rewards.playStoreUnavailable'),
-                        );
-                      }
-                    }}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
-                      {t('rewards.openPlayStore')}
-                    </Text>
-                  </Pressable>
-                </View>
                 <Pressable
                   style={({ pressed }) => [
                     {
@@ -19724,25 +19806,21 @@ type CommandCentreSection =
                   activeOpacity={0.7}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
-                  <View
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
+                  <Text
+                    style={[
+                      styles.logbookActionText,
+                      {
+                        fontSize: 15,
+                        textAlign: 'center',
+                        width: '100%',
+                        lineHeight: 18,
+                      },
+                    ]}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
                   >
-                    <View
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: 6,
-                        backgroundColor: '#1E90FF',
-                      }}
-                    />
-                    <Text
-                      style={[styles.logbookActionText, { fontSize: 13, flexShrink: 1 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                    >
-                      {t('profile.myVibes')}
-                    </Text>
-                  </View>
+                    {t('profile.myVibes')}
+                  </Text>
                 </Pressable>
                 <Pressable
                   style={[styles.logbookAction, styles.auraActionButton, styles.auraCollectionBtn]}
@@ -19756,25 +19834,50 @@ type CommandCentreSection =
                   activeOpacity={0.7}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
-                  <View
-                    style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'flex-start' }}
+                  <Text
+                    style={[
+                      styles.logbookActionText,
+                      {
+                        fontSize: 15,
+                        textAlign: 'center',
+                        width: '100%',
+                        lineHeight: 18,
+                      },
+                    ]}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
                   >
-                    <View
-                      style={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: 6,
-                        backgroundColor: '#FFD700',
-                      }}
-                    />
-                    <Text
-                      style={[styles.logbookActionText, { fontSize: 13, flexShrink: 1 }]}
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                    >
-                      {t('profile.myTreasure')}
-                    </Text>
-                  </View>
+                    {t('profile.myTreasure')}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.logbookAction, styles.auraActionButton, styles.auraRewardsBtn]}
+                  onPress={() => {
+                    setShowProfile(false);
+                    setCommandCentreSection('rewards');
+                    setShowBridge(true);
+                  }}
+                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                  delayPressIn={0}
+                  delayPressOut={0}
+                  activeOpacity={0.7}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                >
+                  <Text
+                    style={[
+                      styles.logbookActionText,
+                      {
+                        fontSize: 15,
+                        textAlign: 'center',
+                        width: '100%',
+                        lineHeight: 18,
+                      },
+                    ]}
+                    numberOfLines={2}
+                    adjustsFontSizeToFit
+                  >
+                    {t('command.rewardsUserTitle')}
+                  </Text>
                 </Pressable>
               </View>
             </View>
@@ -19783,7 +19886,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowProfile(false)}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -21102,7 +21205,7 @@ type CommandCentreSection =
               setSelectedNotifications(new Set());
             }}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -21348,7 +21451,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowMyWaves(false)}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -22823,7 +22926,7 @@ type CommandCentreSection =
                 style={[styles.primaryStartButton, { flex: 1 }]}
                 onPress={() => setShowMinuteFame(false)}
               >
-                <Text style={styles.primaryStartButtonText}>Close</Text>
+                  <Text style={styles.primaryStartButtonText}>{t('common.close')}</Text>
               </Pressable>
             </View>
           </View>
@@ -22884,7 +22987,7 @@ type CommandCentreSection =
                   style={[styles.bridgeSettingButton, { marginBottom: 10 }]}
                   onPress={() => setCommandCentreSection('home')}
                 >
-                  <Text style={styles.bridgeSettingButtonText}>Back</Text>
+                  <Text style={styles.bridgeSettingButtonText}>{t('common.back')}</Text>
                 </Pressable>
               ) : null}
               <ScrollView>
@@ -23002,7 +23105,7 @@ type CommandCentreSection =
                         </Text>
                         <View style={styles.logbookAction}>
                           <Text style={styles.logbookActionText}>
-                            {profileReferralCode || 'Generating referral code...'}
+                            {profileReferralCode || t('profile.generatingReferralCode')}
                           </Text>
                           <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 6 }}>
                             {t('rewards.counts', {
@@ -23039,6 +23142,35 @@ type CommandCentreSection =
                               </Text>
                             );
                           })()}
+                          <Pressable
+                            style={[styles.bridgeSettingButton, { marginTop: 10, alignSelf: 'flex-start' }]}
+                            onPress={async () => {
+                              if (!profileReferralCode) {
+                                Alert.alert(
+                                  t('rewards.codePreparingTitle'),
+                                  t('rewards.codePreparingBody'),
+                                );
+                                return;
+                              }
+                              try {
+                                await Share.share({
+                                  message: t('rewards.shareBody', {
+                                    storeUrl: PLAY_STORE_URL,
+                                    code: profileReferralCode,
+                                  }),
+                                });
+                              } catch {
+                                Alert.alert(
+                                  t('rewards.shareFailedTitle'),
+                                  t('rewards.shareFailedBody'),
+                                );
+                              }
+                            }}
+                          >
+                            <Text style={styles.bridgeSettingButtonText}>
+                              {t('profile.shareReferral')}
+                            </Text>
+                          </Pressable>
                           <Pressable
                             style={[styles.bridgeSettingButton, { marginTop: 10, alignSelf: 'flex-start' }]}
                             onPress={async () => {
@@ -23895,7 +24027,7 @@ type CommandCentreSection =
                   style={[styles.closeBtn, { flex: 1, backgroundColor: '#0E7490', marginVertical: 0, minHeight: 42, justifyContent: 'center' }]}
                   onPress={() => setCommandCentreSection('home')}
                 >
-                  <Text style={styles.closeText}>Back</Text>
+                  <Text style={styles.closeText}>{t('common.back')}</Text>
                 </Pressable>
                 <View style={{ width: 12 }} />
               </>
@@ -23907,7 +24039,7 @@ type CommandCentreSection =
                 setShowBridge(false);
               }}
             >
-              <Text style={styles.dismissText}>Close</Text>
+              <Text style={styles.dismissText}>{t('common.close')}</Text>
             </Pressable>
           </View>
         </View>
@@ -23992,7 +24124,7 @@ type CommandCentreSection =
                   setTonePicker({ visible: false, action: null, label: '' });
                 }}
               >
-                <Text style={styles.dismissText}>Done</Text>
+                <Text style={styles.dismissText}>{t('common.done')}</Text>
               </Pressable>
             </View>
           </View>
@@ -24223,7 +24355,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowAIModal(false)}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -24261,7 +24393,7 @@ type CommandCentreSection =
               /> 
             </React.Suspense> 
             <Pressable style={styles.closeBtn} onPress={() => setShowDeepSearch(false)}> 
-              <Text style={styles.closeText}>Close</Text> 
+              <Text style={styles.closeText}>{t('common.close')}</Text> 
             </Pressable> 
           </View> 
         </View> 
@@ -24453,7 +24585,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowPearls(false)}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -24614,7 +24746,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowTreasure(false)}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -24660,7 +24792,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowCountryPicker(false)}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -24783,7 +24915,7 @@ type CommandCentreSection =
               updateEchoText('');
             }}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </KeyboardAvoidingView>
       </Modal>
@@ -25010,7 +25142,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowSendMessage(false)}
           >
-            <Text style={styles.dismissText}>Cancel</Text>
+            <Text style={styles.dismissText}>{t('common.cancel')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -26140,7 +26272,7 @@ type CommandCentreSection =
                   setShowTextOverlayModal(false);
                 }}
               >
-                <Text style={[styles.closeText, { color: '#FFFFFF' }]}>Clear</Text>
+                <Text style={[styles.closeText, { color: '#FFFFFF' }]}>{t('common.clear')}</Text>
               </Pressable>
               <Pressable
                 style={[
@@ -26271,6 +26403,7 @@ type CommandCentreSection =
             {/* Owner menu is customized; other-user menu stays as before */}
             {getWaveOptionMenu(
               !!waveOptionsTarget?.ownerUid && waveOptionsTarget.ownerUid === myUid,
+              t,
             )
               .map(option => (
                 <Pressable
