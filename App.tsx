@@ -5,6 +5,8 @@ import React, {
   useState,
   useRef,
   useCallback,
+  createContext,
+  useContext,
 } from 'react';
 import Fuse from 'fuse.js';
 import ErrorBoundary from './src/components/ErrorBoundary';
@@ -100,6 +102,7 @@ import MediaEditor, {
   MediaEdits,
   TextOverlay,
 } from './src/components/MediaEditor';
+import { Video as MediaVideoCompressor } from 'react-native-compressor';
                     
 
 // Navigation stack shared across auth/app flows
@@ -459,6 +462,56 @@ type MinuteFameSession = {
   baseHugs: number;
   preview?: Partial<Vibe> | null;
 };
+
+type MinuteFameTier = {
+  id: 'rising_star' | 'crowd_favorite' | 'wave_king';
+  label: string;
+  icon: string;
+  minScore: number;
+  subtitle: string;
+  encouragement: string;
+};
+
+const MINUTE_FAME_TIERS: MinuteFameTier[] = [
+  {
+    id: 'rising_star',
+    label: 'Rising Star',
+    icon: '⭐',
+    minScore: 180,
+    subtitle: 'Breakout energy',
+    encouragement: 'You showed up and people noticed. Keep building your voice.',
+  },
+  {
+    id: 'crowd_favorite',
+    label: 'Crowd Favorite',
+    icon: '🔥',
+    minScore: 700,
+    subtitle: 'People stayed with you',
+    encouragement: 'Your minute pulled people in. You are earning real attention now.',
+  },
+  {
+    id: 'wave_king',
+    label: 'Wave King',
+    icon: '👑',
+    minScore: 1400,
+    subtitle: 'Top-tier momentum',
+    encouragement: 'You owned the room. Keep leading with confidence.',
+  },
+];
+
+const getMinuteFameTierForScore = (score: number): MinuteFameTier => {
+  const sorted = [...MINUTE_FAME_TIERS].sort((a, b) => b.minScore - a.minScore);
+  return sorted.find(tier => score >= tier.minScore) || MINUTE_FAME_TIERS[0];
+};
+
+const getMinuteFameEncouragement = (
+  category: string,
+  mode: 'queue' | 'silent' | 'flash',
+): string => {
+  const modeLabel =
+    mode === 'flash' ? 'fast reach' : mode === 'silent' ? 'quiet confidence' : 'full spotlight';
+  return `Your ${category} moment is ready. One strong minute can create ${modeLabel}.`;
+};
                     
 type SearchResult = {
   kind: 'user' | 'vibe';
@@ -768,8 +821,89 @@ type HarborSettingsState = {
   listSortMode: 'recent' | 'alphabetical';
   chatQuickSend: boolean;
   smartDataSaver: boolean;
-  appLanguage: string;
+  appLanguage: SupportedAppLanguage;
 };
+
+type SupportedAppLanguage = 'system' | 'en' | 'sn' | 'nd' | 'sw';
+type ResolvedAppLanguage = Exclude<SupportedAppLanguage, 'system'>;
+type TranslationKey =
+  | 'language.system'
+  | 'language.english'
+  | 'language.shona'
+  | 'language.ndebele'
+  | 'language.kiswahili'
+  | 'welcome.title'
+  | 'welcome.subtitle'
+  | 'loading.tagline'
+  | 'auth.signupTitle'
+  | 'auth.signinTitle'
+  | 'auth.email'
+  | 'auth.emailOrPhone'
+  | 'auth.username'
+  | 'auth.referralCode'
+  | 'auth.password'
+  | 'auth.confirmPassword'
+  | 'auth.passwordHint'
+  | 'auth.agreePrefix'
+  | 'auth.terms'
+  | 'auth.privacy'
+  | 'auth.signup'
+  | 'auth.signin'
+  | 'auth.alreadyHaveAccount'
+  | 'auth.noAccount'
+  | 'auth.forgotPassword'
+  | 'alert.missingInfoTitle'
+  | 'alert.missingInfoBody'
+  | 'alert.chooseUsernameTitle'
+  | 'alert.chooseUsernameBody'
+  | 'alert.invalidInputTitle'
+  | 'alert.invalidInputBody'
+  | 'alert.weakPasswordTitle'
+  | 'alert.weakPasswordBody'
+  | 'alert.passwordMismatchTitle'
+  | 'alert.passwordMismatchBody'
+  | 'alert.agreementRequiredTitle'
+  | 'alert.agreementRequiredBody'
+  | 'alert.termsTitle'
+  | 'alert.termsBody'
+  | 'alert.privacyTitle'
+  | 'alert.privacyBody'
+  | 'alert.signUpFailedTitle'
+  | 'alert.signUpFailedBody'
+  | 'alert.noInternetBody'
+  | 'alert.successTitle'
+  | 'alert.accountCreatedBody'
+  | 'alert.phoneSignInTitle'
+  | 'alert.phoneSignInBody'
+  | 'alert.accountNotFoundTitle'
+  | 'alert.accountNotFoundBody'
+  | 'alert.signInFailedTitle'
+  | 'alert.incorrectPasswordTitle'
+  | 'alert.incorrectPasswordBody'
+  | 'alert.resetLinkSentTitle'
+  | 'alert.resetLinkSentBody'
+  | 'alert.resetFailedTitle'
+  | 'alert.missingEmailTitle'
+  | 'alert.missingEmailBody'
+  | 'command.rewardsAdminTitle'
+  | 'command.rewardsUserTitle'
+  | 'command.rewardsAdminSubtitle'
+  | 'command.rewardsUserSubtitle'
+  | 'rewards.myTitle'
+  | 'rewards.mySubtitle'
+  | 'rewards.counts'
+  | 'rewards.ladder'
+  | 'rewards.qualifyRule'
+  | 'rewards.currentUnlocked'
+  | 'rewards.nextReward'
+  | 'rewards.highestTier'
+  | 'rewards.openPlayStore'
+  | 'rewards.playStoreUnavailable'
+  | 'settings.languageValue'
+  | 'settings.selectLanguageTitle'
+  | 'settings.selectLanguageBody';
+
+type TranslationDictionary = Record<TranslationKey, string>;
 
 type TonePickerState = {
   visible: boolean;
@@ -902,21 +1036,113 @@ const buildWaveMediaItems = (data: any): Asset[] => {
     ? data.galleryItems
     : Array.isArray(data?.mediaItems)
     ? data.mediaItems
+    : Array.isArray(data?.media)
+    ? data.media
     : [];
   rawItems.forEach((entry: any) => {
-    const uri = String(entry?.uri || entry?.mediaUrl || '').trim();
+    const uri = String(
+      entry?.uri ||
+        entry?.mediaUrl ||
+        entry?.url ||
+        entry?.downloadURL ||
+        entry?.downloadUrl ||
+        entry?.playbackUrl ||
+        '',
+    ).trim();
     if (!uri) return;
     out.push({
       uri,
-      type: entry?.type || entry?.mediaType || undefined,
+      type: entry?.type || entry?.mediaType || entry?.mimeType || undefined,
       fileName: entry?.fileName || entry?.name || undefined,
     } as Asset);
   });
   if (out.length > 0) return out;
+  const legacyMedia = data?.media && !Array.isArray(data.media) ? data.media : null;
+  if (legacyMedia) {
+    const legacyUri = String(
+      legacyMedia?.uri ||
+        legacyMedia?.mediaUrl ||
+        legacyMedia?.url ||
+        legacyMedia?.downloadURL ||
+        legacyMedia?.downloadUrl ||
+        legacyMedia?.playbackUrl ||
+        '',
+    ).trim();
+    if (legacyUri) {
+      return [
+        {
+          uri: legacyUri,
+          type: legacyMedia?.type || legacyMedia?.mediaType || legacyMedia?.mimeType || data?.mediaType || undefined,
+          fileName: legacyMedia?.fileName || legacyMedia?.name || undefined,
+        } as Asset,
+      ];
+    }
+  }
   const fallbackUri = String(data?.playbackUrl || data?.mediaUrl || '').trim();
   if (!fallbackUri) return [];
   const mediaType = data?.mediaType || undefined;
   return [{ uri: fallbackUri, type: mediaType }] as Asset[];
+};
+
+const buildWavePreviewImage = (data: any, mediaItems?: Asset[] | null): string | null => {
+  const directPreview = [
+    data?.image,
+    data?.thumbnailUrl,
+    data?.thumbUrl,
+    data?.thumb,
+    data?.poster,
+    data?.posterUrl,
+    data?.previewImageUrl,
+    data?.coverImage,
+  ]
+    .map((value: any) => String(value || '').trim())
+    .find(Boolean);
+
+  if (directPreview) {
+    return directPreview;
+  }
+
+  const firstImage = (Array.isArray(mediaItems) ? mediaItems : [])
+    .find(item => {
+      const type = String(item?.type || '').toLowerCase();
+      const uri = String(item?.uri || '').toLowerCase();
+      return type.startsWith('image/') || /(\.jpg|\.jpeg|\.png|\.gif|\.webp|\.heic)(\?|$)/i.test(uri);
+    });
+
+  return firstImage?.uri ? String(firstImage.uri) : null;
+};
+
+const resolveWaveStoredUrl = (data: any): string | null => {
+  const direct = [
+    data?.playbackUrl,
+    data?.mediaUrl,
+    data?.videoUrl,
+    data?.imageUrl,
+    data?.downloadURL,
+    data?.downloadUrl,
+    data?.fileUrl,
+    data?.fileURL,
+    data?.media?.uri,
+    data?.media?.url,
+    data?.media?.mediaUrl,
+    data?.media?.downloadURL,
+    data?.media?.downloadUrl,
+    data?.media?.playbackUrl,
+  ]
+    .map((value: any) => String(value || '').trim())
+    .find(Boolean);
+
+  if (direct) {
+    return direct;
+  }
+
+  const mediaPath = String(data?.mediaPath || '').trim();
+  if (/^https?:\/\//i.test(mediaPath)) {
+    return mediaPath;
+  }
+
+  const firstItemUri = buildWaveMediaItems(data).find(item => !!item?.uri)?.uri;
+  return firstItemUri ? String(firstItemUri) : null;
 };
 
 const preserveExistingGridWave = (existingWave: Vibe | undefined, nextWave: Vibe): Vibe => {
@@ -1034,7 +1260,532 @@ const DEFAULT_HARBOR_SETTINGS: HarborSettingsState = {
   listSortMode: 'recent',
   chatQuickSend: true,
   smartDataSaver: true,
-  appLanguage: 'System Default',
+  appLanguage: 'system',
+};
+
+const APP_LANGUAGE_OPTIONS: Array<{
+  code: SupportedAppLanguage;
+  labelKey: TranslationKey;
+}> = [
+  { code: 'system', labelKey: 'language.system' },
+  { code: 'en', labelKey: 'language.english' },
+  { code: 'sn', labelKey: 'language.shona' },
+  { code: 'nd', labelKey: 'language.ndebele' },
+  { code: 'sw', labelKey: 'language.kiswahili' },
+];
+
+const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
+  en: {
+    'language.system': 'System Default',
+    'language.english': 'English',
+    'language.shona': 'Shona',
+    'language.ndebele': 'Ndebele',
+    'language.kiswahili': 'Kiswahili',
+    'welcome.title': 'Everyone deserves their moment.',
+    'welcome.subtitle': 'Real people. Real moments.',
+    'loading.tagline': 'Everyone deserves their moment.',
+    'auth.signupTitle': 'Create your account',
+    'auth.signinTitle': 'Welcome back',
+    'auth.email': 'Email',
+    'auth.emailOrPhone': 'Email or phone number',
+    'auth.username': 'Username',
+    'auth.referralCode': 'Referral Code (optional)',
+    'auth.password': 'Password',
+    'auth.confirmPassword': 'Confirm Password',
+    'auth.passwordHint': '8-64 chars; 3 of: upper, lower, num, symbol.',
+    'auth.agreePrefix': 'I agree to the',
+    'auth.terms': 'Terms of Service',
+    'auth.privacy': 'Privacy Policy',
+    'auth.signup': 'Sign Up',
+    'auth.signin': 'Sign In',
+    'auth.alreadyHaveAccount': 'Already have an account? Sign In',
+    'auth.noAccount': "Don't have an account? Sign up",
+    'auth.forgotPassword': 'Forgot Password?',
+    'alert.missingInfoTitle': 'Missing Info',
+    'alert.missingInfoBody': 'Please fill out all fields.',
+    'alert.chooseUsernameTitle': 'Choose a Username',
+    'alert.chooseUsernameBody': 'Use at least 3 characters for your username.',
+    'alert.invalidInputTitle': 'Invalid Input',
+    'alert.invalidInputBody': 'Please enter a valid email address or phone number.',
+    'alert.weakPasswordTitle': 'Weak Password',
+    'alert.weakPasswordBody':
+      'Password must be 8-64 characters and contain at least 3 of the following: uppercase, lowercase, number, symbol.',
+    'alert.passwordMismatchTitle': 'Passwords Do Not Match',
+    'alert.passwordMismatchBody': 'Please re-enter your password to confirm.',
+    'alert.agreementRequiredTitle': 'Agreement Required',
+    'alert.agreementRequiredBody':
+      'You must agree to the Terms of Service and Privacy Policy to continue.',
+    'alert.termsTitle': 'Terms',
+    'alert.termsBody': 'Terms of Service go here.',
+    'alert.privacyTitle': 'Privacy',
+    'alert.privacyBody': 'Privacy Policy goes here.',
+    'alert.signUpFailedTitle': 'Sign Up Failed',
+    'alert.signUpFailedBody':
+      'We could not create your account right now. Please try again.',
+    'alert.noInternetBody':
+      'No internet right now. Please check your connection and try again.',
+    'alert.successTitle': 'Success',
+    'alert.accountCreatedBody': 'Account created successfully!',
+    'alert.phoneSignInTitle': 'Phone Sign In',
+    'alert.phoneSignInBody':
+      'Phone authentication requires verification code. Please use email for now.',
+    'alert.accountNotFoundTitle': 'Account Not Found',
+    'alert.accountNotFoundBody':
+      'No account found with this email. Please sign up first.',
+    'alert.signInFailedTitle': 'Sign In Failed',
+    'alert.incorrectPasswordTitle': 'Incorrect Password',
+    'alert.incorrectPasswordBody':
+      'The password you entered is incorrect. Please try again.',
+    'alert.resetLinkSentTitle': 'Reset Link Sent',
+    'alert.resetLinkSentBody':
+      'A password reset link has been sent to your email address.',
+    'alert.resetFailedTitle': 'Reset Failed',
+    'alert.missingEmailTitle': 'Missing Email',
+    'alert.missingEmailBody': 'Enter your email to reset the password.',
+    'command.rewardsAdminTitle': 'Referral Rewards',
+    'command.rewardsUserTitle': 'My Rewards',
+    'command.rewardsAdminSubtitle': 'Review and issue referral reward claims',
+    'command.rewardsUserSubtitle':
+      'Track your referral code, progress, and unlocked rewards',
+    'rewards.myTitle': 'My Referral Rewards',
+    'rewards.mySubtitle':
+      'Invite real new users with your code and track which reward tier you have unlocked.',
+    'rewards.counts': 'Qualified users: {{qualified}}  Pending: {{pending}}  Total invited: {{invited}}',
+    'rewards.ladder':
+      'Reward ladder: 5 = Visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or a special promo reward.',
+    'rewards.qualifyRule':
+      'A referral qualifies only after the invited person signs up with your code and is active on at least {{days}} different days.',
+    'rewards.currentUnlocked': 'Current unlocked reward: {{reward}}',
+    'rewards.nextReward':
+      'Next reward: reach {{count}} qualified users for {{reward}}.',
+    'rewards.highestTier':
+      'You have unlocked the highest referral reward tier currently available.',
+    'rewards.openPlayStore': 'Open Play Store',
+    'rewards.playStoreUnavailable':
+      'We could not open the Play Store link right now.',
+    'settings.languageValue': 'Language: {{language}}',
+    'settings.selectLanguageTitle': 'Select language',
+    'settings.selectLanguageBody': 'Choose app language preference.',
+  },
+  sn: {
+    'language.system': 'Tevera mutauro wesystem',
+    'language.english': 'Chirungu',
+    'language.shona': 'ChiShona',
+    'language.ndebele': 'isiNdebele',
+    'language.kiswahili': 'Kiswahili',
+    'welcome.title': 'Munhu wese anokodzera nguva yake.',
+    'welcome.subtitle': 'Vanhu chaivo. Nguva chaidzo.',
+    'loading.tagline': 'Munhu wese anokodzera nguva yake.',
+    'auth.signupTitle': 'Gadzira account yako',
+    'auth.signinTitle': 'Mauya zvakare',
+    'auth.email': 'Email',
+    'auth.emailOrPhone': 'Email kana nhamba yefoni',
+    'auth.username': 'Zita rekushandisa',
+    'auth.referralCode': 'Kodhi yerefero (kusarudza)',
+    'auth.password': 'Pasiwedhi',
+    'auth.confirmPassword': 'Simbisa pasiwedhi',
+    'auth.passwordHint': 'Mavara 8-64; shandisa 3 eizvi: makuru, madiki, nhamba, chiratidzo.',
+    'auth.agreePrefix': 'Ndinobvuma',
+    'auth.terms': 'Mitemo yeSevhisi',
+    'auth.privacy': 'Mutemo weKuvanzika',
+    'auth.signup': 'Nyoresa',
+    'auth.signin': 'Pinda',
+    'auth.alreadyHaveAccount': 'Une account kare? Pinda',
+    'auth.noAccount': 'Hauna account? Nyoresa',
+    'auth.forgotPassword': 'Wakanganwa pasiwedhi?',
+    'alert.missingInfoTitle': 'Pane zvashomeka',
+    'alert.missingInfoBody': 'Zadzisa minda yose.',
+    'alert.chooseUsernameTitle': 'Sarudza zita rekushandisa',
+    'alert.chooseUsernameBody': 'Shandisa angangoita mavara matatu pazita rako.',
+    'alert.invalidInputTitle': 'Zvawaisa hazvina kunaka',
+    'alert.invalidInputBody': 'Isa email kana nhamba yefoni yakakodzera.',
+    'alert.weakPasswordTitle': 'Pasiwedhi haina kusimba',
+    'alert.weakPasswordBody':
+      'Pasiwedhi inofanira kuva nemavara 8-64 uye ive nezvitatu pane izvi: mavara makuru, madiki, nhamba, chiratidzo.',
+    'alert.passwordMismatchTitle': 'Mapasiwedhi haana kufanana',
+    'alert.passwordMismatchBody': 'Nyora zvakare pasiwedhi yako kuti usimbise.',
+    'alert.agreementRequiredTitle': 'Kubvuma kunodiwa',
+    'alert.agreementRequiredBody':
+      'Unofanira kubvuma Mitemo yeSevhisi neMutemo weKuvanzika kuti uenderere mberi.',
+    'alert.termsTitle': 'Mitemo',
+    'alert.termsBody': 'Mitemo yeSevhisi inoiswa pano.',
+    'alert.privacyTitle': 'Kuvanzika',
+    'alert.privacyBody': 'Mutemo weKuvanzika unoiswa pano.',
+    'alert.signUpFailedTitle': 'Kunyoresa kwatadza',
+    'alert.signUpFailedBody':
+      'Hatina kukwanisa kugadzira account yako izvozvi. Edza zvakare.',
+    'alert.noInternetBody':
+      'Parizvino hapana internet. Tarisa network yako woedza zvakare.',
+    'alert.successTitle': 'Zvabudirira',
+    'alert.accountCreatedBody': 'Account yagadzirwa zvakanaka!',
+    'alert.phoneSignInTitle': 'Kupinda nefoni',
+    'alert.phoneSignInBody':
+      'Kupinda nefoni kunoda kodhi yekusimbisa. Shandisa email parizvino.',
+    'alert.accountNotFoundTitle': 'Account haina kuwanikwa',
+    'alert.accountNotFoundBody':
+      'Hapana account yawanikwa neemail iyi. Tanga wanyoresa.',
+    'alert.signInFailedTitle': 'Kupinda kwatadza',
+    'alert.incorrectPasswordTitle': 'Pasiwedhi haisi iyo',
+    'alert.incorrectPasswordBody':
+      'Pasiwedhi yawaisa haisi iyo. Edza zvakare.',
+    'alert.resetLinkSentTitle': 'Link yekuchinja pasiwedhi yatumwa',
+    'alert.resetLinkSentBody':
+      'Link yekuchinja pasiwedhi yatumirwa kuemail yako.',
+    'alert.resetFailedTitle': 'Kuchinja kwatadza',
+    'alert.missingEmailTitle': 'Email yashomeka',
+    'alert.missingEmailBody': 'Isa email yako kuti uchinje pasiwedhi.',
+    'command.rewardsAdminTitle': 'Mibayiro yerefero',
+    'command.rewardsUserTitle': 'Mibayiro yangu',
+    'command.rewardsAdminSubtitle': 'Ongorora uye budisa mibayiro yerefero',
+    'command.rewardsUserSubtitle':
+      'Tevera kodhi yako yerefero, kufambira mberi, nemibayiro yawavhura',
+    'rewards.myTitle': 'Mibayiro yangu yerefero',
+    'rewards.mySubtitle':
+      'Koka vashandisi vatsva vechokwadi nekodhi yako uye tevera chikamu chemubayiro chawavhura.',
+    'rewards.counts': 'Vakakodzera: {{qualified}}  Vakamirira: {{pending}}  Vese vakokwa: {{invited}}',
+    'rewards.ladder':
+      'Masitepisi emibayiro: 5 = kusimudzirwa kuoneka, 10 = $1 airtime/data, 20 = $2 airtime/data kana mubayiro wakakosha.',
+    'rewards.qualifyRule':
+      'Refero inobvumirwa chete kana munhu akokwa anyoresa nekodhi yako uye ashande mazuva anosvika {{days}} akasiyana.',
+    'rewards.currentUnlocked': 'Mubayiro wavhura ikozvino: {{reward}}',
+    'rewards.nextReward':
+      'Mubayiro unotevera: svika kune {{count}} vakakodzera uwane {{reward}}.',
+    'rewards.highestTier':
+      'Wavhura chikamu chepamusoro chemubayiro chiripo parizvino.',
+    'rewards.openPlayStore': 'Vhura Play Store',
+    'rewards.playStoreUnavailable':
+      'Hatina kukwanisa kuvhura link yePlay Store izvozvi.',
+    'settings.languageValue': 'Mutauro: {{language}}',
+    'settings.selectLanguageTitle': 'Sarudza mutauro',
+    'settings.selectLanguageBody': 'Sarudza mutauro waunoda kushandisa muapp.',
+  },
+  nd: {
+    'language.system': 'Landela ulimi lwefoni',
+    'language.english': 'IsiNgisi',
+    'language.shona': 'IsiShona',
+    'language.ndebele': 'isiNdebele',
+    'language.kiswahili': 'Kiswahili',
+    'welcome.title': 'Wonke umuntu ufanele ithuba lakhe.',
+    'welcome.subtitle': 'Abantu beqiniso. Izikhathi zeqiniso.',
+    'loading.tagline': 'Wonke umuntu ufanele ithuba lakhe.',
+    'auth.signupTitle': 'Yakha i-account yakho',
+    'auth.signinTitle': 'Siyakwamukela njalo',
+    'auth.email': 'Email',
+    'auth.emailOrPhone': 'Email loba inombolo yocingo',
+    'auth.username': 'Ibizo lokusebenzisa',
+    'auth.referralCode': 'Ikhodi yereferensi (ngokuzikhethela)',
+    'auth.password': 'Iphasiwedi',
+    'auth.confirmPassword': 'Qinisekisa iphasiwedi',
+    'auth.passwordHint': '8-64 chars; khetha 3 kulokhu: upper, lower, inombolo, uphawu.',
+    'auth.agreePrefix': 'Ngiyavuma',
+    'auth.terms': 'Imigomo Yesevisi',
+    'auth.privacy': 'Inqubomgomo Yobumfihlo',
+    'auth.signup': 'Bhalisa',
+    'auth.signin': 'Ngena',
+    'auth.alreadyHaveAccount': 'Usulelayo i-account? Ngena',
+    'auth.noAccount': 'Awulayo i-account? Bhalisa',
+    'auth.forgotPassword': 'Ukhohlwe iphasiwedi?',
+    'alert.missingInfoTitle': 'Kukhona okungekho',
+    'alert.missingInfoBody': 'Gcwalisa zonke indawo.',
+    'alert.chooseUsernameTitle': 'Khetha ibizo',
+    'alert.chooseUsernameBody': 'Sebenzisa okungenani izinhlamvu ezi-3 ebizweni lakho.',
+    'alert.invalidInputTitle': 'Okufakileyo akulunganga',
+    'alert.invalidInputBody': 'Faka i-email kumbe inombolo yocingo elungileyo.',
+    'alert.weakPasswordTitle': 'Iphasiwedi ibuthakathaka',
+    'alert.weakPasswordBody':
+      'Iphasiwedi kumele ibe yi-8-64 futhi ibe lezintathu kulokhu: upper, lower, inombolo, uphawu.',
+    'alert.passwordMismatchTitle': 'Amaphasiwedi awafani',
+    'alert.passwordMismatchBody': 'Bhala futhi iphasiwedi yakho ukuze uqinisekise.',
+    'alert.agreementRequiredTitle': 'Ukuvuma kuyadingeka',
+    'alert.agreementRequiredBody':
+      'Kumele uvume Imigomo Yesevisi leNqubomgomo Yobumfihlo ukuze uqhubeke.',
+    'alert.termsTitle': 'Imigomo',
+    'alert.termsBody': 'Imigomo Yesevisi izafakwa lapha.',
+    'alert.privacyTitle': 'Ubumfihlo',
+    'alert.privacyBody': 'Inqubomgomo Yobumfihlo izafakwa lapha.',
+    'alert.signUpFailedTitle': 'Ukubhalisa kwehlulekile',
+    'alert.signUpFailedBody':
+      'Sehlulekile ukwakha i-account yakho khathesi. Zama njalo.',
+    'alert.noInternetBody':
+      'Akula internet khathesi. Hlola inethiwekhi yakho ubuye uzame njalo.',
+    'alert.successTitle': 'Kuphumelele',
+    'alert.accountCreatedBody': 'I-account yakhiwe ngempumelelo!',
+    'alert.phoneSignInTitle': 'Ngena ngocingo',
+    'alert.phoneSignInBody':
+      'Ukungena ngocingo kudinga ikhodi yokuqinisekisa. Sebenzisa i-email okwamanje.',
+    'alert.accountNotFoundTitle': 'I-account kayitholakalanga',
+    'alert.accountNotFoundBody':
+      'Akulayo i-account etholwe ngale email. Qala ubhalise.',
+    'alert.signInFailedTitle': 'Ukungena kwehlulekile',
+    'alert.incorrectPasswordTitle': 'Iphasiwedi ayisiyo',
+    'alert.incorrectPasswordBody':
+      'Iphasiwedi oyifakileyo ayisiyo. Zama njalo.',
+    'alert.resetLinkSentTitle': 'I-link yokuguqula iphasiwedi ithunyelwe',
+    'alert.resetLinkSentBody':
+      'I-link yokuguqula iphasiwedi ithunyelwe ku-email yakho.',
+    'alert.resetFailedTitle': 'Ukuguqula kwehlulekile',
+    'alert.missingEmailTitle': 'I-email ayikho',
+    'alert.missingEmailBody': 'Faka i-email yakho ukuze uguqule iphasiwedi.',
+    'command.rewardsAdminTitle': 'Imivuzo yereferensi',
+    'command.rewardsUserTitle': 'Imivuzo yami',
+    'command.rewardsAdminSubtitle': 'Hlola uphinde ukhuphe imivuzo yereferensi',
+    'command.rewardsUserSubtitle':
+      'Landela ikhodi yakho yereferensi, ukuqhubeka, lemivuzo oyivulileyo',
+    'rewards.myTitle': 'Imivuzo yami yereferensi',
+    'rewards.mySubtitle':
+      'Mema abasebenzisi abatsha beqiniso ngekhodi yakho njalo ubone isigaba somvuzo osivulileyo.',
+    'rewards.counts': 'Abafaneleyo: {{qualified}}  Abasalindileyo: {{pending}}  Abamenyiweyo bonke: {{invited}}',
+    'rewards.ladder':
+      'Izinga lemivuzo: 5 = ukukhuliswa kokubonakala, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe umvuzo okhethekileyo.',
+    'rewards.qualifyRule':
+      'Ireferensi iyabalwa kuphela nxa umuntu ommemileyo ebhalisa ngekhodi yakho aphinde asebenze okungenani izinsuku ezi-{{days}} ezitshiyeneyo.',
+    'rewards.currentUnlocked': 'Umvuzo ovuliweyo khathesi: {{reward}}',
+    'rewards.nextReward':
+      'Umvuzo olandelayo: finyelela ku-{{count}} abafaneleyo uthole {{reward}}.',
+    'rewards.highestTier':
+      'Usuvule izinga eliphezulu lomvuzo elikhona khathesi.',
+    'rewards.openPlayStore': 'Vula iPlay Store',
+    'rewards.playStoreUnavailable':
+      'Sehlulekile ukuvula i-link yePlay Store khathesi.',
+    'settings.languageValue': 'Ulimi: {{language}}',
+    'settings.selectLanguageTitle': 'Khetha ulimi',
+    'settings.selectLanguageBody': 'Khetha ulimi ofuna ukuthi i-app isebenzise.',
+  },
+  sw: {
+    'language.system': 'Fuata lugha ya simu',
+    'language.english': 'Kiingereza',
+    'language.shona': 'Kishona',
+    'language.ndebele': 'Kindebele',
+    'language.kiswahili': 'Kiswahili',
+    'welcome.title': 'Kila mtu anastahili muda wake.',
+    'welcome.subtitle': 'Watu halisi. Nyakati halisi.',
+    'loading.tagline': 'Kila mtu anastahili muda wake.',
+    'auth.signupTitle': 'Fungua akaunti yako',
+    'auth.signinTitle': 'Karibu tena',
+    'auth.email': 'Barua pepe',
+    'auth.emailOrPhone': 'Barua pepe au namba ya simu',
+    'auth.username': 'Jina la mtumiaji',
+    'auth.referralCode': 'Msimbo wa rufaa (hiari)',
+    'auth.password': 'Nenosiri',
+    'auth.confirmPassword': 'Thibitisha nenosiri',
+    'auth.passwordHint': 'Herufi 8-64; chagua 3 kati ya: kubwa, ndogo, namba, alama.',
+    'auth.agreePrefix': 'Nakubali',
+    'auth.terms': 'Masharti ya Huduma',
+    'auth.privacy': 'Sera ya Faragha',
+    'auth.signup': 'Jisajili',
+    'auth.signin': 'Ingia',
+    'auth.alreadyHaveAccount': 'Tayari una akaunti? Ingia',
+    'auth.noAccount': 'Huna akaunti? Jisajili',
+    'auth.forgotPassword': 'Umesahau nenosiri?',
+    'alert.missingInfoTitle': 'Taarifa hazijakamilika',
+    'alert.missingInfoBody': 'Tafadhali jaza sehemu zote.',
+    'alert.chooseUsernameTitle': 'Chagua jina la mtumiaji',
+    'alert.chooseUsernameBody': 'Tumia angalau herufi 3 kwa jina lako la mtumiaji.',
+    'alert.invalidInputTitle': 'Taarifa si sahihi',
+    'alert.invalidInputBody': 'Weka barua pepe au namba ya simu sahihi.',
+    'alert.weakPasswordTitle': 'Nenosiri dhaifu',
+    'alert.weakPasswordBody':
+      'Nenosiri lazima liwe na herufi 8-64 na liwe na angalau 3 kati ya: herufi kubwa, ndogo, namba, alama.',
+    'alert.passwordMismatchTitle': 'Manenosiri hayafanani',
+    'alert.passwordMismatchBody': 'Tafadhali andika tena nenosiri lako kuthibitisha.',
+    'alert.agreementRequiredTitle': 'Makubaliano yanahitajika',
+    'alert.agreementRequiredBody':
+      'Lazima ukubali Masharti ya Huduma na Sera ya Faragha ili kuendelea.',
+    'alert.termsTitle': 'Masharti',
+    'alert.termsBody': 'Masharti ya Huduma yatawekwa hapa.',
+    'alert.privacyTitle': 'Faragha',
+    'alert.privacyBody': 'Sera ya Faragha itawekwa hapa.',
+    'alert.signUpFailedTitle': 'Usajili umeshindikana',
+    'alert.signUpFailedBody':
+      'Hatukuweza kufungua akaunti yako sasa hivi. Tafadhali jaribu tena.',
+    'alert.noInternetBody':
+      'Hakuna intaneti kwa sasa. Tafadhali angalia mtandao wako kisha ujaribu tena.',
+    'alert.successTitle': 'Imefanikiwa',
+    'alert.accountCreatedBody': 'Akaunti imefunguliwa kwa mafanikio!',
+    'alert.phoneSignInTitle': 'Kuingia kwa simu',
+    'alert.phoneSignInBody':
+      'Kuingia kwa simu kunahitaji msimbo wa uthibitisho. Tumia barua pepe kwa sasa.',
+    'alert.accountNotFoundTitle': 'Akaunti haijapatikana',
+    'alert.accountNotFoundBody':
+      'Hakuna akaunti iliyopatikana kwa barua pepe hii. Tafadhali jisajili kwanza.',
+    'alert.signInFailedTitle': 'Kuingia kumeshindikana',
+    'alert.incorrectPasswordTitle': 'Nenosiri si sahihi',
+    'alert.incorrectPasswordBody':
+      'Nenosiri uliloandika si sahihi. Tafadhali jaribu tena.',
+    'alert.resetLinkSentTitle': 'Kiungo cha kubadili nenosiri kimetumwa',
+    'alert.resetLinkSentBody':
+      'Kiungo cha kubadili nenosiri kimetumwa kwenye barua pepe yako.',
+    'alert.resetFailedTitle': 'Kubadili kumeshindikana',
+    'alert.missingEmailTitle': 'Barua pepe haipo',
+    'alert.missingEmailBody':
+      'Weka barua pepe yako ili kubadili nenosiri.',
+    'command.rewardsAdminTitle': 'Zawadi za rufaa',
+    'command.rewardsUserTitle': 'Zawadi zangu',
+    'command.rewardsAdminSubtitle': 'Kagua na utoe madai ya zawadi za rufaa',
+    'command.rewardsUserSubtitle':
+      'Fuatilia msimbo wako wa rufaa, maendeleo, na zawadi ulizofungua',
+    'rewards.myTitle': 'Zawadi zangu za rufaa',
+    'rewards.mySubtitle':
+      'Alika watumiaji wapya halisi kwa msimbo wako na fuatilia kiwango cha zawadi ulichofungua.',
+    'rewards.counts': 'Waliohitimu: {{qualified}}  Wanaosubiri: {{pending}}  Waliyoalikwa wote: {{invited}}',
+    'rewards.ladder':
+      'Ngazi ya zawadi: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi maalum.',
+    'rewards.qualifyRule':
+      'Rufaa huhesabiwa tu baada ya mtu aliyealikwa kujisajili kwa msimbo wako na kuwa hai kwa angalau siku {{days}} tofauti.',
+    'rewards.currentUnlocked': 'Zawadi uliyofungua sasa: {{reward}}',
+    'rewards.nextReward':
+      'Zawadi inayofuata: fika kwa watumiaji {{count}} waliohitimu upate {{reward}}.',
+    'rewards.highestTier':
+      'Umefungua kiwango cha juu kabisa cha zawadi kilichopo kwa sasa.',
+    'rewards.openPlayStore': 'Fungua Play Store',
+    'rewards.playStoreUnavailable':
+      'Hatukuweza kufungua kiungo cha Play Store kwa sasa.',
+    'settings.languageValue': 'Lugha: {{language}}',
+    'settings.selectLanguageTitle': 'Chagua lugha',
+    'settings.selectLanguageBody': 'Chagua lugha unayotaka app itumie.',
+  },
+};
+
+const interpolateTranslation = (
+  template: string,
+  values?: Record<string, string | number>,
+) =>
+  Object.entries(values || {}).reduce(
+    (text, [key, value]) => text.split(`{{${key}}}`).join(String(value)),
+    template,
+  );
+
+const normalizeAppLanguage = (value?: string | null): SupportedAppLanguage => {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+  switch (normalized) {
+    case 'en':
+    case 'english':
+      return 'en';
+    case 'sn':
+    case 'shona':
+    case 'chishona':
+      return 'sn';
+    case 'nd':
+    case 'ndebele':
+    case 'isindebele':
+      return 'nd';
+    case 'sw':
+    case 'kiswahili':
+    case 'swahili':
+      return 'sw';
+    case 'system':
+    case 'system default':
+    default:
+      return 'system';
+  }
+};
+
+const getDeviceLanguageCode = (): ResolvedAppLanguage => {
+  const localeCandidate =
+    String(
+      NativeModules?.I18nManager?.localeIdentifier ||
+        NativeModules?.SettingsManager?.settings?.AppleLocale ||
+        NativeModules?.SettingsManager?.settings?.AppleLanguages?.[0] ||
+        '',
+    ).toLowerCase();
+  if (localeCandidate.startsWith('sw')) return 'sw';
+  if (localeCandidate.startsWith('sn')) return 'sn';
+  if (localeCandidate.startsWith('nd')) return 'nd';
+  return 'en';
+};
+
+const resolveAppLanguage = (
+  preference: SupportedAppLanguage,
+): ResolvedAppLanguage =>
+  preference === 'system' ? getDeviceLanguageCode() : preference;
+
+const getTranslationLabel = (
+  language: ResolvedAppLanguage,
+  code: SupportedAppLanguage,
+) => TRANSLATIONS[language][APP_LANGUAGE_OPTIONS.find(option => option.code === code)?.labelKey || 'language.english'];
+
+type AppLanguageContextValue = {
+  languagePreference: SupportedAppLanguage;
+  resolvedLanguage: ResolvedAppLanguage;
+  setLanguagePreference: (language: SupportedAppLanguage) => Promise<void>;
+  t: (key: TranslationKey, values?: Record<string, string | number>) => string;
+};
+
+const AppLanguageContext = createContext<AppLanguageContextValue | null>(null);
+
+const AppLanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [languagePreference, setLanguagePreferenceState] =
+    useState<SupportedAppLanguage>('system');
+
+  useEffect(() => {
+    let mounted = true;
+    const loadLanguagePreference = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(HARBOR_SETTINGS_STORAGE_KEY);
+        if (!mounted || !raw) return;
+        const parsed = JSON.parse(raw || '{}') || {};
+        setLanguagePreferenceState(normalizeAppLanguage(parsed?.appLanguage));
+      } catch {}
+    };
+    loadLanguagePreference();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const resolvedLanguage = resolveAppLanguage(languagePreference);
+
+  const setLanguagePreference = useCallback(async (language: SupportedAppLanguage) => {
+    const normalized = normalizeAppLanguage(language);
+    setLanguagePreferenceState(normalized);
+    try {
+      const raw = await AsyncStorage.getItem(HARBOR_SETTINGS_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw || '{}') || {} : {};
+      await AsyncStorage.setItem(
+        HARBOR_SETTINGS_STORAGE_KEY,
+        JSON.stringify({
+          ...DEFAULT_HARBOR_SETTINGS,
+          ...parsed,
+          appLanguage: normalized,
+        }),
+      );
+    } catch {}
+  }, []);
+
+  const t = useCallback(
+    (key: TranslationKey, values?: Record<string, string | number>) =>
+      interpolateTranslation(
+        TRANSLATIONS[resolvedLanguage][key] || TRANSLATIONS.en[key] || key,
+        values,
+      ),
+    [resolvedLanguage],
+  );
+
+  const contextValue = useMemo(
+    () => ({
+      languagePreference,
+      resolvedLanguage,
+      setLanguagePreference,
+      t,
+    }),
+    [languagePreference, resolvedLanguage, setLanguagePreference, t],
+  );
+
+  return (
+    <AppLanguageContext.Provider value={contextValue}>
+      {children}
+    </AppLanguageContext.Provider>
+  );
+};
+
+const useAppLanguage = () => {
+  const context = useContext(AppLanguageContext);
+  if (!context) {
+    throw new Error('useAppLanguage must be used within AppLanguageProvider');
+  }
+  return context;
 };
                     
 const toJSDate = (ts: any) => {
@@ -1174,6 +1925,267 @@ const getWaveOptionMenu = (isOwnPost: boolean) =>
                     
 // ======================== STYLES ========================
 const NAVY_BLUE = 'black';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.aqualink.tindo';
+const REFERRAL_REQUIRED_QUALIFIED_USERS = 20;
+const REFERRAL_MIN_ACTIVE_DAYS = 2;
+const REFERRAL_REWARD_TIERS = [
+  {
+    qualifiedUsers: 5,
+    label: 'Starter Boost',
+    reward: 'Visibility boost',
+  },
+  {
+    qualifiedUsers: 10,
+    label: 'Airtime Reward',
+    reward: '$1 airtime or data',
+  },
+  {
+    qualifiedUsers: 20,
+    label: 'Growth Reward',
+    reward: '$2 airtime, data, or a special promo reward',
+  },
+] as const;
+
+const normalizeUniqueUsername = (value?: string | null): string =>
+  String(value || '')
+    .replace(/^[@/]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const usernameReservationId = (usernameLc: string): string =>
+  encodeURIComponent(usernameLc);
+
+const normalizeReferralCodeInput = (value?: string | null): string =>
+  String(value || '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .trim();
+
+const buildReferralCodeBase = (value?: string | null): string => {
+  const cleaned = normalizeUniqueUsername(value)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '')
+    .slice(0, 12);
+  const suffix = cleaned || `USER${Date.now().toString().slice(-4)}`;
+  return `MOMO-${suffix}`;
+};
+
+const referralCodeReservationId = (code: string): string =>
+  encodeURIComponent(normalizeReferralCodeInput(code));
+
+const getUnlockedReferralRewardTier = (qualifiedCount: number) =>
+  [...REFERRAL_REWARD_TIERS]
+    .sort((a, b) => b.qualifiedUsers - a.qualifiedUsers)
+    .find(tier => qualifiedCount >= tier.qualifiedUsers) || null;
+
+const getNextReferralRewardTier = (qualifiedCount: number) =>
+  [...REFERRAL_REWARD_TIERS]
+    .sort((a, b) => a.qualifiedUsers - b.qualifiedUsers)
+    .find(tier => qualifiedCount < tier.qualifiedUsers) || null;
+
+const hasReferralAdminAccess = (data: Record<string, any> = {}) => {
+  const role = String(data?.role || data?.userRole || '').trim().toLowerCase();
+  const roles = Array.isArray(data?.roles)
+    ? data.roles.map((value: any) => String(value || '').trim().toLowerCase())
+    : [];
+  return (
+    data?.isAdmin === true ||
+    data?.admin === true ||
+    role === 'admin' ||
+    role === 'owner' ||
+    roles.includes('admin') ||
+    roles.includes('owner')
+  );
+};
+
+const reserveUniqueUsername = async (
+  uid: string,
+  rawUsername: string,
+  previousUsername?: string | null,
+) => {
+  const username = normalizeUniqueUsername(rawUsername);
+  const usernameLc = username.toLowerCase();
+  if (username.length < 3) {
+    throw new Error('username-invalid');
+  }
+
+  await firestore().runTransaction(async tx => {
+    const userRef = firestore().collection('users').doc(uid);
+    const nextRef = firestore()
+      .collection('usernames')
+      .doc(usernameReservationId(usernameLc));
+    const nextSnap = await tx.get(nextRef);
+    const nextOwner = nextSnap.exists ? nextSnap.data()?.uid : null;
+
+    if (nextOwner && nextOwner !== uid) {
+      throw new Error('username-taken');
+    }
+
+    const previousLc = normalizeUniqueUsername(previousUsername).toLowerCase();
+    if (previousLc && previousLc !== usernameLc) {
+      const prevRef = firestore()
+        .collection('usernames')
+        .doc(usernameReservationId(previousLc));
+      const prevSnap = await tx.get(prevRef);
+      if (prevSnap.exists && prevSnap.data()?.uid === uid) {
+        tx.delete(prevRef);
+      }
+    }
+
+    tx.set(
+      nextRef,
+      {
+        uid,
+        username,
+        username_lc: usernameLc,
+      },
+      { merge: true },
+    );
+    tx.set(
+      userRef,
+      {
+        username,
+        userName: username,
+        displayName: username,
+        username_lc: usernameLc,
+      },
+      { merge: true },
+    );
+  });
+
+  return username;
+};
+
+const reserveReferralCode = async (uid: string, seedValue: string) => {
+  const userRef = firestore().collection('users').doc(uid);
+  const currentUserSnap = await userRef.get();
+  const existingCode = normalizeReferralCodeInput(currentUserSnap.data()?.referralCode || '');
+  if (existingCode) {
+    return existingCode;
+  }
+
+  const base = buildReferralCodeBase(seedValue);
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const code = attempt === 0 ? base : `${base}-${attempt + 1}`;
+    const codeLc = code.toLowerCase();
+    const codeRef = firestore()
+      .collection('referral_codes')
+      .doc(referralCodeReservationId(code));
+
+    try {
+      await firestore().runTransaction(async tx => {
+        const codeSnap = await tx.get(codeRef);
+        const codeOwner = codeSnap.exists ? codeSnap.data()?.uid : null;
+        if (codeOwner && codeOwner !== uid) {
+          throw new Error('referral-code-taken');
+        }
+
+        tx.set(
+          codeRef,
+          {
+            uid,
+            code,
+            code_lc: codeLc,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        tx.set(
+          userRef,
+          {
+            referralCode: code,
+            referralCode_lc: codeLc,
+          },
+          { merge: true },
+        );
+      });
+      return code;
+    } catch (error: any) {
+      lastError = error;
+      if (!String(error?.message || '').includes('referral-code-taken')) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError || new Error('referral-code-unavailable');
+};
+
+const attachReferralToNewUser = async (uid: string, rawCode: string) => {
+  const code = normalizeReferralCodeInput(rawCode);
+  if (!code) return null;
+
+  const codeRef = firestore()
+    .collection('referral_codes')
+    .doc(referralCodeReservationId(code));
+  const codeSnap = await codeRef.get();
+  if (!codeSnap.exists) {
+    throw new Error('referral-code-invalid');
+  }
+  const referrerUid = String(codeSnap.data()?.uid || '').trim();
+  if (!referrerUid) {
+    throw new Error('referral-code-invalid');
+  }
+  if (referrerUid === uid) {
+    throw new Error('referral-code-self');
+  }
+
+  const userRef = firestore().collection('users').doc(uid);
+  const referrerRef = firestore().collection('users').doc(referrerUid);
+  const referralRef = firestore().collection(`users/${referrerUid}/referrals`).doc(uid);
+
+  await firestore().runTransaction(async tx => {
+    const userSnap = await tx.get(userRef);
+    const existingReferrer = String(userSnap.data()?.referredByUid || '').trim();
+    if (existingReferrer && existingReferrer !== referrerUid) {
+      throw new Error('referral-already-set');
+    }
+    const referrerSnap = await tx.get(referrerRef);
+    const pendingCount = Math.max(0, Number(referrerSnap.data()?.referralPendingCount || 0));
+    const totalCount = Math.max(0, Number(referrerSnap.data()?.referralInvitedCount || 0));
+
+    tx.set(
+      userRef,
+      {
+        referredByUid: referrerUid,
+        referralCodeUsed: code,
+        referralStatus: 'pending',
+        referralQualified: false,
+        referralActiveDayCount: 0,
+        referralLastActiveDay: null,
+        referralJoinedAt: firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+    tx.set(
+      referrerRef,
+      {
+        referralPendingCount: pendingCount + 1,
+        referralInvitedCount: totalCount + 1,
+      },
+      { merge: true },
+    );
+    tx.set(
+      referralRef,
+      {
+        referredUid: uid,
+        referralCode: code,
+        status: 'pending',
+        qualified: false,
+        activeDayCount: 0,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+
+  return referrerUid;
+};
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: 'white' },
   topStrip: {
@@ -1197,40 +2209,40 @@ const styles = StyleSheet.create({
   profileLabel: { color: 'white', fontWeight: '700', letterSpacing: 1.2 },
                     
   lowerRow: { height: 32 },
-  scrollRow: { alignItems: 'center', gap: 18, paddingHorizontal: 12 },
+  scrollRow: { alignItems: 'center', gap: 10, paddingHorizontal: 12, paddingBottom: 2 },
                     
   topItem: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
     paddingVertical: 1,
-    paddingHorizontal: 2,
+    paddingHorizontal: 0,
   },
   topArtWrap: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    gap: 6,
     position: 'relative',
-    paddingTop: 4,
-    paddingBottom: 4,
-    paddingHorizontal: 6,
+    paddingTop: 7,
+    paddingBottom: 7,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#38BDF8',
+    borderWidth: 1,
+    borderColor: '#7DD3FC',
+    minHeight: 38,
+    shadowColor: '#04131f',
+    shadowOpacity: 0.18,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   topArtCap: {
     position: 'absolute',
     top: 1,
-    width: 33,
-    height: 19,
-    backgroundColor: '#8D0000',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    borderTopLeftRadius: 7,
-    borderTopRightRadius: 13,
-    borderBottomLeftRadius: 11,
-    borderBottomRightRadius: 5,
-    shadowColor: '#8D0000',
-    shadowOpacity: 0.32,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
-    transform: [{ rotate: '-4deg' }],
+    width: 0,
+    height: 0,
+    opacity: 0,
   },
   topArtBody: {
     position: 'absolute',
@@ -1238,77 +2250,46 @@ const styles = StyleSheet.create({
     right: 2,
     top: 12,
     bottom: 0,
-    backgroundColor: '#8D0000',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.14)',
-    borderTopLeftRadius: 9,
-    borderTopRightRadius: 12,
-    borderBottomLeftRadius: 15,
-    borderBottomRightRadius: 8,
-    shadowColor: '#8D0000',
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 0 },
-    elevation: 4,
-    transform: [{ rotate: '-1.25deg' }],
+    width: 0,
+    height: 0,
+    opacity: 0,
   },
   topArtFuse: {
     position: 'absolute',
     top: 9,
-    width: 24,
-    height: 9,
-    backgroundColor: '#8D0000',
-    borderTopLeftRadius: 4,
-    borderTopRightRadius: 8,
-    borderBottomLeftRadius: 7,
-    borderBottomRightRadius: 3,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
-    transform: [{ rotate: '7deg' }],
+    width: 0,
+    height: 0,
+    opacity: 0,
   },
   topArtRagLeft: {
     position: 'absolute',
     left: -1,
     bottom: 2,
-    width: 9,
-    height: 12,
-    backgroundColor: '#8D0000',
-    borderTopLeftRadius: 3,
-    borderTopRightRadius: 7,
-    borderBottomLeftRadius: 8,
-    borderBottomRightRadius: 2,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    transform: [{ rotate: '-11deg' }],
+    width: 0,
+    height: 0,
+    opacity: 0,
   },
   topArtRagRight: {
     position: 'absolute',
     right: -1,
     bottom: 1,
-    width: 10,
-    height: 11,
-    backgroundColor: '#8D0000',
-    borderTopLeftRadius: 6,
-    borderTopRightRadius: 3,
-    borderBottomLeftRadius: 3,
-    borderBottomRightRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-    transform: [{ rotate: '9deg' }],
+    width: 0,
+    height: 0,
+    opacity: 0,
   },
   topLabel: {
-    color: 'white',
+    color: '#07263A',
     fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 0.5,
+    fontSize: 11,
+    letterSpacing: 0.3,
     textAlign: 'center',
-    paddingHorizontal: 2,
+    paddingHorizontal: 0,
   },
                     
   // Icons above words
-  dolphinIcon: { fontSize: 18, marginBottom: 2 },
-  pingsIcon: { fontSize: 18, marginBottom: 2 },
-  compassIcon: { fontSize: 18, marginBottom: 2 },
+  dolphinIcon: { fontSize: 15, marginBottom: 0 },
+  pingsIcon: { fontSize: 15, marginBottom: 0 },
+  compassIcon: { fontSize: 15, marginBottom: 0 },
   globeIcon: { fontSize: 18, marginBottom: 2, color: '#1E90FF' },
   pingsBadge: {
     position: 'absolute',
@@ -3189,6 +4170,7 @@ type InnerAppProps = { allowPlayback?: boolean };
 const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const navigation = useNavigation();
   const dataSaver = useDataSaver();
+  const { t, setLanguagePreference, resolvedLanguage } = useAppLanguage();
   // Get current user for ocean features
   const [user, setUser] = useState<any>(null);
   const [isCurrentUserOnline, setIsCurrentUserOnline] = useState<boolean>(false);
@@ -3543,20 +4525,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           );
         }
 
-        // Show toast for new unread notifications
-        const newUnreadNotifications = notificationsData.filter(n => !n.read);
-        if (newUnreadNotifications.length > 0) {
-          const latestNotification = newUnreadNotifications[0];
-          // Show toast for social interaction notifications
-          if (['CONNECT_VIBE', 'echo', 'splash', 'octopus_hug', 'follow'].includes(latestNotification.type)) {
-            // Ensure user data is available for the notification sender (async, don't wait)
-            ensureUserData(latestNotification.fromUid);
-            
-            const avatar = userData ? getUserAvatar(latestNotification.fromUid, userData) : null;
-            const formattedMessage = formatNotificationMessage(latestNotification, userData || {});
-            notifySuccess(formattedMessage, avatar);
-          }
-        }
       });
 
     return unsubscribe;
@@ -3666,6 +4634,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [profileName, setProfileName] = useState<string>('');
   const [profileBio, setProfileBio] = useState<string>('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
+  const [profileMinuteFameTitle, setProfileMinuteFameTitle] = useState<string>('');
+  const [profileReferralCode, setProfileReferralCode] = useState<string>('');
+  const [profileReferralPendingCount, setProfileReferralPendingCount] = useState<number>(0);
+  const [profileReferralQualifiedCount, setProfileReferralQualifiedCount] = useState<number>(0);
+  const [profileReferralInvitedCount, setProfileReferralInvitedCount] = useState<number>(0);
+  const [profileReferralRewardLabel, setProfileReferralRewardLabel] = useState<string>('');
+  const [isReferralAdmin, setIsReferralAdmin] = useState<boolean>(false);
+  const [rewardReviewItems, setRewardReviewItems] = useState<
+    Array<{
+      uid: string;
+      name: string;
+      rewardLabel: string;
+      qualifiedCount: number;
+      status: string;
+    }>
+  >([]);
+  const [rewardReviewLoading, setRewardReviewLoading] = useState<boolean>(false);
 
   // Load profilePhoto from AsyncStorage on app start
   useEffect(() => {
@@ -4007,6 +4992,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setHarborSettings({
           ...DEFAULT_HARBOR_SETTINGS,
           ...(parsed as Partial<HarborSettingsState>),
+          appLanguage: normalizeAppLanguage(parsed?.appLanguage),
         });
       } catch {}
     };
@@ -4016,21 +5002,57 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const uid = auth?.()?.currentUser?.uid;
+    if (!uid) return;
+    const loadRemoteHarborSettings = async () => {
+      try {
+        const snap = await firestore().doc(`users/${uid}/settings/harbor`).get();
+        const data = snap?.data?.() || (snap as any)?.data?.() || null;
+        if (!data || cancelled) return;
+        const merged = {
+          ...DEFAULT_HARBOR_SETTINGS,
+          ...data,
+          appLanguage: normalizeAppLanguage(data?.appLanguage),
+        } as HarborSettingsState;
+        setHarborSettings(prev => ({ ...prev, ...merged }));
+        await setLanguagePreference(merged.appLanguage);
+      } catch {}
+    };
+    loadRemoteHarborSettings();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid, setLanguagePreference]);
+
   const saveHarborSettings = useCallback(
     async (patch: Partial<HarborSettingsState>) => {
       const next = {
         ...harborSettings,
         ...patch,
+        appLanguage: normalizeAppLanguage(
+          patch.appLanguage ?? harborSettings.appLanguage,
+        ),
       };
       setHarborSettings(next);
+      if (patch.appLanguage) {
+        await setLanguagePreference(next.appLanguage);
+      }
       try {
         await AsyncStorage.setItem(
           HARBOR_SETTINGS_STORAGE_KEY,
           JSON.stringify(next),
         );
       } catch {}
+      try {
+        const uid = auth?.()?.currentUser?.uid;
+        if (uid) {
+          await firestore().doc(`users/${uid}/settings/harbor`).set(next, { merge: true });
+        }
+      } catch {}
     },
-    [harborSettings],
+    [harborSettings, setLanguagePreference],
   );
 
   const saveAppToneSetting = useCallback(
@@ -4394,6 +5416,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             console.log('No displayName available either');
           }
         }
+        setProfileBio(String(data?.bio || ''));
+        setProfileMinuteFameTitle(String(data?.minuteFameTitleLabel || data?.minuteFameTitle || ''));
+        setProfileReferralCode(String(data?.referralCode || ''));
+        setProfileReferralPendingCount(Math.max(0, Number(data?.referralPendingCount || 0)));
+        setProfileReferralQualifiedCount(Math.max(0, Number(data?.referralQualifiedCount || 0)));
+        setProfileReferralInvitedCount(Math.max(0, Number(data?.referralInvitedCount || 0)));
+        setProfileReferralRewardLabel(String(data?.referralRewardLabel || ''));
+        setIsReferralAdmin(hasReferralAdminAccess(data));
       })
       .catch((error: any) => {
         console.error('Error loading user data:', error);
@@ -4405,11 +5435,125 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setAccountCreationHandle(normalized);
           setProfileName(normalized);
         }
+        setIsReferralAdmin(false);
       });
     return () => {
       cancelled = true;
     };
   }, [user?.uid, normalizeUserHandle]);
+
+  const advanceReferralProgressForUid = useCallback(async (uid: string) => {
+    const activeUid = String(uid || '').trim();
+    if (!activeUid) return;
+    const dayKey = new Date().toISOString().slice(0, 10);
+    const userRef = firestore().collection('users').doc(activeUid);
+
+    await firestore().runTransaction(async tx => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) return;
+      const data = userSnap.data() || {};
+      const referrerUid = String(data.referredByUid || '').trim();
+      if (!referrerUid) return;
+
+      const previousDay = String(data.referralLastActiveDay || '').trim();
+      const previousCount = Math.max(0, Number(data.referralActiveDayCount || 0));
+      const alreadyQualified =
+        data.referralQualified === true ||
+        String(data.referralStatus || '').toLowerCase() === 'qualified';
+      const nextCount = previousDay === dayKey ? previousCount : previousCount + 1;
+
+      tx.set(
+        userRef,
+        {
+          referralLastActiveDay: dayKey,
+          referralActiveDayCount: nextCount,
+        },
+        { merge: true },
+      );
+
+      const referralRef = firestore().collection(`users/${referrerUid}/referrals`).doc(activeUid);
+      tx.set(
+        referralRef,
+        {
+          activeDayCount: nextCount,
+          lastActiveDay: dayKey,
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      if (alreadyQualified || nextCount < REFERRAL_MIN_ACTIVE_DAYS) {
+        return;
+      }
+
+      const referrerRef = firestore().collection('users').doc(referrerUid);
+      const referrerSnap = await tx.get(referrerRef);
+      const pendingCount = Math.max(0, Number(referrerSnap.data()?.referralPendingCount || 0));
+      const qualifiedCount = Math.max(0, Number(referrerSnap.data()?.referralQualifiedCount || 0));
+      const nextQualifiedCount = qualifiedCount + 1;
+      const unlockedRewardTier = getUnlockedReferralRewardTier(nextQualifiedCount);
+
+      tx.set(
+        userRef,
+        {
+          referralQualified: true,
+          referralStatus: 'qualified',
+          referralQualifiedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      tx.set(
+        referrerRef,
+        {
+          referralPendingCount: Math.max(0, pendingCount - 1),
+          referralQualifiedCount: nextQualifiedCount,
+          referralRewardLabel: unlockedRewardTier
+            ? `${unlockedRewardTier.label}: ${unlockedRewardTier.reward}`
+            : firestore.FieldValue.delete(),
+          referralRewardQualifiedCount: unlockedRewardTier
+            ? unlockedRewardTier.qualifiedUsers
+            : firestore.FieldValue.delete(),
+          referralRewardStatus: unlockedRewardTier ? 'pending_review' : firestore.FieldValue.delete(),
+          referralRewardEligibleAt: unlockedRewardTier
+            ? firestore.FieldValue.serverTimestamp()
+            : firestore.FieldValue.delete(),
+        },
+        { merge: true },
+      );
+      tx.set(
+        referralRef,
+        {
+          qualified: true,
+          status: 'qualified',
+          qualifiedAt: firestore.FieldValue.serverTimestamp(),
+          rewardUnlocked: nextQualifiedCount >= REFERRAL_REQUIRED_QUALIFIED_USERS,
+          rewardTierLabel: unlockedRewardTier
+            ? `${unlockedRewardTier.label}: ${unlockedRewardTier.reward}`
+            : null,
+        },
+        { merge: true },
+      );
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!myUid) return;
+    advanceReferralProgressForUid(myUid).catch(error => {
+      console.warn('Referral progress advance failed:', error);
+    });
+  }, [advanceReferralProgressForUid, myUid]);
+
+  useEffect(() => {
+    if (!myUid || profileReferralCode) return;
+    const seed = profileName || accountCreationHandle || auth()?.currentUser?.displayName || myUid;
+    reserveReferralCode(myUid, seed)
+      .then(code => {
+        setProfileReferralCode(code);
+      })
+      .catch(error => {
+        console.warn('Referral code reservation failed:', error);
+      });
+  }, [accountCreationHandle, myUid, profileName, profileReferralCode]);
 
   // Auto-focus reply input when a message is selected for reply
   useEffect(() => {
@@ -4424,7 +5568,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
-  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }>>({});
+  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean; minuteFameTitle?: string | null }>>({});
 
   // Helper function to ensure user data is available for a given user ID
   const ensureUserData = async (userId: string) => {
@@ -4457,6 +5601,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         bio: data?.bio || '',
         lastSeen: lastSeen,
         online: data?.online === true,
+        minuteFameTitle: data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
       };
       setUserData(prev => {
         const existing = prev[userId];
@@ -4925,7 +6070,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     useState<'queue' | 'silent' | 'flash'>('queue');
   const [minuteFameChoices, setMinuteFameChoices] = useState<Vibe[]>([]);
   const [minuteFameSelectedWaveId, setMinuteFameSelectedWaveId] = useState<string | null>(null);
-  const [minuteFameResults, setMinuteFameResults] = useState<{ views: number; hugs: number; echoes: number; level: string } | null>(null);
+  const [minuteFameResults, setMinuteFameResults] = useState<{
+    views: number;
+    hugs: number;
+    echoes: number;
+    score: number;
+    tier: MinuteFameTier;
+    encouragement: string;
+  } | null>(null);
   const [activeMinuteFameSession, setActiveMinuteFameSession] = useState<MinuteFameSession | null>(null);
   const [activeMinuteFameWave, setActiveMinuteFameWave] = useState<Vibe | null>(null);
   const [commandCentreSection, setCommandCentreSection] =
@@ -4947,6 +6099,62 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCommandCentreSection('home');
     }
   }, [showBridge, stopTonePreview]);
+
+  const loadRewardReviewItems = useCallback(async () => {
+    setRewardReviewLoading(true);
+    try {
+      const snap = await firestore()
+        .collection('users')
+        .where('referralRewardStatus', '==', 'pending_review')
+        .limit(50)
+        .get();
+      const next = snap.docs.map(doc => {
+        const data = doc.data() || {};
+        return {
+          uid: doc.id,
+          name: String(data.username || data.displayName || data.userName || 'User'),
+          rewardLabel: String(data.referralRewardLabel || 'Referral reward'),
+          qualifiedCount: Math.max(0, Number(data.referralQualifiedCount || 0)),
+          status: String(data.referralRewardStatus || 'pending_review'),
+        };
+      });
+      setRewardReviewItems(next);
+    } catch (error) {
+      console.warn('Load reward review items failed:', error);
+      setRewardReviewItems([]);
+    } finally {
+      setRewardReviewLoading(false);
+    }
+  }, []);
+
+  const updateRewardReviewStatus = useCallback(
+    async (targetUid: string, status: 'approved' | 'issued' | 'rejected') => {
+      try {
+        await firestore().collection('users').doc(targetUid).set(
+          {
+            referralRewardStatus: status,
+            referralRewardReviewedAt: firestore.FieldValue.serverTimestamp(),
+            referralRewardReviewedBy: myUid || null,
+          },
+          { merge: true },
+        );
+        setRewardReviewItems(prev =>
+          prev.map(item => (item.uid === targetUid ? { ...item, status } : item)),
+        );
+        if (status !== 'pending_review') {
+          setRewardReviewItems(prev => prev.filter(item => item.uid !== targetUid));
+        }
+      } catch (error) {
+        Alert.alert('Review Failed', 'We could not update that reward status right now.');
+      }
+    },
+    [myUid],
+  );
+
+  useEffect(() => {
+    if (!showBridge || commandCentreSection !== 'rewards' || !isReferralAdmin) return;
+    loadRewardReviewItems().catch(() => {});
+  }, [commandCentreSection, isReferralAdmin, loadRewardReviewItems, showBridge]);
 
   useEffect(() => {
     if (!showMinuteFame) {
@@ -5046,15 +6254,76 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const echoes = Math.max(0, currentEchoes - Number(base?.baseEchoes || 0));
           const views = Math.max(0, Math.max(currentViews - Number(base?.baseViews || 0), hugs + echoes));
           const score = views + hugs * 8 + echoes * 12;
-          const level =
-            score >= 1800 ? 'Wave King 🌊' : score >= 900 ? 'Crowd Favorite 🔥' : 'Rising Star 🌟';
-          setMinuteFameResults({ views, hugs, echoes, level });
+          const tier = getMinuteFameTierForScore(score);
+          setMinuteFameResults({
+            views,
+            hugs,
+            echoes,
+            score,
+            tier,
+            encouragement: tier.encouragement,
+          });
+          if (myUid) {
+            const userRef = firestore().doc(`users/${myUid}`);
+            await firestore().runTransaction(async tx => {
+              const userSnap = await tx.get(userRef);
+              const previousBest = Number(userSnap.data()?.minuteFameBestScore || 0);
+              tx.set(
+                userRef,
+                {
+                  minuteFameTitle: tier.id,
+                  minuteFameTitleLabel: `${tier.icon} ${tier.label}`,
+                  minuteFameBestScore: Math.max(previousBest, score),
+                  minuteFameLastScore: score,
+                  minuteFameLastViews: views,
+                  minuteFameLastHugs: hugs,
+                  minuteFameLastEchoes: echoes,
+                  minuteFameLastCategory: minuteFameCategory,
+                  minuteFameLastMode: minuteFameMode,
+                  minuteFameLastEarnedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+            });
+            await firestore().collection(`users/${myUid}/minute_fame_history`).add({
+              waveId: selectedWaveId,
+              score,
+              views,
+              hugs,
+              echoes,
+              category: minuteFameCategory,
+              mode: minuteFameMode,
+              titleId: tier.id,
+              titleLabel: `${tier.icon} ${tier.label}`,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            }).catch(() => {});
+            setProfileMinuteFameTitle(`${tier.icon} ${tier.label}`);
+            setUserData(prev => ({
+              ...prev,
+              [myUid]: {
+                name: prev[myUid]?.name || profileName || accountCreationHandle || 'User',
+                avatar: prev[myUid]?.avatar || profilePhoto || '',
+                bio: prev[myUid]?.bio || profileBio || '',
+                lastSeen: prev[myUid]?.lastSeen || null,
+                online: prev[myUid]?.online,
+                minuteFameTitle: `${tier.icon} ${tier.label}`,
+              },
+            }));
+          }
           setMinuteFamePhase('results');
           if (base?.ownerUid === myUid || !base) {
             await firestore().collection('minute_fame').doc('active').delete().catch(() => {});
           }
         } catch {
-          setMinuteFameResults({ views: 0, hugs: 0, echoes: 0, level: 'Rising Star 🌟' });
+          const tier = getMinuteFameTierForScore(0);
+          setMinuteFameResults({
+            views: 0,
+            hugs: 0,
+            echoes: 0,
+            score: 0,
+            tier,
+            encouragement: 'Your next minute can still change everything. Keep showing up.',
+          });
           setMinuteFamePhase('results');
         }
       })();
@@ -6068,6 +7337,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         if (Platform.OS === 'android' && localPath.startsWith('file://')) {
           localPath = localPath.replace('file://', '');
         }
+        localPath = await maybeCompressVideoForUpload(
+          localPath,
+          mediaType || null,
+          shouldUseLightVideoUpload,
+        );
         const safeName = String(noticeAdMedia.fileName || `advert_${Date.now()}`)
           .replace(/[^A-Za-z0-9._-]/g, '_');
         mediaPath = `notice-board/${currentUser.uid}/${Date.now()}_${safeName}`;
@@ -6375,6 +7649,7 @@ type CommandCentreSection =
   | 'notifications'
   | 'performance'
   | 'appearance'
+  | 'rewards'
   | 'about';
                     
   const [bridge, setBridge] = useState<BridgeSettings>({
@@ -8487,9 +9762,14 @@ type CommandCentreSection =
         const mediaType = data?.mediaType || null;
         const isAudioPost =
           data?.postType === 'audio' || /^audio\//i.test(String(mediaType || ''));
-        let playbackUrl: string | null = data?.playbackUrl || data?.mediaUrl || null;
+        let playbackUrl: string | null = resolveWaveStoredUrl(data);
         let mediaUri: string | null = null;
-        if (!playbackUrl && storageMod && data?.mediaPath) {
+        if (
+          !playbackUrl &&
+          storageMod &&
+          data?.mediaPath &&
+          !/^https?:\/\//i.test(String(data.mediaPath || ''))
+        ) {
           try {
             mediaUri = await storageMod().ref(String(data.mediaPath)).getDownloadURL();
           } catch {}
@@ -8518,13 +9798,14 @@ type CommandCentreSection =
             };
           } catch {}
         }
+        const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
         return {
           id,
           media:
             !isAudioPost && finalUri
               ? ({ uri: finalUri, type: mediaType || undefined } as any)
               : null,
-          mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
+          mediaItems,
           audio: data?.audioUrl
             ? { uri: String(data.audioUrl) }
             : isAudioPost && finalUri
@@ -8539,7 +9820,7 @@ type CommandCentreSection =
           authorName: data?.authorName || userInfo?.name || null,
           ownerUid,
           user: userInfo,
-          image: data?.image || null,
+          image: buildWavePreviewImage(data, mediaItems),
           counts: {
             splashes: Number(data?.counts?.splashes || 0),
             echoes: Number(data?.counts?.echoes || 0),
@@ -9445,10 +10726,14 @@ type CommandCentreSection =
             const isAudioPost =
               data?.postType === 'audio' ||
               /^audio\//i.test(String(mediaType || ''));
-            let playbackUrl: string | null =
-              data?.playbackUrl || data?.mediaUrl || null;
+            let playbackUrl: string | null = resolveWaveStoredUrl(data);
             let mediaUri: string | null = null;
-            if (!playbackUrl && storageMod && data?.mediaPath) {
+            if (
+              !playbackUrl &&
+              storageMod &&
+              data?.mediaPath &&
+              !/^https?:\/\//i.test(String(data.mediaPath || ''))
+            ) {
               try {
                 mediaUri = await storageMod()
                   .ref(String(data.mediaPath))
@@ -9458,13 +10743,14 @@ type CommandCentreSection =
             // Show all vibes in public feed (my vibes and other users' vibes)
             const finalUri = playbackUrl || mediaUri;
             if (!finalUri && !data?.audioUrl) continue;
+            const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
             out.push({
               id: id,
               media:
                 !isAudioPost && finalUri
                   ? ({ uri: finalUri, type: mediaType || undefined } as any)
                   : null,
-              mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
+              mediaItems,
               audio: data?.audioUrl
                 ? { uri: String(data.audioUrl) }
                 : isAudioPost && finalUri
@@ -9478,6 +10764,7 @@ type CommandCentreSection =
               muxStatus: (data?.muxStatus || null) as any,
               authorName,
               ownerUid: (data?.ownerUid || data?.authorId || null) as any,
+              image: buildWavePreviewImage(data, mediaItems),
               counts: {
                 splashes: Number(data?.counts?.splashes || 0),
                 echoes: Number(data?.counts?.echoes || 0),
@@ -9487,7 +10774,7 @@ type CommandCentreSection =
           if (!cancelled) {
             // Fetch user data for all wave authors
             const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
-            const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
+            const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null; minuteFameTitle?: string | null }> = {};
             
             if (uniqueOwnerUids.length > 0) {
               try {
@@ -9507,6 +10794,7 @@ type CommandCentreSection =
                       name: data?.displayName || data?.name || data?.username || 'User',
                       avatar: avatarUrl,
                       bio: data?.bio || null,
+                      minuteFameTitle: data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
                     };
                     console.log('User data loaded for', uid, ':', { name: userDataMap[uid].name, avatar: userDataMap[uid].avatar, bio: userDataMap[uid].bio });
                   } else {
@@ -9516,6 +10804,7 @@ type CommandCentreSection =
                       name: 'User',
                       avatar: null,
                       bio: null,
+                      minuteFameTitle: null,
                     };
                     console.log('User document not found for', uid);
                   }
@@ -9528,6 +10817,7 @@ type CommandCentreSection =
                     name: 'User',
                     avatar: null,
                     bio: null,
+                    minuteFameTitle: null,
                   };
                 });
               }
@@ -9541,6 +10831,7 @@ type CommandCentreSection =
                   name: userInfo.name || 'User',
                   avatar: userInfo.avatar || '',
                   bio: userInfo.bio || '',
+                  minuteFameTitle: userInfo.minuteFameTitle || null,
                 };
               }
             });
@@ -9701,10 +10992,14 @@ type CommandCentreSection =
           const isAudioPost =
             data?.postType === 'audio' ||
             /^audio\//i.test(String(mediaType || ''));
-          let playbackUrl: string | null =
-            data?.playbackUrl || data?.mediaUrl || null;
+          let playbackUrl: string | null = resolveWaveStoredUrl(data);
           let mediaUri: string | null = null;
-          if (!playbackUrl && storageMod && data?.mediaPath) {
+          if (
+            !playbackUrl &&
+            storageMod &&
+            data?.mediaPath &&
+            !/^https?:\/\//i.test(String(data.mediaPath || ''))
+          ) {
             try {
               mediaUri = await storageMod()
                 .ref(String(data.mediaPath))
@@ -9714,13 +11009,14 @@ type CommandCentreSection =
           // Show all vibes in public feed (my vibes and other users' vibes)
           const finalUri = playbackUrl || mediaUri;
           if (!finalUri && !data?.audioUrl) continue;
+          const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
           out.push({
             id: id,
             media:
               !isAudioPost && finalUri
                 ? ({ uri: finalUri, type: mediaType || undefined } as any)
                 : null,
-            mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
+            mediaItems,
             audio: data?.audioUrl
               ? { uri: String(data.audioUrl) }
               : isAudioPost && finalUri
@@ -9734,6 +11030,7 @@ type CommandCentreSection =
             muxStatus: (data?.muxStatus || null) as any,
             authorName,
             ownerUid: (data?.ownerUid || data?.authorId || null) as any,
+            image: buildWavePreviewImage(data, mediaItems),
             counts: {
               splashes: Number(data?.counts?.splashes || 0),
               echoes: Number(data?.counts?.echoes || 0),
@@ -9746,7 +11043,7 @@ type CommandCentreSection =
           try {
             // Fetch user data for new wave authors
             const uniqueOwnerUids = [...new Set(out.map(w => w.ownerUid).filter(Boolean))];
-            const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null }> = {};
+            const userDataMap: Record<string, { name: string; avatar: string | null; bio?: string | null; minuteFameTitle?: string | null }> = {};
             
             if (uniqueOwnerUids.length > 0) {
               try {
@@ -9766,6 +11063,7 @@ type CommandCentreSection =
                       name: data?.displayName || data?.name || data?.username || 'User',
                       avatar: avatarUrl,
                       bio: data?.bio || null,
+                      minuteFameTitle: data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
                     };
                   } else {
                     // User document doesn't exist, create default data
@@ -9774,6 +11072,7 @@ type CommandCentreSection =
                       name: 'User',
                       avatar: null,
                       bio: null,
+                      minuteFameTitle: null,
                     };
                   }
                 });
@@ -9785,6 +11084,7 @@ type CommandCentreSection =
                     name: 'User',
                     avatar: null,
                     bio: null,
+                    minuteFameTitle: null,
                   };
                 });
               }
@@ -9798,6 +11098,7 @@ type CommandCentreSection =
                   name: userInfo.name || 'User',
                   avatar: userInfo.avatar || '',
                   bio: userInfo.bio || '',
+                  minuteFameTitle: userInfo.minuteFameTitle || null,
                 };
               }
             });
@@ -10644,6 +11945,11 @@ type CommandCentreSection =
             console.warn('Attachment content copy before upload failed', copyErr);
           }
         }
+        localPath = await maybeCompressVideoForUpload(
+          localPath,
+          uploadContentType || type || null,
+          shouldUseLightVideoUpload,
+        );
 
         const storagePathCandidates = [
           `posts/${user.uid}/messages/${Date.now()}_${baseNoExt}.${ext}`,
@@ -11655,20 +12961,12 @@ type CommandCentreSection =
       if (!wave) {
         await Share.share({
           title: 'Cast Vibe',
-          message: 'Cast Vibe - check out this vibe!',
+          message: `Check out MoMo on Google Play:\n${PLAY_STORE_URL}`,
         });
         return;
       }
-      let authMod: any = null;
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const uid = authMod?.().currentUser?.uid;
-      const waveId = wave.id;
-      const deep = `drift://wave/${encodeURIComponent(waveId)}`;
-      const web = `https://drift.link/w/${encodeURIComponent(waveId)}`;
       const caption = wave.captionText ? `"${wave.captionText}"` : 'my vibe';
-      const msg = `Cast Vibe - Check out ${caption}\n\n${web}\n(Open in app: ${deep})`;
+      const msg = `Check out ${caption} on MoMo.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to cast the net right now.');
@@ -11676,10 +12974,8 @@ type CommandCentreSection =
   };
   const onShareWave = async (wave: Vibe) => {
     try {
-      const waveId = wave.id;
-      const link = `aqualink://wave/${encodeURIComponent(waveId)}`;
       const caption = wave.captionText ? `"${wave.captionText}"` : 'my MoMo';
-      const msg = `Cast MoMo - Check out ${caption}\n\n${link}`;
+      const msg = `Check out ${caption} on MoMo.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast MoMo', message: msg });
     } catch {
       showOceanDialog(
@@ -12985,15 +14281,8 @@ type CommandCentreSection =
                     
   const shareProfile = async () => {
     try {
-      let authMod: any = null;
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const uid = authMod?.().currentUser?.uid;
       const name = profileName || accountCreationHandle || '@your_handle';
-      const deep = uid ? `drift://user/${uid}` : 'drift://home';
-      const web = uid ? `https://drift.link/u/${uid}` : 'https://drift.link/';
-      const msg = `Cast Vibe - Check out my Aura ${name}!\n\n${web}\n(Open in app: ${deep})`;
+      const msg = `Check out my Aura ${name} on MoMo.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
@@ -13046,16 +14335,9 @@ type CommandCentreSection =
                     
   const shareProfileLink = async () => {
     try {
-      let authMod: any = null;
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const uid = authMod?.().currentUser?.uid;
-      const deep = uid ? `drift://user/${uid}` : 'drift://home';
-      const web = uid ? `https://drift.link/u/${uid}` : 'https://drift.link/';
       await Share.share({
         title: 'Share Profile Link',
-        message: `${web}\nOpen in app: ${deep}`,
+        message: `Download MoMo on Google Play:\n${PLAY_STORE_URL}`,
       });
     } catch {
       Alert.alert('Share failed', 'Unable to share the link right now.');
@@ -13809,6 +15091,49 @@ type CommandCentreSection =
     }
   }, []);
 
+  const maybeCompressVideoForUpload = useCallback(
+    async (localPath: string, mimeType?: string | null, forceLight: boolean = false) => {
+      const type = String(mimeType || '').toLowerCase();
+      if (!type.startsWith('video/')) return localPath;
+
+      let resolvedPath = String(localPath || '').trim();
+      if (!resolvedPath) return localPath;
+      if (Platform.OS === 'android' && resolvedPath.startsWith('file://')) {
+        resolvedPath = resolvedPath.replace('file://', '');
+      }
+
+      try {
+        const stats = await RNFS.stat(resolvedPath);
+        const sizeBytes = Math.max(0, Number((stats as any)?.size || 0));
+        const minBytes = forceLight ? 4 * 1024 * 1024 : 8 * 1024 * 1024;
+        if (sizeBytes <= minBytes) {
+          return resolvedPath;
+        }
+
+        const compressedUri = await MediaVideoCompressor.compress(
+          Platform.OS === 'android' && !/^file:\/\//i.test(resolvedPath)
+            ? `file://${resolvedPath}`
+            : resolvedPath,
+          {
+            compressionMethod: 'auto',
+            maxSize: forceLight ? 720 : 960,
+            minimumFileSizeForCompress: Math.max(1, Math.round(minBytes / (1024 * 1024))),
+          },
+        );
+        if (!compressedUri) {
+          return resolvedPath;
+        }
+        return Platform.OS === 'android' && compressedUri.startsWith('file://')
+          ? compressedUri.replace('file://', '')
+          : compressedUri;
+      } catch (error) {
+        console.warn('Video compression failed, using original file:', error);
+        return resolvedPath;
+      }
+    },
+    [],
+  );
+
   const uploadUnifiedPostAsset = useCallback(
     async (
       asset: Asset,
@@ -13884,6 +15209,11 @@ type CommandCentreSection =
           throw error;
         }
       }
+      localPath = await maybeCompressVideoForUpload(
+        localPath,
+        mimeType,
+        shouldUseLightVideoUpload,
+      );
       const fileRef = storageMod().ref(filePath);
       await trackUploadTask(
         fileRef.putFile(localPath, { contentType: mimeType }),
@@ -13905,7 +15235,7 @@ type CommandCentreSection =
           : 'document',
       };
     },
-    [ensureNetworkActionAllowed],
+    [ensureNetworkActionAllowed, maybeCompressVideoForUpload, shouldUseLightVideoUpload],
   );
 
   const handleUnifiedPost = async () => {
@@ -15603,8 +16933,12 @@ type CommandCentreSection =
         if (isIncomingCallNotification) {
           handleNotificationNavigation(rm?.data || {});
           notifySuccess(text || 'Incoming call');
-        } else if (rm?.notification?.body) {
-          notifySuccess(rm.notification.body || 'You have new activity');
+        } else if (
+          mappedType === 'call_invite' ||
+          mappedType === 'live_invite' ||
+          mappedType === 'call_missed'
+        ) {
+          notifySuccess(rm?.notification?.body || text || 'You have a new alert');
           playFalconSound();
         }
       } catch (err) {
@@ -16148,6 +17482,11 @@ type CommandCentreSection =
             return;
           }
         } catch {}
+        localPath = await maybeCompressVideoForUpload(
+          localPath,
+          type || null,
+          shouldUseLightVideoUpload,
+        );
         // Set contentType to help ExoPlayer/iOS pick the right pipeline
         const uploadPath = localPath;
         const uploadContentType =
@@ -16707,6 +18046,7 @@ type CommandCentreSection =
                         myUid={myUid}
                         profileName={profileName}
                         profileBio={profileBio}
+                        profileMinuteFameTitle={profileMinuteFameTitle}
                         userData={userData}
                         ensureUserData={ensureUserData}
                         waveStats={waveStats}
@@ -17296,6 +18636,133 @@ type CommandCentreSection =
                     fontFamily: Platform.OS === 'ios' ? 'Courier New' : 'monospace',
                   }}
                 />
+                {!!profileMinuteFameTitle && (
+                  <Text
+                    style={{
+                      color: '#FFFFFF',
+                      marginTop: 10,
+                      textAlign: 'center',
+                      fontSize: 11,
+                      fontWeight: '800',
+                    }}
+                  >
+                    1 Minute Fame Title: {profileMinuteFameTitle}
+                  </Text>
+                )}
+                <View
+                  style={{
+                    width: '100%',
+                    marginTop: 14,
+                    padding: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(14,165,217,0.16)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(125,211,252,0.4)',
+                  }}
+                >
+                  <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
+                    Invite & Earn
+                  </Text>
+                  {(() => {
+                    const nextRewardTier = getNextReferralRewardTier(profileReferralQualifiedCount);
+                    return (
+                      <Text style={{ color: '#D7F0FF', fontSize: 12, marginTop: 6 }}>
+                        {nextRewardTier
+                          ? `Reach ${nextRewardTier.qualifiedUsers} qualified users for ${nextRewardTier.reward}.`
+                          : 'You have unlocked the top referral reward tier available right now.'}
+                      </Text>
+                    );
+                  })()}
+                  <Text style={{ color: '#D7F0FF', fontSize: 12, marginTop: 6 }}>
+                    Reward ladder: 5 = Visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or a special promo reward.
+                  </Text>
+                  <Text
+                    selectable
+                    style={{
+                      color: '#FFFFFF',
+                      fontSize: 14,
+                      fontWeight: '900',
+                      marginTop: 10,
+                      letterSpacing: 0.5,
+                    }}
+                  >
+                    {profileReferralCode || 'Generating referral code...'}
+                  </Text>
+                  <Text style={{ color: '#C8EFFF', fontSize: 11, marginTop: 8 }}>
+                    Qualified: {profileReferralQualifiedCount}  Pending: {profileReferralPendingCount}  Total invited: {profileReferralInvitedCount}
+                  </Text>
+                  {!!profileReferralRewardLabel && (
+                    <Text style={{ color: '#FFFFFF', fontSize: 11, marginTop: 8, fontWeight: '800' }}>
+                      Current unlocked reward: {profileReferralRewardLabel}
+                    </Text>
+                  )}
+                  <Text style={{ color: '#B9E8FB', fontSize: 11, marginTop: 8, lineHeight: 16 }}>
+                    A referral counts only when the invited person is a real new user, signs up with your code, and is active on at least {REFERRAL_MIN_ACTIVE_DAYS} different days. Fake accounts, duplicate accounts, and self-referrals do not qualify.
+                  </Text>
+                  <Text style={{ color: '#B9E8FB', fontSize: 11, marginTop: 6, lineHeight: 16 }}>
+                    Airtime and other rewards are reviewed before issue. MoMo may replace a reward with an equivalent promo benefit where needed.
+                  </Text>
+                  <Pressable
+                    style={({ pressed }) => [
+                      {
+                        backgroundColor: '#0EA5D9',
+                        borderRadius: 999,
+                        paddingVertical: 9,
+                        paddingHorizontal: 16,
+                        marginTop: 10,
+                        alignSelf: 'flex-start',
+                      },
+                      pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
+                    ]}
+                    onPress={async () => {
+                      if (!profileReferralCode) {
+                        Alert.alert('Referral Code', 'Your referral code is still being prepared. Please try again in a moment.');
+                        return;
+                      }
+                      try {
+                        await Share.share({
+                          message:
+                            `Join MoMo on the Play Store: ${PLAY_STORE_URL}\n\nUse my referral code ${profileReferralCode} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.`,
+                        });
+                      } catch {
+                        Alert.alert('Share Failed', 'We could not open sharing right now. Please try again.');
+                      }
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
+                      Share Referral
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [
+                      {
+                        backgroundColor: 'rgba(255,255,255,0.08)',
+                        borderRadius: 999,
+                        paddingVertical: 9,
+                        paddingHorizontal: 16,
+                        marginTop: 8,
+                        alignSelf: 'flex-start',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.12)',
+                      },
+                      pressed && { opacity: 0.8, transform: [{ scale: 0.97 }] },
+                    ]}
+                    onPress={async () => {
+                      try {
+                        await Linking.openURL(PLAY_STORE_URL);
+                      } catch {
+                        Alert.alert(
+                          t('rewards.openPlayStore'),
+                          t('rewards.playStoreUnavailable'),
+                        );
+                      }
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
+                      {t('rewards.openPlayStore')}
+                    </Text>
+                  </Pressable>
+                </View>
                 <Pressable
                   style={({ pressed }) => [
                     {
@@ -17322,34 +18789,37 @@ type CommandCentreSection =
                       Alert.alert('Invalid Username', 'Username cannot be empty.');
                       return;
                     }
-                    const trimmedName = profileName.trim();
+                    const trimmedName = normalizeUniqueUsername(profileName);
                     if (trimmedName.length < 3) {
                       Alert.alert('Invalid Username', 'Username must be at least 3 characters.');
                       return;
                     }
                     // Check if username is unique
                     try {
-                      const firestore = require('@react-native-firebase/firestore').default;
-                      const query = await firestore()
-                        .collection('users')
-                        .where('username', '==', trimmedName)
-                        .get();
-                      if (!query.empty) {
-                        const existing = query.docs.find(doc => doc.id !== myUid);
-                        if (existing) {
-                          Alert.alert('Username Taken', 'Username already taken.');
-                          return;
-                        }
+                      if (!myUid) {
+                        Alert.alert('Profile Unavailable', 'Please sign in again and try once more.');
+                        return;
                       }
-                      // Save username and bio to Firestore
+                      const currentSnap = await firestore().collection('users').doc(myUid).get();
+                      const currentUsername = String(currentSnap.data()?.username || currentSnap.data()?.displayName || '').trim();
+                      await reserveUniqueUsername(myUid, trimmedName, currentUsername);
+                      const ensuredReferralCode =
+                        String(currentSnap.data()?.referralCode || '').trim() ||
+                        (await reserveReferralCode(myUid, trimmedName));
                       await firestore().collection('users').doc(myUid).set({
-                        username: trimmedName,
-                        username_lc: trimmedName.replace(/^[\/]+/, '').toLowerCase(),
                         bio: profileBio.trim(),
                       }, { merge: true });
+                      try {
+                        await auth().currentUser?.updateProfile({ displayName: trimmedName });
+                      } catch {}
+                      setProfileReferralCode(ensuredReferralCode);
                       Alert.alert('Success', 'Profile updated!');
-                    } catch (e) {
-                      Alert.alert('Save Failed', 'Failed to save profile.');
+                    } catch (e: any) {
+                      if (String(e?.message || '').includes('username-taken')) {
+                        Alert.alert('Username Taken', 'That username is already in use. Try another one.');
+                      } else {
+                        Alert.alert('Save Failed', 'We could not save your profile right now. Please try again.');
+                      }
                     }
                   }}
                 >
@@ -20227,6 +21697,9 @@ type CommandCentreSection =
                 <Text style={{ color: '#D7F0FF', fontSize: 14, lineHeight: 20, marginTop: 10 }}>
                   Everyone deserves their moment.
                 </Text>
+                <Text style={{ color: '#A9DBF5', fontSize: 13, lineHeight: 19, marginTop: 8 }}>
+                  One strong minute can open a door. Show your work, your story, or your courage.
+                </Text>
               </View>
 
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
@@ -20252,6 +21725,9 @@ type CommandCentreSection =
                     <Text style={styles.sectionHeader}>Your next moment</Text>
                     <Text style={styles.sectionSubtle}>
                       Pick one real post. When your minute starts, that exact post is pushed to other feeds.
+                    </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      {getMinuteFameEncouragement(minuteFameCategory, minuteFameMode)}
                     </Text>
                   </View>
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
@@ -20334,7 +21810,20 @@ type CommandCentreSection =
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
                     <Text style={styles.sectionHeader}>Today's Stars</Text>
                     <Text style={styles.sectionSubtle}>Top category: {minuteFameCategory}</Text>
-                    <Text style={[styles.sectionSubtle, { marginTop: 6 }]}>Rising Star 🌟  Crowd Favorite 🔥  Wave King 🌊</Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 6 }]}>
+                      ⭐ Rising Star from 180 points
+                    </Text>
+                    <Text style={styles.sectionSubtle}>
+                      🔥 Crowd Favorite from 700 points
+                    </Text>
+                    <Text style={styles.sectionSubtle}>
+                      👑 Wave King from 1400 points
+                    </Text>
+                    {!!profileMinuteFameTitle && (
+                      <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#FFFFFF' }]}>
+                        Your current title: {profileMinuteFameTitle}
+                      </Text>
+                    )}
                   </View>
                 </View>
               ) : null}
@@ -20349,6 +21838,9 @@ type CommandCentreSection =
                     </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 10 }}>
                       #{minuteFameQueueSpot}
+                    </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      Stay ready. The next minute could shift how people see your work.
                     </Text>
                   </View>
                 </View>
@@ -20376,6 +21868,9 @@ type CommandCentreSection =
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
                       People can now view, hug, and echo that post normally from the feed.
                     </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#FFE1E1' }]}>
+                      Be proud of this minute. Someone is discovering you right now.
+                    </Text>
                   </View>
                 </View>
               ) : null}
@@ -20388,8 +21883,12 @@ type CommandCentreSection =
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>👁 Views: {minuteFameResults.views}</Text>
                     <Text style={styles.sectionSubtle}>❤️ Hugs: {minuteFameResults.hugs}</Text>
                     <Text style={styles.sectionSubtle}>💬 Echoes: {minuteFameResults.echoes}</Text>
+                    <Text style={styles.sectionSubtle}>🏁 Score: {minuteFameResults.score}</Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 12 }}>
-                      {minuteFameResults.level}
+                      {minuteFameResults.tier.icon} {minuteFameResults.tier.label}
+                    </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#DFF7E8' }]}>
+                      {minuteFameResults.encouragement}
                     </Text>
                   </View>
                   <View style={styles.toolGrid}>
@@ -20456,7 +21955,7 @@ type CommandCentreSection =
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>
+                <Text style={styles.logbookTitle}>
                 {commandCentreSection === 'home'
                   ? 'COMMAND CENTRE'
                   : commandCentreSection === 'profile'
@@ -20467,6 +21966,8 @@ type CommandCentreSection =
                   ? 'NOTIFICATIONS'
                   : commandCentreSection === 'performance'
                   ? 'PERFORMANCE'
+                  : commandCentreSection === 'rewards'
+                  ? 'REFERRAL REWARDS'
                   : commandCentreSection === 'appearance'
                   ? 'APPEARANCE'
                   : 'ABOUT'}
@@ -20492,6 +21993,15 @@ type CommandCentreSection =
                       ['privacy', 'Privacy & Safety', 'Privacy, guardianship, and restricted content'],
                       ['notifications', 'Notifications', 'Tones and messaging behavior'],
                       ['performance', 'Performance', 'Data saver, playback, cache, and loading'],
+                      [
+                        'rewards',
+                        isReferralAdmin
+                          ? t('command.rewardsAdminTitle')
+                          : t('command.rewardsUserTitle'),
+                        isReferralAdmin
+                          ? t('command.rewardsAdminSubtitle')
+                          : t('command.rewardsUserSubtitle'),
+                      ],
                       ['appearance', 'Appearance', 'Storm and visual effects'],
                       ['about', 'About', 'Version info, updates, and sign out'],
                     ].map(item => (
@@ -20516,6 +22026,137 @@ type CommandCentreSection =
                         </Text>
                       </Pressable>
                     ))}
+                  </View>
+                ) : null}
+                {commandCentreSection === 'rewards' ? (
+                  <View
+                    style={{
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: 'rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    {isReferralAdmin ? (
+                      <>
+                        <Text style={[styles.logbookActionText, { fontSize: 18, marginBottom: 6 }]}>
+                          Reward Review Queue
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, marginBottom: 10 }}>
+                          Pending referral rewards are reviewed here before airtime, data, or promo benefits are issued.
+                        </Text>
+                        <Pressable
+                          style={[styles.bridgeSettingButton, { marginBottom: 10 }]}
+                          onPress={loadRewardReviewItems}
+                        >
+                          <Text style={styles.bridgeSettingButtonText}>
+                            {rewardReviewLoading ? 'Refreshing...' : 'Refresh Queue'}
+                          </Text>
+                        </Pressable>
+                        {rewardReviewLoading ? <ActivityIndicator color="#10c9ff" style={{ marginVertical: 12 }} /> : null}
+                        {rewardReviewItems.length === 0 && !rewardReviewLoading ? (
+                          <View style={styles.logbookAction}>
+                            <Text style={styles.logbookActionText}>No referral rewards are waiting for review right now.</Text>
+                          </View>
+                        ) : null}
+                        {rewardReviewItems.map(item => (
+                          <View key={`reward-review-${item.uid}`} style={styles.logbookAction}>
+                            <Text style={styles.logbookActionText}>{item.name}</Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 4 }}>
+                              {item.rewardLabel}
+                            </Text>
+                            <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4 }}>
+                              Qualified users: {item.qualifiedCount}  Status: {item.status}
+                            </Text>
+                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                              <Pressable
+                                style={styles.bridgeSettingButton}
+                                onPress={() => updateRewardReviewStatus(item.uid, 'approved')}
+                              >
+                                <Text style={styles.bridgeSettingButtonText}>Approve</Text>
+                              </Pressable>
+                              <Pressable
+                                style={styles.bridgeSettingButton}
+                                onPress={() => updateRewardReviewStatus(item.uid, 'issued')}
+                              >
+                                <Text style={styles.bridgeSettingButtonText}>Mark Issued</Text>
+                              </Pressable>
+                              <Pressable
+                                style={styles.bridgeSettingButton}
+                                onPress={() => updateRewardReviewStatus(item.uid, 'rejected')}
+                              >
+                                <Text style={styles.bridgeSettingButtonText}>Reject</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        <Text style={[styles.logbookActionText, { fontSize: 18, marginBottom: 6 }]}>
+                          {t('rewards.myTitle')}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, marginBottom: 10 }}>
+                          {t('rewards.mySubtitle')}
+                        </Text>
+                        <View style={styles.logbookAction}>
+                          <Text style={styles.logbookActionText}>
+                            {profileReferralCode || 'Generating referral code...'}
+                          </Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 6 }}>
+                            {t('rewards.counts', {
+                              qualified: profileReferralQualifiedCount,
+                              pending: profileReferralPendingCount,
+                              invited: profileReferralInvitedCount,
+                            })}
+                          </Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 8, lineHeight: 17 }}>
+                            {t('rewards.ladder')}
+                          </Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 8, lineHeight: 17 }}>
+                            {t('rewards.qualifyRule', {
+                              days: REFERRAL_MIN_ACTIVE_DAYS,
+                            })}
+                          </Text>
+                          {!!profileReferralRewardLabel && (
+                            <Text style={{ color: '#FFFFFF', fontSize: 11, marginTop: 8, fontWeight: '800' }}>
+                              {t('rewards.currentUnlocked', {
+                                reward: profileReferralRewardLabel,
+                              })}
+                            </Text>
+                          )}
+                          {(() => {
+                            const nextRewardTier = getNextReferralRewardTier(profileReferralQualifiedCount);
+                            return (
+                              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 8, lineHeight: 17 }}>
+                                {nextRewardTier
+                                  ? t('rewards.nextReward', {
+                                      count: nextRewardTier.qualifiedUsers,
+                                      reward: nextRewardTier.reward,
+                                    })
+                                  : t('rewards.highestTier')}
+                              </Text>
+                            );
+                          })()}
+                          <Pressable
+                            style={[styles.bridgeSettingButton, { marginTop: 10, alignSelf: 'flex-start' }]}
+                            onPress={async () => {
+                              try {
+                                await Linking.openURL(PLAY_STORE_URL);
+                              } catch {
+                                Alert.alert(
+                                  t('rewards.openPlayStore'),
+                                  t('rewards.playStoreUnavailable'),
+                                );
+                              }
+                            }}
+                          >
+                            <Text style={styles.bridgeSettingButtonText}>
+                              {t('rewards.openPlayStore')}
+                            </Text>
+                          </Pressable>
+                        </View>
+                      </>
+                    )}
                   </View>
                 ) : null}
                 {(commandCentreSection === 'profile' ||
@@ -20882,26 +22523,29 @@ type CommandCentreSection =
                             appSettingsSectionsExpanded[section.id] && (
                               <View style={styles.logbookAction}>
                                 <Text style={styles.logbookActionText}>
-                                  Language: {harborSettings.appLanguage}
+                                  {t('settings.languageValue', {
+                                    language: getTranslationLabel(
+                                      resolvedLanguage,
+                                      harborSettings.appLanguage,
+                                    ),
+                                  })}
                                 </Text>
                                 <Pressable
                                   style={[styles.bridgeSettingButton, { marginTop: 6 }]}
                                   onPress={() => {
-                                    const options = [
-                                      'System Default',
-                                      'English',
-                                      'Kiswahili',
-                                      'French',
-                                      'Portuguese',
-                                    ];
                                     Alert.alert(
-                                      'Select language',
-                                      'Choose app language preference.',
+                                      t('settings.selectLanguageTitle'),
+                                      t('settings.selectLanguageBody'),
                                       [
-                                        ...options.map(label => ({
-                                          text: label,
+                                        ...APP_LANGUAGE_OPTIONS.map(option => ({
+                                          text: getTranslationLabel(
+                                            resolvedLanguage,
+                                            option.code,
+                                          ),
                                           onPress: () =>
-                                            saveHarborSettings({ appLanguage: label }),
+                                            saveHarborSettings({
+                                              appLanguage: option.code,
+                                            }),
                                         })),
                                         { text: 'Cancel', style: 'cancel' as const },
                                       ],
@@ -30084,7 +31728,10 @@ const enhancedLiveStyles = StyleSheet.create({
                     
 /* ----------------------- Auth Screens ------------------------- */
 function SignUpScreen({ navigation }: any) {
+  const { t } = useAppLanguage();
   const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [referralCodeInput, setReferralCodeInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -30102,9 +31749,18 @@ function SignUpScreen({ navigation }: any) {
                     
   const signUp = async () => {
     const trimmedEmail = email.trim();
+    const trimmedUsername = normalizeUniqueUsername(username);
+    const trimmedReferralCode = normalizeReferralCodeInput(referralCodeInput);
                     
-    if (!trimmedEmail || !password || !confirmPassword) {
-      Alert.alert('Missing Info', 'Please fill out all fields.');
+    if (!trimmedEmail || !trimmedUsername || !password || !confirmPassword) {
+      Alert.alert(t('alert.missingInfoTitle'), t('alert.missingInfoBody'));
+      return;
+    }
+    if (trimmedUsername.length < 3) {
+      Alert.alert(
+        t('alert.chooseUsernameTitle'),
+        t('alert.chooseUsernameBody'),
+      );
       return;
     }
     
@@ -30113,28 +31769,25 @@ function SignUpScreen({ navigation }: any) {
     const isPhone = /^[\+]?[1-9][\d]{0,15}$/.test(trimmedEmail.replace(/[\s\-\(\)]/g, ''));
     
     if (!isEmail && !isPhone) {
-      Alert.alert('Invalid Input', 'Please enter a valid email address or phone number.');
+      Alert.alert(t('alert.invalidInputTitle'), t('alert.invalidInputBody'));
       return;
     }
     
     if (!validatePassword(password)) {
-      Alert.alert(
-        'Weak Password',
-        'Password must be 8-64 characters and contain at least 3 of the following: uppercase, lowercase, number, symbol.',
-      );
+      Alert.alert(t('alert.weakPasswordTitle'), t('alert.weakPasswordBody'));
       return;
     }
     if (password !== confirmPassword) {
       Alert.alert(
-        'Passwords Do Not Match',
-        'Please re-enter your password to confirm.',
+        t('alert.passwordMismatchTitle'),
+        t('alert.passwordMismatchBody'),
       );
       return;
     }
     if (!agreedToTerms) {
       Alert.alert(
-        'Agreement Required',
-        'You must agree to the Terms of Service and Privacy Policy to continue.',
+        t('alert.agreementRequiredTitle'),
+        t('alert.agreementRequiredBody'),
       );
       return;
     }
@@ -30182,21 +31835,41 @@ function SignUpScreen({ navigation }: any) {
                     const result = await confirmation.confirm(code);
                     
                     if (result.user) {
-                      // Store details in Firestore
-                      const firestore = require('@react-native-firebase/firestore').default;
-                      await firestore().collection('users').doc(result.user.uid).set({
+                      const firestoreMod = require('@react-native-firebase/firestore').default;
+                      try {
+                        await reserveUniqueUsername(result.user.uid, trimmedUsername);
+                        await reserveReferralCode(result.user.uid, trimmedUsername);
+                        if (trimmedReferralCode) {
+                          await attachReferralToNewUser(result.user.uid, trimmedReferralCode);
+                        }
+                      } catch (usernameError: any) {
+                        await result.user.delete().catch(() => {});
+                        if (String(usernameError?.message || '').includes('username-taken')) {
+                          Alert.alert('Username Taken', 'That username is already in use. Try another one.');
+                        } else if (String(usernameError?.message || '').includes('referral-code-invalid')) {
+                          Alert.alert('Invalid Referral Code', 'That referral code was not found. Please check it and try again.');
+                        } else if (String(usernameError?.message || '').includes('referral-code-self')) {
+                          Alert.alert('Invalid Referral Code', 'You cannot use your own referral code.');
+                        } else {
+                          Alert.alert('Sign Up Unavailable', 'We could not finish account setup right now. Please try again.');
+                        }
+                        return;
+                      }
+                      await firestoreMod().collection('users').doc(result.user.uid).set({
                         phoneNumber: formattedPhone,
-                        createdAt: firestore.FieldValue.serverTimestamp(),
+                        createdAt: firestoreMod.FieldValue.serverTimestamp(),
+                      }, { merge: true });
+                      await result.user.updateProfile({
+                        displayName: trimmedUsername,
                       });
-                      console.log('User document created:', result.user.uid);
-                      
-                      // Removed displayName update to avoid reference error
-                      console.log('Firebase Auth profile updated with displayName:', formattedPhone);
                       
                       // Mark authentication as completed so user stays signed in
                       await AsyncStorage.setItem('auth_completed', 'true');
                       
-                      Alert.alert('Success', 'Account created successfully!');
+                      Alert.alert(
+                        t('alert.successTitle'),
+                        t('alert.accountCreatedBody'),
+                      );
                     }
                   } catch (verifyError: any) {
                     console.error('Verification error:', verifyError);
@@ -30222,13 +31895,13 @@ function SignUpScreen({ navigation }: any) {
             Alert.alert('Too Many Requests', 'Too many verification attempts. Please try again later.');
           } else if (phoneError.code === 'auth/operation-not-allowed') {
             Alert.alert(
-              'Phone Authentication Disabled',
-              'Phone authentication is not enabled for this project. Please enable it in the Firebase console under Authentication > Sign-in method.'
+              'Phone Sign Up Unavailable',
+              'Phone sign up is not available right now. Please try email instead.'
             );
           } else if (phoneError.code === 'auth/missing-client-identifier') {
             Alert.alert(
-              'Configuration Required',
-              'Phone authentication requires additional setup. Please configure SHA certificates in Firebase console: Project Settings > General > Your apps > Android app > Add fingerprint.'
+              'Phone Verification Unavailable',
+              'Phone verification is not ready right now. Please try again later or use email.'
             );
           } else if (phoneError.code === 'auth/invalid-verification-code') {
             Alert.alert('Invalid Code', 'The verification code is invalid. Please try again.');
@@ -30237,7 +31910,7 @@ function SignUpScreen({ navigation }: any) {
           } else {
             Alert.alert(
               'Phone Verification Failed',
-              `Error: ${phoneError?.message || 'Unable to send verification code. Please check your phone number and try again.'}`
+              'We could not send the verification code right now. Please check your network and try again.'
             );
           }
         }
@@ -30245,20 +31918,34 @@ function SignUpScreen({ navigation }: any) {
       }
       
       if (userCredential.user) {
-        // Store details in Firestore
-        const firestore = require('@react-native-firebase/firestore').default;
-        await firestore().collection('users').doc(userCredential.user.uid).set({
+        const firestoreMod = require('@react-native-firebase/firestore').default;
+        try {
+          await reserveUniqueUsername(userCredential.user.uid, trimmedUsername);
+          await reserveReferralCode(userCredential.user.uid, trimmedUsername);
+          if (trimmedReferralCode) {
+            await attachReferralToNewUser(userCredential.user.uid, trimmedReferralCode);
+          }
+        } catch (usernameError: any) {
+          await userCredential.user.delete().catch(() => {});
+          if (String(usernameError?.message || '').includes('username-taken')) {
+            Alert.alert('Username Taken', 'That username is already in use. Try another one.');
+          } else if (String(usernameError?.message || '').includes('referral-code-invalid')) {
+            Alert.alert('Invalid Referral Code', 'That referral code was not found. Please check it and try again.');
+          } else if (String(usernameError?.message || '').includes('referral-code-self')) {
+            Alert.alert('Invalid Referral Code', 'You cannot use your own referral code.');
+          } else {
+            Alert.alert('Sign Up Unavailable', 'We could not finish account setup right now. Please try again.');
+          }
+          return;
+        }
+        await firestoreMod().collection('users').doc(userCredential.user.uid).set({
           email: isEmail ? trimmedEmail : null,
           phoneNumber: isPhone ? trimmedEmail : null,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        });
-        console.log('User document created:', userCredential.user.uid);
-        
-        // Update Firebase Auth profile with display name
+          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+        }, { merge: true });
         await userCredential.user.updateProfile({
-          displayName: isEmail ? trimmedEmail : trimmedEmail,
+          displayName: trimmedUsername,
         });
-        console.log('Firebase Auth profile updated with displayName:', trimmedEmail);
         
         // Mark authentication as completed so user stays signed in
         await AsyncStorage.setItem('auth_completed', 'true');
@@ -30276,9 +31963,9 @@ function SignUpScreen({ navigation }: any) {
       } else {
         const signUpMessage =
           String(e?.code || '').includes('network')
-            ? 'No internet right now. Please check your connection and try again.'
-            : 'We could not create your account right now. Please try again.';
-        Alert.alert('Sign Up Failed', signUpMessage);
+            ? t('alert.noInternetBody')
+            : t('alert.signUpFailedBody');
+        Alert.alert(t('alert.signUpFailedTitle'), signUpMessage);
       }
     }
   };
@@ -30291,16 +31978,27 @@ function SignUpScreen({ navigation }: any) {
         style={{ flex: 1, justifyContent: 'center' }}
       >
         <ScrollView showsVerticalScrollIndicator={false}>
-          <Text style={authStyles.title}>Create your account</Text>
+          <Text style={authStyles.title}>{t('auth.signupTitle')}</Text>
                     
           <Field
-            label="Email"
+            label={t('auth.email')}
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
           />
           <Field
-            label="Password"
+            label={t('auth.username')}
+            value={username}
+            onChangeText={setUsername}
+          />
+          <Field
+            label={t('auth.referralCode')}
+            value={referralCodeInput}
+            onChangeText={setReferralCodeInput}
+            autoCapitalize="characters"
+          />
+          <Field
+            label={t('auth.password')}
             value={password}
             onChangeText={setPassword}
             secureTextEntry
@@ -30313,10 +32011,10 @@ function SignUpScreen({ navigation }: any) {
               marginBottom: 8,
             }}
           >
-            8-64 chars; 3 of: upper, lower, num, symbol.
+            {t('auth.passwordHint')}
           </Text>
           <Field
-            label="Confirm Password"
+            label={t('auth.confirmPassword')}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             secureTextEntry
@@ -30358,29 +32056,29 @@ function SignUpScreen({ navigation }: any) {
               )}
             </Pressable>
             <Text style={{ color: 'white', flex: 1 }}>
-              I agree to the{' '}
+              {t('auth.agreePrefix')}{' '}
               <Text
                 style={{ color: '#2196F3', textDecorationLine: 'underline' }}
                 onPress={() =>
-                  Alert.alert('Terms', 'Terms of Service go here.')
+                  Alert.alert(t('alert.termsTitle'), t('alert.termsBody'))
                 }
               >
-                Terms of Service
+                {t('auth.terms')}
               </Text>{' '}
               and{' '}
               <Text
                 style={{ color: '#2196F3', textDecorationLine: 'underline' }}
                 onPress={() =>
-                  Alert.alert('Privacy', 'Privacy Policy goes here.')
+                  Alert.alert(t('alert.privacyTitle'), t('alert.privacyBody'))
                 }
               >
-                Privacy Policy
+                {t('auth.privacy')}
               </Text>
               .
             </Text>
           </View>
                     
-          <AuthButton title="Sign Up" onPress={signUp} />
+          <AuthButton title={t('auth.signup')} onPress={signUp} />
                     
           <Pressable
             onPress={() => navigation.replace('SignIn')}
@@ -30390,9 +32088,7 @@ function SignUpScreen({ navigation }: any) {
             ]}
             hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
           >
-            <Text style={authStyles.link}>
-              Already have an account? Sign In
-            </Text>
+            <Text style={authStyles.link}>{t('auth.alreadyHaveAccount')}</Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -30401,6 +32097,7 @@ function SignUpScreen({ navigation }: any) {
 }
                     
 function SignInScreen({ navigation }: any) {
+  const { t } = useAppLanguage();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
                     
@@ -30408,7 +32105,7 @@ function SignInScreen({ navigation }: any) {
     const trimmedEmail = email.trim();
     
     if (!trimmedEmail || !password) {
-      Alert.alert('Missing Info', 'Please fill out all fields.');
+      Alert.alert(t('alert.missingInfoTitle'), t('alert.missingInfoBody'));
       return;
     }
     
@@ -30417,7 +32114,7 @@ function SignInScreen({ navigation }: any) {
     const isPhone = /^[\+]?[1-9][\d]{0,15}$/.test(trimmedEmail.replace(/[\s\-\(\)]/g, ''));
     
     if (!isEmail && !isPhone) {
-      Alert.alert('Invalid Input', 'Please enter a valid email address or phone number.');
+      Alert.alert(t('alert.invalidInputTitle'), t('alert.invalidInputBody'));
       return;
     }
     
@@ -30432,7 +32129,10 @@ function SignInScreen({ navigation }: any) {
         );
       } else {
         // Sign in with phone number - this would require phone auth flow
-        Alert.alert('Phone Sign In', 'Phone authentication requires verification code. Please use email for now.');
+        Alert.alert(
+          t('alert.phoneSignInTitle'),
+          t('alert.phoneSignInBody'),
+        );
         return;
       }
       
@@ -30444,24 +32144,24 @@ function SignInScreen({ navigation }: any) {
     } catch (e: any) {
       if (e.code === 'auth/user-not-found') {
         Alert.alert(
-          'Account Not Found',
-          'No account found with this email. Please sign up first.',
+          t('alert.accountNotFoundTitle'),
+          t('alert.accountNotFoundBody'),
           [
-            { text: 'Sign Up', onPress: () => navigation.replace('SignUp') },
+            { text: t('auth.signup'), onPress: () => navigation.replace('SignUp') },
             { text: 'Try Again', style: 'cancel' }
           ]
         );
       } else if (e.code === 'auth/wrong-password') {
         Alert.alert(
-          'Incorrect Password',
-          'The password you entered is incorrect. Please try again.',
+          t('alert.incorrectPasswordTitle'),
+          t('alert.incorrectPasswordBody'),
         );
       } else {
         const signInMessage =
           String(e?.code || '').includes('network')
-            ? 'No internet right now. Please check your connection and try again.'
-            : 'We could not sign you in right now. Please try again.';
-        Alert.alert('Sign In Failed', signInMessage);
+            ? t('alert.noInternetBody')
+            : t('alert.signUpFailedBody');
+        Alert.alert(t('alert.signInFailedTitle'), signInMessage);
       }
     }
   };
@@ -30469,22 +32169,22 @@ function SignInScreen({ navigation }: any) {
   const resetPassword = async () => {
     const trimmedEmail = email.trim();
     if (!trimmedEmail) {
-      Alert.alert('Missing Email', 'Enter your email to reset the password.');
+      Alert.alert(t('alert.missingEmailTitle'), t('alert.missingEmailBody'));
       return;
     }
                     
     try {
       await auth().sendPasswordResetEmail(trimmedEmail);
       Alert.alert(
-        'Reset Link Sent',
-        'A password reset link has been sent to your email address.',
+        t('alert.resetLinkSentTitle'),
+        t('alert.resetLinkSentBody'),
       );
     } catch (e: any) {
       const resetMessage =
         String(e?.code || '').includes('network')
-          ? 'No internet right now. Please check your connection and try again.'
-          : 'We could not send the reset link right now. Please try again.';
-      Alert.alert('Reset Failed', resetMessage);
+          ? t('alert.noInternetBody')
+          : t('alert.signUpFailedBody');
+      Alert.alert(t('alert.resetFailedTitle'), resetMessage);
     }
   };
                     
@@ -30495,16 +32195,16 @@ function SignInScreen({ navigation }: any) {
         behavior={Platform.select({ ios: 'padding', android: undefined })}
         style={{ flex: 1, justifyContent: 'center' }}
       >
-        <Text style={authStyles.title}>Welcome back</Text>
+        <Text style={authStyles.title}>{t('auth.signinTitle')}</Text>
                     
         <Field
-          label="Email or phone number"
+          label={t('auth.emailOrPhone')}
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
         />
         <Field
-          label="Password"
+          label={t('auth.password')}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -30518,11 +32218,11 @@ function SignInScreen({ navigation }: any) {
           ]}
           hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
         >
-          <Text style={authStyles.link}>Forgot Password?</Text>
+          <Text style={authStyles.link}>{t('auth.forgotPassword')}</Text>
         </Pressable>
                     
         <View style={{ marginTop: 4 }}>
-          <AuthButton title="Sign In" onPress={signIn} />
+          <AuthButton title={t('auth.signin')} onPress={signIn} />
         </View>
                     
         <Pressable
@@ -30533,7 +32233,7 @@ function SignInScreen({ navigation }: any) {
           ]}
           hitSlop={{ top: 5, bottom: 5, left: 5, right: 5 }}
         >
-          <Text style={authStyles.link}>Don't have an account? Sign up</Text>
+          <Text style={authStyles.link}>{t('auth.noAccount')}</Text>
         </Pressable>
       </KeyboardAvoidingView>
     </View>
@@ -30541,6 +32241,7 @@ function SignInScreen({ navigation }: any) {
 }
                     
 function WelcomeAnimationScreen({ navigation }: any) {
+  const { t } = useAppLanguage();
   const isMounted = React.useRef(true);
   const bounceAnim = React.useRef(new Animated.Value(0)).current;
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
@@ -30599,21 +32300,15 @@ function WelcomeAnimationScreen({ navigation }: any) {
           alignItems: 'center',
         }}
       >
-        <View
+        <Image
+          source={require('./assets/APP LOGO.png')}
           style={{
-            paddingHorizontal: 18,
-            paddingVertical: 10,
-            borderRadius: 999,
-            backgroundColor: 'rgba(14,165,233,0.16)',
-            borderWidth: 1,
-            borderColor: 'rgba(14,165,233,0.42)',
+            width: 92,
+            height: 92,
+            resizeMode: 'contain',
             marginBottom: 18,
           }}
-        >
-          <Text style={{ color: '#8DD8FF', fontSize: 12, fontWeight: '900', letterSpacing: 1.2 }}>
-            MOMO
-          </Text>
-        </View>
+        />
         <Text
           style={{
             color: '#FFFFFF',
@@ -30623,7 +32318,7 @@ function WelcomeAnimationScreen({ navigation }: any) {
             textAlign: 'center',
           }}
         >
-          Everyone deserves their moment.
+          {t('welcome.title')}
         </Text>
         <Text
           style={{
@@ -30633,7 +32328,7 @@ function WelcomeAnimationScreen({ navigation }: any) {
             textAlign: 'center',
           }}
         >
-          Fast visibility. Real people. Real moments.
+          {t('welcome.subtitle')}
         </Text>
       </Animated.View>
     </Pressable>
@@ -31285,6 +32980,7 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
 }
                     
 const App: React.FC = () => {
+  const { t } = useAppLanguage();
   // The splash animation is now part of the navigation flow,
   // so we no longer need state to control its visibility here.
   // const [showSplash, setShowSplash] = React.useState(true);
@@ -31566,7 +33262,7 @@ const App: React.FC = () => {
                           textAlign: 'center',
                         }}
                       >
-                        Everyone deserves their moment.
+                        {t('loading.tagline')}
                       </Text>
                     </View>
                   ) : user ? (
@@ -31587,7 +33283,9 @@ const App: React.FC = () => {
 // Top-level error boundary wrapper for the app
 const AppWithErrorBoundary: React.FC = () => (
   <ErrorBoundary>
-    <App />
+    <AppLanguageProvider>
+      <App />
+    </AppLanguageProvider>
   </ErrorBoundary>
 );
                     
