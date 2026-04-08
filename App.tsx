@@ -472,6 +472,59 @@ type MinuteFameTier = {
   encouragement: string;
 };
 
+type MinuteFameCreatorLevel = {
+  id: 'new_wave' | 'rising_tide' | 'spotlighted' | 'creator_on_fire' | 'ocean_star';
+  label: string;
+  minPoints: number;
+  frameLabel: string;
+  accent: string;
+};
+
+type MinuteFameHistoryEntry = {
+  id: string;
+  waveId: string;
+  score: number;
+  views: number;
+  hugs: number;
+  echoes: number;
+  category: string;
+  mode: string;
+  titleLabel: string;
+  levelLabel?: string | null;
+  statusLabel?: string | null;
+  createdAtMs: number;
+};
+
+type MinuteFameSpotlightEntry = {
+  id: string;
+  dayKey: string;
+  ownerUid: string;
+  ownerName: string;
+  waveId: string;
+  category: string;
+  mode: string;
+  score: number;
+  views: number;
+  hugs: number;
+  echoes: number;
+  titleLabel: string;
+  levelLabel?: string | null;
+  statusLabel?: string | null;
+  captionText?: string | null;
+  supportCount: number;
+  nominationCount: number;
+  createdAtMs: number;
+};
+
+type MinuteFameChallenge = {
+  id: string;
+  title: string;
+  description: string;
+  category: 'Talent' | 'Funny' | 'Hustle' | 'Real Life' | 'Sports';
+  targetScore: number;
+  reward: string;
+};
+
 const MINUTE_FAME_TIERS: MinuteFameTier[] = [
   {
     id: 'rising_star',
@@ -499,9 +552,201 @@ const MINUTE_FAME_TIERS: MinuteFameTier[] = [
   },
 ];
 
+const MINUTE_FAME_LEVELS: MinuteFameCreatorLevel[] = [
+  {
+    id: 'new_wave',
+    label: 'New Wave',
+    minPoints: 0,
+    frameLabel: 'Sea Glass Frame',
+    accent: '#4DD5FF',
+  },
+  {
+    id: 'rising_tide',
+    label: 'Rising Tide',
+    minPoints: 500,
+    frameLabel: 'Rising Glow Frame',
+    accent: '#22C55E',
+  },
+  {
+    id: 'spotlighted',
+    label: 'Spotlighted',
+    minPoints: 1400,
+    frameLabel: 'Spotlight Frame',
+    accent: '#F59E0B',
+  },
+  {
+    id: 'creator_on_fire',
+    label: 'Creator on Fire',
+    minPoints: 3200,
+    frameLabel: 'Inferno Frame',
+    accent: '#EF4444',
+  },
+  {
+    id: 'ocean_star',
+    label: 'Ocean Star',
+    minPoints: 6500,
+    frameLabel: 'Ocean Star Crown',
+    accent: '#A855F7',
+  },
+];
+
 const getMinuteFameTierForScore = (score: number): MinuteFameTier => {
   const sorted = [...MINUTE_FAME_TIERS].sort((a, b) => b.minScore - a.minScore);
   return sorted.find(tier => score >= tier.minScore) || MINUTE_FAME_TIERS[0];
+};
+
+const getMinuteFameLevelForPoints = (points: number): MinuteFameCreatorLevel => {
+  const sorted = [...MINUTE_FAME_LEVELS].sort((a, b) => b.minPoints - a.minPoints);
+  return sorted.find(level => points >= level.minPoints) || MINUTE_FAME_LEVELS[0];
+};
+
+const getNextMinuteFameLevel = (points: number): MinuteFameCreatorLevel | null =>
+  MINUTE_FAME_LEVELS.find(level => level.minPoints > points) || null;
+
+const getMinuteFameStatusForScore = (score: number): string => {
+  if (score >= 1400) return "Editor's Pick";
+  if (score >= 700) return 'Crowd Favorite';
+  if (score >= 360) return 'Trending';
+  if (score >= 180) return 'Breakout Potential';
+  if (score >= 80) return 'Almost There';
+  return 'Under Review';
+};
+
+const getMinuteFameDayKey = (date: Date = new Date()) =>
+  date.toISOString().slice(0, 10);
+
+const getMinuteFameWeekKey = (date: Date = new Date()) => {
+  const copy = new Date(date);
+  const day = copy.getUTCDay();
+  const diff = (day + 6) % 7;
+  copy.setUTCDate(copy.getUTCDate() - diff);
+  copy.setUTCHours(0, 0, 0, 0);
+  return copy.toISOString().slice(0, 10);
+};
+
+const getMinuteFameChallengeForWeek = (
+  date: Date = new Date(),
+): MinuteFameChallenge => {
+  const categories: MinuteFameChallenge['category'][] = [
+    'Talent',
+    'Funny',
+    'Hustle',
+    'Real Life',
+    'Sports',
+  ];
+  const weekKey = getMinuteFameWeekKey(date);
+  const seed = weekKey
+    .split('')
+    .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
+  const category = categories[seed % categories.length];
+  const targetScore = 700 + (seed % 4) * 150;
+  return {
+    id: `weekly_${weekKey}`,
+    title: `${category} Week`,
+    description: `Stack spotlight points in ${category} and prove you belong in the creator lane this week.`,
+    category,
+    targetScore,
+    reward: 'Weekly challenge badge + featured creator frame time',
+  };
+};
+
+const getMinuteFameDisplayName = (language: ResolvedAppLanguage): string =>
+  language === 'sn' ? 'IMBOBVIRA' : '1 Minute Fame';
+
+const MinuteFameWordmark: React.FC<{
+  language: ResolvedAppLanguage;
+  variant?: 'topbar' | 'hero';
+  color?: string;
+}> = ({ language, variant = 'hero', color = '#FFFFFF' }) => {
+  if (language !== 'en') {
+    return (
+      <Text
+        style={{
+          color: '#FFFFFF',
+          fontSize: variant === 'topbar' ? 14 : 26,
+          fontWeight: '900',
+          letterSpacing: variant === 'topbar' ? 0.8 : 1.1,
+          textAlign: 'center',
+          textShadowColor: '#8D0000',
+          textShadowOffset: { width: 1, height: 1 },
+          textShadowRadius: 1.2,
+        }}
+      >
+        {getMinuteFameDisplayName(language)}
+      </Text>
+    );
+  }
+
+  const oneSize = variant === 'topbar' ? 26 : 56;
+  const fameSize = variant === 'topbar' ? 14 : 28;
+  const minSize = variant === 'topbar' ? 10 : 14;
+  const minLineHeight = variant === 'topbar' ? 10 : 14;
+  const minOffsetTop = variant === 'topbar' ? -4 : -8;
+  const gap = variant === 'topbar' ? 2 : 8;
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+      <Text
+        style={{
+          color,
+          fontSize: oneSize,
+          lineHeight: oneSize,
+          fontWeight: '900',
+          textAlignVertical: 'center',
+        }}
+      >
+        1
+      </Text>
+      <View
+        style={{
+          marginLeft: gap,
+          marginRight: gap,
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          height: variant === 'topbar' ? 26 : 56,
+          transform: [{ translateY: minOffsetTop }],
+        }}
+      >
+        {['N', 'I', 'M'].map(letter => (
+          <Text
+            key={`${variant}-${letter}`}
+            style={{
+              color: '#8D0000',
+              fontSize: minSize,
+              lineHeight: minLineHeight,
+              fontWeight: '900',
+              textAlign: 'center',
+              transform: [{ rotate: '-90deg' }],
+            }}
+          >
+            {letter}
+          </Text>
+        ))}
+      </View>
+      <Text
+        style={{
+          color,
+          fontSize: fameSize,
+          lineHeight: fameSize,
+          fontWeight: '900',
+          letterSpacing: variant === 'topbar' ? 0.7 : 1.1,
+          textAlignVertical: 'center',
+        }}
+      >
+        FAME
+      </Text>
+    </View>
+  );
+};
+
+const getTimeUntilNextUtcDayLabel = () => {
+  const now = new Date();
+  const next = new Date(now);
+  next.setUTCHours(24, 0, 0, 0);
+  const diff = Math.max(0, next.getTime() - now.getTime());
+  const hours = Math.floor(diff / 3600000);
+  const minutes = Math.floor((diff % 3600000) / 60000);
+  return `${String(hours).padStart(2, '0')}h ${String(minutes).padStart(2, '0')}m`;
 };
 
 const getMinuteFameEncouragement = (
@@ -1102,7 +1347,52 @@ type TranslationKey =
   | 'feed.shareBody'
   | 'feed.defaultSubject'
   | 'feed.reportQueued'
-  | 'feed.comingSoon';
+  | 'feed.comingSoon'
+  | 'feed.joinTide'
+  | 'feed.leaveTide'
+  | 'feed.reach'
+  | 'feed.hereNow'
+  | 'feed.awaySince'
+  | 'feed.awayUnknown'
+  | 'feed.justNow'
+  | 'feed.replyAction'
+  | 'feed.hugAction'
+  | 'feed.viewLessEchoes'
+  | 'feed.viewAllEchoes'
+  | 'feed.loadMoreEchoes'
+  | 'feed.openChatFailedTitle'
+  | 'feed.openChatFailedBody'
+  | 'feed.removeHug'
+  | 'feed.hugThisPost'
+  | 'feed.hugged'
+  | 'feed.hug'
+  | 'feed.retryHugSync'
+  | 'feed.retryHug'
+  | 'feed.echoThisPost'
+  | 'feed.echoed'
+  | 'feed.echo'
+  | 'feed.sendGem'
+  | 'feed.gems'
+  | 'feed.anchorThisPost'
+  | 'feed.anchor'
+  | 'feed.castThisPost'
+  | 'feed.cast'
+  | 'feed.loadingHuggers'
+  | 'feed.noHuggersYet'
+  | 'feed.recently'
+  | 'feed.loadHuggersFailedTitle'
+  | 'feed.loadHuggersFailedBody'
+  | 'feed.loadingMoreWaves'
+  | 'feed.endOfOcean'
+  | 'top.dropWave'
+  | 'top.minuteFame'
+  | 'top.alerts'
+  | 'top.hunt'
+  | 'top.myAura'
+  | 'top.commandCentre'
+  | 'creator.postsTitle'
+  | 'creator.noPosts'
+  | 'creator.tapToOpen';
 
 type TranslationDictionary = Record<TranslationKey, string>;
 
@@ -1776,6 +2066,51 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.defaultSubject': 'this MoMo',
     'feed.reportQueued': 'Going to moderation.',
     'feed.comingSoon': 'Coming soon!',
+    'feed.joinTide': 'Join Tide',
+    'feed.leaveTide': 'Leave Tide',
+    'feed.reach': 'Reach',
+    'feed.hereNow': 'Here Now!',
+    'feed.awaySince': 'Away Since: {{time}}',
+    'feed.awayUnknown': 'Away Since: ...',
+    'feed.justNow': 'just now',
+    'feed.replyAction': 'Reply',
+    'feed.hugAction': 'Hug',
+    'feed.viewLessEchoes': 'View less',
+    'feed.viewAllEchoes': 'View all {{count}} echoes',
+    'feed.loadMoreEchoes': 'Load {{count}} more echoes',
+    'feed.openChatFailedTitle': 'Error',
+    'feed.openChatFailedBody': 'Could not open chat',
+    'feed.removeHug': 'Remove hug',
+    'feed.hugThisPost': 'Hug this post',
+    'feed.hugged': 'Hugged',
+    'feed.hug': 'Hug',
+    'feed.retryHugSync': 'Retry hug sync',
+    'feed.retryHug': 'Retry Hug',
+    'feed.echoThisPost': 'Echo this post',
+    'feed.echoed': 'Echoed',
+    'feed.echo': 'Echo',
+    'feed.sendGem': 'Send gem',
+    'feed.gems': 'Gems',
+    'feed.anchorThisPost': 'Anchor this post',
+    'feed.anchor': 'Anchor',
+    'feed.castThisPost': 'Cast this post',
+    'feed.cast': 'Cast',
+    'feed.loadingHuggers': 'Loading huggers...',
+    'feed.noHuggersYet': 'No one has hugged this post yet',
+    'feed.recently': 'Recently',
+    'feed.loadHuggersFailedTitle': 'Error',
+    'feed.loadHuggersFailedBody': 'Failed to load huggers list',
+    'feed.loadingMoreWaves': 'Loading more waves...',
+    'feed.endOfOcean': "You've reached the end of the ocean",
+    'top.dropWave': 'DROP A WAVE',
+    'top.minuteFame': '1 MINUTE FAME',
+    'top.alerts': 'ALERTS',
+    'top.hunt': 'HUNT',
+    'top.myAura': 'MY AURA',
+    'top.commandCentre': 'COMMAND CENTRE',
+    'creator.postsTitle': 'Posts',
+    'creator.noPosts': 'No posts from this creator yet.',
+    'creator.tapToOpen': 'Tap a post to open it in the main feed.',
   },
   sn: {
     'language.system': 'Tevera mutauro wesystem',
@@ -1985,7 +2320,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'thread.removeAttachment': 'Bvisa chakabatanidzwa',
     'profile.usernamePlaceholder': 'Username (semuenzaniso janedoe)',
     'profile.bioPlaceholder': 'Nyora bio pfupi...',
-    'profile.minuteFameTitle': 'Zita re1 Minute Fame: {{title}}',
+    'profile.minuteFameTitle': 'Zita reIMBOBVIRA: {{title}}',
     'profile.inviteEarn': 'Koka Uwane',
     'profile.reachNextReward': 'Svika kune {{count}} vakakodzera uwane {{reward}}.',
     'profile.topRewardUnlocked': 'Wavhura chikamu chepamusoro chemubayiro chiripo parizvino.',
@@ -2076,6 +2411,51 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.defaultSubject': 'MoMo iyi',
     'feed.reportQueued': 'Yatumirwa kumoderation.',
     'feed.comingSoon': 'Zvichauya munguva pfupi!',
+    'feed.joinTide': 'Pinda muTide',
+    'feed.leaveTide': 'Buda muTide',
+    'feed.reach': 'Kusvika',
+    'feed.hereNow': 'Ari pano zvino!',
+    'feed.awaySince': 'Abva kubva: {{time}}',
+    'feed.awayUnknown': 'Abva kubva: ...',
+    'feed.justNow': 'izvozvi',
+    'feed.replyAction': 'Pindura',
+    'feed.hugAction': 'Mahug',
+    'feed.viewLessEchoes': 'Ratidza zvishoma',
+    'feed.viewAllEchoes': 'Ona maecho ese {{count}}',
+    'feed.loadMoreEchoes': 'Isa mamwe maecho {{count}}',
+    'feed.openChatFailedTitle': 'Kanganiso',
+    'feed.openChatFailedBody': 'Hatina kukwanisa kuvhura chat',
+    'feed.removeHug': 'Bvisa mahug',
+    'feed.hugThisPost': 'Mahug post iyi',
+    'feed.hugged': 'Wahaga',
+    'feed.hug': 'Mahug',
+    'feed.retryHugSync': 'Edza kugadzirisa mahug zvakare',
+    'feed.retryHug': 'Edza Mahug zvakare',
+    'feed.echoThisPost': 'Pindira post iyi',
+    'feed.echoed': 'Wapindira',
+    'feed.echo': 'Pindira',
+    'feed.sendGem': 'Tumira gem',
+    'feed.gems': 'Gems',
+    'feed.anchorThisPost': 'Anchor post iyi',
+    'feed.anchor': 'Anchor',
+    'feed.castThisPost': 'Cast post iyi',
+    'feed.cast': 'Cast',
+    'feed.loadingHuggers': 'Kurodha varikuhug...',
+    'feed.noHuggersYet': 'Hapana ahug post iyi parizvino',
+    'feed.recently': 'Nguva pfupi yapfuura',
+    'feed.loadHuggersFailedTitle': 'Kanganiso',
+    'feed.loadHuggersFailedBody': 'Zvaramba kurodha runyorwa rwevarikuhug',
+    'feed.loadingMoreWaves': 'Kurodha mamwe mawaves...',
+    'feed.endOfOcean': 'Wasvika kumagumo egungwa',
+    'top.dropWave': 'KANDA WAVE',
+    'top.minuteFame': 'IMBOBVIRA',
+    'top.alerts': 'MAALERT',
+    'top.hunt': 'TSVAGA',
+    'top.myAura': 'ININI',
+    'top.commandCentre': 'COMMAND CENTRE',
+    'creator.postsTitle': 'Mapost',
+    'creator.noPosts': 'Hakusati kwava nemapost kubva kumugadziri uyu.',
+    'creator.tapToOpen': 'Tinya post kuti uvhure mufeed guru.',
   },
   nd: {
     'language.system': 'Landela ulimi lwefoni',
@@ -2376,6 +2756,51 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.defaultSubject': 'iMoMo le',
     'feed.reportQueued': 'Kusiya ku moderation.',
     'feed.comingSoon': 'Kuyeza maduzane!',
+    'feed.joinTide': 'Joyina iTide',
+    'feed.leaveTide': 'Phuma kuTide',
+    'feed.reach': 'Ukufinyelela',
+    'feed.hereNow': 'Ulapha khathesi!',
+    'feed.awaySince': 'Uhambe kusukela: {{time}}',
+    'feed.awayUnknown': 'Uhambe kusukela: ...',
+    'feed.justNow': 'khathesi nje',
+    'feed.replyAction': 'Phendula',
+    'feed.hugAction': 'Hug',
+    'feed.viewLessEchoes': 'Bona okuncane',
+    'feed.viewAllEchoes': 'Bona wonke ama-echo {{count}}',
+    'feed.loadMoreEchoes': 'Layisha amanye ama-echo {{count}}',
+    'feed.openChatFailedTitle': 'Iphutha',
+    'feed.openChatFailedBody': 'Kwehlulekile ukuvula ingxoxo',
+    'feed.removeHug': 'Susa i-hug',
+    'feed.hugThisPost': 'Hug le post',
+    'feed.hugged': 'Seku-hugwe',
+    'feed.hug': 'Hug',
+    'feed.retryHugSync': 'Phinda ukuvumelanisa i-hug',
+    'feed.retryHug': 'Phinda iHug',
+    'feed.echoThisPost': 'Echo le post',
+    'feed.echoed': 'Seku-echoiwe',
+    'feed.echo': 'Echo',
+    'feed.sendGem': 'Thumela igem',
+    'feed.gems': 'Gems',
+    'feed.anchorThisPost': 'Anchor le post',
+    'feed.anchor': 'Anchor',
+    'feed.castThisPost': 'Cast le post',
+    'feed.cast': 'Cast',
+    'feed.loadingHuggers': 'Kulayishwa abahuggayo...',
+    'feed.noHuggersYet': 'Kakho osehug le post okwamanje',
+    'feed.recently': 'Muva nje',
+    'feed.loadHuggersFailedTitle': 'Iphutha',
+    'feed.loadHuggersFailedBody': 'Kwehlulekile ukulayisha uhlu lwabahuggayo',
+    'feed.loadingMoreWaves': 'Kulayishwa amanye ama-wave...',
+    'feed.endOfOcean': 'Usufike ekucineni kolwandle',
+    'top.dropWave': 'PHOSA I-WAVE',
+    'top.minuteFame': 'UMZUZWANA 1 WODUMO',
+    'top.alerts': 'AMA-ALERT',
+    'top.hunt': 'DINGA',
+    'top.myAura': 'AURA YAMI',
+    'top.commandCentre': 'COMMAND CENTRE',
+    'creator.postsTitle': 'Amapost',
+    'creator.noPosts': 'Akukabi lamapost avela kulo mdali.',
+    'creator.tapToOpen': 'Chofoza ipost ukuze uyivule kufeed enkulu.',
   },
   sw: {
     'language.system': 'Fuata lugha ya simu',
@@ -2677,6 +3102,51 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.defaultSubject': 'MoMo hii',
     'feed.reportQueued': 'Inaenda kwa moderation.',
     'feed.comingSoon': 'Inakuja karibuni!',
+    'feed.joinTide': 'Jiunge na Tide',
+    'feed.leaveTide': 'Ondoka Tide',
+    'feed.reach': 'Ufikiaji',
+    'feed.hereNow': 'Yupo hapa sasa!',
+    'feed.awaySince': 'Hayupo tangu: {{time}}',
+    'feed.awayUnknown': 'Hayupo tangu: ...',
+    'feed.justNow': 'sasa hivi',
+    'feed.replyAction': 'Jibu',
+    'feed.hugAction': 'Hug',
+    'feed.viewLessEchoes': 'Tazama chache',
+    'feed.viewAllEchoes': 'Tazama echo zote {{count}}',
+    'feed.loadMoreEchoes': 'Pakia echo {{count}} zaidi',
+    'feed.openChatFailedTitle': 'Hitilafu',
+    'feed.openChatFailedBody': 'Haikuwezekana kufungua chat',
+    'feed.removeHug': 'Ondoa hug',
+    'feed.hugThisPost': 'Hug post hii',
+    'feed.hugged': 'Umehug',
+    'feed.hug': 'Hug',
+    'feed.retryHugSync': 'Jaribu tena kusawazisha hug',
+    'feed.retryHug': 'Jaribu Hug tena',
+    'feed.echoThisPost': 'Echo post hii',
+    'feed.echoed': 'Umeecho',
+    'feed.echo': 'Echo',
+    'feed.sendGem': 'Tuma gem',
+    'feed.gems': 'Gems',
+    'feed.anchorThisPost': 'Anchor post hii',
+    'feed.anchor': 'Anchor',
+    'feed.castThisPost': 'Cast post hii',
+    'feed.cast': 'Cast',
+    'feed.loadingHuggers': 'Inapakia wanaohug...',
+    'feed.noHuggersYet': 'Bado hakuna aliyohug post hii',
+    'feed.recently': 'Hivi karibuni',
+    'feed.loadHuggersFailedTitle': 'Hitilafu',
+    'feed.loadHuggersFailedBody': 'Imeshindikana kupakia orodha ya wanaohug',
+    'feed.loadingMoreWaves': 'Inapakia wave zaidi...',
+    'feed.endOfOcean': 'Umefika mwisho wa bahari',
+    'top.dropWave': 'DONDOSHA WAVE',
+    'top.minuteFame': 'DAKIKA 1 YA UMAARUFU',
+    'top.alerts': 'ARIFA',
+    'top.hunt': 'TAFUTA',
+    'top.myAura': 'AURA YANGU',
+    'top.commandCentre': 'COMMAND CENTRE',
+    'creator.postsTitle': 'Posti',
+    'creator.noPosts': 'Bado hakuna posti kutoka kwa mtayarishaji huyu.',
+    'creator.tapToOpen': 'Gusa post kuifungua kwenye feed kuu.',
   },
 };
 
@@ -3334,7 +3804,7 @@ const styles = StyleSheet.create({
     opacity: 0,
   },
   topLabel: {
-    color: '#07263A',
+    color: '#8D0000',
     fontWeight: '800',
     fontSize: 11,
     letterSpacing: 0.3,
@@ -6685,6 +7155,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
+  const openCreatorProfile = useCallback(
+    (targetUid?: string | null, fallbackName?: string | null) => {
+      if (!targetUid) return;
+      if (myUid && targetUid === myUid) {
+        setShowProfile(true);
+        return;
+      }
+      setCreatorProfileUid(targetUid);
+      setCreatorProfileName(String(fallbackName || ''));
+      setShowCreatorProfile(true);
+      void ensureUserData(targetUid);
+    },
+    [ensureUserData, myUid],
+  );
+
+  useEffect(() => {
+    if (!showCreatorProfile || !creatorProfileUid) return;
+    void ensureUserData(creatorProfileUid);
+  }, [creatorProfileUid, ensureUserData, showCreatorProfile]);
+
   // Load userData from AsyncStorage on app start
   useEffect(() => {
     const loadUserData = async () => {
@@ -7074,6 +7564,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     
   const [showProfile, setShowProfile] = useState<boolean>(false);
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
+  const [showCreatorProfile, setShowCreatorProfile] = useState<boolean>(false);
+  const [creatorProfileUid, setCreatorProfileUid] = useState<string | null>(null);
+  const [creatorProfileName, setCreatorProfileName] = useState<string>('');
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
   const [showTextComposer, setShowTextComposer] = useState<boolean>(false);
   const [textComposerText, setTextComposerText] = useState<string>('');
@@ -7119,6 +7612,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     createdAt?: any;
   }>>([]);
   const [showBridge, setShowBridge] = useState<boolean>(false);
+  const [showLanguagePicker, setShowLanguagePicker] = useState<boolean>(false);
   const [showMinuteFame, setShowMinuteFame] = useState<boolean>(false);
   const [minuteFamePhase, setMinuteFamePhase] = useState<'home' | 'queue' | 'countdown' | 'live' | 'results'>('home');
   const [minuteFameQueueSpot, setMinuteFameQueueSpot] = useState<number>(4);
@@ -7140,6 +7634,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   } | null>(null);
   const [activeMinuteFameSession, setActiveMinuteFameSession] = useState<MinuteFameSession | null>(null);
   const [activeMinuteFameWave, setActiveMinuteFameWave] = useState<Vibe | null>(null);
+  const [minuteFameHistory, setMinuteFameHistory] = useState<MinuteFameHistoryEntry[]>([]);
+  const [minuteFameSpotlights, setMinuteFameSpotlights] = useState<MinuteFameSpotlightEntry[]>([]);
+  const [minuteFameCareerPoints, setMinuteFameCareerPoints] = useState<number>(0);
+  const [minuteFameFeatureCount, setMinuteFameFeatureCount] = useState<number>(0);
+  const [minuteFameStatusLabel, setMinuteFameStatusLabel] = useState<string>('Under Review');
+  const [minuteFameLevelLabel, setMinuteFameLevelLabel] = useState<string>(MINUTE_FAME_LEVELS[0].label);
+  const [minuteFameFrameLabel, setMinuteFameFrameLabel] = useState<string>(MINUTE_FAME_LEVELS[0].frameLabel);
+  const [minuteFameSupportMap, setMinuteFameSupportMap] = useState<Record<string, boolean>>({});
+  const [minuteFameNominationMap, setMinuteFameNominationMap] = useState<Record<string, boolean>>({});
+  const [minuteFameLoading, setMinuteFameLoading] = useState<boolean>(false);
   const [commandCentreSection, setCommandCentreSection] =
     useState<CommandCentreSection>('home');
   const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
@@ -7152,6 +7656,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isOffline, setIsOffline] = useState<boolean>(true);
   const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
   const minuteFameSessionStartedRef = useRef(false);
+  const minuteFameChallenge = useMemo(
+    () => getMinuteFameChallengeForWeek(new Date()),
+    [showMinuteFame],
+  );
+  const minuteFameCurrentLevel = useMemo(
+    () => getMinuteFameLevelForPoints(minuteFameCareerPoints),
+    [minuteFameCareerPoints],
+  );
+  const minuteFameNextLevel = useMemo(
+    () => getNextMinuteFameLevel(minuteFameCareerPoints),
+    [minuteFameCareerPoints],
+  );
+  const minuteFameChallengeProgress = useMemo(
+    () =>
+      minuteFameHistory
+        .filter(entry =>
+          String(entry.category || '').toLowerCase() ===
+            String(minuteFameChallenge.category || '').toLowerCase() &&
+          entry.createdAtMs >= new Date(`${getMinuteFameWeekKey(new Date())}T00:00:00.000Z`).getTime(),
+        )
+        .reduce((sum, entry) => sum + Number(entry.score || 0), 0),
+    [minuteFameChallenge.category, minuteFameHistory],
+  );
 
   useEffect(() => {
     if (!showBridge) {
@@ -7315,6 +7842,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const views = Math.max(0, Math.max(currentViews - Number(base?.baseViews || 0), hugs + echoes));
           const score = views + hugs * 8 + echoes * 12;
           const tier = getMinuteFameTierForScore(score);
+          const statusLabel = getMinuteFameStatusForScore(score);
           setMinuteFameResults({
             views,
             hugs,
@@ -7325,9 +7853,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           });
           if (myUid) {
             const userRef = firestore().doc(`users/${myUid}`);
+            const dayKey = getMinuteFameDayKey(new Date());
+            let nextCareerPoints = score;
+            let nextFeatureCount = 1;
+            let nextLevel = getMinuteFameLevelForPoints(score);
             await firestore().runTransaction(async tx => {
               const userSnap = await tx.get(userRef);
               const previousBest = Number(userSnap.data()?.minuteFameBestScore || 0);
+              const previousCareerPoints = Number(userSnap.data()?.minuteFameCareerPoints || 0);
+              const previousFeatureCount = Number(userSnap.data()?.minuteFameFeatureCount || 0);
+              nextCareerPoints = previousCareerPoints + score;
+              nextFeatureCount = previousFeatureCount + 1;
+              nextLevel = getMinuteFameLevelForPoints(nextCareerPoints);
               tx.set(
                 userRef,
                 {
@@ -7341,6 +7878,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   minuteFameLastCategory: minuteFameCategory,
                   minuteFameLastMode: minuteFameMode,
                   minuteFameLastEarnedAt: firestore.FieldValue.serverTimestamp(),
+                  minuteFameCareerPoints: nextCareerPoints,
+                  minuteFameFeatureCount: nextFeatureCount,
+                  minuteFameLevelId: nextLevel.id,
+                  minuteFameLevelLabel: nextLevel.label,
+                  minuteFameFrameLabel: nextLevel.frameLabel,
+                  minuteFameStatusLabel: statusLabel,
+                  minuteFameRisingBadgeUntil: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+                  minuteFameLastSpotlightDay: dayKey,
                 },
                 { merge: true },
               );
@@ -7355,9 +7900,87 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               mode: minuteFameMode,
               titleId: tier.id,
               titleLabel: `${tier.icon} ${tier.label}`,
+              levelLabel: nextLevel.label,
+              statusLabel,
               createdAt: firestore.FieldValue.serverTimestamp(),
             }).catch(() => {});
+            const spotlightId = `${dayKey}_${myUid}_${selectedWaveId}`;
+            await firestore()
+              .collection('minute_fame_spotlights')
+              .doc(spotlightId)
+              .set(
+                {
+                  dayKey,
+                  ownerUid: myUid,
+                  ownerName: selectedWave?.authorName || profileName || 'User',
+                  waveId: selectedWaveId,
+                  category: minuteFameCategory,
+                  mode: minuteFameMode,
+                  score,
+                  views,
+                  hugs,
+                  echoes,
+                  titleId: tier.id,
+                  titleLabel: `${tier.icon} ${tier.label}`,
+                  levelLabel: nextLevel.label,
+                  statusLabel,
+                  captionText: selectedWave?.captionText || '',
+                  supportCount: 0,
+                  nominationCount: 0,
+                  createdAt: firestore.FieldValue.serverTimestamp(),
+                  updatedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              )
+              .catch(() => {});
             setProfileMinuteFameTitle(`${tier.icon} ${tier.label}`);
+            setMinuteFameCareerPoints(nextCareerPoints);
+            setMinuteFameFeatureCount(nextFeatureCount);
+            setMinuteFameStatusLabel(statusLabel);
+            setMinuteFameLevelLabel(nextLevel.label);
+            setMinuteFameFrameLabel(nextLevel.frameLabel);
+            setMinuteFameHistory(prev => [
+              {
+                id: `${Date.now()}`,
+                waveId: selectedWaveId,
+                score,
+                views,
+                hugs,
+                echoes,
+                category: minuteFameCategory,
+                mode: minuteFameMode,
+                titleLabel: `${tier.icon} ${tier.label}`,
+                levelLabel: nextLevel.label,
+                statusLabel,
+                createdAtMs: Date.now(),
+              },
+              ...prev,
+            ].slice(0, 8));
+            setMinuteFameSpotlights(prev => [
+              {
+                id: spotlightId,
+                dayKey,
+                ownerUid: myUid,
+                ownerName: selectedWave?.authorName || profileName || 'User',
+                waveId: selectedWaveId,
+                category: minuteFameCategory,
+                mode: minuteFameMode,
+                score,
+                views,
+                hugs,
+                echoes,
+                titleLabel: `${tier.icon} ${tier.label}`,
+                levelLabel: nextLevel.label,
+                statusLabel,
+                captionText: selectedWave?.captionText || '',
+                supportCount: 0,
+                nominationCount: 0,
+                createdAtMs: Date.now(),
+              },
+              ...prev.filter(item => item.id !== spotlightId),
+            ]
+              .sort((a, b) => b.score - a.score)
+              .slice(0, 8));
             setUserData(prev => ({
               ...prev,
               [myUid]: {
@@ -7454,6 +8077,279 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       cancelled = true;
     };
   }, [buildWaveFromDoc, myUid, showMinuteFame, vibesFeed]);
+
+  useEffect(() => {
+    if (!showMinuteFame) return;
+    let cancelled = false;
+    (async () => {
+      setMinuteFameLoading(true);
+      try {
+        const todayKey = getMinuteFameDayKey(new Date());
+        const spotlightQuery = firestore()
+          .collection('minute_fame_spotlights')
+          .where('dayKey', '==', todayKey)
+          .limit(12)
+          .get()
+          .catch(() => null);
+
+        const userDocQuery = myUid
+          ? firestore().collection('users').doc(myUid).get().catch(() => null)
+          : Promise.resolve(null);
+        const historyQuery = myUid
+          ? firestore()
+              .collection(`users/${myUid}/minute_fame_history`)
+              .orderBy('createdAt', 'desc')
+              .limit(8)
+              .get()
+              .catch(() => null)
+          : Promise.resolve(null);
+        const supportQuery = myUid
+          ? firestore()
+              .collection(`users/${myUid}/minute_fame_support`)
+              .where('dayKey', '==', todayKey)
+              .get()
+              .catch(() => null)
+          : Promise.resolve(null);
+        const nominationQuery = myUid
+          ? firestore()
+              .collection(`users/${myUid}/minute_fame_nominations`)
+              .where('dayKey', '==', todayKey)
+              .get()
+              .catch(() => null)
+          : Promise.resolve(null);
+
+        const [spotlightSnap, userSnap, historySnap, supportSnap, nominationSnap] =
+          await Promise.all([
+            spotlightQuery,
+            userDocQuery,
+            historyQuery,
+            supportQuery,
+            nominationQuery,
+          ]);
+
+        if (cancelled) return;
+
+        const spotlightRows: MinuteFameSpotlightEntry[] =
+          (spotlightSnap?.docs?.map(doc => {
+            const data = doc.data() || {};
+            const createdAtMs = toMillis(data?.createdAt) || Date.now();
+            return {
+              id: doc.id,
+              dayKey: String(data?.dayKey || todayKey),
+              ownerUid: String(data?.ownerUid || ''),
+              ownerName: String(data?.ownerName || 'User'),
+              waveId: String(data?.waveId || ''),
+              category: String(data?.category || 'Talent'),
+              mode: String(data?.mode || 'queue'),
+              score: Number(data?.score || 0),
+              views: Number(data?.views || 0),
+              hugs: Number(data?.hugs || 0),
+              echoes: Number(data?.echoes || 0),
+              titleLabel: String(data?.titleLabel || 'Rising Star'),
+              levelLabel: data?.levelLabel ? String(data.levelLabel) : null,
+              statusLabel: data?.statusLabel ? String(data.statusLabel) : null,
+              captionText: data?.captionText ? String(data.captionText) : null,
+              supportCount: Math.max(0, Number(data?.supportCount || 0)),
+              nominationCount: Math.max(0, Number(data?.nominationCount || 0)),
+              createdAtMs,
+            };
+          }) || [])
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 8);
+
+        const historyRows: MinuteFameHistoryEntry[] =
+          historySnap?.docs?.map(doc => {
+            const data = doc.data() || {};
+            return {
+              id: doc.id,
+              waveId: String(data?.waveId || ''),
+              score: Number(data?.score || 0),
+              views: Number(data?.views || 0),
+              hugs: Number(data?.hugs || 0),
+              echoes: Number(data?.echoes || 0),
+              category: String(data?.category || 'Talent'),
+              mode: String(data?.mode || 'queue'),
+              titleLabel: String(data?.titleLabel || 'Rising Star'),
+              levelLabel: data?.levelLabel ? String(data.levelLabel) : null,
+              statusLabel: data?.statusLabel ? String(data.statusLabel) : null,
+              createdAtMs: toMillis(data?.createdAt) || Date.now(),
+            };
+          }) || [];
+
+        const supportMap: Record<string, boolean> = {};
+        supportSnap?.docs?.forEach(doc => {
+          const data = doc.data() || {};
+          const spotlightId = String(data?.spotlightId || '');
+          if (spotlightId) supportMap[spotlightId] = true;
+        });
+        const nominationMap: Record<string, boolean> = {};
+        nominationSnap?.docs?.forEach(doc => {
+          const data = doc.data() || {};
+          const spotlightId = String(data?.spotlightId || '');
+          if (spotlightId) nominationMap[spotlightId] = true;
+        });
+
+        const userDataDoc = userSnap?.data?.() || {};
+        const storedCareerPoints = Math.max(0, Number(userDataDoc?.minuteFameCareerPoints || 0));
+        const storedFeatureCount = Math.max(0, Number(userDataDoc?.minuteFameFeatureCount || historyRows.length));
+        const derivedLevel = getMinuteFameLevelForPoints(storedCareerPoints);
+
+        setMinuteFameSpotlights(spotlightRows);
+        setMinuteFameHistory(historyRows);
+        setMinuteFameCareerPoints(storedCareerPoints);
+        setMinuteFameFeatureCount(storedFeatureCount);
+        setMinuteFameStatusLabel(String(userDataDoc?.minuteFameStatusLabel || getMinuteFameStatusForScore(Number(userDataDoc?.minuteFameLastScore || 0))));
+        setMinuteFameLevelLabel(String(userDataDoc?.minuteFameLevelLabel || derivedLevel.label));
+        setMinuteFameFrameLabel(String(userDataDoc?.minuteFameFrameLabel || derivedLevel.frameLabel));
+        setMinuteFameSupportMap(supportMap);
+        setMinuteFameNominationMap(nominationMap);
+      } catch (error) {
+        console.warn('Minute fame load failed:', error);
+      } finally {
+        if (!cancelled) setMinuteFameLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [myUid, showMinuteFame]);
+
+  const shareMinuteFameCard = useCallback(
+    async (entry?: Partial<MinuteFameSpotlightEntry> | null) => {
+      const title = entry?.titleLabel || profileMinuteFameTitle || 'Rising Creator';
+      const creatorName = entry?.ownerName || profileName || 'A creator on MoMo';
+      const score = Number(entry?.score || minuteFameResults?.score || 0);
+      const category = String(entry?.category || minuteFameCategory || 'Talent');
+      const body = `${creatorName} is building momentum on ${getMinuteFameDisplayName(resolvedLanguage)}.\n\nTitle: ${title}\nCategory: ${category}\nScore: ${score}\n\nRecognized on MoMo for creator growth, reach, and real audience response.`;
+      try {
+        await Share.share({
+          title: `${getMinuteFameDisplayName(resolvedLanguage)} Card`,
+          message: body,
+        });
+      } catch {}
+    },
+    [minuteFameCategory, minuteFameResults?.score, profileMinuteFameTitle, profileName, resolvedLanguage],
+  );
+
+  const supportMinuteFameSpotlight = useCallback(
+    async (entry: MinuteFameSpotlightEntry) => {
+      if (!myUid) {
+        Alert.alert('Sign in required', 'Please sign in to support creators.');
+        return;
+      }
+      if (minuteFameSupportMap[entry.id]) {
+        notifySuccess('Support already added for this creator today.');
+        return;
+      }
+      const docId = `${entry.dayKey}_${entry.ownerUid}_${entry.waveId}`;
+      try {
+        const supportRef = firestore().doc(`users/${myUid}/minute_fame_support/${docId}`);
+        const supportSnap = await supportRef.get();
+        if (supportSnap.exists) {
+          setMinuteFameSupportMap(prev => ({ ...prev, [entry.id]: true }));
+          return;
+        }
+        const batch = firestore().batch();
+        batch.set(supportRef, {
+          spotlightId: entry.id,
+          ownerUid: entry.ownerUid,
+          waveId: entry.waveId,
+          dayKey: entry.dayKey,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
+        batch.set(
+          firestore().collection('minute_fame_support').doc(`${docId}_${myUid}`),
+          {
+            spotlightId: entry.id,
+            ownerUid: entry.ownerUid,
+            waveId: entry.waveId,
+            voterUid: myUid,
+            dayKey: entry.dayKey,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        batch.set(
+          firestore().collection('minute_fame_spotlights').doc(entry.id),
+          { supportCount: firestore.FieldValue.increment(1) },
+          { merge: true },
+        );
+        await batch.commit();
+        setMinuteFameSupportMap(prev => ({ ...prev, [entry.id]: true }));
+        setMinuteFameSpotlights(prev =>
+          prev.map(item =>
+            item.id === entry.id
+              ? { ...item, supportCount: Number(item.supportCount || 0) + 1 }
+              : item,
+          ),
+        );
+        notifySuccess(`You boosted ${entry.ownerName}'s spotlight.`);
+      } catch (error) {
+        notifyError('Could not add support right now.');
+      }
+    },
+    [minuteFameSupportMap, myUid, notifyError, notifySuccess],
+  );
+
+  const nominateMinuteFameSpotlight = useCallback(
+    async (entry: MinuteFameSpotlightEntry) => {
+      if (!myUid) {
+        Alert.alert('Sign in required', 'Please sign in to nominate creators.');
+        return;
+      }
+      if (minuteFameNominationMap[entry.id]) {
+        notifySuccess('Nomination already sent for this creator today.');
+        return;
+      }
+      const docId = `${entry.dayKey}_${entry.ownerUid}_${entry.waveId}`;
+      try {
+        const nominationRef = firestore().doc(`users/${myUid}/minute_fame_nominations/${docId}`);
+        const nominationSnap = await nominationRef.get();
+        if (nominationSnap.exists) {
+          setMinuteFameNominationMap(prev => ({ ...prev, [entry.id]: true }));
+          return;
+        }
+        const batch = firestore().batch();
+        batch.set(nominationRef, {
+          spotlightId: entry.id,
+          ownerUid: entry.ownerUid,
+          waveId: entry.waveId,
+          dayKey: entry.dayKey,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+        });
+        batch.set(
+          firestore().collection('minute_fame_nominations').doc(`${docId}_${myUid}`),
+          {
+            spotlightId: entry.id,
+            ownerUid: entry.ownerUid,
+            waveId: entry.waveId,
+            voterUid: myUid,
+            dayKey: entry.dayKey,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        batch.set(
+          firestore().collection('minute_fame_spotlights').doc(entry.id),
+          { nominationCount: firestore.FieldValue.increment(1) },
+          { merge: true },
+        );
+        await batch.commit();
+        setMinuteFameNominationMap(prev => ({ ...prev, [entry.id]: true }));
+        setMinuteFameSpotlights(prev =>
+          prev.map(item =>
+            item.id === entry.id
+              ? { ...item, nominationCount: Number(item.nominationCount || 0) + 1 }
+              : item,
+          ),
+        );
+        notifySuccess(`You nominated ${entry.ownerName} for more spotlight.`);
+      } catch (error) {
+        notifyError('Could not send nomination right now.');
+      }
+    },
+    [minuteFameNominationMap, myUid, notifyError, notifySuccess],
+  );
 
   useEffect(() => {
     const unsub = firestore()
@@ -10807,6 +11703,17 @@ type CommandCentreSection =
       ? displayFeed[currentIndex]
       : null;
 
+  const creatorProfilePosts = useMemo(() => {
+    if (!creatorProfileUid) return [] as Vibe[];
+    const seen = new Set<string>();
+    return displayFeed.filter(wave => {
+      if (!wave?.id || seen.has(wave.id)) return false;
+      if (wave.ownerUid !== creatorProfileUid) return false;
+      seen.add(wave.id);
+      return true;
+    });
+  }, [creatorProfileUid, displayFeed]);
+
   const buildWaveFromDoc = useCallback(
     async (docOrId: any): Promise<Vibe | null> => {
       try {
@@ -11270,6 +12177,27 @@ type CommandCentreSection =
     setMinuteFameResults(null);
     setShowMinuteFame(true);
   }, [showTopBar]);
+
+  const minuteFameDisplayName = getMinuteFameDisplayName(resolvedLanguage);
+  const minuteFameChallengePercent = Math.max(
+    0,
+    Math.min(
+      1,
+      minuteFameChallenge.targetScore > 0
+        ? minuteFameChallengeProgress / minuteFameChallenge.targetScore
+        : 0,
+    ),
+  );
+  const minuteFameNextLevelPercent = minuteFameNextLevel
+    ? Math.max(
+        0,
+        Math.min(
+          1,
+          (minuteFameCareerPoints - minuteFameCurrentLevel.minPoints) /
+            Math.max(1, minuteFameNextLevel.minPoints - minuteFameCurrentLevel.minPoints),
+        ),
+      )
+    : 1;
                     
   const handleVibeAlerts = useCallback(() => {
     showTopBar();
@@ -19164,6 +20092,7 @@ type CommandCentreSection =
                         currentIndex={currentIndex}
                         displayHandle={displayHandle}
                         formatDefiniteTime={formatDefiniteTime}
+                        translate={t}
                         openWaveOptions={openWaveOptions}
                         handleToggleVibe={handleToggleVibe}
                         setExpandedPosts={setExpandedPosts}
@@ -19190,6 +20119,7 @@ type CommandCentreSection =
                         videoStyleFor={videoStyleFor}
                         isVideoAsset={isVideoAsset}
                         onReplyToEcho={openReplyToPostEcho}
+                        onOpenCreatorProfile={openCreatorProfile}
                       />
                     );
                   } catch (error) {
@@ -19207,14 +20137,14 @@ type CommandCentreSection =
             {isLoadingMore && (
               <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f0f2f5' }}>
                 <ActivityIndicator size="large" color="#00C2FF" />
-                <Text style={{ marginTop: 10, color: '#666', fontSize: 14 }}>Loading more waves...</Text>
+                <Text style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{t('feed.loadingMoreWaves')}</Text>
               </View>
             )}
             
             {/* End of feed message */}
             {!isLoadingMore && !hasMoreItems && displayFeed.length > 0 && (
               <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f0f2f5' }}>
-                <Text style={{ color: '#666', fontSize: 14, fontStyle: 'italic' }}>You've reached the end of the ocean 🌊</Text>
+                <Text style={{ color: '#666', fontSize: 14, fontStyle: 'italic' }}>{t('feed.endOfOcean')} 🌊</Text>
               </View>
             )}
             </>
@@ -19247,7 +20177,7 @@ type CommandCentreSection =
                   style={styles.topItem}
                   onPress={handleDropWave}
                   accessibilityRole="button"
-                  accessibilityLabel="Drop a wave"
+                  accessibilityLabel={t('top.dropWave')}
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -19259,14 +20189,14 @@ type CommandCentreSection =
                     <View style={styles.topArtFuse} />
                     <View style={styles.topArtCap} />
                     <Text style={styles.dolphinIcon}>✨</Text>
-                    <Text style={styles.topLabel}>DROP A WAVE</Text>
+                    <Text style={styles.topLabel}>{t('top.dropWave')}</Text>
                   </View>
                 </Pressable>
                 <Pressable
                   style={styles.topItem}
                   onPress={handleMinuteFame}
                   accessibilityRole="button"
-                  accessibilityLabel="Open 1 Minute Fame"
+                  accessibilityLabel={t('top.minuteFame')}
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -19278,7 +20208,11 @@ type CommandCentreSection =
                     <View style={styles.topArtFuse} />
                     <View style={styles.topArtCap} />
                     <Text style={styles.dolphinIcon}>🔥</Text>
-                    <Text style={styles.topLabel}>1 MINUTE FAME</Text>
+                    <MinuteFameWordmark
+                      language={resolvedLanguage}
+                      variant="topbar"
+                      color="#FFFFFF"
+                    />
                   </View>
                 </Pressable>
                 {/* ALERTS - Placeholder */}
@@ -19286,7 +20220,7 @@ type CommandCentreSection =
                   style={styles.topItem}
                   onPress={handleVibeAlerts}
                   accessibilityRole="button"
-                  accessibilityLabel="Open alerts"
+                  accessibilityLabel={t('top.alerts')}
                   delayPressIn={0}
                   delayPressOut={0}
                   hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
@@ -19307,7 +20241,7 @@ type CommandCentreSection =
                         </View>
                       )}
                     </View>
-                    <Text style={styles.topLabel}>ALERTS</Text>
+                    <Text style={styles.topLabel}>{t('top.alerts')}</Text>
                   </View>
                 </Pressable>
                 {/* HUNT */}
@@ -19327,7 +20261,7 @@ type CommandCentreSection =
                     <View style={styles.topArtFuse} />
                     <View style={styles.topArtCap} />
                     <Text style={styles.dolphinIcon}>🔎</Text>
-                    <Text style={styles.topLabel}>HUNT</Text>
+                    <Text style={styles.topLabel}>{t('top.hunt')}</Text>
                   </View>
                 </Pressable>
                     
@@ -19348,7 +20282,7 @@ type CommandCentreSection =
                     <View style={styles.topArtFuse} />
                     <View style={styles.topArtCap} />
                     <Text style={styles.umbrellaIcon}>⛱️</Text>
-                    <Text style={styles.topLabel}>MY AURA</Text>
+                    <Text style={styles.topLabel}>{t('top.myAura')}</Text>
                   </View>
                 </Pressable>
                 {/* THE BRIDGE */}
@@ -19371,7 +20305,7 @@ type CommandCentreSection =
                     <View style={styles.topArtFuse} />
                     <View style={styles.topArtCap} />
                     <Text style={styles.gearIcon}>⚙️</Text>
-                    <Text style={styles.topLabel}>COMMAND CENTRE</Text>
+                    <Text style={styles.topLabel}>{t('top.commandCentre')}</Text>
                   </View>
                 </Pressable>
               </ScrollView>
@@ -19905,6 +20839,139 @@ type CommandCentreSection =
           </Pressable>
         </View>
       </Modal>
+
+      <Modal
+        visible={showCreatorProfile}
+        transparent
+        animationType="none"
+        onRequestClose={() => setShowCreatorProfile(false)}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.8,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>
+                {userData[creatorProfileUid || '']?.name || creatorProfileName || 'User'}
+              </Text>
+              <ScrollView>
+                {creatorProfileUid ? (
+                  <View style={[styles.logbookAction, { alignItems: 'center' }]}>
+                    <ProfileAvatarWithCrew
+                      userId={creatorProfileUid}
+                      size={72}
+                      showCrewCount={true}
+                      showFleetCount={false}
+                    />
+                    {!!userData[creatorProfileUid]?.minuteFameTitle && (
+                      <Text style={{ color: '#FFFFFF', marginTop: 10, fontSize: 12, fontWeight: '800' }}>
+                        {userData[creatorProfileUid]?.minuteFameTitle}
+                      </Text>
+                    )}
+                    {!!userData[creatorProfileUid]?.bio && (
+                      <Text
+                        style={{
+                          color: 'rgba(255,255,255,0.72)',
+                          fontSize: 12,
+                          marginTop: 8,
+                          textAlign: 'center',
+                          fontStyle: 'italic',
+                        }}
+                      >
+                        {userData[creatorProfileUid]?.bio}
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
+
+                <Text style={[styles.logbookActionText, { fontSize: 18, marginTop: 8 }]}>
+                  {t('creator.postsTitle')}
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4, marginBottom: 10 }}>
+                  {t('creator.tapToOpen')}
+                </Text>
+
+                {creatorProfilePosts.length === 0 ? (
+                  <View style={styles.logbookAction}>
+                    <Text style={styles.logbookActionText}>{t('creator.noPosts')}</Text>
+                  </View>
+                ) : null}
+
+                {creatorProfilePosts.map(post => {
+                  const actualIndex = displayFeed.findIndex(feedItem => feedItem.id === post.id);
+                  const previewUri = String(
+                    post.image ||
+                      post.media?.uri ||
+                      post.playbackUrl ||
+                      post.audio?.uri ||
+                      '',
+                  );
+                  return (
+                    <Pressable
+                      key={`creator-post-${post.id}`}
+                      style={[styles.logbookAction, { flexDirection: 'row', gap: 12, alignItems: 'center' }]}
+                      onPress={() => {
+                        setShowCreatorProfile(false);
+                        if (actualIndex >= 0) {
+                          setCurrentIndex(actualIndex);
+                          setWaveKey(Date.now());
+                          requestAnimationFrame(() => {
+                            feedRef.current?.scrollToIndex?.({
+                              index: actualIndex,
+                              animated: false,
+                            });
+                          });
+                          showUiTemporarily();
+                        }
+                      }}
+                    >
+                      {previewUri ? (
+                        <Image
+                          source={{ uri: previewUri }}
+                          style={{ width: 64, height: 64, borderRadius: 10, backgroundColor: '#000' }}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 10,
+                            backgroundColor: 'rgba(255,255,255,0.08)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text style={{ color: '#fff', fontSize: 20 }}>📝</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.logbookActionText} numberOfLines={2}>
+                          {post.captionText || post.authorName || 'Untitled MoMo'}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 6 }}>
+                          {post.postType || (post.audio?.uri ? 'audio' : post.media ? 'media' : 'text')}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+          <Pressable style={styles.dismissBtn} onPress={() => setShowCreatorProfile(false)}>
+            <Text style={styles.dismissText}>{t('common.back')}</Text>
+          </Pressable>
+        </View>
+      </Modal>
       
       {/* MESSAGING INBOX MODAL */}
       <Modal
@@ -20139,7 +21206,9 @@ type CommandCentreSection =
                               paddingHorizontal: 10,
                               paddingVertical: 6,
                               borderRadius: 14,
-                              backgroundColor: inboxFilter === 'messages' ? '#8D0000' : 'rgba(141,0,0,0.28)',
+                              backgroundColor: '#8D0000',
+                              borderWidth: 1,
+                              borderColor: '#8D0000',
                             }}
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
@@ -22715,9 +23784,13 @@ type CommandCentreSection =
                 <Text style={{ color: '#8DD8FF', fontSize: 12, fontWeight: '900', letterSpacing: 1.1 }}>
                   MOMO
                 </Text>
-                <Text style={{ color: '#FFFFFF', fontSize: 26, fontWeight: '900', marginTop: 8 }}>
-                  1 Minute Fame
-                </Text>
+                <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
+                  <MinuteFameWordmark
+                    language={resolvedLanguage}
+                    variant="hero"
+                    color="#FFFFFF"
+                  />
+                </View>
                 <Text style={{ color: '#D7F0FF', fontSize: 14, lineHeight: 20, marginTop: 10 }}>
                   Everyone deserves their moment.
                 </Text>
@@ -22745,6 +23818,135 @@ type CommandCentreSection =
 
               {minuteFamePhase === 'home' ? (
                 <View style={{ marginTop: 16, gap: 12 }}>
+                  <View
+                    style={[
+                      styles.logbookAction,
+                      {
+                        borderRadius: 18,
+                        backgroundColor: 'rgba(8, 28, 44, 0.94)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(77,213,255,0.24)',
+                      },
+                    ]}
+                  >
+                    <Text style={styles.sectionHeader}>Creator Lane</Text>
+                    <Text style={styles.sectionSubtle}>
+                      Build your creator identity through spotlight moments, support, and weekly challenges.
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                      <View
+                        style={{
+                          flex: 1,
+                          padding: 12,
+                          borderRadius: 14,
+                          backgroundColor: 'rgba(255,255,255,0.05)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <Text style={{ color: '#7DD3FC', fontSize: 11, fontWeight: '800' }}>LEVEL</Text>
+                        <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 6 }}>
+                          {minuteFameLevelLabel}
+                        </Text>
+                        <Text style={{ color: '#A9DBF5', fontSize: 12, marginTop: 4 }}>
+                          Frame: {minuteFameFrameLabel}
+                        </Text>
+                      </View>
+                      <View
+                        style={{
+                          flex: 1,
+                          padding: 12,
+                          borderRadius: 14,
+                          backgroundColor: 'rgba(255,255,255,0.05)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <Text style={{ color: '#7DD3FC', fontSize: 11, fontWeight: '800' }}>STATUS</Text>
+                        <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 6 }}>
+                          {minuteFameStatusLabel}
+                        </Text>
+                        <Text style={{ color: '#A9DBF5', fontSize: 12, marginTop: 4 }}>
+                          Features: {minuteFameFeatureCount}
+                        </Text>
+                      </View>
+                    </View>
+                    <View
+                      style={{
+                        marginTop: 12,
+                        borderRadius: 999,
+                        height: 10,
+                        overflow: 'hidden',
+                        backgroundColor: 'rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: `${minuteFameNextLevelPercent * 100}%`,
+                          height: '100%',
+                          backgroundColor: minuteFameCurrentLevel.accent,
+                        }}
+                      />
+                    </View>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      Career points: {minuteFameCareerPoints}
+                      {minuteFameNextLevel
+                        ? `  •  ${Math.max(0, minuteFameNextLevel.minPoints - minuteFameCareerPoints)} points to ${minuteFameNextLevel.label}`
+                        : '  •  Highest creator level unlocked'}
+                    </Text>
+                    {!!profileMinuteFameTitle && (
+                      <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#FFFFFF' }]}>
+                        Current spotlight title: {profileMinuteFameTitle}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View
+                    style={[
+                      styles.logbookAction,
+                      {
+                        borderRadius: 18,
+                        backgroundColor: 'rgba(34,197,94,0.08)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(34,197,94,0.24)',
+                      },
+                    ]}
+                  >
+                    <Text style={styles.sectionHeader}>Weekly Challenge</Text>
+                    <Text style={styles.sectionSubtle}>
+                      {minuteFameChallenge.title}: {minuteFameChallenge.description}
+                    </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      Target: {minuteFameChallenge.targetScore} score in {minuteFameChallenge.category}
+                    </Text>
+                    <Text style={styles.sectionSubtle}>
+                      Reward: {minuteFameChallenge.reward}
+                    </Text>
+                    <View
+                      style={{
+                        marginTop: 12,
+                        borderRadius: 999,
+                        height: 10,
+                        overflow: 'hidden',
+                        backgroundColor: 'rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: `${minuteFameChallengePercent * 100}%`,
+                          height: '100%',
+                          backgroundColor: '#22C55E',
+                        }}
+                      />
+                    </View>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      Progress: {minuteFameChallengeProgress}/{minuteFameChallenge.targetScore}
+                    </Text>
+                    <Text style={styles.sectionSubtle}>
+                      Next spotlight reset in {getTimeUntilNextUtcDayLabel()}
+                    </Text>
+                  </View>
+
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
                     <Text style={styles.sectionHeader}>Your next moment</Text>
                     <Text style={styles.sectionSubtle}>
@@ -22753,11 +23955,23 @@ type CommandCentreSection =
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
                       {getMinuteFameEncouragement(minuteFameCategory, minuteFameMode)}
                     </Text>
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+                      <Pressable
+                        style={[
+                          styles.toolButton,
+                          { flex: 1, minHeight: 56, backgroundColor: '#0EA5D9' },
+                        ]}
+                        onPress={() => shareMinuteFameCard()}
+                      >
+                        <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Share My Fame Card</Text>
+                        <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Show your creator lane publicly</Text>
+                      </Pressable>
+                    </View>
                   </View>
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
                     <Text style={styles.sectionHeader}>Choose content</Text>
                     {minuteFameChoices.length === 0 ? (
-                      <Text style={styles.sectionSubtle}>Post something first to use 1 Minute Fame.</Text>
+                      <Text style={styles.sectionSubtle}>Post something first to use {minuteFameDisplayName}.</Text>
                     ) : (
                       minuteFameChoices.slice(0, 4).map(item => (
                         <Pressable
@@ -22779,6 +23993,9 @@ type CommandCentreSection =
                         >
                           <Text style={styles.savedItemText} numberOfLines={2}>
                             {item.captionText || item.authorName || 'Untitled MoMo'}
+                          </Text>
+                          <Text style={[styles.sectionSubtle, { marginTop: 4 }]}>
+                            Tap to prepare this post for spotlight review and creator growth.
                           </Text>
                         </Pressable>
                       ))
@@ -22848,6 +24065,120 @@ type CommandCentreSection =
                         Your current title: {profileMinuteFameTitle}
                       </Text>
                     )}
+                    {minuteFameLoading ? (
+                      <ActivityIndicator color="#7DD3FC" style={{ marginTop: 12 }} />
+                    ) : minuteFameSpotlights.length === 0 ? (
+                      <Text style={[styles.sectionSubtle, { marginTop: 10 }]}>
+                        The next spotlight winners will appear here after the first creator sessions close.
+                      </Text>
+                    ) : (
+                      <View style={{ marginTop: 10, gap: 10 }}>
+                        {minuteFameSpotlights.slice(0, 4).map(entry => (
+                          <View
+                            key={entry.id}
+                            style={{
+                              borderRadius: 16,
+                              padding: 12,
+                              backgroundColor: 'rgba(255,255,255,0.05)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.08)',
+                            }}
+                          >
+                            <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '900' }}>
+                              {entry.ownerName}
+                            </Text>
+                            <Text style={[styles.sectionSubtle, { marginTop: 4 }]}>
+                              {entry.titleLabel}
+                              {entry.levelLabel ? ` • ${entry.levelLabel}` : ''}
+                              {entry.statusLabel ? ` • ${entry.statusLabel}` : ''}
+                            </Text>
+                            <Text style={styles.sectionSubtle}>
+                              Score {entry.score} • 👁 {entry.views} • ❤️ {entry.hugs} • 💬 {entry.echoes}
+                            </Text>
+                            {!!entry.captionText && (
+                              <Text style={[styles.sectionSubtle, { marginTop: 6 }]} numberOfLines={2}>
+                                {entry.captionText}
+                              </Text>
+                            )}
+                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                              <Pressable
+                                style={[
+                                  styles.toolButton,
+                                  { flex: 1, minHeight: 52, backgroundColor: minuteFameSupportMap[entry.id] ? '#14532D' : '#133047' },
+                                ]}
+                                onPress={() => supportMinuteFameSpotlight(entry)}
+                              >
+                                <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>
+                                  {minuteFameSupportMap[entry.id] ? 'Boosted' : 'Boost Creator'}
+                                </Text>
+                                <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>
+                                  Fan boosts: {entry.supportCount}
+                                </Text>
+                              </Pressable>
+                              <Pressable
+                                style={[
+                                  styles.toolButton,
+                                  { flex: 1, minHeight: 52, backgroundColor: minuteFameNominationMap[entry.id] ? '#7C2D12' : '#8D0000' },
+                                ]}
+                                onPress={() => nominateMinuteFameSpotlight(entry)}
+                              >
+                                <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>
+                                  {minuteFameNominationMap[entry.id] ? 'Nominated' : 'Nominate Creator'}
+                                </Text>
+                                <Text style={[styles.toolButtonHint, { color: '#FFD7D7' }]}>
+                                  Nominations: {entry.nominationCount}
+                                </Text>
+                              </Pressable>
+                            </View>
+                            <Pressable
+                              style={[
+                                styles.secondaryMiniBtn,
+                                { marginTop: 10, alignSelf: 'flex-start' },
+                              ]}
+                              onPress={() => shareMinuteFameCard(entry)}
+                            >
+                              <Text style={styles.secondaryMiniBtnText}>Share Creator Card</Text>
+                            </Pressable>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={[styles.logbookAction, { borderRadius: 18 }]}>
+                    <Text style={styles.sectionHeader}>Fame History</Text>
+                    {minuteFameHistory.length === 0 ? (
+                      <Text style={styles.sectionSubtle}>
+                        Your spotlight history will start building here after your first creator session.
+                      </Text>
+                    ) : (
+                      minuteFameHistory.slice(0, 4).map(entry => (
+                        <View
+                          key={entry.id}
+                          style={{
+                            marginTop: 10,
+                            borderRadius: 16,
+                            padding: 12,
+                            backgroundColor: 'rgba(255,255,255,0.05)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.08)',
+                          }}
+                        >
+                          <Text style={{ color: '#FFFFFF', fontSize: 15, fontWeight: '900' }}>
+                            {entry.titleLabel}
+                          </Text>
+                          <Text style={styles.sectionSubtle}>
+                            {entry.category} • {entry.mode} • {new Date(entry.createdAtMs).toLocaleDateString()}
+                          </Text>
+                          <Text style={styles.sectionSubtle}>
+                            Score {entry.score} • 👁 {entry.views} • ❤️ {entry.hugs} • 💬 {entry.echoes}
+                          </Text>
+                          <Text style={[styles.sectionSubtle, { marginTop: 4 }]}>
+                            {entry.levelLabel || 'Creator lane'}{entry.statusLabel ? ` • ${entry.statusLabel}` : ''}
+                          </Text>
+                        </View>
+                      ))
+                    )}
                   </View>
                 </View>
               ) : null}
@@ -22914,6 +24245,12 @@ type CommandCentreSection =
                     <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#DFF7E8' }]}>
                       {minuteFameResults.encouragement}
                     </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      Status unlocked: {getMinuteFameStatusForScore(minuteFameResults.score)}
+                    </Text>
+                    <Text style={styles.sectionSubtle}>
+                      Career lane: {minuteFameLevelLabel} • Frame: {minuteFameFrameLabel}
+                    </Text>
                   </View>
                   <View style={styles.toolGrid}>
                     <Pressable
@@ -22925,6 +24262,13 @@ type CommandCentreSection =
                     >
                       <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Second Chance</Text>
                       <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Try again tomorrow</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.toolButton, { backgroundColor: '#133047' }]}
+                      onPress={() => shareMinuteFameCard()}
+                    >
+                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Share My Fame Card</Text>
+                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Show your new creator recognition</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -22991,7 +24335,9 @@ type CommandCentreSection =
                   : commandCentreSection === 'performance'
                   ? t('command.performanceTitle')
                   : commandCentreSection === 'rewards'
-                  ? t('command.rewardsAdminTitle')
+                  ? isReferralAdmin
+                    ? t('command.rewardsAdminTitle')
+                    : t('command.rewardsUserTitle')
                   : commandCentreSection === 'appearance'
                   ? t('command.appearanceTitle')
                   : t('command.aboutTitle')}
@@ -23594,25 +24940,7 @@ type CommandCentreSection =
                                 </Text>
                                 <Pressable
                                   style={[styles.bridgeSettingButton, { marginTop: 6 }]}
-                                  onPress={() => {
-                                    Alert.alert(
-                                      t('settings.selectLanguageTitle'),
-                                      t('settings.selectLanguageBody'),
-                                      [
-                                        ...APP_LANGUAGE_OPTIONS.map(option => ({
-                                          text: getTranslationLabel(
-                                            resolvedLanguage,
-                                            option.code,
-                                          ),
-                                          onPress: () =>
-                                            saveHarborSettings({
-                                              appLanguage: option.code,
-                                            }),
-                                        })),
-                                        { text: t('common.cancel'), style: 'cancel' as const },
-                                      ],
-                                    );
-                                  }}
+                                  onPress={() => setShowLanguagePicker(true)}
                                 >
                                   <Text style={styles.bridgeSettingButtonText}>{t('settings.chooseLanguage')}</Text>
                                 </Pressable>
@@ -24060,6 +25388,72 @@ type CommandCentreSection =
             >
               <Text style={styles.dismissText}>{t('common.close')}</Text>
             </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showLanguagePicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLanguagePicker(false)}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 22 }]}>
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.72,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>{t('settings.selectLanguageTitle')}</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 10 }}>
+                {t('settings.selectLanguageBody')}
+              </Text>
+              <ScrollView>
+                {APP_LANGUAGE_OPTIONS.map(option => {
+                  const isSelected = harborSettings.appLanguage === option.code;
+                  return (
+                    <Pressable
+                      key={`language-picker-${option.code}`}
+                      style={[
+                        styles.logbookAction,
+                        {
+                          backgroundColor: isSelected
+                            ? 'rgba(0,186,255,0.16)'
+                            : 'rgba(255,255,255,0.03)',
+                          borderRadius: 10,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                        },
+                      ]}
+                      onPress={async () => {
+                        await saveHarborSettings({ appLanguage: option.code });
+                        setShowLanguagePicker(false);
+                      }}
+                    >
+                      <Text style={styles.logbookActionText}>
+                        {getTranslationLabel(resolvedLanguage, option.code)}
+                      </Text>
+                      <Text style={[styles.logbookActionText, { fontSize: 13, opacity: isSelected ? 1 : 0.35 }]}>
+                        {isSelected ? t('common.ok') : ''}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+              <Pressable
+                style={[styles.dismissBtn, { marginTop: 12, minHeight: 42, justifyContent: 'center' }]}
+                onPress={() => setShowLanguagePicker(false)}
+              >
+                <Text style={styles.dismissText}>{t('common.done')}</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
