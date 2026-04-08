@@ -901,7 +901,174 @@ type TranslationKey =
   | 'rewards.playStoreUnavailable'
   | 'settings.languageValue'
   | 'settings.selectLanguageTitle'
-  | 'settings.selectLanguageBody';
+  | 'settings.selectLanguageBody'
+  | 'command.homeTitle'
+  | 'command.profileTitle'
+  | 'command.privacyTitle'
+  | 'command.notificationsTitle'
+  | 'command.performanceTitle'
+  | 'command.appearanceTitle'
+  | 'command.aboutTitle'
+  | 'command.pickChange'
+  | 'command.tapBelow'
+  | 'command.settingsForCategory'
+  | 'menu.profileDesc'
+  | 'menu.privacyDesc'
+  | 'menu.notificationsDesc'
+  | 'menu.performanceDesc'
+  | 'menu.appearanceDesc'
+  | 'menu.aboutDesc'
+  | 'settings.profileAccess'
+  | 'settings.interaction'
+  | 'settings.system'
+  | 'settings.captainIdentity'
+  | 'settings.captainIdentityDesc'
+  | 'settings.shieldsBoundaries'
+  | 'settings.shieldsBoundariesDesc'
+  | 'settings.crewLists'
+  | 'settings.crewListsDesc'
+  | 'settings.chatHarbor'
+  | 'settings.chatHarborDesc'
+  | 'settings.alertBells'
+  | 'settings.alertBellsDesc'
+  | 'settings.cacheCurrents'
+  | 'settings.cacheCurrentsDesc'
+  | 'settings.tongueRegion'
+  | 'settings.tongueRegionDesc'
+  | 'settings.tidePatches'
+  | 'settings.tidePatchesDesc'
+  | 'common.open'
+  | 'common.hide'
+  | 'common.on'
+  | 'common.off'
+  | 'common.cancel'
+  | 'settings.handle'
+  | 'settings.signedInAs'
+  | 'settings.anonymous'
+  | 'settings.harborPortrait'
+  | 'settings.changeAvatar'
+  | 'settings.privateWakeMode'
+  | 'settings.privateWakeModeDesc'
+  | 'settings.sortMode'
+  | 'settings.recent'
+  | 'settings.quickSend'
+  | 'settings.quickSendDesc'
+  | 'settings.incomingCalls'
+  | 'settings.messages'
+  | 'settings.liveInviteSilent'
+  | 'settings.missedCalls'
+  | 'settings.notification'
+  | 'settings.tone'
+  | 'settings.silent'
+  | 'settings.smartDataSaver'
+  | 'settings.clearedTitle'
+  | 'settings.clearCacheBody'
+  | 'settings.clearLocalCache'
+  | 'settings.chooseLanguage'
+  | 'settings.appUpdates'
+  | 'settings.currentVersion'
+  | 'settings.checkNow'
+  | 'inbox.title'
+  | 'inbox.header'
+  | 'inbox.callAlert'
+  | 'inbox.crewUpdate'
+  | 'inbox.postActivity'
+  | 'inbox.activity'
+  | 'inbox.noNotifications'
+  | 'inbox.noNotificationsBody'
+  | 'inbox.filterAll'
+  | 'inbox.filterMessages'
+  | 'inbox.filterActivity'
+  | 'inbox.searchPlaceholder'
+  | 'inbox.noMatches'
+  | 'inbox.noMatchesBody'
+  | 'inbox.selectedCount'
+  | 'inbox.markRead'
+  | 'inbox.deleteMessagesTitle'
+  | 'inbox.deleteMessagesBody'
+  | 'common.delete'
+  | 'common.copied'
+  | 'common.ok'
+  | 'thread.noMessages'
+  | 'thread.noMessagesBody'
+  | 'thread.replyTo'
+  | 'thread.messageUser'
+  | 'thread.typeMessage'
+  | 'thread.sending'
+  | 'thread.send'
+  | 'thread.copy'
+  | 'thread.forward'
+  | 'thread.hide'
+  | 'thread.copyBody'
+  | 'thread.forwardBody'
+  | 'thread.hideBody'
+  | 'thread.removeAttachment'
+  | 'profile.usernamePlaceholder'
+  | 'profile.bioPlaceholder'
+  | 'profile.minuteFameTitle'
+  | 'profile.inviteEarn'
+  | 'profile.reachNextReward'
+  | 'profile.topRewardUnlocked'
+  | 'profile.generatingReferralCode'
+  | 'profile.qualifiedCounts'
+  | 'profile.referralQualifyRule'
+  | 'profile.referralReviewRule'
+  | 'profile.shareReferral'
+  | 'profile.invalidUsernameTitle'
+  | 'profile.invalidUsernameEmpty'
+  | 'profile.invalidUsernameShort'
+  | 'profile.updatedTitle'
+  | 'profile.updatedBody'
+  | 'profile.saveProfile'
+  | 'profile.myVibes'
+  | 'profile.myTreasure'
+  | 'compose.editPost'
+  | 'compose.createPost'
+  | 'compose.selectedItems'
+  | 'compose.remove'
+  | 'compose.attachedAudio'
+  | 'compose.removeAudio'
+  | 'compose.storyPlaceholder'
+  | 'compose.uploading'
+  | 'compose.postingStory'
+  | 'compose.preparingFiles'
+  | 'compose.publishing'
+  | 'compose.postFailed'
+  | 'compose.retryPost'
+  | 'compose.camera'
+  | 'compose.gallery'
+  | 'compose.sdCard'
+  | 'compose.music'
+  | 'compose.saveEdit'
+  | 'compose.postGrid'
+  | 'compose.postWithMedia'
+  | 'compose.postAudio'
+  | 'compose.postText'
+  | 'compose.addContentTitle'
+  | 'compose.addContentBody'
+  | 'compose.postUpdated'
+  | 'compose.overlayNotSupportedTitle'
+  | 'compose.overlayNotSupportedBody'
+  | 'compose.backendNotReadyTitle'
+  | 'compose.filePostingUnavailable'
+  | 'compose.audioPostingUnavailable'
+  | 'compose.signInRequiredTitle'
+  | 'compose.signInPostFiles'
+  | 'compose.signInPostAudio'
+  | 'compose.uploadErrorTitle'
+  | 'compose.selectedFileUnavailable'
+  | 'compose.selectedAudioUnavailable'
+  | 'compose.createPostFailedFallback'
+  | 'compose.createPostFailedBody'
+  | 'myVibes.empty'
+  | 'myVibes.untitledWave'
+  | 'myVibes.views'
+  | 'myVibes.date'
+  | 'myVibes.unknown'
+  | 'myVibes.deleting'
+  | 'myVibes.delete'
+  | 'myVibes.share'
+  | 'myVibes.anchor';
 
 type TranslationDictionary = Record<TranslationKey, string>;
 
@@ -1366,6 +1533,177 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.languageValue': 'Language: {{language}}',
     'settings.selectLanguageTitle': 'Select language',
     'settings.selectLanguageBody': 'Choose app language preference.',
+    'command.homeTitle': 'COMMAND CENTRE',
+    'command.profileTitle': 'PROFILE',
+    'command.privacyTitle': 'PRIVACY & SAFETY',
+    'command.notificationsTitle': 'NOTIFICATIONS',
+    'command.performanceTitle': 'PERFORMANCE',
+    'command.appearanceTitle': 'APPEARANCE',
+    'command.aboutTitle': 'ABOUT',
+    'command.pickChange': 'Pick what you want to change.',
+    'command.tapBelow': 'Tap a setting below.',
+    'command.settingsForCategory': 'Settings for this category',
+    'menu.profileDesc': 'Identity, avatar, language, and crew preferences',
+    'menu.privacyDesc': 'Privacy, guardianship, and restricted content',
+    'menu.notificationsDesc': 'Tones and messaging behavior',
+    'menu.performanceDesc': 'Data saver, playback, cache, and loading',
+    'menu.appearanceDesc': 'Storm and visual effects',
+    'menu.aboutDesc': 'Version info, updates, and sign out',
+    'settings.profileAccess': 'Profile & Access',
+    'settings.interaction': 'Interaction',
+    'settings.system': 'System',
+    'settings.captainIdentity': 'Captain Identity',
+    'settings.captainIdentityDesc': 'Account and profile controls',
+    'settings.shieldsBoundaries': 'Shields & Boundaries',
+    'settings.shieldsBoundariesDesc': 'Privacy controls for your drift',
+    'settings.crewLists': 'Crew Lists',
+    'settings.crewListsDesc': 'List ordering and visibility style',
+    'settings.chatHarbor': 'Chat Harbor',
+    'settings.chatHarborDesc': 'Message behavior and quick-send',
+    'settings.alertBells': 'Alert Bells',
+    'settings.alertBellsDesc': 'Notification tones and badge behavior',
+    'settings.cacheCurrents': 'Cache & Currents',
+    'settings.cacheCurrentsDesc': 'Storage and data transfer mode',
+    'settings.tongueRegion': 'Tongue & Region',
+    'settings.tongueRegionDesc': 'App language preference',
+    'settings.tidePatches': 'Tide Patches',
+    'settings.tidePatchesDesc': 'Version and update checks',
+    'common.open': 'Open',
+    'common.hide': 'Hide',
+    'common.on': 'ON',
+    'common.off': 'OFF',
+    'common.cancel': 'Cancel',
+    'settings.handle': 'Handle: {{handle}}',
+    'settings.signedInAs': 'Signed in as {{account}}',
+    'settings.anonymous': 'anonymous',
+    'settings.harborPortrait': 'Harbor Portrait',
+    'settings.changeAvatar': 'Change Avatar',
+    'settings.privateWakeMode': 'Private Wake Mode',
+    'settings.privateWakeModeDesc': 'Limit unsolicited drift requests.',
+    'settings.sortMode': 'Sort Mode',
+    'settings.recent': 'Recent',
+    'settings.quickSend': 'Quick Send',
+    'settings.quickSendDesc': 'Send faster from chat composer.',
+    'settings.incomingCalls': 'Incoming Calls',
+    'settings.messages': 'Messages',
+    'settings.liveInviteSilent': 'Live Invite Badge (Silent)',
+    'settings.missedCalls': 'Missed Calls',
+    'settings.notification': 'Notification',
+    'settings.tone': 'Tone: {{tone}}',
+    'settings.silent': 'Silent',
+    'settings.smartDataSaver': 'Smart Data Saver',
+    'settings.clearedTitle': 'Cleared',
+    'settings.clearCacheBody': 'Local invite cache and previews cleared.',
+    'settings.clearLocalCache': 'Clear Local Cache',
+    'settings.chooseLanguage': 'Choose Language',
+    'settings.appUpdates': 'App updates',
+    'settings.currentVersion': 'Current version is v{{version}} build {{build}}.',
+    'settings.checkNow': 'Check Now',
+    'inbox.title': 'VIBE ALERTS',
+    'inbox.header': 'NOTIFICATIONS',
+    'inbox.callAlert': 'Call Alert',
+    'inbox.crewUpdate': 'Crew Update',
+    'inbox.postActivity': 'Post Activity',
+    'inbox.activity': 'Activity',
+    'inbox.noNotifications': 'No notifications yet',
+    'inbox.noNotificationsBody':
+      "When you receive messages or notifications, they'll appear here!",
+    'inbox.filterAll': 'All',
+    'inbox.filterMessages': 'Messages',
+    'inbox.filterActivity': 'Activity',
+    'inbox.searchPlaceholder': 'Search by name or message...',
+    'inbox.noMatches': 'No matching results',
+    'inbox.noMatchesBody': 'Try a different name or keyword.',
+    'inbox.selectedCount': '{{count}} selected',
+    'inbox.markRead': 'Mark Read',
+    'inbox.deleteMessagesTitle': 'Delete Messages',
+    'inbox.deleteMessagesBody': 'Delete {{count}} message{{suffix}}?',
+    'common.delete': 'Delete',
+    'common.copied': 'Copied',
+    'common.ok': 'OK',
+    'thread.noMessages': 'No messages yet',
+    'thread.noMessagesBody':
+      'Start the conversation using the message box below.',
+    'thread.replyTo': 'Reply to {{name}}',
+    'thread.messageUser': 'Message {{name}}',
+    'thread.typeMessage': 'Type a message...',
+    'thread.sending': 'Sending...',
+    'thread.send': 'Send',
+    'thread.copy': 'Copy',
+    'thread.forward': 'Forward',
+    'thread.hide': 'Hide',
+    'thread.copyBody': 'Message text copied to clipboard',
+    'thread.forwardBody': 'Forward functionality would be implemented here',
+    'thread.hideBody': 'Hide functionality would be implemented here',
+    'thread.removeAttachment': 'Remove attachment',
+    'profile.usernamePlaceholder': 'Username (e.g. janedoe)',
+    'profile.bioPlaceholder': 'Write a short bio...',
+    'profile.minuteFameTitle': '1 Minute Fame Title: {{title}}',
+    'profile.inviteEarn': 'Invite & Earn',
+    'profile.reachNextReward': 'Reach {{count}} qualified users for {{reward}}.',
+    'profile.topRewardUnlocked': 'You have unlocked the top referral reward tier available right now.',
+    'profile.generatingReferralCode': 'Generating referral code...',
+    'profile.qualifiedCounts': 'Qualified: {{qualified}}  Pending: {{pending}}  Total invited: {{invited}}',
+    'profile.referralQualifyRule':
+      'A referral counts only when the invited person is a real new user, signs up with your code, and is active on at least {{days}} different days. Fake accounts, duplicate accounts, and self-referrals do not qualify.',
+    'profile.referralReviewRule':
+      'Airtime and other rewards are reviewed before issue. MoMo may replace a reward with an equivalent promo benefit where needed.',
+    'profile.shareReferral': 'Share Referral',
+    'profile.invalidUsernameTitle': 'Invalid Username',
+    'profile.invalidUsernameEmpty': 'Username cannot be empty.',
+    'profile.invalidUsernameShort': 'Username must be at least 3 characters.',
+    'profile.updatedTitle': 'Success',
+    'profile.updatedBody': 'Profile updated!',
+    'profile.saveProfile': 'Save Profile',
+    'profile.myVibes': 'My Vibes',
+    'profile.myTreasure': 'My Treasure',
+    'compose.editPost': 'Edit Post',
+    'compose.createPost': 'Create Post',
+    'compose.selectedItems': '{{count}} item{{suffix}} selected',
+    'compose.remove': 'Remove',
+    'compose.attachedAudio': 'Attached audio',
+    'compose.removeAudio': 'Remove Audio',
+    'compose.storyPlaceholder': "What's the story?",
+    'compose.uploading': 'Uploading...',
+    'compose.postingStory': 'Posting story...',
+    'compose.preparingFiles': 'preparing files',
+    'compose.publishing': 'publishing',
+    'compose.postFailed': 'Post failed: {{message}}',
+    'compose.retryPost': 'Retry Post',
+    'compose.camera': 'Camera',
+    'compose.gallery': 'Gallery',
+    'compose.sdCard': 'SD Card',
+    'compose.music': 'Music',
+    'compose.saveEdit': 'Save Edit',
+    'compose.postGrid': 'Post Grid',
+    'compose.postWithMedia': 'Post with Media',
+    'compose.postAudio': 'Post Audio',
+    'compose.postText': 'Post Text',
+    'compose.addContentTitle': 'Create a Post',
+    'compose.addContentBody': 'Please add some text or select media to post.',
+    'compose.postUpdated': 'Post updated.',
+    'compose.overlayNotSupportedTitle': 'Overlay Not Supported',
+    'compose.overlayNotSupportedBody': 'Audio overlay can be attached only to images and videos.',
+    'compose.backendNotReadyTitle': 'Backend not ready',
+    'compose.filePostingUnavailable': 'File posting is unavailable right now.',
+    'compose.audioPostingUnavailable': 'Audio posting is unavailable right now.',
+    'compose.signInRequiredTitle': 'Sign in required',
+    'compose.signInPostFiles': 'Please sign in to post files.',
+    'compose.signInPostAudio': 'Please sign in to post audio.',
+    'compose.uploadErrorTitle': 'Upload error',
+    'compose.selectedFileUnavailable': 'Could not access the selected file.',
+    'compose.selectedAudioUnavailable': 'Could not access the selected audio file.',
+    'compose.createPostFailedFallback': 'Failed to create post. Please try again.',
+    'compose.createPostFailedBody': 'Failed to create post. {{message}}',
+    'myVibes.empty': 'No vibes yet. Post from Make Vibes.',
+    'myVibes.untitledWave': 'Untitled wave',
+    'myVibes.views': 'Views',
+    'myVibes.date': 'Date',
+    'myVibes.unknown': 'Unknown',
+    'myVibes.deleting': 'Deleting...',
+    'myVibes.delete': 'Delete',
+    'myVibes.share': 'Share',
+    'myVibes.anchor': 'Anchor',
   },
   sn: {
     'language.system': 'Tevera mutauro wesystem',
@@ -1458,6 +1796,176 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.languageValue': 'Mutauro: {{language}}',
     'settings.selectLanguageTitle': 'Sarudza mutauro',
     'settings.selectLanguageBody': 'Sarudza mutauro waunoda kushandisa muapp.',
+    'command.homeTitle': 'COMMAND CENTRE',
+    'command.profileTitle': 'PROFAYIRI',
+    'command.privacyTitle': 'KUVANZIKA & KUDZIVIRIRWA',
+    'command.notificationsTitle': 'ZVIZIVISO',
+    'command.performanceTitle': 'MAITIRO',
+    'command.appearanceTitle': 'MAONEKERO',
+    'command.aboutTitle': 'NEZVAYO',
+    'command.pickChange': 'Sarudza chaunoda kuchinja.',
+    'command.tapBelow': 'Baya zvimiro zviri pasi.',
+    'command.settingsForCategory': 'Zvirongwa zvechikamu ichi',
+    'menu.profileDesc': 'Zita, avatar, mutauro, nezvido zvecrew',
+    'menu.privacyDesc': 'Kuvanzika, kuchengetedzwa, nezvinorambidzwa',
+    'menu.notificationsDesc': 'Matoni nemaitiro emameseji',
+    'menu.performanceDesc': 'Kuchengetedza data, playback, cache, nekurodha',
+    'menu.appearanceDesc': 'Mhepo nemhedzisiro yekuonekwa',
+    'menu.aboutDesc': 'Shanduro, updates, nekubuda',
+    'settings.profileAccess': 'Profayiri & Kuwana',
+    'settings.interaction': 'Kudyidzana',
+    'settings.system': 'Sisitimu',
+    'settings.captainIdentity': 'Chitupa cheCaptain',
+    'settings.captainIdentityDesc': 'Zvirongwa zveaccount neprofayiri',
+    'settings.shieldsBoundaries': 'Dziviriro & Miganhu',
+    'settings.shieldsBoundariesDesc': 'Kuvanzika kwe drift yako',
+    'settings.crewLists': 'Mazita eCrew',
+    'settings.crewListsDesc': 'Kurongeka nekuonekwa kwemazita',
+    'settings.chatHarbor': 'Chat Harbor',
+    'settings.chatHarborDesc': 'Maitiro emeseji nekukurumidza kutumira',
+    'settings.alertBells': 'Mabhero eZvizariso',
+    'settings.alertBellsDesc': 'Matoni ezviziviso nemabheji',
+    'settings.cacheCurrents': 'Cache & Currents',
+    'settings.cacheCurrentsDesc': 'Kuchengeta nedata transfer mode',
+    'settings.tongueRegion': 'Mutauro & Nharaunda',
+    'settings.tongueRegionDesc': 'Sarudzo yemutauro weapp',
+    'settings.tidePatches': 'Tide Patches',
+    'settings.tidePatchesDesc': 'Version nekutarisa maupdates',
+    'common.open': 'Vhura',
+    'common.hide': 'Vanza',
+    'common.on': 'BATIDZA',
+    'common.off': 'DZIMA',
+    'common.cancel': 'Kanzura',
+    'settings.handle': 'Handle: {{handle}}',
+    'settings.signedInAs': 'Wapinda se {{account}}',
+    'settings.anonymous': 'asingazivikanwe',
+    'settings.harborPortrait': 'Mufananidzo weHarbor',
+    'settings.changeAvatar': 'Chinja Avatar',
+    'settings.privateWakeMode': 'Private Wake Mode',
+    'settings.privateWakeModeDesc': 'Deredza zvikumbiro zvisina kukumbirwa.',
+    'settings.sortMode': 'Maitiro ekuronga',
+    'settings.recent': 'Zvichangobva',
+    'settings.quickSend': 'Kukurumidza Kutumira',
+    'settings.quickSendDesc': 'Tumira nekukurumidza kubva mu chat.',
+    'settings.incomingCalls': 'Mafoni anopinda',
+    'settings.messages': 'Mameseji',
+    'settings.liveInviteSilent': 'Badge yeLive Invite (Yakanyarara)',
+    'settings.missedCalls': 'Mafoni akarasika',
+    'settings.notification': 'Chiziviso',
+    'settings.tone': 'Toni: {{tone}}',
+    'settings.silent': 'Yakanyarara',
+    'settings.smartDataSaver': 'Smart Data Saver',
+    'settings.clearedTitle': 'Zvacheneswa',
+    'settings.clearCacheBody': 'Cache yemainvite nemapreview yabviswa.',
+    'settings.clearLocalCache': 'Bvisa Local Cache',
+    'settings.chooseLanguage': 'Sarudza Mutauro',
+    'settings.appUpdates': 'Ma updates eapp',
+    'settings.currentVersion': 'Version yazvino i v{{version}} build {{build}}.',
+    'settings.checkNow': 'Tarisa Zvino',
+    'inbox.title': 'ZVIZIVISO ZVEVIBE',
+    'inbox.header': 'ZVIZIVISO',
+    'inbox.callAlert': 'Chiziviso chefoni',
+    'inbox.crewUpdate': 'Shanduko yeCrew',
+    'inbox.postActivity': 'Chiitiko chePost',
+    'inbox.activity': 'Chiitiko',
+    'inbox.noNotifications': 'Hapana zviziviso parizvino',
+    'inbox.noNotificationsBody':
+      'Paunogamuchira mameseji kana zviziviso, zvichaonekwa pano!',
+    'inbox.filterAll': 'Zvese',
+    'inbox.filterMessages': 'Mameseji',
+    'inbox.filterActivity': 'Zviitiko',
+    'inbox.searchPlaceholder': 'Tsvaga nezita kana meseji...',
+    'inbox.noMatches': 'Hapana zvawana zvinoenderana',
+    'inbox.noMatchesBody': 'Edza rimwe zita kana keyword.',
+    'inbox.selectedCount': '{{count}} zvakasarudzwa',
+    'inbox.markRead': 'Maka seVerengwa',
+    'inbox.deleteMessagesTitle': 'Bvisa Mameseji',
+    'inbox.deleteMessagesBody': 'Bvisa meseji {{count}}{{suffix}}?',
+    'common.delete': 'Bvisa',
+    'common.copied': 'Zvakopiwa',
+    'common.ok': 'Zvakanaka',
+    'thread.noMessages': 'Hapana mameseji parizvino',
+    'thread.noMessagesBody': 'Tanga hurukuro uchishandisa bhokisi remeseji riri pasi.',
+    'thread.replyTo': 'Pindura kuna {{name}}',
+    'thread.messageUser': 'Tumira meseji kuna {{name}}',
+    'thread.typeMessage': 'Nyora meseji...',
+    'thread.sending': 'Kuri kutumirwa...',
+    'thread.send': 'Tumira',
+    'thread.copy': 'Kopa',
+    'thread.forward': 'Tumira mberi',
+    'thread.hide': 'Vanza',
+    'thread.copyBody': 'Zvinyorwa zvemeseji zvakopiwa kuclipboard',
+    'thread.forwardBody': 'Kushanda kwekutumira mberi kuchaiswa pano',
+    'thread.hideBody': 'Kushanda kwekuvanza kuchaiswa pano',
+    'thread.removeAttachment': 'Bvisa chakabatanidzwa',
+    'profile.usernamePlaceholder': 'Username (semuenzaniso janedoe)',
+    'profile.bioPlaceholder': 'Nyora bio pfupi...',
+    'profile.minuteFameTitle': 'Zita re1 Minute Fame: {{title}}',
+    'profile.inviteEarn': 'Koka Uwane',
+    'profile.reachNextReward': 'Svika kune {{count}} vakakodzera uwane {{reward}}.',
+    'profile.topRewardUnlocked': 'Wavhura chikamu chepamusoro chemubayiro chiripo parizvino.',
+    'profile.generatingReferralCode': 'Kodhi yerefero iri kugadzirwa...',
+    'profile.qualifiedCounts': 'Vakakodzera: {{qualified}}  Vakamirira: {{pending}}  Vese vakokwa: {{invited}}',
+    'profile.referralQualifyRule':
+      'Refero inoverengwa chete kana munhu akokwa ari mushandisi mutsva chaiye, anyoresa nekodhi yako, uye ashande mazuva anosvika {{days}} akasiyana. Maakaunzi enhema, akadzokororwa, kana kuzvikoka pachako hazviverengwi.',
+    'profile.referralReviewRule':
+      'Airtime nemimwe mibayiro zvinoongororwa zvisati zvapihwa. MoMo inogona kutsiva mubayiro nemubatsiro wakaenzana.',
+    'profile.shareReferral': 'Govera Refero',
+    'profile.invalidUsernameTitle': 'Username haina kunaka',
+    'profile.invalidUsernameEmpty': 'Username haigoni kusiiwa isina chinhu.',
+    'profile.invalidUsernameShort': 'Username inofanira kuva nemavara anosvika matatu.',
+    'profile.updatedTitle': 'Zvabudirira',
+    'profile.updatedBody': 'Profayiri yagadziridzwa!',
+    'profile.saveProfile': 'Chengeta Profayiri',
+    'profile.myVibes': 'MaVibes Angu',
+    'profile.myTreasure': 'Pfuma Yangu',
+    'compose.editPost': 'Gadzirisa Post',
+    'compose.createPost': 'Gadzira Post',
+    'compose.selectedItems': '{{count}} chinhu{{suffix}} chasarudzwa',
+    'compose.remove': 'Bvisa',
+    'compose.attachedAudio': 'Audio yakabatanidzwa',
+    'compose.removeAudio': 'Bvisa Audio',
+    'compose.storyPlaceholder': 'Nyaya iripi?',
+    'compose.uploading': 'Zviri kukwidzwa...',
+    'compose.postingStory': 'Nyaya iri kutumirwa...',
+    'compose.preparingFiles': 'kugadzirira mafaira',
+    'compose.publishing': 'kuburitsa',
+    'compose.postFailed': 'Post yaramba: {{message}}',
+    'compose.retryPost': 'Edzazve Kutumira',
+    'compose.camera': 'Kamera',
+    'compose.gallery': 'Garari',
+    'compose.sdCard': 'SD Card',
+    'compose.music': 'Mimhanzi',
+    'compose.saveEdit': 'Chengeta Shanduro',
+    'compose.postGrid': 'Tumira Grid',
+    'compose.postWithMedia': 'Tumira neMedia',
+    'compose.postAudio': 'Tumira Audio',
+    'compose.postText': 'Tumira Zvinyorwa',
+    'compose.addContentTitle': 'Gadzira Post',
+    'compose.addContentBody': 'Ndapota wedzera zvinyorwa kana usarudze media yekutumira.',
+    'compose.postUpdated': 'Post yagadziridzwa.',
+    'compose.overlayNotSupportedTitle': 'Overlay Haitsigirwi',
+    'compose.overlayNotSupportedBody': 'Audio overlay inogona kubatanidzwa pamifananidzo nemavhidhiyo chete.',
+    'compose.backendNotReadyTitle': 'Backend haisati yagadzirira',
+    'compose.filePostingUnavailable': 'Kutumira mafaira hakusi kuwanikwa pari zvino.',
+    'compose.audioPostingUnavailable': 'Kutumira audio hakusi kuwanikwa pari zvino.',
+    'compose.signInRequiredTitle': 'Pinda kutanga',
+    'compose.signInPostFiles': 'Ndapota pinda kuti utumire mafaira.',
+    'compose.signInPostAudio': 'Ndapota pinda kuti utumire audio.',
+    'compose.uploadErrorTitle': 'Kukanganisa pakukwidza',
+    'compose.selectedFileUnavailable': 'Hatina kukwanisa kuwana faira rasarudzwa.',
+    'compose.selectedAudioUnavailable': 'Hatina kukwanisa kuwana audio rasarudzwa.',
+    'compose.createPostFailedFallback': 'Hatina kukwanisa kugadzira post. Edzazve.',
+    'compose.createPostFailedBody': 'Hatina kukwanisa kugadzira post. {{message}}',
+    'myVibes.empty': 'Hakusati kwave nema vibes. Tumira kubva ku Make Vibes.',
+    'myVibes.untitledWave': 'Wave isina zita',
+    'myVibes.views': 'Kuonekwa',
+    'myVibes.date': 'Zuva',
+    'myVibes.unknown': 'Hazvizivikanwi',
+    'myVibes.deleting': 'Kuri kubviswa...',
+    'myVibes.delete': 'Bvisa',
+    'myVibes.share': 'Govera',
+    'myVibes.anchor': 'Namira',
   },
   nd: {
     'language.system': 'Landela ulimi lwefoni',
@@ -1550,6 +2058,176 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.languageValue': 'Ulimi: {{language}}',
     'settings.selectLanguageTitle': 'Khetha ulimi',
     'settings.selectLanguageBody': 'Khetha ulimi ofuna ukuthi i-app isebenzise.',
+    'command.homeTitle': 'COMMAND CENTRE',
+    'command.profileTitle': 'IPHROFAYILI',
+    'command.privacyTitle': 'UBUMFIHLO & UKUPHEPHA',
+    'command.notificationsTitle': 'IZAZISO',
+    'command.performanceTitle': 'UKUSEBENZA',
+    'command.appearanceTitle': 'UKUBUKALA',
+    'command.aboutTitle': 'MAYELANA',
+    'command.pickChange': 'Khetha ofuna ukukuguqula.',
+    'command.tapBelow': 'Chofoza isethingi engezansi.',
+    'command.settingsForCategory': 'Amasethingi esigaba lesi',
+    'menu.profileDesc': 'Ubuwena, avatar, ulimi, lezifiso zecrew',
+    'menu.privacyDesc': 'Ubumfihlo, ukugadwa, lokuthintwa okulinganiselweyo',
+    'menu.notificationsDesc': 'Amathoni lemikhuba yemilayezo',
+    'menu.performanceDesc': 'Ukonga data, playback, cache, lokulayisha',
+    'menu.appearanceDesc': 'Izivunguvungu lemithelela yokubukeka',
+    'menu.aboutDesc': 'Ulwazi lweversion, updates, lokuphuma',
+    'settings.profileAccess': 'Iphrofayili & Ukufinyelela',
+    'settings.interaction': 'Ukusebenzisana',
+    'settings.system': 'Isistimu',
+    'settings.captainIdentity': 'Ubuwena bukaCaptain',
+    'settings.captainIdentityDesc': 'Amasethingi e-account lephrofayili',
+    'settings.shieldsBoundaries': 'Izivikelamzimba leMingcele',
+    'settings.shieldsBoundariesDesc': 'Ukulawula ubumfihlo bedrfit yakho',
+    'settings.crewLists': 'Uhlu lweCrew',
+    'settings.crewListsDesc': 'Ukuhlelwa lokubonakala kohlu',
+    'settings.chatHarbor': 'Chat Harbor',
+    'settings.chatHarborDesc': 'Imikhuba yemilayezo lokuthumela msinyane',
+    'settings.alertBells': 'Amabhele Ezaziso',
+    'settings.alertBellsDesc': 'Amathoni ezaziso lemikhuba yebheji',
+    'settings.cacheCurrents': 'Cache & Currents',
+    'settings.cacheCurrentsDesc': 'Ukugcina lendlela yokudlulisa data',
+    'settings.tongueRegion': 'Ulimi leSifunda',
+    'settings.tongueRegionDesc': 'Ukukhetha ulimi lweapp',
+    'settings.tidePatches': 'Tide Patches',
+    'settings.tidePatchesDesc': 'Version lokuhlola ama-updates',
+    'common.open': 'Vula',
+    'common.hide': 'Fihla',
+    'common.on': 'VULA',
+    'common.off': 'CIMA',
+    'common.cancel': 'Khansela',
+    'settings.handle': 'Handle: {{handle}}',
+    'settings.signedInAs': 'Ungene njenge {{account}}',
+    'settings.anonymous': 'ongaziwayo',
+    'settings.harborPortrait': 'Isithombe seHarbor',
+    'settings.changeAvatar': 'Guqula i-Avatar',
+    'settings.privateWakeMode': 'Private Wake Mode',
+    'settings.privateWakeModeDesc': 'Nciphisa izicelo ezingacelwanga.',
+    'settings.sortMode': 'Indlela Yokuhlela',
+    'settings.recent': 'Okusanda kwenziwa',
+    'settings.quickSend': 'Quick Send',
+    'settings.quickSendDesc': 'Thumela msinyane usuka ku chat composer.',
+    'settings.incomingCalls': 'Amakholi angenayo',
+    'settings.messages': 'Imilayezo',
+    'settings.liveInviteSilent': 'Ibheji le Live Invite (Silent)',
+    'settings.missedCalls': 'Amakholi aphuthekileyo',
+    'settings.notification': 'Isaziso',
+    'settings.tone': 'Ithoni: {{tone}}',
+    'settings.silent': 'Silent',
+    'settings.smartDataSaver': 'Smart Data Saver',
+    'settings.clearedTitle': 'Kucitshiwe',
+    'settings.clearCacheBody': 'I-cache yama invite lama preview isuliwe.',
+    'settings.clearLocalCache': 'Sula i-Local Cache',
+    'settings.chooseLanguage': 'Khetha Ulimi',
+    'settings.appUpdates': 'Ama-updates eapp',
+    'settings.currentVersion': 'Iversion yamanje yi v{{version}} build {{build}}.',
+    'settings.checkNow': 'Hlola Khathesi',
+    'inbox.title': 'IZAZISO ZEVIBE',
+    'inbox.header': 'IZAZISO',
+    'inbox.callAlert': 'Isaziso Sekholi',
+    'inbox.crewUpdate': 'Ukuvuselelwa kweCrew',
+    'inbox.postActivity': 'Umsebenzi wePost',
+    'inbox.activity': 'Umsebenzi',
+    'inbox.noNotifications': 'Akulazaziso okwamanje',
+    'inbox.noNotificationsBody':
+      'Nxa usuthola imilayezo kumbe izaziso, zizavela lapha!',
+    'inbox.filterAll': 'Konke',
+    'inbox.filterMessages': 'Imilayezo',
+    'inbox.filterActivity': 'Imisebenzi',
+    'inbox.searchPlaceholder': 'Dinga ngebizo kumbe umlayezo...',
+    'inbox.noMatches': 'Akulampumela ehambelanayo',
+    'inbox.noMatchesBody': 'Zama elinye ibizo kumbe keyword.',
+    'inbox.selectedCount': '{{count}} okukhethiwe',
+    'inbox.markRead': 'Maka seKubaliwe',
+    'inbox.deleteMessagesTitle': 'Cima Imilayezo',
+    'inbox.deleteMessagesBody': 'Cima umlayezo {{count}}{{suffix}}?',
+    'common.delete': 'Cima',
+    'common.copied': 'Kukopishiwe',
+    'common.ok': 'Kulungile',
+    'thread.noMessages': 'Akulamlayezo okwamanje',
+    'thread.noMessagesBody': 'Qalisa ingxoxo usebenzisa ibhokisi lomlayezo elingezansi.',
+    'thread.replyTo': 'Phendula ku {{name}}',
+    'thread.messageUser': 'Thumela umlayezo ku {{name}}',
+    'thread.typeMessage': 'Bhala umlayezo...',
+    'thread.sending': 'Kuyathunyelwa...',
+    'thread.send': 'Thumela',
+    'thread.copy': 'Kopisha',
+    'thread.forward': 'Dlulisela',
+    'thread.hide': 'Fihla',
+    'thread.copyBody': 'Umbhalo womlayezo ukopishiwe ku clipboard',
+    'thread.forwardBody': 'Ukusebenza kokudlulisela kuzafakwa lapha',
+    'thread.hideBody': 'Ukusebenza kokufihla kuzafakwa lapha',
+    'thread.removeAttachment': 'Susa okuhlanganisiweyo',
+    'profile.usernamePlaceholder': 'Username (isb. janedoe)',
+    'profile.bioPlaceholder': 'Bhala i-bio emfutshane...',
+    'profile.minuteFameTitle': 'Isihloko se1 Minute Fame: {{title}}',
+    'profile.inviteEarn': 'Mema Uzuze',
+    'profile.reachNextReward': 'Finyelela ku {{count}} abafaneleyo uthole {{reward}}.',
+    'profile.topRewardUnlocked': 'Usuvule izinga eliphezulu lomvuzo elikhona khathesi.',
+    'profile.generatingReferralCode': 'Ikhodi yereferensi iyalungiswa...',
+    'profile.qualifiedCounts': 'Abafaneleyo: {{qualified}}  Abasalindileyo: {{pending}}  Abamenyiweyo bonke: {{invited}}',
+    'profile.referralQualifyRule':
+      'Ireferensi ibalwa kuphela nxa umuntu ommemeleyo engumsebenzisi omutsha oqotho, ebhalisa ngekhodi yakho, aphinde asebenze okungenani izinsuku ezi {{days}} ezehlukileyo. Ama-akhawunti enkohliso, aphindwe kabili, loba ukuzimema akwamukelwa.',
+    'profile.referralReviewRule':
+      'I-airtime leminye imivuzo kuyahlolwa kungakakhitshwa. IMoMo ingatshintsha umvuzo ngomunye olingana lawo.',
+    'profile.shareReferral': 'Yabelana ngeReferensi',
+    'profile.invalidUsernameTitle': 'Username ayilunganga',
+    'profile.invalidUsernameEmpty': 'Username kayingabi yize.',
+    'profile.invalidUsernameShort': 'Username kumele ibe lezinhlamvu okungenani ezintathu.',
+    'profile.updatedTitle': 'Kuphumelele',
+    'profile.updatedBody': 'Iphrofayili ivuselelwe!',
+    'profile.saveProfile': 'Gcina Iphrofayili',
+    'profile.myVibes': 'AmaVibes Ami',
+    'profile.myTreasure': 'Ingcebo Yami',
+    'compose.editPost': 'Lungisa iPost',
+    'compose.createPost': 'Dala iPost',
+    'compose.selectedItems': '{{count}} into{{suffix}} zikhethiwe',
+    'compose.remove': 'Susa',
+    'compose.attachedAudio': 'I-audio ehlanganisiweyo',
+    'compose.removeAudio': 'Susa i-Audio',
+    'compose.storyPlaceholder': 'Indaba ithini?',
+    'compose.uploading': 'Kuyalayishwa...',
+    'compose.postingStory': 'Indaba iyathunyelwa...',
+    'compose.preparingFiles': 'kulungiswa amafayela',
+    'compose.publishing': 'kuyakhutshwa',
+    'compose.postFailed': 'Ipost yehlulekile: {{message}}',
+    'compose.retryPost': 'Zama Ukuthumela Njalo',
+    'compose.camera': 'Ikhamera',
+    'compose.gallery': 'Igalari',
+    'compose.sdCard': 'SD Card',
+    'compose.music': 'Umculo',
+    'compose.saveEdit': 'Gcina Ushintsho',
+    'compose.postGrid': 'Thumela iGrid',
+    'compose.postWithMedia': 'Thumela leMedia',
+    'compose.postAudio': 'Thumela i-Audio',
+    'compose.postText': 'Thumela Umbhalo',
+    'compose.addContentTitle': 'Dala iPost',
+    'compose.addContentBody': 'Sicela ungeze umbhalo loba ukhethe i-media yokuthumela.',
+    'compose.postUpdated': 'Ipost ivuselelwe.',
+    'compose.overlayNotSupportedTitle': 'I-Overlay Ayisekelwa',
+    'compose.overlayNotSupportedBody': 'I-audio overlay ingafakwa kuphela emifanekisweni lakumavidiyo.',
+    'compose.backendNotReadyTitle': 'I-backend kayikalungi',
+    'compose.filePostingUnavailable': 'Ukuthumela amafayela akutholakali khathesi.',
+    'compose.audioPostingUnavailable': 'Ukuthumela i-audio akutholakali khathesi.',
+    'compose.signInRequiredTitle': 'Ngena kuqala',
+    'compose.signInPostFiles': 'Sicela ungene ukuze uthumele amafayela.',
+    'compose.signInPostAudio': 'Sicela ungene ukuze uthumele i-audio.',
+    'compose.uploadErrorTitle': 'Iphutha lokulayisha',
+    'compose.selectedFileUnavailable': 'Yehlulekile ukuthola ifayela elikhethiwe.',
+    'compose.selectedAudioUnavailable': 'Yehlulekile ukuthola i-audio ekhethiwe.',
+    'compose.createPostFailedFallback': 'Yehlulekile ukudala ipost. Zama njalo.',
+    'compose.createPostFailedBody': 'Yehlulekile ukudala ipost. {{message}}',
+    'myVibes.empty': 'Akukabi lama vibes. Thumela usuka ku Make Vibes.',
+    'myVibes.untitledWave': 'I-wave engelabizo',
+    'myVibes.views': 'Ukubukwa',
+    'myVibes.date': 'Usuku',
+    'myVibes.unknown': 'Akukwaziwa',
+    'myVibes.deleting': 'Kuyasuswa...',
+    'myVibes.delete': 'Susa',
+    'myVibes.share': 'Yabelana',
+    'myVibes.anchor': 'Namathisela',
   },
   sw: {
     'language.system': 'Fuata lugha ya simu',
@@ -1643,6 +2321,176 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.languageValue': 'Lugha: {{language}}',
     'settings.selectLanguageTitle': 'Chagua lugha',
     'settings.selectLanguageBody': 'Chagua lugha unayotaka app itumie.',
+    'command.homeTitle': 'COMMAND CENTRE',
+    'command.profileTitle': 'PROFAILI',
+    'command.privacyTitle': 'FARAGHA & USALAMA',
+    'command.notificationsTitle': 'ARIFA',
+    'command.performanceTitle': 'UTENDAJI',
+    'command.appearanceTitle': 'MWONEKANO',
+    'command.aboutTitle': 'KUHUSU',
+    'command.pickChange': 'Chagua unachotaka kubadilisha.',
+    'command.tapBelow': 'Gusa mpangilio hapa chini.',
+    'command.settingsForCategory': 'Mipangilio ya sehemu hii',
+    'menu.profileDesc': 'Utambulisho, avatar, lugha, na mapendeleo ya crew',
+    'menu.privacyDesc': 'Faragha, ulinzi, na maudhui yaliyowekewa mipaka',
+    'menu.notificationsDesc': 'Sauti na tabia za ujumbe',
+    'menu.performanceDesc': 'Kuokoa data, playback, cache, na upakiaji',
+    'menu.appearanceDesc': 'Athari za storm na mwonekano',
+    'menu.aboutDesc': 'Taarifa za toleo, updates, na kutoka',
+    'settings.profileAccess': 'Profaili & Ufikiaji',
+    'settings.interaction': 'Mwingiliano',
+    'settings.system': 'Mfumo',
+    'settings.captainIdentity': 'Utambulisho wa Captain',
+    'settings.captainIdentityDesc': 'Udhibiti wa akaunti na profaili',
+    'settings.shieldsBoundaries': 'Ngao & Mipaka',
+    'settings.shieldsBoundariesDesc': 'Udhibiti wa faragha kwa drift yako',
+    'settings.crewLists': 'Orodha za Crew',
+    'settings.crewListsDesc': 'Mpangilio wa orodha na mtindo wa kuonekana',
+    'settings.chatHarbor': 'Chat Harbor',
+    'settings.chatHarborDesc': 'Tabia za ujumbe na kutuma haraka',
+    'settings.alertBells': 'Kengele za Tahadhari',
+    'settings.alertBellsDesc': 'Sauti za arifa na tabia ya beji',
+    'settings.cacheCurrents': 'Cache & Currents',
+    'settings.cacheCurrentsDesc': 'Hifadhi na mtindo wa uhamisho wa data',
+    'settings.tongueRegion': 'Lugha & Eneo',
+    'settings.tongueRegionDesc': 'Chaguo la lugha ya app',
+    'settings.tidePatches': 'Tide Patches',
+    'settings.tidePatchesDesc': 'Toleo na ukaguzi wa updates',
+    'common.open': 'Fungua',
+    'common.hide': 'Ficha',
+    'common.on': 'WASHA',
+    'common.off': 'ZIMA',
+    'common.cancel': 'Ghairi',
+    'settings.handle': 'Handle: {{handle}}',
+    'settings.signedInAs': 'Umeingia kama {{account}}',
+    'settings.anonymous': 'asiyejulikana',
+    'settings.harborPortrait': 'Picha ya Harbor',
+    'settings.changeAvatar': 'Badili Avatar',
+    'settings.privateWakeMode': 'Private Wake Mode',
+    'settings.privateWakeModeDesc': 'Punguza maombi ya drift yasiyoombwa.',
+    'settings.sortMode': 'Mtindo wa kupanga',
+    'settings.recent': 'Ya karibuni',
+    'settings.quickSend': 'Tuma Haraka',
+    'settings.quickSendDesc': 'Tuma kwa haraka kutoka kwenye chat composer.',
+    'settings.incomingCalls': 'Simu zinazoingia',
+    'settings.messages': 'Ujumbe',
+    'settings.liveInviteSilent': 'Beji ya Live Invite (Kimya)',
+    'settings.missedCalls': 'Simu zilizokosa',
+    'settings.notification': 'Arifa',
+    'settings.tone': 'Sauti: {{tone}}',
+    'settings.silent': 'Kimya',
+    'settings.smartDataSaver': 'Smart Data Saver',
+    'settings.clearedTitle': 'Imefutwa',
+    'settings.clearCacheBody': 'Cache ya invite za ndani na previews imefutwa.',
+    'settings.clearLocalCache': 'Futa Local Cache',
+    'settings.chooseLanguage': 'Chagua Lugha',
+    'settings.appUpdates': 'Updates za app',
+    'settings.currentVersion': 'Toleo la sasa ni v{{version}} build {{build}}.',
+    'settings.checkNow': 'Angalia Sasa',
+    'inbox.title': 'ARIFA ZA VIBE',
+    'inbox.header': 'ARIFA',
+    'inbox.callAlert': 'Tahadhari ya Simu',
+    'inbox.crewUpdate': 'Mabadiliko ya Crew',
+    'inbox.postActivity': 'Shughuli ya Post',
+    'inbox.activity': 'Shughuli',
+    'inbox.noNotifications': 'Hakuna arifa bado',
+    'inbox.noNotificationsBody':
+      'Ukipokea ujumbe au arifa, vitaonekana hapa!',
+    'inbox.filterAll': 'Zote',
+    'inbox.filterMessages': 'Ujumbe',
+    'inbox.filterActivity': 'Shughuli',
+    'inbox.searchPlaceholder': 'Tafuta kwa jina au ujumbe...',
+    'inbox.noMatches': 'Hakuna matokeo yanayolingana',
+    'inbox.noMatchesBody': 'Jaribu jina au neno tofauti.',
+    'inbox.selectedCount': '{{count}} vimechaguliwa',
+    'inbox.markRead': 'Weka Kama Imesomwa',
+    'inbox.deleteMessagesTitle': 'Futa Ujumbe',
+    'inbox.deleteMessagesBody': 'Futa ujumbe {{count}}{{suffix}}?',
+    'common.delete': 'Futa',
+    'common.copied': 'Imenakiliwa',
+    'common.ok': 'Sawa',
+    'thread.noMessages': 'Hakuna ujumbe bado',
+    'thread.noMessagesBody': 'Anza mazungumzo ukitumia kisanduku cha ujumbe hapa chini.',
+    'thread.replyTo': 'Jibu kwa {{name}}',
+    'thread.messageUser': 'Tuma ujumbe kwa {{name}}',
+    'thread.typeMessage': 'Andika ujumbe...',
+    'thread.sending': 'Inatuma...',
+    'thread.send': 'Tuma',
+    'thread.copy': 'Nakili',
+    'thread.forward': 'Tuma mbele',
+    'thread.hide': 'Ficha',
+    'thread.copyBody': 'Maandishi ya ujumbe yamenakiliwa kwenye clipboard',
+    'thread.forwardBody': 'Uwezo wa kutuma mbele utawekwa hapa',
+    'thread.hideBody': 'Uwezo wa kuficha utawekwa hapa',
+    'thread.removeAttachment': 'Ondoa kiambatisho',
+    'profile.usernamePlaceholder': 'Username (mfano janedoe)',
+    'profile.bioPlaceholder': 'Andika bio fupi...',
+    'profile.minuteFameTitle': 'Kichwa cha 1 Minute Fame: {{title}}',
+    'profile.inviteEarn': 'Alika Ujipatie',
+    'profile.reachNextReward': 'Fikia watumiaji {{count}} waliohitimu upate {{reward}}.',
+    'profile.topRewardUnlocked': 'Umefungua kiwango cha juu kabisa cha zawadi kilichopo kwa sasa.',
+    'profile.generatingReferralCode': 'Msimbo wa rufaa unatengenezwa...',
+    'profile.qualifiedCounts': 'Waliohitimu: {{qualified}}  Wanaosubiri: {{pending}}  Waliyoalikwa wote: {{invited}}',
+    'profile.referralQualifyRule':
+      'Rufaa huhesabiwa tu pale mtu aliyealikwa akiwa mtumiaji mpya wa kweli, akisajili kwa msimbo wako, na kuwa hai kwa angalau siku {{days}} tofauti. Akaunti bandia, za kurudia, au kujialika hazihesabiwi.',
+    'profile.referralReviewRule':
+      'Airtime na zawadi nyingine hukaguliwa kabla ya kutolewa. MoMo inaweza kubadilisha zawadi na faida nyingine sawia inapobidi.',
+    'profile.shareReferral': 'Shiriki Rufaa',
+    'profile.invalidUsernameTitle': 'Username si sahihi',
+    'profile.invalidUsernameEmpty': 'Username haiwezi kuwa tupu.',
+    'profile.invalidUsernameShort': 'Username lazima iwe na angalau herufi 3.',
+    'profile.updatedTitle': 'Imefanikiwa',
+    'profile.updatedBody': 'Profaili imesasishwa!',
+    'profile.saveProfile': 'Hifadhi Profaili',
+    'profile.myVibes': 'Vibes Zangu',
+    'profile.myTreasure': 'Hazina Yangu',
+    'compose.editPost': 'Hariri Post',
+    'compose.createPost': 'Tengeneza Post',
+    'compose.selectedItems': 'Kitu {{count}}{{suffix}} kimechaguliwa',
+    'compose.remove': 'Ondoa',
+    'compose.attachedAudio': 'Audio iliyounganishwa',
+    'compose.removeAudio': 'Ondoa Audio',
+    'compose.storyPlaceholder': 'Habari ni ipi?',
+    'compose.uploading': 'Inapakia...',
+    'compose.postingStory': 'Inachapisha habari...',
+    'compose.preparingFiles': 'inaandaa faili',
+    'compose.publishing': 'inachapisha',
+    'compose.postFailed': 'Post imeshindikana: {{message}}',
+    'compose.retryPost': 'Jaribu Tena Kuchapisha',
+    'compose.camera': 'Kamera',
+    'compose.gallery': 'Galeria',
+    'compose.sdCard': 'SD Card',
+    'compose.music': 'Muziki',
+    'compose.saveEdit': 'Hifadhi Mabadiliko',
+    'compose.postGrid': 'Chapisha Grid',
+    'compose.postWithMedia': 'Chapisha na Media',
+    'compose.postAudio': 'Chapisha Audio',
+    'compose.postText': 'Chapisha Maandishi',
+    'compose.addContentTitle': 'Tengeneza Post',
+    'compose.addContentBody': 'Tafadhali ongeza maandishi au uchague media ya kuchapisha.',
+    'compose.postUpdated': 'Post imesasishwa.',
+    'compose.overlayNotSupportedTitle': 'Overlay Haitumiki',
+    'compose.overlayNotSupportedBody': 'Audio overlay inaweza kuongezwa kwenye picha na video pekee.',
+    'compose.backendNotReadyTitle': 'Backend haijawa tayari',
+    'compose.filePostingUnavailable': 'Uchapishaji wa faili haupatikani kwa sasa.',
+    'compose.audioPostingUnavailable': 'Uchapishaji wa audio haupatikani kwa sasa.',
+    'compose.signInRequiredTitle': 'Ingia kwanza',
+    'compose.signInPostFiles': 'Tafadhali ingia ili kuchapisha faili.',
+    'compose.signInPostAudio': 'Tafadhali ingia ili kuchapisha audio.',
+    'compose.uploadErrorTitle': 'Hitilafu ya kupakia',
+    'compose.selectedFileUnavailable': 'Imeshindikana kufikia faili lililochaguliwa.',
+    'compose.selectedAudioUnavailable': 'Imeshindikana kufikia audio iliyochaguliwa.',
+    'compose.createPostFailedFallback': 'Imeshindikana kutengeneza post. Jaribu tena.',
+    'compose.createPostFailedBody': 'Imeshindikana kutengeneza post. {{message}}',
+    'myVibes.empty': 'Bado hakuna vibes. Chapisha kutoka Make Vibes.',
+    'myVibes.untitledWave': 'Wave isiyo na jina',
+    'myVibes.views': 'Mitazamo',
+    'myVibes.date': 'Tarehe',
+    'myVibes.unknown': 'Haijulikani',
+    'myVibes.deleting': 'Inafuta...',
+    'myVibes.delete': 'Futa',
+    'myVibes.share': 'Shiriki',
+    'myVibes.anchor': 'Anika',
   },
 };
 
@@ -15243,7 +16091,7 @@ type CommandCentreSection =
     
     // If no text, media, or audio, show error
     if (!trimmedText && unifiedPostMediaItems.length === 0 && !unifiedPostAudio) {
-      Alert.alert('Create a Post', 'Please add some text or select media to post.');
+      Alert.alert(t('compose.addContentTitle'), t('compose.addContentBody'));
       return;
     }
     
@@ -15271,7 +16119,7 @@ type CommandCentreSection =
         setPublicFeed(prev => prev.map(applyEdit));
         setPostFeed(prev => prev.map(applyEdit));
         closeUnifiedPostModal();
-        notifySuccess('Post updated.');
+        notifySuccess(t('compose.postUpdated'));
         return;
       }
 
@@ -15332,8 +16180,8 @@ type CommandCentreSection =
 
         if (unifiedPostAudio?.uri && !mediaIsVisual) {
           Alert.alert(
-            'Overlay Not Supported',
-            'Audio overlay can be attached only to images and videos.',
+            t('compose.overlayNotSupportedTitle'),
+            t('compose.overlayNotSupportedBody'),
           );
           return;
         }
@@ -15366,13 +16214,19 @@ type CommandCentreSection =
             authMod = require('@react-native-firebase/auth').default;
           } catch {}
           if (!storageMod || !firestoreMod || !authMod) {
-            Alert.alert('Backend not ready', 'File posting is unavailable right now.');
+            Alert.alert(
+              t('compose.backendNotReadyTitle'),
+              t('compose.filePostingUnavailable'),
+            );
             return;
           }
           const a = authMod();
           const uid = a.currentUser?.uid;
           if (!uid) {
-            Alert.alert('Sign in required', 'Please sign in to post files.');
+            Alert.alert(
+              t('compose.signInRequiredTitle'),
+              t('compose.signInPostFiles'),
+            );
             return;
           }
 
@@ -15412,7 +16266,10 @@ type CommandCentreSection =
             localPath = localPath.replace('file://', '');
           }
           if (!localPath) {
-            Alert.alert('Upload error', 'Could not access the selected file.');
+            Alert.alert(
+              t('compose.uploadErrorTitle'),
+              t('compose.selectedFileUnavailable'),
+            );
             return;
           }
 
@@ -15501,13 +16358,19 @@ type CommandCentreSection =
           authMod = require('@react-native-firebase/auth').default;
         } catch {}
         if (!storageMod || !firestoreMod || !authMod) {
-          Alert.alert('Backend not ready', 'Audio posting is unavailable right now.');
+          Alert.alert(
+            t('compose.backendNotReadyTitle'),
+            t('compose.audioPostingUnavailable'),
+          );
           return;
         }
         const a = authMod();
         const uid = a.currentUser?.uid;
         if (!uid) {
-          Alert.alert('Sign in required', 'Please sign in to post audio.');
+          Alert.alert(
+            t('compose.signInRequiredTitle'),
+            t('compose.signInPostAudio'),
+          );
           return;
         }
         if (
@@ -15544,7 +16407,10 @@ type CommandCentreSection =
           audioLocal = audioLocal.replace('file://', '');
         }
         if (!audioLocal) {
-          Alert.alert('Upload error', 'Could not access the selected audio file.');
+          Alert.alert(
+            t('compose.uploadErrorTitle'),
+            t('compose.selectedAudioUnavailable'),
+          );
           return;
         }
 
@@ -15652,9 +16518,14 @@ type CommandCentreSection =
       console.error('Unified post error:', error);
       const message =
         (error as any)?.message ||
-        (typeof error === 'string' ? error : 'Failed to create post. Please try again.');
+        (typeof error === 'string'
+          ? error
+          : t('compose.createPostFailedFallback'));
       setUnifiedPostError(String(message));
-      Alert.alert('Error', `Failed to create post. ${message}`);
+      Alert.alert(
+        t('compose.uploadErrorTitle'),
+        t('compose.createPostFailedBody', { message }),
+      );
     } finally {
       setIsUnifiedPosting(false);
       setUnifiedPostProgress(null);
@@ -18608,7 +19479,7 @@ type CommandCentreSection =
                 <TextInput
                   value={profileName || ''}
                   onChangeText={setProfileName}
-                  placeholder="Username (e.g. janedoe)"
+                  placeholder={t('profile.usernamePlaceholder')}
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   style={[
                     styles.profileName as any,
@@ -18623,7 +19494,7 @@ type CommandCentreSection =
                 <TextInput
                   value={profileBio}
                   onChangeText={setProfileBio}
-                  placeholder="Write a short bio..."
+                  placeholder={t('profile.bioPlaceholder')}
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   multiline
                   style={{
@@ -18646,7 +19517,7 @@ type CommandCentreSection =
                       fontWeight: '800',
                     }}
                   >
-                    1 Minute Fame Title: {profileMinuteFameTitle}
+                    {t('profile.minuteFameTitle', { title: profileMinuteFameTitle })}
                   </Text>
                 )}
                 <View
@@ -18661,15 +19532,18 @@ type CommandCentreSection =
                   }}
                 >
                   <Text style={{ color: '#FFFFFF', fontSize: 13, fontWeight: '800' }}>
-                    Invite & Earn
+                    {t('profile.inviteEarn')}
                   </Text>
                   {(() => {
                     const nextRewardTier = getNextReferralRewardTier(profileReferralQualifiedCount);
                     return (
                       <Text style={{ color: '#D7F0FF', fontSize: 12, marginTop: 6 }}>
                         {nextRewardTier
-                          ? `Reach ${nextRewardTier.qualifiedUsers} qualified users for ${nextRewardTier.reward}.`
-                          : 'You have unlocked the top referral reward tier available right now.'}
+                          ? t('profile.reachNextReward', {
+                              count: nextRewardTier.qualifiedUsers,
+                              reward: nextRewardTier.reward,
+                            })
+                          : t('profile.topRewardUnlocked')}
                       </Text>
                     );
                   })()}
@@ -18686,10 +19560,14 @@ type CommandCentreSection =
                       letterSpacing: 0.5,
                     }}
                   >
-                    {profileReferralCode || 'Generating referral code...'}
+                    {profileReferralCode || t('profile.generatingReferralCode')}
                   </Text>
                   <Text style={{ color: '#C8EFFF', fontSize: 11, marginTop: 8 }}>
-                    Qualified: {profileReferralQualifiedCount}  Pending: {profileReferralPendingCount}  Total invited: {profileReferralInvitedCount}
+                    {t('profile.qualifiedCounts', {
+                      qualified: profileReferralQualifiedCount,
+                      pending: profileReferralPendingCount,
+                      invited: profileReferralInvitedCount,
+                    })}
                   </Text>
                   {!!profileReferralRewardLabel && (
                     <Text style={{ color: '#FFFFFF', fontSize: 11, marginTop: 8, fontWeight: '800' }}>
@@ -18697,10 +19575,10 @@ type CommandCentreSection =
                     </Text>
                   )}
                   <Text style={{ color: '#B9E8FB', fontSize: 11, marginTop: 8, lineHeight: 16 }}>
-                    A referral counts only when the invited person is a real new user, signs up with your code, and is active on at least {REFERRAL_MIN_ACTIVE_DAYS} different days. Fake accounts, duplicate accounts, and self-referrals do not qualify.
+                    {t('profile.referralQualifyRule', { days: REFERRAL_MIN_ACTIVE_DAYS })}
                   </Text>
                   <Text style={{ color: '#B9E8FB', fontSize: 11, marginTop: 6, lineHeight: 16 }}>
-                    Airtime and other rewards are reviewed before issue. MoMo may replace a reward with an equivalent promo benefit where needed.
+                    {t('profile.referralReviewRule')}
                   </Text>
                   <Pressable
                     style={({ pressed }) => [
@@ -18730,7 +19608,7 @@ type CommandCentreSection =
                     }}
                   >
                     <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
-                      Share Referral
+                      {t('profile.shareReferral')}
                     </Text>
                   </Pressable>
                   <Pressable
@@ -18786,12 +19664,18 @@ type CommandCentreSection =
                   onPress={async () => {
                     // Validation for username
                     if (!profileName.trim()) {
-                      Alert.alert('Invalid Username', 'Username cannot be empty.');
+                      Alert.alert(
+                        t('profile.invalidUsernameTitle'),
+                        t('profile.invalidUsernameEmpty'),
+                      );
                       return;
                     }
                     const trimmedName = normalizeUniqueUsername(profileName);
                     if (trimmedName.length < 3) {
-                      Alert.alert('Invalid Username', 'Username must be at least 3 characters.');
+                      Alert.alert(
+                        t('profile.invalidUsernameTitle'),
+                        t('profile.invalidUsernameShort'),
+                      );
                       return;
                     }
                     // Check if username is unique
@@ -18813,7 +19697,7 @@ type CommandCentreSection =
                         await auth().currentUser?.updateProfile({ displayName: trimmedName });
                       } catch {}
                       setProfileReferralCode(ensuredReferralCode);
-                      Alert.alert('Success', 'Profile updated!');
+                      Alert.alert(t('profile.updatedTitle'), t('profile.updatedBody'));
                     } catch (e: any) {
                       if (String(e?.message || '').includes('username-taken')) {
                         Alert.alert('Username Taken', 'That username is already in use. Try another one.');
@@ -18823,7 +19707,7 @@ type CommandCentreSection =
                     }
                   }}
                 >
-                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>Save Profile</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>{t('profile.saveProfile')}</Text>
                 </Pressable>
               </View>
               {/* My Vibes and My Treasure */}
@@ -18856,7 +19740,7 @@ type CommandCentreSection =
                       numberOfLines={1}
                       adjustsFontSizeToFit
                     >
-                      My Vibes
+                      {t('profile.myVibes')}
                     </Text>
                   </View>
                 </Pressable>
@@ -18888,7 +19772,7 @@ type CommandCentreSection =
                       numberOfLines={1}
                       adjustsFontSizeToFit
                     >
-                      My Treasure
+                      {t('profile.myTreasure')}
                     </Text>
                   </View>
                 </Pressable>
@@ -18939,10 +19823,10 @@ type CommandCentreSection =
             <View style={{ flex: 1, padding: 16 }}>
               <View style={{ marginBottom: 16 }}>
                 <Text style={[styles.logbookTitle, { textAlign: 'center', marginBottom: 8 }]}>
-                  VIBE ALERTS
+                  {t('inbox.title')}
                 </Text>
                 <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
-                  <Text style={{ color: '#8D0000' }}>NOTIFICATIONS</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + callHistory.length})</Text>
+                  <Text style={{ color: '#8D0000' }}>{t('inbox.header')}</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + callHistory.length})</Text>
                 </Text>
               </View>
 
@@ -18950,25 +19834,25 @@ type CommandCentreSection =
                 // Unified notifications view
                 (() => {
                   const getActivityCategoryLabel = (notification: any) => {
-                    const t = String(notification?.type || '').toLowerCase();
-                    if (t.startsWith('call_')) return 'Call Alert';
+                    const notificationType = String(notification?.type || '').toLowerCase();
+                    if (notificationType.startsWith('call_')) return t('inbox.callAlert');
                     if (
-                      t === 'follow' ||
-                      t === 'connect_vibe' ||
-                      t === 'joined_tide' ||
-                      t === 'left_crew'
+                      notificationType === 'follow' ||
+                      notificationType === 'connect_vibe' ||
+                      notificationType === 'joined_tide' ||
+                      notificationType === 'left_crew'
                     ) {
-                      return 'Crew Update';
+                      return t('inbox.crewUpdate');
                     }
                     if (
-                      t === 'echo' ||
-                      t === 'splash' ||
-                      t === 'octopus_hug' ||
-                      t === 'post'
+                      notificationType === 'echo' ||
+                      notificationType === 'splash' ||
+                      notificationType === 'octopus_hug' ||
+                      notificationType === 'post'
                     ) {
-                      return 'Post Activity';
+                      return t('inbox.postActivity');
                     }
-                    return 'Activity';
+                    return t('inbox.activity');
                   };
                   // Define system notification types that should show with letter avatars
                   const systemNotificationTypes = ['hug', 'echo', 'joined_tide', 'left_crew', 'post', 'splash', 'octopus_hug', 'follow', 'CONNECT_VIBE', 'call_missed', 'call_invite', 'call_declined'];
@@ -19100,10 +19984,10 @@ type CommandCentreSection =
                     return (
                       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
                         <Text style={{ color: 'white', fontSize: 16, textAlign: 'center' }}>
-                          No notifications yet
+                          {t('inbox.noNotifications')}
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', marginTop: 8 }}>
-                          When you receive messages or notifications, they'll appear here!
+                          {t('inbox.noNotificationsBody')}
                         </Text>
                       </View>
                     );
@@ -19128,7 +20012,7 @@ type CommandCentreSection =
                             }}
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
-                              All ({unifiedNotifications.length})
+                              {t('inbox.filterAll')} ({unifiedNotifications.length})
                             </Text>
                           </Pressable>
                           <Pressable
@@ -19141,7 +20025,7 @@ type CommandCentreSection =
                             }}
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
-                              Messages ({messageCount})
+                              {t('inbox.filterMessages')} ({messageCount})
                             </Text>
                           </Pressable>
                           <Pressable
@@ -19154,14 +20038,14 @@ type CommandCentreSection =
                             }}
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
-                              Activity ({activityCount})
+                              {t('inbox.filterActivity')} ({activityCount})
                             </Text>
                           </Pressable>
                         </ScrollView>
                         <TextInput
                           value={inboxSearchQuery}
                           onChangeText={setInboxSearchQuery}
-                          placeholder="Search by name or message..."
+                          placeholder={t('inbox.searchPlaceholder')}
                           placeholderTextColor="rgba(255,255,255,0.45)"
                           style={{
                             color: 'white',
@@ -19177,7 +20061,7 @@ type CommandCentreSection =
                       {filteredNotifications.length === 0 ? (
                         <View style={{ paddingVertical: 28, alignItems: 'center' }}>
                           <Text style={{ color: 'white', fontSize: 15, fontWeight: '700' }}>
-                            No matching results
+                            {t('inbox.noMatches')}
                           </Text>
                           <Text
                             style={{
@@ -19187,7 +20071,7 @@ type CommandCentreSection =
                               textAlign: 'center',
                             }}
                           >
-                            Try a different name or keyword.
+                            {t('inbox.noMatchesBody')}
                           </Text>
                         </View>
                       ) : (
@@ -19519,7 +20403,7 @@ type CommandCentreSection =
                       }}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
                           <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
-                            {selectedNotifications.size} selected
+                            {t('inbox.selectedCount', { count: selectedNotifications.size })}
                           </Text>
                         </View>
                         
@@ -19546,7 +20430,7 @@ type CommandCentreSection =
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
                             <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
-                              Cancel
+                              {t('common.cancel')}
                             </Text>
                           </Pressable>
 
@@ -19580,7 +20464,7 @@ type CommandCentreSection =
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
                             <Text style={{ color: 'black', fontSize: 11, fontWeight: 'bold' }}>
-                              Mark Read
+                              {t('inbox.markRead')}
                             </Text>
                           </Pressable>
 
@@ -19596,12 +20480,15 @@ type CommandCentreSection =
                             }}
                             onPress={() => {
                               Alert.alert(
-                                'Delete Messages',
-                                `Delete ${selectedNotifications.size} message${selectedNotifications.size > 1 ? 's' : ''}?`,
+                                t('inbox.deleteMessagesTitle'),
+                                t('inbox.deleteMessagesBody', {
+                                  count: selectedNotifications.size,
+                                  suffix: selectedNotifications.size > 1 ? 's' : '',
+                                }),
                                 [
-                                  { text: 'Cancel', style: 'cancel' },
+                                  { text: t('common.cancel'), style: 'cancel' },
                                   {
-                                    text: 'Delete',
+                                    text: t('common.delete'),
                                     style: 'destructive',
                                     onPress: async () => {
                                       await deleteSelectedNotifications();
@@ -19614,7 +20501,7 @@ type CommandCentreSection =
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                           >
                             <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
-                              Delete
+                              {t('common.delete')}
                             </Text>
                           </Pressable>
                         </View>
@@ -19674,10 +20561,10 @@ type CommandCentreSection =
                           marginBottom: 6,
                         }}
                       >
-                        No messages yet
+                        {t('thread.noMessages')}
                       </Text>
                       <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 13 }}>
-                        Start the conversation using the message box below.
+                        {t('thread.noMessagesBody')}
                       </Text>
                     </View>
                   ) : selectedThread.messages.map((message, index) => (
@@ -19901,7 +20788,7 @@ type CommandCentreSection =
                     }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                         <Text style={{ color: 'white', fontSize: 14, fontWeight: 'bold' }}>
-                          {selectedThreadMessages.size} selected
+                          {t('inbox.selectedCount', { count: selectedThreadMessages.size })}
                         </Text>
                       </View>
                       
@@ -19928,7 +20815,7 @@ type CommandCentreSection =
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
                           <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
-                            Cancel
+                            {t('common.cancel')}
                           </Text>
                         </Pressable>
 
@@ -19948,14 +20835,14 @@ type CommandCentreSection =
                             );
                             const textToCopy = selectedMessages.map(msg => msg.text).join('\n\n');
                             // Note: Clipboard.setString would be used in a real implementation
-                            Alert.alert('Copied', 'Message text copied to clipboard');
+                            Alert.alert(t('common.copied'), t('thread.copyBody'));
                             setIsThreadSelectionMode(false);
                             setSelectedThreadMessages(new Set());
                           }}
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
                           <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
-                            Copy
+                            {t('thread.copy')}
                           </Text>
                         </Pressable>
 
@@ -19970,14 +20857,14 @@ type CommandCentreSection =
                             alignItems: 'center',
                           }}
                           onPress={() => {
-                            Alert.alert('Forward', 'Forward functionality would be implemented here');
+                            Alert.alert(t('thread.forward'), t('thread.forwardBody'));
                             setIsThreadSelectionMode(false);
                             setSelectedThreadMessages(new Set());
                           }}
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
                           <Text style={{ color: 'black', fontSize: 11, fontWeight: 'bold' }}>
-                            Forward
+                            {t('thread.forward')}
                           </Text>
                         </Pressable>
 
@@ -19992,14 +20879,14 @@ type CommandCentreSection =
                             alignItems: 'center',
                           }}
                           onPress={() => {
-                            Alert.alert('Hide', 'Hide functionality would be implemented here');
+                            Alert.alert(t('thread.hide'), t('thread.hideBody'));
                             setIsThreadSelectionMode(false);
                             setSelectedThreadMessages(new Set());
                           }}
                           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
                           <Text style={{ color: 'white', fontSize: 11, fontWeight: 'bold' }}>
-                            Hide
+                            {t('thread.hide')}
                           </Text>
                         </Pressable>
                       </View>
@@ -20019,8 +20906,12 @@ type CommandCentreSection =
                       fontWeight: 'bold',
                     }}>
                       {selectedMessageForReply
-                        ? `Reply to ${String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}`
-                        : `Message ${String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}`}
+                        ? t('thread.replyTo', {
+                            name: String(selectedThread.senderName || '').replace(/\s+IJ$/, ''),
+                          })
+                        : t('thread.messageUser', {
+                            name: String(selectedThread.senderName || '').replace(/\s+IJ$/, ''),
+                          })}
                     </Text>
                     <Text
                       style={{
@@ -20045,7 +20936,7 @@ type CommandCentreSection =
                           fontSize: 14,
                           marginRight: 8,
                         }}
-                        placeholder="Type a message..."
+                        placeholder={t('thread.typeMessage')}
                         placeholderTextColor="rgba(255,255,255,0.5)"
                         value={quickReplyText}
                         onChangeText={setQuickReplyText}
@@ -20147,7 +21038,7 @@ type CommandCentreSection =
                           fontSize: 12,
                           fontWeight: 'bold',
                         }}>
-                        {isThreadSending ? 'Sending...' : 'Send'}
+                        {isThreadSending ? t('thread.sending') : t('thread.send')}
                         </Text>
                       </Pressable>
                     </View>
@@ -20157,7 +21048,7 @@ type CommandCentreSection =
                           📎 {threadMessageAttachment.fileName || threadMessageAttachment.uri}
                         </Text>
                         <Pressable onPress={() => setThreadMessageAttachment(null)} style={{ marginTop: 6 }}>
-                          <Text style={{ color: '#9ED8FF', fontSize: 12, fontWeight: '700' }}>Remove attachment</Text>
+                          <Text style={{ color: '#9ED8FF', fontSize: 12, fontWeight: '700' }}>{t('thread.removeAttachment')}</Text>
                         </Pressable>
                       </View>
                     ) : null}
@@ -20277,11 +21168,11 @@ type CommandCentreSection =
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>My Vibes</Text>
+              <Text style={styles.logbookTitle}>{t('profile.myVibes')}</Text>
               <ScrollView>
                 {vibesFeed.filter(w => w.ownerUid === myUid).length === 0 ? (
                   <Text style={styles.hint}>
-                    No vibes yet. Post from Make Vibes.
+                    {t('myVibes.empty')}
                   </Text>
                 ) : (
                   vibesFeed.filter(w => w.ownerUid === myUid).map((w, idx) => {
@@ -20349,7 +21240,7 @@ type CommandCentreSection =
                             }}
                             numberOfLines={1}
                           >
-                            {w.captionText || 'Untitled wave'}
+                            {w.captionText || t('myVibes.untitledWave')}
                           </Text>
                         </Pressable>
                         <Text
@@ -20359,7 +21250,7 @@ type CommandCentreSection =
                             fontSize: 12,
                           }}
                         >
-                          Views:{' '}
+                          {t('myVibes.views')}:{' '}
                           <Text style={{ fontWeight: '700', color: 'white' }}>
                             {Math.max(0, waveStats[w.id]?.views ?? 0)}
                           </Text>
@@ -20371,12 +21262,12 @@ type CommandCentreSection =
                             marginTop: 2,
                           }}
                         >
-                          Date:{' '}
+                          {t('myVibes.date')}:{' '}
                           {waveStats[w.id]?.createdAt
                             ? new Date(
                                 waveStats[w.id]!.createdAt!,
                               ).toLocaleString()
-                            : 'Unknown'}
+                            : t('myVibes.unknown')}
                         </Text>
                         <View
                           style={{
@@ -20405,12 +21296,12 @@ type CommandCentreSection =
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                 <ActivityIndicator color="white" size="small" />
                                 <Text style={[styles.closeText, { fontSize: 12 }]}>
-                                  Deleting...
+                                  {t('myVibes.deleting')}
                                 </Text>
                               </View>
                             ) : (
                               <Text style={[styles.closeText, { fontSize: 12 }]}>
-                                Delete
+                                {t('myVibes.delete')}
                               </Text>
                             )}
                           </Pressable>
@@ -20426,7 +21317,7 @@ type CommandCentreSection =
                             ]}
                           >
                             <Text style={[styles.closeText, { fontSize: 12 }]}>
-                              Share
+                              {t('myVibes.share')}
                             </Text>
                           </Pressable>
                           <Pressable
@@ -20441,7 +21332,7 @@ type CommandCentreSection =
                             ]}
                           >
                             <Text style={[styles.closeText, { fontSize: 12 }]}>
-                              Anchor
+                              {t('myVibes.anchor')}
                             </Text>
                           </Pressable>
                         </View>
@@ -20628,7 +21519,9 @@ type CommandCentreSection =
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>{editingWave ? 'Edit Post' : 'Create Post'}</Text>
+              <Text style={styles.logbookTitle}>
+                {editingWave ? t('compose.editPost') : t('compose.createPost')}
+              </Text>
               <ScrollView
                 style={styles.createPostScrollArea}
                 contentContainerStyle={{ paddingBottom: 8 }}
@@ -20638,7 +21531,10 @@ type CommandCentreSection =
                 {unifiedPostMediaItems.length > 0 && (
                   <View style={{ marginBottom: 16 }}>
                     <Text style={{ color: '#CFF6FF', fontSize: 12, marginBottom: 8 }}>
-                      {unifiedPostMediaItems.length} item{unifiedPostMediaItems.length === 1 ? '' : 's'} selected
+                      {t('compose.selectedItems', {
+                        count: unifiedPostMediaItems.length,
+                        suffix: unifiedPostMediaItems.length === 1 ? '' : 's',
+                      })}
                     </Text>
                     <View style={styles.createPostPreviewGrid}>
                       {unifiedPostMediaItems.map((mediaItem, mediaIndex) => (
@@ -20682,7 +21578,9 @@ type CommandCentreSection =
                                 paddingVertical: 3,
                               }}
                             >
-                              <Text style={{ color: 'white', fontSize: 10, fontWeight: '700' }}>Remove</Text>
+                              <Text style={{ color: 'white', fontSize: 10, fontWeight: '700' }}>
+                                {t('compose.remove')}
+                              </Text>
                             </Pressable>
                           ) : null}
                         </View>
@@ -20703,7 +21601,7 @@ type CommandCentreSection =
                     }}
                   >
                     <Text style={{ color: '#00C2FF', fontSize: 14, fontWeight: '700' }}>
-                      Attached audio
+                      {t('compose.attachedAudio')}
                     </Text>
                     <Text style={{ color: '#ccc', fontSize: 12, marginTop: 4 }}>
                       {unifiedPostAudio.name || unifiedPostAudio.uri}
@@ -20720,14 +21618,16 @@ type CommandCentreSection =
                           borderRadius: 4,
                         }}
                       >
-                        <Text style={{ color: 'white', fontSize: 12 }}>Remove Audio</Text>
+                        <Text style={{ color: 'white', fontSize: 12 }}>
+                          {t('compose.removeAudio')}
+                        </Text>
                       </Pressable>
                     ) : null}
                   </View>
                 )}
 
                 <TextInput
-                  placeholder="What's the story?"
+                  placeholder={t('compose.storyPlaceholder')}
                   placeholderTextColor="rgba(255,255,255,0.6)"
                   value={unifiedPostText}
                   onChangeText={setUnifiedPostText}
@@ -20761,12 +21661,14 @@ type CommandCentreSection =
                     }}
                   >
                     <Text style={{ color: '#CFF6FF', fontSize: 12, fontWeight: '700' }}>
-                      {unifiedPostMediaItems.length > 0 || unifiedPostAudio ? 'Uploading...' : 'Posting story...'}
+                      {unifiedPostMediaItems.length > 0 || unifiedPostAudio
+                        ? t('compose.uploading')
+                        : t('compose.postingStory')}
                       {typeof unifiedPostProgress === 'number'
                         ? ` ${unifiedPostProgress}%`
                         : unifiedPostMediaItems.length > 0 || unifiedPostAudio
-                        ? ' preparing files'
-                        : ' publishing'}
+                        ? ` ${t('compose.preparingFiles')}`
+                        : ` ${t('compose.publishing')}`}
                     </Text>
                     <View
                       style={{
@@ -20801,7 +21703,7 @@ type CommandCentreSection =
                     }}
                   >
                     <Text style={{ color: '#FFD9D9', fontSize: 12 }}>
-                      Post failed: {unifiedPostError}
+                      {t('compose.postFailed', { message: unifiedPostError })}
                     </Text>
                     <Pressable
                       onPress={handleUnifiedPost}
@@ -20815,7 +21717,7 @@ type CommandCentreSection =
                       }}
                     >
                       <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
-                        Retry Post
+                        {t('compose.retryPost')}
                       </Text>
                     </Pressable>
                   </View>
@@ -20836,7 +21738,7 @@ type CommandCentreSection =
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>📷</Text>
-                      <Text style={styles.createPostActionLabel}>Camera</Text>
+                      <Text style={styles.createPostActionLabel}>{t('compose.camera')}</Text>
                     </Pressable>
                     <Pressable
                       onPress={handleUnifiedGallerySelect}
@@ -20848,7 +21750,7 @@ type CommandCentreSection =
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>🖼️</Text>
-                      <Text style={styles.createPostActionLabel}>Gallery</Text>
+                      <Text style={styles.createPostActionLabel}>{t('compose.gallery')}</Text>
                     </Pressable>
                     <Pressable
                       onPress={handleSDCardPicker}
@@ -20860,7 +21762,7 @@ type CommandCentreSection =
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>💾</Text>
-                      <Text style={styles.createPostActionLabel}>SD Card</Text>
+                      <Text style={styles.createPostActionLabel}>{t('compose.sdCard')}</Text>
                     </Pressable>
                     <Pressable
                       onPress={handleUnifiedAudioSelect}
@@ -20872,7 +21774,7 @@ type CommandCentreSection =
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>🎵</Text>
-                      <Text style={styles.createPostActionLabel}>Music</Text>
+                      <Text style={styles.createPostActionLabel}>{t('compose.music')}</Text>
                     </Pressable>
                   </>
                 ) : null}
@@ -20898,14 +21800,14 @@ type CommandCentreSection =
                   ) : (
                     <Text style={styles.textComposerButtonText}>
                       {editingWave
-                        ? 'Save Edit'
+                        ? t('compose.saveEdit')
                         : unifiedPostMediaItems.length > 1
-                        ? 'Post Grid'
+                        ? t('compose.postGrid')
                         : unifiedPostMedia
-                        ? 'Post with Media'
+                        ? t('compose.postWithMedia')
                         : unifiedPostAudio
-                        ? 'Post Audio'
-                        : 'Post Text'}
+                        ? t('compose.postAudio')
+                        : t('compose.postText')}
                     </Text>
                   )}
                 </Pressable>
@@ -21957,25 +22859,25 @@ type CommandCentreSection =
             <View style={styles.logbookPage}>
                 <Text style={styles.logbookTitle}>
                 {commandCentreSection === 'home'
-                  ? 'COMMAND CENTRE'
+                  ? t('command.homeTitle')
                   : commandCentreSection === 'profile'
-                  ? 'PROFILE'
+                  ? t('command.profileTitle')
                   : commandCentreSection === 'privacy'
-                  ? 'PRIVACY & SAFETY'
+                  ? t('command.privacyTitle')
                   : commandCentreSection === 'notifications'
-                  ? 'NOTIFICATIONS'
+                  ? t('command.notificationsTitle')
                   : commandCentreSection === 'performance'
-                  ? 'PERFORMANCE'
+                  ? t('command.performanceTitle')
                   : commandCentreSection === 'rewards'
-                  ? 'REFERRAL REWARDS'
+                  ? t('command.rewardsAdminTitle')
                   : commandCentreSection === 'appearance'
-                  ? 'APPEARANCE'
-                  : 'ABOUT'}
+                  ? t('command.appearanceTitle')
+                  : t('command.aboutTitle')}
               </Text>
               <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, textAlign: 'center', marginBottom: 10 }}>
                 {commandCentreSection === 'home'
-                  ? 'Pick what you want to change.'
-                  : 'Tap a setting below.'}
+                  ? t('command.pickChange')
+                  : t('command.tapBelow')}
               </Text>
               {commandCentreSection !== 'home' ? (
                 <Pressable
@@ -21989,10 +22891,10 @@ type CommandCentreSection =
                 {commandCentreSection === 'home' ? (
                   <View style={{ marginBottom: 8 }}>
                     {[
-                      ['profile', 'Profile', 'Identity, avatar, language, and crew preferences'],
-                      ['privacy', 'Privacy & Safety', 'Privacy, guardianship, and restricted content'],
-                      ['notifications', 'Notifications', 'Tones and messaging behavior'],
-                      ['performance', 'Performance', 'Data saver, playback, cache, and loading'],
+                      ['profile', t('command.profileTitle'), t('menu.profileDesc')],
+                      ['privacy', t('command.privacyTitle'), t('menu.privacyDesc')],
+                      ['notifications', t('command.notificationsTitle'), t('menu.notificationsDesc')],
+                      ['performance', t('command.performanceTitle'), t('menu.performanceDesc')],
                       [
                         'rewards',
                         isReferralAdmin
@@ -22002,8 +22904,8 @@ type CommandCentreSection =
                           ? t('command.rewardsAdminSubtitle')
                           : t('command.rewardsUserSubtitle'),
                       ],
-                      ['appearance', 'Appearance', 'Storm and visual effects'],
-                      ['about', 'About', 'Version info, updates, and sign out'],
+                      ['appearance', t('command.appearanceTitle'), t('menu.appearanceDesc')],
+                      ['about', t('command.aboutTitle'), t('menu.aboutDesc')],
                     ].map(item => (
                       <Pressable
                         key={`command-centre-card-${item[0]}`}
@@ -22177,60 +23079,60 @@ type CommandCentreSection =
                   >
                     <Text style={[styles.logbookActionText, { fontSize: 18 }]}>
                       {commandCentreSection === 'profile'
-                        ? 'Profile'
+                        ? t('command.profileTitle')
                         : commandCentreSection === 'privacy'
-                        ? 'Privacy'
+                        ? t('command.privacyTitle')
                         : commandCentreSection === 'notifications'
-                        ? 'Notifications'
+                        ? t('command.notificationsTitle')
                         : commandCentreSection === 'performance'
-                        ? 'Performance'
-                        : 'About'}
+                        ? t('command.performanceTitle')
+                        : t('command.aboutTitle')}
                     </Text>
                     <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
-                      Settings for this category
+                      {t('command.settingsForCategory')}
                     </Text>
                   </Pressable>
                   <View style={{ marginTop: 6 }}>
                       {[
                         {
                           id: 'captain_identity',
-                          title: 'Captain Identity',
-                          subtitle: 'Account and profile controls',
+                          title: t('settings.captainIdentity'),
+                          subtitle: t('settings.captainIdentityDesc'),
                         },
                         {
                           id: 'shields_boundaries',
-                          title: 'Shields & Boundaries',
-                          subtitle: 'Privacy controls for your drift',
+                          title: t('settings.shieldsBoundaries'),
+                          subtitle: t('settings.shieldsBoundariesDesc'),
                         },
                         {
                           id: 'crew_lists',
-                          title: 'Crew Lists',
-                          subtitle: 'List ordering and visibility style',
+                          title: t('settings.crewLists'),
+                          subtitle: t('settings.crewListsDesc'),
                         },
                         {
                           id: 'chat_harbor',
-                          title: 'Chat Harbor',
-                          subtitle: 'Message behavior and quick-send',
+                          title: t('settings.chatHarbor'),
+                          subtitle: t('settings.chatHarborDesc'),
                         },
                         {
                           id: 'alert_bells',
-                          title: 'Alert Bells',
-                          subtitle: 'Notification tones and badge behavior',
+                          title: t('settings.alertBells'),
+                          subtitle: t('settings.alertBellsDesc'),
                         },
                         {
                           id: 'cache_currents',
-                          title: 'Cache & Currents',
-                          subtitle: 'Storage and data transfer mode',
+                          title: t('settings.cacheCurrents'),
+                          subtitle: t('settings.cacheCurrentsDesc'),
                         },
                         {
                           id: 'tongue_region',
-                          title: 'Tongue & Region',
-                          subtitle: 'App language preference',
+                          title: t('settings.tongueRegion'),
+                          subtitle: t('settings.tongueRegionDesc'),
                         },
                         {
                           id: 'tide_patches',
-                          title: 'Tide Patches',
-                          subtitle: 'Version and update checks',
+                          title: t('settings.tidePatches'),
+                          subtitle: t('settings.tidePatchesDesc'),
                         },
                       ].filter(section => {
                         if (commandCentreSection === 'profile') {
@@ -22273,10 +23175,10 @@ type CommandCentreSection =
                               ]}
                             >
                               {section.id === 'captain_identity'
-                                ? 'Profile & Access'
+                                ? t('settings.profileAccess')
                                 : section.id === 'chat_harbor'
-                                ? 'Interaction'
-                                : 'System'}
+                                ? t('settings.interaction')
+                                : t('settings.system')}
                             </Text>
                           )}
                           <Pressable
@@ -22312,8 +23214,8 @@ type CommandCentreSection =
                             </View>
                             <Text style={styles.logbookActionText}>
                               {appSettingsSectionsExpanded[section.id]
-                                ? 'Hide'
-                                : 'Open'}
+                                ? t('common.hide')
+                                : t('common.open')}
                             </Text>
                           </Pressable>
 
@@ -22322,22 +23224,26 @@ type CommandCentreSection =
                               <View style={{ marginTop: 4 }}>
                                 <View style={styles.logbookAction}>
                                   <Text style={styles.logbookActionText}>
-                                    Handle: {profileName || accountCreationHandle || '@captain'}
+                                    {t('settings.handle', {
+                                      handle: profileName || accountCreationHandle || '@captain',
+                                    })}
                                   </Text>
                                   <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
-                                    Signed in as {user?.email || 'anonymous'}
+                                    {t('settings.signedInAs', {
+                                      account: user?.email || t('settings.anonymous'),
+                                    })}
                                   </Text>
                                 </View>
                                 <View style={styles.logbookAction}>
                                   <Text style={styles.logbookActionText}>
-                                    Harbor Portrait
+                                    {t('settings.harborPortrait')}
                                   </Text>
                                   <Pressable
                                     style={[styles.bridgeSettingButton, { marginTop: 6 }]}
                                     onPress={pickProfilePhoto}
                                   >
                                     <Text style={styles.bridgeSettingButtonText}>
-                                      Change Avatar
+                                      {t('settings.changeAvatar')}
                                     </Text>
                                   </Pressable>
                                 </View>
@@ -22348,7 +23254,7 @@ type CommandCentreSection =
                             appSettingsSectionsExpanded[section.id] && (
                               <View style={styles.logbookAction}>
                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                  <Text style={styles.logbookActionText}>Private Wake Mode</Text>
+                                  <Text style={styles.logbookActionText}>{t('settings.privateWakeMode')}</Text>
                                   <Pressable
                                     onPress={() =>
                                       saveHarborSettings({
@@ -22357,12 +23263,12 @@ type CommandCentreSection =
                                     }
                                   >
                                     <Text style={styles.logbookActionText}>
-                                      {harborSettings.privateWakeMode ? 'ON' : 'OFF'}
+                                      {harborSettings.privateWakeMode ? t('common.on') : t('common.off')}
                                     </Text>
                                   </Pressable>
                                 </View>
                                 <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
-                                  Limit unsolicited drift requests.
+                                  {t('settings.privateWakeModeDesc')}
                                 </Text>
                               </View>
                             )}
@@ -22371,7 +23277,7 @@ type CommandCentreSection =
                             appSettingsSectionsExpanded[section.id] && (
                               <View style={styles.logbookAction}>
                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                  <Text style={styles.logbookActionText}>Sort Mode</Text>
+                                  <Text style={styles.logbookActionText}>{t('settings.sortMode')}</Text>
                                   <Pressable
                                     onPress={() =>
                                       saveHarborSettings({
@@ -22384,7 +23290,7 @@ type CommandCentreSection =
                                   >
                                     <Text style={styles.logbookActionText}>
                                       {harborSettings.listSortMode === 'recent'
-                                        ? 'Recent'
+                                        ? t('settings.recent')
                                         : 'A-Z'}
                                     </Text>
                                   </Pressable>
@@ -22396,7 +23302,7 @@ type CommandCentreSection =
                             appSettingsSectionsExpanded[section.id] && (
                               <View style={styles.logbookAction}>
                                 <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                  <Text style={styles.logbookActionText}>Quick Send</Text>
+                                  <Text style={styles.logbookActionText}>{t('settings.quickSend')}</Text>
                                   <Pressable
                                     onPress={() =>
                                       saveHarborSettings({
@@ -22405,12 +23311,12 @@ type CommandCentreSection =
                                     }
                                   >
                                     <Text style={styles.logbookActionText}>
-                                      {harborSettings.chatQuickSend ? 'ON' : 'OFF'}
+                                      {harborSettings.chatQuickSend ? t('common.on') : t('common.off')}
                                     </Text>
                                   </Pressable>
                                 </View>
                                 <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
-                                  Send faster from chat composer.
+                                  {t('settings.quickSendDesc')}
                                 </Text>
                               </View>
                             )}
@@ -22419,10 +23325,10 @@ type CommandCentreSection =
                             appSettingsSectionsExpanded[section.id] && (
                               <View style={{ marginTop: 4 }}>
                                 {[
-                                  { action: 'incoming_call', label: 'Incoming Calls' },
-                                  { action: 'messages', label: 'Messages' },
-                                  { action: 'live_invite', label: 'Live Invite Badge (Silent)' },
-                                  { action: 'call_missed', label: 'Missed Calls' },
+                                  { action: 'incoming_call', label: t('settings.incomingCalls') },
+                                  { action: 'messages', label: t('settings.messages') },
+                                  { action: 'live_invite', label: t('settings.liveInviteSilent') },
+                                  { action: 'call_missed', label: t('settings.missedCalls') },
                                 ].map(item => {
                                   const selectedId =
                                     item.action === 'live_invite'
@@ -22431,7 +23337,7 @@ type CommandCentreSection =
                                         DEFAULT_APP_TONE_SETTINGS[item.action as AppToneAction];
                                   const selectedLabel =
                                     APP_TONE_OPTIONS.find(opt => opt.id === selectedId)?.label ||
-                                    'Notification';
+                                    t('settings.notification');
                                   return (
                                     <Pressable
                                       key={`tone-setting-${item.action}`}
@@ -22460,7 +23366,7 @@ type CommandCentreSection =
                                       <View style={{ flex: 1, paddingRight: 10 }}>
                                         <Text style={styles.logbookActionText}>{item.label}</Text>
                                         <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
-                                          Tone: {selectedLabel}
+                                          {t('settings.tone', { tone: selectedLabel })}
                                         </Text>
                                       </View>
                                       <Text
@@ -22472,7 +23378,9 @@ type CommandCentreSection =
                                           },
                                         ]}
                                       >
-                                        {item.action === 'live_invite' ? 'Silent' : 'Open'}
+                                        {item.action === 'live_invite'
+                                          ? t('settings.silent')
+                                          : t('common.open')}
                                       </Text>
                                     </Pressable>
                                   );
@@ -22485,7 +23393,7 @@ type CommandCentreSection =
                               <View style={{ marginTop: 4 }}>
                                 <View style={styles.logbookAction}>
                                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                                    <Text style={styles.logbookActionText}>Smart Data Saver</Text>
+                                    <Text style={styles.logbookActionText}>{t('settings.smartDataSaver')}</Text>
                                     <Pressable
                                       onPress={() =>
                                         saveHarborSettings({
@@ -22494,7 +23402,7 @@ type CommandCentreSection =
                                       }
                                     >
                                       <Text style={styles.logbookActionText}>
-                                        {harborSettings.smartDataSaver ? 'ON' : 'OFF'}
+                                        {harborSettings.smartDataSaver ? t('common.on') : t('common.off')}
                                       </Text>
                                     </Pressable>
                                   </View>
@@ -22510,10 +23418,13 @@ type CommandCentreSection =
                                           `${LIVE_INVITE_BADGE_CACHE_KEY_PREFIX}${me.uid}`,
                                         ).catch(() => {});
                                       }
-                                      Alert.alert('Cleared', 'Local invite cache and previews cleared.');
+                                      Alert.alert(
+                                        t('settings.clearedTitle'),
+                                        t('settings.clearCacheBody'),
+                                      );
                                     }}
                                   >
-                                    <Text style={styles.bridgeSettingButtonText}>Clear Local Cache</Text>
+                                    <Text style={styles.bridgeSettingButtonText}>{t('settings.clearLocalCache')}</Text>
                                   </Pressable>
                                 </View>
                               </View>
@@ -22547,12 +23458,12 @@ type CommandCentreSection =
                                               appLanguage: option.code,
                                             }),
                                         })),
-                                        { text: 'Cancel', style: 'cancel' as const },
+                                        { text: t('common.cancel'), style: 'cancel' as const },
                                       ],
                                     );
                                   }}
                                 >
-                                  <Text style={styles.bridgeSettingButtonText}>Choose Language</Text>
+                                  <Text style={styles.bridgeSettingButtonText}>{t('settings.chooseLanguage')}</Text>
                                 </Pressable>
                               </View>
                             )}
@@ -22567,12 +23478,15 @@ type CommandCentreSection =
                                   style={[styles.bridgeSettingButton, { marginTop: 6 }]}
                                   onPress={() =>
                                     Alert.alert(
-                                      'App updates',
-                                      `Current version is v${versionInfo.version} build ${versionInfo.build}.`,
+                                      t('settings.appUpdates'),
+                                      t('settings.currentVersion', {
+                                        version: versionInfo.version,
+                                        build: versionInfo.build,
+                                      }),
                                     )
                                   }
                                 >
-                                  <Text style={styles.bridgeSettingButtonText}>Check Now</Text>
+                                  <Text style={styles.bridgeSettingButtonText}>{t('settings.checkNow')}</Text>
                                 </Pressable>
                               </View>
                             )}
