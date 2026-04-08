@@ -1057,6 +1057,9 @@ type TranslationKey =
   | 'compose.addContentTitle'
   | 'compose.addContentBody'
   | 'compose.postUpdated'
+  | 'compose.makeVibesTitle'
+  | 'compose.saySomething'
+  | 'compose.driftExpo'
   | 'compose.overlayNotSupportedTitle'
   | 'compose.overlayNotSupportedBody'
   | 'compose.backendNotReadyTitle'
@@ -1727,6 +1730,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'compose.addContentTitle': 'Create a Post',
     'compose.addContentBody': 'Please add some text or select media to post.',
     'compose.postUpdated': 'Post updated.',
+    'compose.makeVibesTitle': 'Make Vibes',
+    'compose.saySomething': 'Say Something',
+    'compose.driftExpo': 'Drift Expo',
     'compose.overlayNotSupportedTitle': 'Overlay Not Supported',
     'compose.overlayNotSupportedBody': 'Audio overlay can be attached only to images and videos.',
     'compose.backendNotReadyTitle': 'Backend not ready',
@@ -2024,6 +2030,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'compose.addContentTitle': 'Gadzira Post',
     'compose.addContentBody': 'Ndapota wedzera zvinyorwa kana usarudze media yekutumira.',
     'compose.postUpdated': 'Post yagadziridzwa.',
+    'compose.makeVibesTitle': 'Gadzira Vibes',
+    'compose.saySomething': 'Taura Chimwe',
+    'compose.driftExpo': 'Drift Expo',
     'compose.overlayNotSupportedTitle': 'Overlay Haitsigirwi',
     'compose.overlayNotSupportedBody': 'Audio overlay inogona kubatanidzwa pamifananidzo nemavhidhiyo chete.',
     'compose.backendNotReadyTitle': 'Backend haisati yagadzirira',
@@ -2321,6 +2330,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'compose.addContentTitle': 'Dala iPost',
     'compose.addContentBody': 'Sicela ungeze umbhalo loba ukhethe i-media yokuthumela.',
     'compose.postUpdated': 'Ipost ivuselelwe.',
+    'compose.makeVibesTitle': 'Dala AmaVibes',
+    'compose.saySomething': 'Tsho Okuthile',
+    'compose.driftExpo': 'Drift Expo',
     'compose.overlayNotSupportedTitle': 'I-Overlay Ayisekelwa',
     'compose.overlayNotSupportedBody': 'I-audio overlay ingafakwa kuphela emifanekisweni lakumavidiyo.',
     'compose.backendNotReadyTitle': 'I-backend kayikalungi',
@@ -2619,6 +2631,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'compose.addContentTitle': 'Tengeneza Post',
     'compose.addContentBody': 'Tafadhali ongeza maandishi au uchague media ya kuchapisha.',
     'compose.postUpdated': 'Post imesasishwa.',
+    'compose.makeVibesTitle': 'Tengeneza Vibes',
+    'compose.saySomething': 'Sema Kitu',
+    'compose.driftExpo': 'Drift Expo',
     'compose.overlayNotSupportedTitle': 'Overlay Haitumiki',
     'compose.overlayNotSupportedBody': 'Audio overlay inaweza kuongezwa kwenye picha na video pekee.',
     'compose.backendNotReadyTitle': 'Backend haijawa tayari',
@@ -21480,7 +21495,7 @@ type CommandCentreSection =
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>Make Vibes</Text>
+              <Text style={styles.logbookTitle}>{t('compose.makeVibesTitle')}</Text>
               <ScrollView>
                 <Pressable style={[styles.logbookAction, styles.makeWavesPrimaryAction]} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
@@ -21496,7 +21511,9 @@ type CommandCentreSection =
                       justifyContent: 'space-between',
                     }}
                   >
-                    <Text style={[styles.logbookActionText, styles.logbookActionLabelStrong, { color: '#FFFFFF' }]}>Say Something</Text>
+                    <Text style={[styles.logbookActionText, styles.logbookActionLabelStrong, { color: '#FFFFFF' }]}>
+                      {t('compose.saySomething')}
+                    </Text>
                     <Text style={[styles.logbookActionIconText, { color: '#FFFFFF' }]}>✍️</Text>
                   </View>
                 </Pressable>
@@ -21522,7 +21539,9 @@ type CommandCentreSection =
                         backgroundColor: '#00C2FF',
                       }}
                     />
-                    <Text style={[styles.logbookActionText, styles.logbookActionLabelStrong, { color: '#FFFFFF' }]}>Drift Expo</Text>
+                    <Text style={[styles.logbookActionText, styles.logbookActionLabelStrong, { color: '#FFFFFF' }]}>
+                      {t('compose.driftExpo')}
+                    </Text>
                     <Text style={[styles.logbookActionIconText, { color: '#FFFFFF' }]}>🎥</Text>
                   </View>
                 </Pressable>
@@ -21593,7 +21612,7 @@ type CommandCentreSection =
             style={styles.dismissBtn}
             onPress={() => setShowMakeWaves(false)}
           >
-            <Text style={styles.dismissText}>Close</Text>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
