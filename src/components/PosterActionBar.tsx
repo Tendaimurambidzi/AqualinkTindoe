@@ -43,6 +43,7 @@ interface PosterActionBarProps {
   creatorUserId: string;
   splashSyncStatus?: 'idle' | 'saving' | 'error';
   onRetrySplash?: () => void;
+  translate: (key: string, values?: Record<string, string | number>) => string;
 }
 
 // Main component
@@ -63,6 +64,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   creatorUserId,
   splashSyncStatus = 'idle',
   onRetrySplash,
+  translate,
 }) => {
   const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
   const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
@@ -189,7 +191,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           if (!userData) return null;
           return {
             id: userId,
-            name: userData.displayName || userData.username || 'Unknown User',
+            name: userData.displayName || userData.username || 'User',
             photo: userData.photoURL || userData.userPhoto,
             timestamp: splashData.createdAt,
           };
@@ -199,7 +201,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       setShowHuggersDropdown(true);
     } catch (error) {
       console.error('Error fetching huggers:', error);
-      Alert.alert('Error', 'Failed to load huggers list');
+      Alert.alert(
+        translate('feed.loadHuggersFailedTitle'),
+        translate('feed.loadHuggersFailedBody'),
+      );
     } finally {
       setLoadingHuggers(false);
     }
@@ -245,7 +250,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressed && styles.pressedButton
         ]}
         accessibilityRole="button"
-        accessibilityLabel={(hasHugged && Math.max(0, splashesCount) > 0) ? 'Remove hug' : 'Hug this post'}
+        accessibilityLabel={(hasHugged && Math.max(0, splashesCount) > 0)
+          ? translate('feed.removeHug')
+          : translate('feed.hugThisPost')}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
@@ -255,7 +262,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             {'\uD83E\uDEC2'}
           </Text>
           <Text style={[styles.actionLabel, (hasHugged && localHugsCount > 0) ? styles.blueCount : styles.whiteCount]}>
-            {(hasHugged && localHugsCount > 0) ? 'Hugged' : 'Hug'} ({localHugsCount})
+            {(hasHugged && localHugsCount > 0)
+              ? translate('feed.hugged')
+              : translate('feed.hug')} ({localHugsCount})
           </Text>
         </View>
       </Pressable>
@@ -268,14 +277,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             pressed && styles.pressedButton
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Retry hug sync"
+          accessibilityLabel={translate('feed.retryHugSync')}
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionIconSmall}>{'\u21BB'}</Text>
-            <Text style={styles.actionLabel}>Retry Hug</Text>
+            <Text style={styles.actionLabel}>{translate('feed.retryHug')}</Text>
           </View>
         </Pressable>
       )}
@@ -288,7 +297,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           pressed && styles.pressedButton
         ]}
         accessibilityRole="button"
-        accessibilityLabel="Echo this post"
+        accessibilityLabel={translate('feed.echoThisPost')}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
         pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
         android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
@@ -298,7 +307,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             {'\uD83D\uDCE3'}
           </Text>
           <Text style={[styles.actionLabel, hasEchoed ? styles.blueCount : styles.whiteCount]}>
-            {hasEchoed ? 'Echoed' : 'Echo'} ({localEchoesCount})
+            {hasEchoed ? translate('feed.echoed') : translate('feed.echo')} ({localEchoesCount})
           </Text>
         </View>
       </Pressable>
@@ -312,14 +321,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             pressed && styles.pressedButton
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Send gem"
+          accessibilityLabel={translate('feed.sendGem')}
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionIconSmall}>{'\uD83D\uDC8E'}</Text>
-            <Text style={styles.actionLabel}>Gems</Text>
+            <Text style={styles.actionLabel}>{translate('feed.gems')}</Text>
           </View>
         </Pressable>
       )}
@@ -333,14 +342,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             pressed && styles.pressedButton
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Anchor this post"
+          accessibilityLabel={translate('feed.anchorThisPost')}
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionIconSmall}>{'\u2693\uFE0F'}</Text>
-            <Text style={styles.actionLabel}>Anchor</Text>
+            <Text style={styles.actionLabel}>{translate('feed.anchor')}</Text>
           </View>
         </Pressable>
       )}
@@ -354,14 +363,14 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
             pressed && styles.pressedButton
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Cast this post"
+          accessibilityLabel={translate('feed.castThisPost')}
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
           pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
             <Text style={styles.actionIconSmall}>{'\uD83D\uDCE1'}</Text>
-            <Text style={styles.actionLabel}>Cast</Text>
+            <Text style={styles.actionLabel}>{translate('feed.cast')}</Text>
           </View>
         </Pressable>
       )}
@@ -388,11 +397,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           </Pressable>
           {loadingHuggers ? (
             <View style={styles.loadingContainer}>
-              <Text style={styles.loadingText}>Loading huggers...</Text>
+              <Text style={styles.loadingText}>{translate('feed.loadingHuggers')}</Text>
             </View>
           ) : huggersList.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No one has hugged this post yet</Text>
+              <Text style={styles.emptyText}>{translate('feed.noHuggersYet')}</Text>
             </View>
           ) : (
             <FlatList
@@ -402,7 +411,9 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
                 <View style={styles.huggerItem}>
                   <Text style={styles.huggerName}>{item.name}</Text>
                   <Text style={styles.huggerTimestamp}>
-                    {item.timestamp ? new Date(item.timestamp.toDate()).toLocaleDateString() : 'Recently'}
+                    {item.timestamp
+                      ? new Date(item.timestamp.toDate()).toLocaleDateString()
+                      : translate('feed.recently')}
                   </Text>
                 </View>
               )}

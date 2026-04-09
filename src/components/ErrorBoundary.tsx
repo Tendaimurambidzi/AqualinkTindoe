@@ -1,15 +1,19 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Pressable } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 type ErrorBoundaryProps = {
   children: React.ReactNode;
 };
+
 type ErrorBoundaryState = {
   hasError: boolean;
   error: Error | null;
 };
 
-export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export default class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
@@ -20,10 +24,8 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
   }
 
   componentDidCatch(error: Error, info: any) {
-    // Log error details for debugging
     console.error('ErrorBoundary caught error:', error);
     console.error('Error info:', info);
-    console.error('Error stack:', error.stack);
   }
 
   handleReload = () => {
@@ -32,66 +34,27 @@ export default class ErrorBoundary extends React.Component<ErrorBoundaryProps, E
 
   render() {
     if (this.state.hasError) {
-      const error = this.state.error;
-      const errorMessage = error?.message || 'An unexpected error occurred.';
-      const errorStack = error?.stack || 'No stack trace available';
-      const errorName = error?.name || 'Error';
-
       return (
         <View style={styles.container}>
-          <Text style={styles.title}>🚨 COMPONENT ERROR 🚨</Text>
-
-          <Text style={styles.errorType}>Error Type: {errorName}</Text>
-
-          <Text style={styles.message}>{errorMessage}</Text>
-
-          <Text style={styles.timestamp}>
-            Timestamp: {new Date().toISOString()}
-          </Text>
-
-          <ScrollView
-            style={styles.stackContainer}
-            showsVerticalScrollIndicator={true}
-          >
-            <Text style={styles.stackTrace}>
-              {errorStack}
+          <View style={styles.card}>
+            <Text style={styles.title}>Something went wrong</Text>
+            <Text style={styles.message}>
+              We hit a problem opening this screen. Please try again.
             </Text>
-          </ScrollView>
-
-          <Pressable 
-            onPress={this.handleReload} 
-            style={({ pressed }) => [
-              styles.button,
-              pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
-              }
-            ]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.buttonText}>Try Again</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              const errorDetails = `Error: ${errorName}\nMessage: ${errorMessage}\nStack:\n${errorStack}\nTimestamp: ${new Date().toISOString()}`;
-              console.log('Error details for debugging:', errorDetails);
-              Alert.alert('Error Details Logged', 'Error details have been logged to console for debugging.');
-            }}
-            style={({ pressed }) => [
-              styles.debugButton,
-              pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
-              }
-            ]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={styles.debugButtonText}>Copy Debug Info</Text>
-          </Pressable>
+            <Pressable
+              onPress={this.handleReload}
+              style={({ pressed }) => [
+                styles.button,
+                pressed ? styles.buttonPressed : null,
+              ]}
+            >
+              <Text style={styles.buttonText}>Try Again</Text>
+            </Pressable>
+          </View>
         </View>
       );
     }
+
     return this.props.children;
   }
 }
@@ -101,72 +64,49 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#001a2c',
-    padding: 20
+    backgroundColor: '#08131f',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 380,
+    borderRadius: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 28,
+    backgroundColor: 'rgba(11, 25, 39, 0.96)',
+    borderWidth: 1,
+    borderColor: 'rgba(123, 216, 255, 0.22)',
+    alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ff4444',
-    marginBottom: 12,
-    textAlign: 'center'
-  },
-  errorType: {
-    fontSize: 16,
-    color: '#ffffff',
-    marginBottom: 8,
+    color: '#F5FBFF',
+    fontSize: 22,
+    fontWeight: '800',
     textAlign: 'center',
-    fontWeight: '600'
   },
   message: {
-    fontSize: 16,
-    color: '#ffffff',
-    marginBottom: 12,
+    marginTop: 10,
+    color: '#B8D4E6',
+    fontSize: 14,
+    lineHeight: 20,
     textAlign: 'center',
-    paddingHorizontal: 24,
-    fontWeight: '500'
-  },
-  timestamp: {
-    fontSize: 12,
-    color: '#ffff00',
-    marginBottom: 16,
-    textAlign: 'center'
-  },
-  stackContainer: {
-    maxHeight: 200,
-    width: '100%',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  stackTrace: {
-    fontSize: 10,
-    color: '#ffffff',
-    fontFamily: 'monospace',
-    lineHeight: 14,
   },
   button: {
-    backgroundColor: '#1e90ff',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginBottom: 10
+    marginTop: 22,
+    minWidth: 140,
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 11,
+    backgroundColor: '#0F5F8F',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  buttonPressed: {
+    opacity: 0.86,
   },
   buttonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16
-  },
-  debugButton: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 6,
-  },
-  debugButtonText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '500'
+    color: '#F8FDFF',
+    fontSize: 14,
+    fontWeight: '800',
   },
 });

@@ -63,22 +63,37 @@ async function resolveAndroidChannelId(userId, type) {
   const isCallInvite =
     normalizedType === 'call_invite' || normalizedType === 'incoming_call';
   const isCallMissed = normalizedType === 'call_missed';
+  const isLiveInvite = normalizedType === 'live_invite';
   let selectedTone = null;
+  let vibrationEnabled = true;
   try {
     const prefSnap = await db
       .doc(`users/${String(userId)}/settings/notifications`)
       .get();
     const prefData = prefSnap.exists ? prefSnap.data() || {} : {};
     const tones = prefData?.tones || {};
+    const vibrations = prefData?.vibrations || {};
     selectedTone = sanitizeToneId(
       isCallInvite
         ? tones?.incoming_call
         : isCallMissed
         ? tones?.call_missed
+        : isLiveInvite
+        ? tones?.live_invite
         : tones?.messages,
+    );
+    vibrationEnabled = Boolean(
+      isCallInvite
+        ? vibrations?.incoming_call ?? true
+        : isCallMissed
+        ? vibrations?.call_missed ?? true
+        : isLiveInvite
+        ? vibrations?.live_invite ?? true
+        : vibrations?.messages ?? true,
     );
   } catch {
     selectedTone = null;
+    vibrationEnabled = true;
   }
   if (!selectedTone) {
     selectedTone = sanitizeToneId(
@@ -86,15 +101,18 @@ async function resolveAndroidChannelId(userId, type) {
         ? DEFAULT_TONE_SETTINGS.incoming_call
         : isCallMissed
         ? DEFAULT_TONE_SETTINGS.call_missed
+        : isLiveInvite
+        ? DEFAULT_TONE_SETTINGS.live_invite
         : DEFAULT_TONE_SETTINGS.messages,
     );
   }
   if (!selectedTone) {
     return isCallInvite ? 'aqualink_calls_lg_cat_ring' : 'aqualink_notifications';
   }
+  const vibrationSuffix = vibrationEnabled ? 'vibe' : 'silent';
   return isCallInvite
-    ? `aqualink_calls_${selectedTone}`
-    : `aqualink_notifications_${selectedTone}`;
+    ? `aqualink_calls_${selectedTone}_${vibrationSuffix}`
+    : `aqualink_notifications_${selectedTone}_${vibrationSuffix}`;
 }
 
 async function addPing(userId, data) {

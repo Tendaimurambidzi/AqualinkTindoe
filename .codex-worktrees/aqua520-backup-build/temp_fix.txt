@@ -1,0 +1,7 @@
+                 </Pressable>
+                <Pressable
+                  onPress={handleSDCardPicker}
+                  style={[styles.logbookAction, { padding: 12, minWidth: 80 }]}
+                >
+                  <Text style={styles.logbookActionText}>💾 SD Card</Text>
+                </Pressable>

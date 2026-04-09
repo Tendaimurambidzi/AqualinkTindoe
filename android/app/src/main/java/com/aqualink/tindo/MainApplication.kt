@@ -52,6 +52,10 @@ class MainApplication : Application(), ReactApplication {
         "old_ring" to "notification",
         "none" to null,
       )
+      val vibrationModes = linkedMapOf(
+        "vibe" to true,
+        "silent" to false,
+      )
 
       fun resolveRawId(rawName: String?): Int {
         if (rawName.isNullOrBlank()) return 0
@@ -63,6 +67,7 @@ class MainApplication : Application(), ReactApplication {
         title: String,
         rawName: String?,
         callStyle: Boolean,
+        vibrate: Boolean,
       ) {
         val channel = NotificationChannel(
           id,
@@ -74,6 +79,7 @@ class MainApplication : Application(), ReactApplication {
           } else {
             "General notifications for Aqualink"
           }
+          setShowBadge(!callStyle)
           lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
           enableLights(true)
           val vibration = if (callStyle) {
@@ -81,13 +87,16 @@ class MainApplication : Application(), ReactApplication {
           } else {
             longArrayOf(0, 250, 250, 250)
           }
-          if (rawName == null) {
-            enableVibration(false)
-            vibrationPattern = longArrayOf(0L)
-            setSound(null, null)
-          } else {
+          if (vibrate) {
             enableVibration(true)
             vibrationPattern = vibration
+          } else {
+            enableVibration(false)
+            vibrationPattern = longArrayOf(0L)
+          }
+          if (rawName == null) {
+            setSound(null, null)
+          } else {
             val rawId = resolveRawId(rawName)
             if (rawId != 0) {
               val soundUri = Uri.parse("android.resource://$packageName/$rawId")
@@ -116,28 +125,48 @@ class MainApplication : Application(), ReactApplication {
         "Aqualink Notifications",
         "notification",
         false,
+        true,
       )
       createNotificationToneChannel(
         "aqualink_calls_progress",
         "Aqualink Calls",
         "lg_cat_ring_freetone_org",
         true,
+        true,
+      )
+      createNotificationToneChannel(
+        "aqualink_calls_lg_cat_ring",
+        "Aqualink Calls (Legacy)",
+        "lg_cat_ring_freetone_org",
+        true,
+        true,
+      )
+      createNotificationToneChannel(
+        "aqualink_calls_lg_cat_ring_vibe",
+        "Aqualink Calls (Default)",
+        "lg_cat_ring_freetone_org",
+        true,
+        true,
       )
 
       // Tone-specific channels for server-selected background sounds.
       toneToRaw.forEach { (toneId, rawName) ->
-        createNotificationToneChannel(
-          "aqualink_notifications_$toneId",
-          "Aqualink Notifications ($toneId)",
-          rawName,
-          false,
-        )
-        createNotificationToneChannel(
-          "aqualink_calls_$toneId",
-          "Aqualink Calls ($toneId)",
-          rawName,
-          true,
-        )
+        vibrationModes.forEach { (suffix, vibrate) ->
+          createNotificationToneChannel(
+            "aqualink_notifications_${toneId}_$suffix",
+            "Aqualink Notifications ($toneId, $suffix)",
+            rawName,
+            false,
+            vibrate,
+          )
+          createNotificationToneChannel(
+            "aqualink_calls_${toneId}_$suffix",
+            "Aqualink Calls ($toneId, $suffix)",
+            rawName,
+            true,
+            vibrate,
+          )
+        }
       }
     }
   }

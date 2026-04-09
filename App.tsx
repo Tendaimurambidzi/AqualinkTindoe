@@ -47,6 +47,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Vibration,
   View,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -120,7 +121,7 @@ try {
 const paperTexture = null;
 const myLogo = (() => {
   try {
-    return require('./assets/my_logo.png');
+    return require('./assets/cmee_logo_final.png');
   } catch {
     return null;
   }
@@ -133,6 +134,14 @@ const FORCE_SIGN_OUT_ON_START = true;
 const STATS_OVERLAY_HEIGHT = 220;
                     
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const isRenderableRemoteMediaUri = (value: any): boolean => {
+  const uri = String(value || '').trim();
+  if (!uri) return false;
+  if (/^https?:\/\//i.test(uri)) return true;
+  if (/^gs:\/\//i.test(uri)) return true;
+  return false;
+};
                     
 const isVideoAsset = (asset: Asset | null | undefined): boolean => {
   if (!asset) return false;
@@ -464,7 +473,13 @@ type MinuteFameSession = {
 };
 
 type MinuteFameTier = {
-  id: 'rising_star' | 'crowd_favorite' | 'wave_king';
+  id:
+    | 'fresh_face'
+    | 'rising_star'
+    | 'crowd_favorite'
+    | 'wave_king'
+    | 'trend_storm'
+    | 'ocean_legend';
   label: string;
   icon: string;
   minScore: number;
@@ -473,8 +488,15 @@ type MinuteFameTier = {
 };
 
 type MinuteFameCreatorLevel = {
-  id: 'new_wave' | 'rising_tide' | 'spotlighted' | 'creator_on_fire' | 'ocean_star';
+  id:
+    | 'fresh_face'
+    | 'rising_star'
+    | 'crowd_favorite'
+    | 'wave_king'
+    | 'trend_storm'
+    | 'ocean_legend';
   label: string;
+  icon: string;
   minPoints: number;
   frameLabel: string;
   accent: string;
@@ -527,6 +549,14 @@ type MinuteFameChallenge = {
 
 const MINUTE_FAME_TIERS: MinuteFameTier[] = [
   {
+    id: 'fresh_face',
+    label: 'Fresh Face',
+    icon: '✨',
+    minScore: 0,
+    subtitle: 'Just entered the spotlight lane',
+    encouragement: 'Every creator starts somewhere. Keep posting and let people notice your voice.',
+  },
+  {
     id: 'rising_star',
     label: 'Rising Star',
     icon: '⭐',
@@ -550,49 +580,78 @@ const MINUTE_FAME_TIERS: MinuteFameTier[] = [
     subtitle: 'Top-tier momentum',
     encouragement: 'You owned the room. Keep leading with confidence.',
   },
+  {
+    id: 'trend_storm',
+    label: 'Trend Storm',
+    icon: '⚡',
+    minScore: 3200,
+    subtitle: 'Electric creator force',
+    encouragement: 'You are no longer rising quietly. Your work is moving with serious force.',
+  },
+  {
+    id: 'ocean_legend',
+    label: 'Ocean Legend',
+    icon: '🦈',
+    minScore: 7000,
+    subtitle: 'Whale shark status',
+    encouragement: 'You have become one of the rarest names on the water. This is elite creator territory.',
+  },
 ];
 
 const MINUTE_FAME_LEVELS: MinuteFameCreatorLevel[] = [
   {
-    id: 'new_wave',
-    label: 'New Wave',
+    id: 'fresh_face',
+    label: 'Fresh Face',
+    icon: '✨',
     minPoints: 0,
-    frameLabel: 'Sea Glass Frame',
+    frameLabel: 'First Light Frame',
     accent: '#4DD5FF',
   },
   {
-    id: 'rising_tide',
-    label: 'Rising Tide',
-    minPoints: 500,
-    frameLabel: 'Rising Glow Frame',
-    accent: '#22C55E',
+    id: 'rising_star',
+    label: 'Rising Star',
+    icon: '⭐',
+    minPoints: 180,
+    frameLabel: 'Golden Star Frame',
+    accent: '#FBBF24',
   },
   {
-    id: 'spotlighted',
-    label: 'Spotlighted',
+    id: 'crowd_favorite',
+    label: 'Crowd Favorite',
+    icon: '🔥',
+    minPoints: 700,
+    frameLabel: 'Burning Frame',
+    accent: '#F97316',
+  },
+  {
+    id: 'wave_king',
+    label: 'Wave King',
+    icon: '👑',
     minPoints: 1400,
-    frameLabel: 'Spotlight Frame',
-    accent: '#F59E0B',
+    frameLabel: 'Royal Crown Frame',
+    accent: '#EAB308',
   },
   {
-    id: 'creator_on_fire',
-    label: 'Creator on Fire',
+    id: 'trend_storm',
+    label: 'Trend Storm',
+    icon: '⚡',
     minPoints: 3200,
-    frameLabel: 'Inferno Frame',
-    accent: '#EF4444',
+    frameLabel: 'Storm Surge Frame',
+    accent: '#A855F7',
   },
   {
-    id: 'ocean_star',
-    label: 'Ocean Star',
-    minPoints: 6500,
-    frameLabel: 'Ocean Star Crown',
+    id: 'ocean_legend',
+    label: 'Ocean Legend',
+    icon: '🦈',
+    minPoints: 7000,
+    frameLabel: 'Whale Shark Frame',
     accent: '#A855F7',
   },
 ];
 
-const getMinuteFameTierForScore = (score: number): MinuteFameTier => {
+const getMinuteFameTierForPoints = (points: number): MinuteFameTier => {
   const sorted = [...MINUTE_FAME_TIERS].sort((a, b) => b.minScore - a.minScore);
-  return sorted.find(tier => score >= tier.minScore) || MINUTE_FAME_TIERS[0];
+  return sorted.find(tier => points >= tier.minScore) || MINUTE_FAME_TIERS[0];
 };
 
 const getMinuteFameLevelForPoints = (points: number): MinuteFameCreatorLevel => {
@@ -611,6 +670,48 @@ const getMinuteFameStatusForScore = (score: number): string => {
   if (score >= 80) return 'Almost There';
   return 'Under Review';
 };
+
+const getMinuteFameTitleLabelFromPoints = (points: number): string => {
+  const tier = getMinuteFameTierForPoints(points);
+  return `${tier.icon} ${tier.label}`;
+};
+
+const getMinuteFameBadgeFromLabel = (value?: string | null): string => {
+  const text = String(value || '').trim();
+  if (!text) return MINUTE_FAME_TIERS[0].icon;
+  const exactMatch = MINUTE_FAME_TIERS.find(
+    tier =>
+      text === tier.id ||
+      text === tier.icon ||
+      text === `${tier.icon} ${tier.label}` ||
+      text.toLowerCase() === tier.label.toLowerCase(),
+  );
+  if (exactMatch) return exactMatch.icon;
+  const labelMatch = MINUTE_FAME_TIERS.find(tier =>
+    text.toLowerCase().includes(tier.label.toLowerCase()),
+  );
+  if (labelMatch) return labelMatch.icon;
+  const firstToken = text.split(/\s+/)[0] || '';
+  return firstToken.length <= 3 ? firstToken : MINUTE_FAME_TIERS[0].icon;
+};
+
+const getMinuteFameScoreFromEngagement = (params: {
+  views: number;
+  hugs: number;
+  echoes: number;
+  supportCount?: number;
+  nominationCount?: number;
+}) => {
+  const qualifiedViews = Math.max(0, Math.floor(Number(params.views || 0) * 0.25));
+  const hugs = Math.max(0, Number(params.hugs || 0));
+  const echoes = Math.max(0, Number(params.echoes || 0));
+  const supportCount = Math.max(0, Number(params.supportCount || 0));
+  const nominationCount = Math.max(0, Number(params.nominationCount || 0));
+  return qualifiedViews + hugs * 5 + echoes * 12 + supportCount * 3 + nominationCount * 5;
+};
+
+const getMinuteFamePendingTreasureValue = (score: number) =>
+  Number((Math.max(0, Number(score || 0)) / 10000).toFixed(4));
 
 const getMinuteFameDayKey = (date: Date = new Date()) =>
   date.toISOString().slice(0, 10);
@@ -639,14 +740,14 @@ const getMinuteFameChallengeForWeek = (
     .split('')
     .reduce((sum, ch) => sum + ch.charCodeAt(0), 0);
   const category = categories[seed % categories.length];
-  const targetScore = 700 + (seed % 4) * 150;
+  const hardenedTargetScore = 1800 + (seed % 4) * 350;
   return {
     id: `weekly_${weekKey}`,
     title: `${category} Week`,
     description: `Stack spotlight points in ${category} and prove you belong in the creator lane this week.`,
     category,
-    targetScore,
-    reward: 'Weekly challenge badge + featured creator frame time',
+    targetScore: hardenedTargetScore,
+    reward: 'Weekly challenge badge + featured creator frame time + pending treasure review',
   };
 };
 
@@ -1061,6 +1162,8 @@ type AppToneOption = {
   candidates: Array<string | number>;
 };
 
+type AppVibrationSettings = Record<AppToneAction, boolean>;
+
 type HarborSettingsState = {
   privateWakeMode: boolean;
   listSortMode: 'recent' | 'alphabetical';
@@ -1197,6 +1300,7 @@ type TranslationKey =
   | 'common.done'
   | 'common.clear'
   | 'common.apply'
+  | 'common.selected'
   | 'settings.handle'
   | 'settings.signedInAs'
   | 'settings.anonymous'
@@ -1214,6 +1318,12 @@ type TranslationKey =
   | 'settings.missedCalls'
   | 'settings.notification'
   | 'settings.tone'
+  | 'settings.noTone'
+  | 'settings.vibration'
+  | 'settings.vibrationOn'
+  | 'settings.vibrationOff'
+  | 'settings.tapToneToPreview'
+  | 'settings.generalAlerts'
   | 'settings.silent'
   | 'settings.smartDataSaver'
   | 'settings.clearedTitle'
@@ -1412,12 +1522,13 @@ const LIVE_INVITE_BADGE_CACHE_KEY_PREFIX = 'live_invite_badge_cache_';
 const CALL_PROGRESS_ASSET = require('./assets/Call progress.mp3');
 const CALLEE_RING_ASSET = require('./assets/Lg_Cat_Ring_freetone.org.mp3');
 const APP_TONES_STORAGE_KEY = 'app_tone_settings_v1';
+const APP_VIBRATIONS_STORAGE_KEY = 'app_vibration_settings_v1';
 const PENDING_INCOMING_CALL_STORAGE_KEY = 'aqualink_pending_incoming_call_v1';
 const HARBOR_SETTINGS_STORAGE_KEY = 'harbor_settings_v1';
 const APP_TONE_OPTIONS: AppToneOption[] = [
   {
     id: 'none',
-    label: 'Off',
+    label: 'No tone',
     candidates: [],
   },
   {
@@ -1494,6 +1605,13 @@ const DEFAULT_APP_TONE_SETTINGS: Record<AppToneAction, string> = {
   call_missed: 'old_ring',
   general: 'default_notification',
 };
+const DEFAULT_APP_VIBRATION_SETTINGS: AppVibrationSettings = {
+  incoming_call: true,
+  messages: true,
+  live_invite: true,
+  call_missed: true,
+  general: true,
+};
 
 const buildLiveInviteNotice = (
   docId: string,
@@ -1540,7 +1658,7 @@ const buildWaveMediaItems = (data: any): Asset[] => {
         entry?.playbackUrl ||
         '',
     ).trim();
-    if (!uri) return;
+    if (!isRenderableRemoteMediaUri(uri)) return;
     out.push({
       uri,
       type: entry?.type || entry?.mediaType || entry?.mimeType || undefined,
@@ -1559,7 +1677,7 @@ const buildWaveMediaItems = (data: any): Asset[] => {
         legacyMedia?.playbackUrl ||
         '',
     ).trim();
-    if (legacyUri) {
+    if (isRenderableRemoteMediaUri(legacyUri)) {
       return [
         {
           uri: legacyUri,
@@ -1570,7 +1688,7 @@ const buildWaveMediaItems = (data: any): Asset[] => {
     }
   }
   const fallbackUri = String(data?.playbackUrl || data?.mediaUrl || '').trim();
-  if (!fallbackUri) return [];
+  if (!isRenderableRemoteMediaUri(fallbackUri)) return [];
   const mediaType = data?.mediaType || undefined;
   return [{ uri: fallbackUri, type: mediaType }] as Asset[];
 };
@@ -1621,14 +1739,14 @@ const resolveWaveStoredUrl = (data: any): string | null => {
     data?.media?.playbackUrl,
   ]
     .map((value: any) => String(value || '').trim())
-    .find(Boolean);
+    .find(isRenderableRemoteMediaUri);
 
   if (direct) {
     return direct;
   }
 
   const mediaPath = String(data?.mediaPath || '').trim();
-  if (/^https?:\/\//i.test(mediaPath)) {
+  if (isRenderableRemoteMediaUri(mediaPath)) {
     return mediaPath;
   }
 
@@ -1638,10 +1756,10 @@ const resolveWaveStoredUrl = (data: any): string | null => {
 
 const preserveExistingGridWave = (existingWave: Vibe | undefined, nextWave: Vibe): Vibe => {
   const existingItems = Array.isArray(existingWave?.mediaItems)
-    ? existingWave.mediaItems.filter(item => !!item?.uri)
+    ? existingWave.mediaItems.filter(item => isRenderableRemoteMediaUri(item?.uri))
     : [];
   const nextItems = Array.isArray(nextWave?.mediaItems)
-    ? nextWave.mediaItems.filter(item => !!item?.uri)
+    ? nextWave.mediaItems.filter(item => isRenderableRemoteMediaUri(item?.uri))
     : [];
   if (existingItems.length > 1 && nextItems.length <= 1) {
     return {
@@ -1667,9 +1785,9 @@ const preserveExistingGridCollection = (existingWaves: Vibe[], nextWaves: Vibe[]
 
 const getWaveMediaItemCount = (wave: Vibe | null | undefined): number => {
   if (Array.isArray(wave?.mediaItems)) {
-    return wave.mediaItems.filter(item => !!item?.uri).length;
+    return wave.mediaItems.filter(item => isRenderableRemoteMediaUri(item?.uri)).length;
   }
-  return wave?.media?.uri ? 1 : 0;
+  return isRenderableRemoteMediaUri(wave?.media?.uri) ? 1 : 0;
 };
 
 const mergeWaveVersions = (existingWave: Vibe | undefined, nextWave: Vibe): Vibe => {
@@ -1772,9 +1890,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'Shona',
     'language.ndebele': 'Ndebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Everyone deserves their moment.',
-    'welcome.subtitle': 'Real people. Real moments.',
-    'loading.tagline': 'Everyone deserves their moment.',
+    'welcome.title': 'CMEE',
+    'welcome.subtitle': 'Everyone deserves to be seen!',
+    'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Create your account',
     'auth.signinTitle': 'Welcome back',
     'auth.email': 'Email',
@@ -1861,7 +1979,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'We could not open sharing right now. Please try again.',
     'rewards.shareBody':
-      'Join MoMo on the Play Store: {{storeUrl}}\n\nUse my referral code {{code}} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.',
+      'Join CMEE on the Play Store: {{storeUrl}}\n\nUse my referral code {{code}} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.',
     'settings.languageValue': 'Language: {{language}}',
     'settings.selectLanguageTitle': 'Select language',
     'settings.selectLanguageBody': 'Choose app language preference.',
@@ -1910,6 +2028,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.done': 'Done',
     'common.clear': 'Clear',
     'common.apply': 'Apply',
+    'common.selected': 'Selected',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Signed in as {{account}}',
     'settings.anonymous': 'anonymous',
@@ -1923,10 +2042,16 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.quickSendDesc': 'Send faster from chat composer.',
     'settings.incomingCalls': 'Incoming Calls',
     'settings.messages': 'Messages',
-    'settings.liveInviteSilent': 'Live Invite Badge (Silent)',
+    'settings.liveInviteSilent': 'Live Invite',
     'settings.missedCalls': 'Missed Calls',
     'settings.notification': 'Notification',
     'settings.tone': 'Tone: {{tone}}',
+    'settings.noTone': 'No tone',
+    'settings.vibration': 'Vibration: {{state}}',
+    'settings.vibrationOn': 'Vibration ON',
+    'settings.vibrationOff': 'Vibration OFF',
+    'settings.tapToneToPreview': 'Tap a tone to preview and apply.',
+    'settings.generalAlerts': 'General Alerts',
     'settings.silent': 'Silent',
     'settings.smartDataSaver': 'Smart Data Saver',
     'settings.clearedTitle': 'Cleared',
@@ -1984,7 +2109,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'A referral counts only when the invited person is a real new user, signs up with your code, and is active on at least {{days}} different days. Fake accounts, duplicate accounts, and self-referrals do not qualify.',
     'profile.referralReviewRule':
-      'Airtime and other rewards are reviewed before issue. MoMo may replace a reward with an equivalent promo benefit where needed.',
+      'Airtime and other rewards are reviewed before issue. CMEE may replace a reward with an equivalent promo benefit where needed.',
     'profile.shareReferral': 'Share Referral',
     'profile.invalidUsernameTitle': 'Invalid Username',
     'profile.invalidUsernameEmpty': 'Username cannot be empty.',
@@ -2052,18 +2177,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Copy link',
     'feed.optionCopyLinkDesc': 'Copy your post link for quick sharing.',
     'feed.optionShare': 'Share',
-    'feed.optionShareDesc': 'Share the MoMo link with friends.',
+    'feed.optionShareDesc': 'Share the CMEE link with friends.',
     'feed.optionSave': 'Save to device',
-    'feed.optionSaveDesc': 'Download a copy of this MoMo for offline viewing.',
+    'feed.optionSaveDesc': 'Download a copy of this CMEE post for offline viewing.',
     'feed.optionReport': 'Report',
-    'feed.optionReportDesc': 'Let us know if this MoMo violates guidelines.',
+    'feed.optionReportDesc': 'Let us know if this CMEE post violates guidelines.',
     'feed.linkCopied': 'Link copied.',
     'feed.copyLinkTitle': 'Copy link',
     'feed.saveFailedTitle': 'Save Failed',
     'feed.saveFailedBody': 'The wave could not be saved to the sea.',
-    'feed.shareTitle': 'Cast MoMo',
-    'feed.shareBody': 'Cast MoMo - Check out {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'this MoMo',
+    'feed.shareTitle': 'Share CMEE',
+    'feed.shareBody': 'Share CMEE - Check out {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'this CMEE post',
     'feed.reportQueued': 'Going to moderation.',
     'feed.comingSoon': 'Coming soon!',
     'feed.joinTide': 'Join Tide',
@@ -2106,7 +2231,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'top.minuteFame': '1 MINUTE FAME',
     'top.alerts': 'ALERTS',
     'top.hunt': 'HUNT',
-    'top.myAura': 'MY AURA',
+    'top.myAura': 'MY SPACE',
     'top.commandCentre': 'COMMAND CENTRE',
     'creator.postsTitle': 'Posts',
     'creator.noPosts': 'No posts from this creator yet.',
@@ -2118,9 +2243,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'ChiShona',
     'language.ndebele': 'isiNdebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Munhu wese anokodzera nguva yake.',
-    'welcome.subtitle': 'Vanhu chaivo. Nguva chaidzo.',
-    'loading.tagline': 'Munhu wese anokodzera nguva yake.',
+    'welcome.title': 'CMEE',
+    'welcome.subtitle': 'Everyone deserves to be seen!',
+    'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Gadzira account yako',
     'auth.signinTitle': 'Mauya zvakare',
     'auth.email': 'Email',
@@ -2207,7 +2332,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Hatina kukwanisa kuvhura kugovera parizvino. Edza zvakare.',
     'rewards.shareBody':
-      'Join MoMo pa Play Store: {{storeUrl}}\n\nShandisa kodhi yangu yerefero {{code}} paunonyoresa. Mibayiro inobva kuvakakodzera: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kana mumwe mubayiro wabvumidzwa.',
+      'Join CMEE pa Play Store: {{storeUrl}}\n\nShandisa kodhi yangu yerefero {{code}} paunonyoresa. Mibayiro inobva kuvakakodzera: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kana mumwe mubayiro wabvumidzwa.',
     'settings.languageValue': 'Mutauro: {{language}}',
     'settings.selectLanguageTitle': 'Sarudza mutauro',
     'settings.selectLanguageBody': 'Sarudza mutauro waunoda kushandisa muapp.',
@@ -2256,6 +2381,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.done': 'Zvaitwa',
     'common.clear': 'Bvisa',
     'common.apply': 'Isa',
+    'common.selected': 'Zvakasarudzwa',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Wapinda se {{account}}',
     'settings.anonymous': 'asingazivikanwe',
@@ -2269,10 +2395,16 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.quickSendDesc': 'Tumira nekukurumidza kubva mu chat.',
     'settings.incomingCalls': 'Mafoni anopinda',
     'settings.messages': 'Mameseji',
-    'settings.liveInviteSilent': 'Badge yeLive Invite (Yakanyarara)',
+    'settings.liveInviteSilent': 'Live Invite',
     'settings.missedCalls': 'Mafoni akarasika',
     'settings.notification': 'Chiziviso',
     'settings.tone': 'Toni: {{tone}}',
+    'settings.noTone': 'Pasina toni',
+    'settings.vibration': 'Vibration: {{state}}',
+    'settings.vibrationOn': 'Vibration YAKABATIDZWA',
+    'settings.vibrationOff': 'Vibration YAKADZIMWA',
+    'settings.tapToneToPreview': 'Bata toni kuti unzwe wobva washandisa.',
+    'settings.generalAlerts': 'Zviziviso Zvakajairika',
     'settings.silent': 'Yakanyarara',
     'settings.smartDataSaver': 'Smart Data Saver',
     'settings.clearedTitle': 'Zvacheneswa',
@@ -2329,7 +2461,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Refero inoverengwa chete kana munhu akokwa ari mushandisi mutsva chaiye, anyoresa nekodhi yako, uye ashande mazuva anosvika {{days}} akasiyana. Maakaunzi enhema, akadzokororwa, kana kuzvikoka pachako hazviverengwi.',
     'profile.referralReviewRule':
-      'Airtime nemimwe mibayiro zvinoongororwa zvisati zvapihwa. MoMo inogona kutsiva mubayiro nemubatsiro wakaenzana.',
+      'Airtime nemimwe mibayiro zvinoongororwa zvisati zvapihwa. CMEE inogona kutsiva mubayiro nemubatsiro wakaenzana.',
     'profile.shareReferral': 'Govera Refero',
     'profile.invalidUsernameTitle': 'Username haina kunaka',
     'profile.invalidUsernameEmpty': 'Username haigoni kusiiwa isina chinhu.',
@@ -2397,18 +2529,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Kopa link',
     'feed.optionCopyLinkDesc': 'Kopa link yepost yako kuitira kugovera nekukurumidza.',
     'feed.optionShare': 'Govera',
-    'feed.optionShareDesc': 'Govera link yeMoMo kushamwari.',
+    'feed.optionShareDesc': 'Govera link yeCMEE kushamwari.',
     'feed.optionSave': 'Chengeta pamudziyo',
-    'feed.optionSaveDesc': 'Dhaunirodha kopi yeMoMo iyi kuti uione pasina internet.',
+    'feed.optionSaveDesc': 'Dhaunirodha kopi yeCMEE iyi kuti uione pasina internet.',
     'feed.optionReport': 'Mhanara',
-    'feed.optionReportDesc': 'Tizivise kana MoMo iyi ichityora mitemo.',
+    'feed.optionReportDesc': 'Tizivise kana CMEE iyi ichityora mitemo.',
     'feed.linkCopied': 'Link yakopiwa.',
     'feed.copyLinkTitle': 'Kopa link',
     'feed.saveFailedTitle': 'Kuchengeta kwatadza',
     'feed.saveFailedBody': 'Wave yatadza kuchengetwa mugungwa.',
-    'feed.shareTitle': 'Govera MoMo',
-    'feed.shareBody': 'Govera MoMo - ona {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'MoMo iyi',
+    'feed.shareTitle': 'Govera CMEE',
+    'feed.shareBody': 'Govera CMEE - ona {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'CMEE iyi',
     'feed.reportQueued': 'Yatumirwa kumoderation.',
     'feed.comingSoon': 'Zvichauya munguva pfupi!',
     'feed.joinTide': 'Pinda muTide',
@@ -2451,7 +2583,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'top.minuteFame': 'IMBOBVIRA',
     'top.alerts': 'MAALERT',
     'top.hunt': 'TSVAGA',
-    'top.myAura': 'ININI',
+    'top.myAura': 'MY SPACE',
     'top.commandCentre': 'COMMAND CENTRE',
     'creator.postsTitle': 'Mapost',
     'creator.noPosts': 'Hakusati kwava nemapost kubva kumugadziri uyu.',
@@ -2463,9 +2595,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'IsiShona',
     'language.ndebele': 'isiNdebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Wonke umuntu ufanele ithuba lakhe.',
-    'welcome.subtitle': 'Abantu beqiniso. Izikhathi zeqiniso.',
-    'loading.tagline': 'Wonke umuntu ufanele ithuba lakhe.',
+    'welcome.title': 'CMEE',
+    'welcome.subtitle': 'Everyone deserves to be seen!',
+    'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Yakha i-account yakho',
     'auth.signinTitle': 'Siyakwamukela njalo',
     'auth.email': 'Email',
@@ -2552,7 +2684,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Sehlulekile ukuvula ukwabelana khathesi. Zama njalo.',
     'rewards.shareBody':
-      'Join MoMo ku Play Store: {{storeUrl}}\n\nSebenzisa ikhodi yami yereferensi {{code}} lapho ubhalisa. Imivuzo isekelwe kwabafaneleyo: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe omunye umvuzo ovunyiweyo.',
+      'Join CMEE ku Play Store: {{storeUrl}}\n\nSebenzisa ikhodi yami yereferensi {{code}} lapho ubhalisa. Imivuzo isekelwe kwabafaneleyo: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe omunye umvuzo ovunyiweyo.',
     'settings.languageValue': 'Ulimi: {{language}}',
     'settings.selectLanguageTitle': 'Khetha ulimi',
     'settings.selectLanguageBody': 'Khetha ulimi ofuna ukuthi i-app isebenzise.',
@@ -2601,6 +2733,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.done': 'Kwenziwe',
     'common.clear': 'Sula',
     'common.apply': 'Sebenzisa',
+    'common.selected': 'Sekukhethiwe',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Ungene njenge {{account}}',
     'settings.anonymous': 'ongaziwayo',
@@ -2614,10 +2747,16 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.quickSendDesc': 'Thumela msinyane usuka ku chat composer.',
     'settings.incomingCalls': 'Amakholi angenayo',
     'settings.messages': 'Imilayezo',
-    'settings.liveInviteSilent': 'Ibheji le Live Invite (Silent)',
+    'settings.liveInviteSilent': 'Live Invite',
     'settings.missedCalls': 'Amakholi aphuthekileyo',
     'settings.notification': 'Isaziso',
     'settings.tone': 'Ithoni: {{tone}}',
+    'settings.noTone': 'Akula thoni',
+    'settings.vibration': 'Vibration: {{state}}',
+    'settings.vibrationOn': 'Vibration VULIWE',
+    'settings.vibrationOff': 'Vibration VALIWE',
+    'settings.tapToneToPreview': 'Thepha ithoni ukuze uyizwe ubusuyisebenzisa.',
+    'settings.generalAlerts': 'Izaziso Ezivamile',
     'settings.silent': 'Silent',
     'settings.smartDataSaver': 'Smart Data Saver',
     'settings.clearedTitle': 'Kucitshiwe',
@@ -2674,7 +2813,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Ireferensi ibalwa kuphela nxa umuntu ommemeleyo engumsebenzisi omutsha oqotho, ebhalisa ngekhodi yakho, aphinde asebenze okungenani izinsuku ezi {{days}} ezehlukileyo. Ama-akhawunti enkohliso, aphindwe kabili, loba ukuzimema akwamukelwa.',
     'profile.referralReviewRule':
-      'I-airtime leminye imivuzo kuyahlolwa kungakakhitshwa. IMoMo ingatshintsha umvuzo ngomunye olingana lawo.',
+      'I-airtime leminye imivuzo kuyahlolwa kungakakhitshwa. ICMEE ingatshintsha umvuzo ngomunye olingana lawo.',
     'profile.shareReferral': 'Yabelana ngeReferensi',
     'profile.invalidUsernameTitle': 'Username ayilunganga',
     'profile.invalidUsernameEmpty': 'Username kayingabi yize.',
@@ -2742,18 +2881,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Kopisha ilink',
     'feed.optionCopyLinkDesc': 'Kopisha ilink yepost yakho ukuze wabelane masinyane.',
     'feed.optionShare': 'Yabelana',
-    'feed.optionShareDesc': 'Yabelana ngelink yeMoMo labangane.',
+    'feed.optionShareDesc': 'Yabelana ngelink yeCMEE labangane.',
     'feed.optionSave': 'Gcina kudivayisi',
-    'feed.optionSaveDesc': 'Landa ikhophi yeMoMo le ukuze uyibuke offline.',
+    'feed.optionSaveDesc': 'Landa ikhophi yeCMEE le ukuze uyibuke offline.',
     'feed.optionReport': 'Bika',
-    'feed.optionReportDesc': 'Sitshele nxa iMoMo le isephula imilayo.',
+    'feed.optionReportDesc': 'Sitshele nxa iCMEE le isephula imilayo.',
     'feed.linkCopied': 'Ilink ikopishiwe.',
     'feed.copyLinkTitle': 'Kopisha ilink',
     'feed.saveFailedTitle': 'Ukugcina kwehlulekile',
     'feed.saveFailedBody': 'I-wave yehlulekile ukugcinwa olwandle.',
-    'feed.shareTitle': 'Yabelana ngeMoMo',
-    'feed.shareBody': 'Yabelana ngeMoMo - buka {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'iMoMo le',
+    'feed.shareTitle': 'Yabelana ngeCMEE',
+    'feed.shareBody': 'Yabelana ngeCMEE - buka {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'iCMEE le',
     'feed.reportQueued': 'Kusiya ku moderation.',
     'feed.comingSoon': 'Kuyeza maduzane!',
     'feed.joinTide': 'Joyina iTide',
@@ -2796,7 +2935,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'top.minuteFame': 'UMZUZWANA 1 WODUMO',
     'top.alerts': 'AMA-ALERT',
     'top.hunt': 'DINGA',
-    'top.myAura': 'AURA YAMI',
+    'top.myAura': 'MY SPACE',
     'top.commandCentre': 'COMMAND CENTRE',
     'creator.postsTitle': 'Amapost',
     'creator.noPosts': 'Akukabi lamapost avela kulo mdali.',
@@ -2808,9 +2947,9 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'Kishona',
     'language.ndebele': 'Kindebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Kila mtu anastahili muda wake.',
-    'welcome.subtitle': 'Watu halisi. Nyakati halisi.',
-    'loading.tagline': 'Kila mtu anastahili muda wake.',
+    'welcome.title': 'CMEE',
+    'welcome.subtitle': 'Everyone deserves to be seen!',
+    'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Fungua akaunti yako',
     'auth.signinTitle': 'Karibu tena',
     'auth.email': 'Barua pepe',
@@ -2898,7 +3037,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Hatukuweza kufungua kushiriki kwa sasa. Tafadhali jaribu tena.',
     'rewards.shareBody':
-      'Jiunge na MoMo kwenye Play Store: {{storeUrl}}\n\nTumia msimbo wangu wa rufaa {{code}} wakati wa kujisajili. Zawadi zinategemea rufaa zilizohitimu: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi nyingine iliyoidhinishwa.',
+      'Jiunge na CMEE kwenye Play Store: {{storeUrl}}\n\nTumia msimbo wangu wa rufaa {{code}} wakati wa kujisajili. Zawadi zinategemea rufaa zilizohitimu: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi nyingine iliyoidhinishwa.',
     'settings.languageValue': 'Lugha: {{language}}',
     'settings.selectLanguageTitle': 'Chagua lugha',
     'settings.selectLanguageBody': 'Chagua lugha unayotaka app itumie.',
@@ -2947,6 +3086,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'common.done': 'Imekamilika',
     'common.clear': 'Futa',
     'common.apply': 'Tumia',
+    'common.selected': 'Imechaguliwa',
     'settings.handle': 'Handle: {{handle}}',
     'settings.signedInAs': 'Umeingia kama {{account}}',
     'settings.anonymous': 'asiyejulikana',
@@ -2960,10 +3100,16 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.quickSendDesc': 'Tuma kwa haraka kutoka kwenye chat composer.',
     'settings.incomingCalls': 'Simu zinazoingia',
     'settings.messages': 'Ujumbe',
-    'settings.liveInviteSilent': 'Beji ya Live Invite (Kimya)',
+    'settings.liveInviteSilent': 'Live Invite',
     'settings.missedCalls': 'Simu zilizokosa',
     'settings.notification': 'Arifa',
     'settings.tone': 'Sauti: {{tone}}',
+    'settings.noTone': 'Hakuna sauti',
+    'settings.vibration': 'Mtetemo: {{state}}',
+    'settings.vibrationOn': 'Mtetemo WASHWA',
+    'settings.vibrationOff': 'Mtetemo UMEZIMWA',
+    'settings.tapToneToPreview': 'Gusa sauti ili kusikia na kuitumia.',
+    'settings.generalAlerts': 'Arifa za Jumla',
     'settings.silent': 'Kimya',
     'settings.smartDataSaver': 'Smart Data Saver',
     'settings.clearedTitle': 'Imefutwa',
@@ -3020,7 +3166,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Rufaa huhesabiwa tu pale mtu aliyealikwa akiwa mtumiaji mpya wa kweli, akisajili kwa msimbo wako, na kuwa hai kwa angalau siku {{days}} tofauti. Akaunti bandia, za kurudia, au kujialika hazihesabiwi.',
     'profile.referralReviewRule':
-      'Airtime na zawadi nyingine hukaguliwa kabla ya kutolewa. MoMo inaweza kubadilisha zawadi na faida nyingine sawia inapobidi.',
+      'Airtime na zawadi nyingine hukaguliwa kabla ya kutolewa. CMEE inaweza kubadilisha zawadi na faida nyingine sawia inapobidi.',
     'profile.shareReferral': 'Shiriki Rufaa',
     'profile.invalidUsernameTitle': 'Username si sahihi',
     'profile.invalidUsernameEmpty': 'Username haiwezi kuwa tupu.',
@@ -3088,18 +3234,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Nakili link',
     'feed.optionCopyLinkDesc': 'Nakili link ya post yako kwa kushiriki haraka.',
     'feed.optionShare': 'Shiriki',
-    'feed.optionShareDesc': 'Shiriki link ya MoMo na marafiki.',
+    'feed.optionShareDesc': 'Shiriki link ya CMEE na marafiki.',
     'feed.optionSave': 'Hifadhi kwenye kifaa',
-    'feed.optionSaveDesc': 'Pakua nakala ya MoMo hii uione bila intaneti.',
+    'feed.optionSaveDesc': 'Pakua nakala ya CMEE hii uione bila intaneti.',
     'feed.optionReport': 'Ripoti',
-    'feed.optionReportDesc': 'Tujulishe kama MoMo hii inakiuka miongozo.',
+    'feed.optionReportDesc': 'Tujulishe kama CMEE hii inakiuka miongozo.',
     'feed.linkCopied': 'Link imenakiliwa.',
     'feed.copyLinkTitle': 'Nakili link',
     'feed.saveFailedTitle': 'Kuhifadhi kumeshindikana',
     'feed.saveFailedBody': 'Wave haikuweza kuhifadhiwa baharini.',
-    'feed.shareTitle': 'Shiriki MoMo',
-    'feed.shareBody': 'Shiriki MoMo - angalia {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'MoMo hii',
+    'feed.shareTitle': 'Shiriki CMEE',
+    'feed.shareBody': 'Shiriki CMEE - angalia {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'CMEE hii',
     'feed.reportQueued': 'Inaenda kwa moderation.',
     'feed.comingSoon': 'Inakuja karibuni!',
     'feed.joinTide': 'Jiunge na Tide',
@@ -3142,7 +3288,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'top.minuteFame': 'DAKIKA 1 YA UMAARUFU',
     'top.alerts': 'ARIFA',
     'top.hunt': 'TAFUTA',
-    'top.myAura': 'AURA YANGU',
+    'top.myAura': 'MY SPACE',
     'top.commandCentre': 'COMMAND CENTRE',
     'creator.postsTitle': 'Posti',
     'creator.noPosts': 'Bado hakuna posti kutoka kwa mtayarishaji huyu.',
@@ -4315,19 +4461,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'nowrap',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     alignItems: 'stretch',
-    gap: 12,
+    gap: 8,
   },
   auraActionButton: {
     flex: 1,
     minWidth: 0,
-    minHeight: 44,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
+    minHeight: 36,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
     borderRadius: 999,
     borderWidth: 1,
-    alignItems: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   auraVibesBtn: {
     backgroundColor: '#0EA5D9',
@@ -4336,10 +4483,6 @@ const styles = StyleSheet.create({
   auraCollectionBtn: {
     backgroundColor: '#8D0000',
     borderColor: '#8D0000',
-  },
-  auraRewardsBtn: {
-    backgroundColor: '#155e75',
-    borderColor: '#155e75',
   },
   auraNotificationsBtn: {
     backgroundColor: '#5B2788',
@@ -6138,6 +6281,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [appToneSettings, setAppToneSettings] = useState<
     Record<AppToneAction, string>
   >(DEFAULT_APP_TONE_SETTINGS);
+  const [appVibrationSettings, setAppVibrationSettings] =
+    useState<AppVibrationSettings>(DEFAULT_APP_VIBRATION_SETTINGS);
   
   // Track which images have been revealed in the feed
   const [revealedImages, setRevealedImages] = useState<Set<string>>(new Set());
@@ -6145,8 +6290,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [treasureStats, setTreasureStats] = useState<{
     tipsTotal: number;
     withdrawable: number;
+    pendingCreatorValue: number;
+    creatorCareerPoints: number;
+    creatorRankLabel: string;
+    creatorCashoutEnabled: boolean;
     lastPayout?: any;
-  }>({ tipsTotal: 0, withdrawable: 0 });
+  }>({
+    tipsTotal: 0,
+    withdrawable: 0,
+    pendingCreatorValue: 0,
+    creatorCareerPoints: 0,
+    creatorRankLabel: getMinuteFameTitleLabelFromPoints(0),
+    creatorCashoutEnabled: false,
+  });
   const [tipHistory, setTipHistory] = useState<
     Array<{
       id: string;
@@ -6165,22 +6321,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [profileBio, setProfileBio] = useState<string>('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [profileMinuteFameTitle, setProfileMinuteFameTitle] = useState<string>('');
-  const [profileReferralCode, setProfileReferralCode] = useState<string>('');
-  const [profileReferralPendingCount, setProfileReferralPendingCount] = useState<number>(0);
-  const [profileReferralQualifiedCount, setProfileReferralQualifiedCount] = useState<number>(0);
-  const [profileReferralInvitedCount, setProfileReferralInvitedCount] = useState<number>(0);
-  const [profileReferralRewardLabel, setProfileReferralRewardLabel] = useState<string>('');
-  const [isReferralAdmin, setIsReferralAdmin] = useState<boolean>(false);
-  const [rewardReviewItems, setRewardReviewItems] = useState<
-    Array<{
-      uid: string;
-      name: string;
-      rewardLabel: string;
-      qualifiedCount: number;
-      status: string;
-    }>
-  >([]);
-  const [rewardReviewLoading, setRewardReviewLoading] = useState<boolean>(false);
 
   // Load profilePhoto from AsyncStorage on app start
   useEffect(() => {
@@ -6404,6 +6544,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     [appToneSettings],
   );
 
+  const getToneLabel = useCallback(
+    (toneId: string) => {
+      if (toneId === 'none') return t('settings.noTone');
+      return (
+        APP_TONE_OPTIONS.find(opt => opt.id === toneId)?.label ||
+        t('settings.notification')
+      );
+    },
+    [t],
+  );
+
+  const getVibrationPatternForAction = useCallback((action: AppToneAction) => {
+    switch (action) {
+      case 'incoming_call':
+        return [0, 700, 350, 700];
+      case 'call_missed':
+        return [0, 220, 120, 220];
+      case 'live_invite':
+        return [0, 180, 90, 180, 90, 180];
+      case 'messages':
+        return [0, 120, 60, 120];
+      case 'general':
+      default:
+        return [0, 150, 70, 150];
+    }
+  }, []);
+
+  const vibrateForAction = useCallback(
+    (action: AppToneAction, opts?: { loop?: boolean }) => {
+      if (!appVibrationSettings[action]) return;
+      try {
+        Vibration.cancel();
+      } catch {}
+      try {
+        Vibration.vibrate(getVibrationPatternForAction(action), !!opts?.loop);
+      } catch {}
+    },
+    [appVibrationSettings, getVibrationPatternForAction],
+  );
+
+  const stopToneVibration = useCallback(() => {
+    try {
+      Vibration.cancel();
+    } catch {}
+  }, []);
+
   const playToneCandidates = useCallback(
     (
       candidates: Array<string | number>,
@@ -6491,19 +6677,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [stopTonePreview]);
 
   useEffect(() => {
+    let mounted = true;
+    const loadAppVibrationSettings = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(APP_VIBRATIONS_STORAGE_KEY);
+        if (!raw || !mounted) return;
+        const parsed = JSON.parse(raw || '{}') || {};
+        setAppVibrationSettings({
+          ...DEFAULT_APP_VIBRATION_SETTINGS,
+          ...(parsed as Partial<AppVibrationSettings>),
+        });
+      } catch {}
+    };
+    loadAppVibrationSettings();
+    return () => {
+      mounted = false;
+      stopToneVibration();
+    };
+  }, [stopToneVibration]);
+
+  useEffect(() => {
     let cancelled = false;
     const uid = auth?.()?.currentUser?.uid;
     if (!uid) return;
     const loadRemoteToneSettings = async () => {
       try {
         const snap = await firestore().doc(`users/${uid}/settings/notifications`).get();
-        const tones = (snap?.data?.() || (snap as any)?.data?.() || {})?.tones || {};
-        if (cancelled || !tones || typeof tones !== 'object') return;
-        const merged = {
-          ...DEFAULT_APP_TONE_SETTINGS,
-          ...(tones as Partial<Record<AppToneAction, string>>),
-        };
-        setAppToneSettings(merged);
+        const data = snap?.data?.() || (snap as any)?.data?.() || {};
+        const tones = data?.tones || {};
+        const vibrations = data?.vibrations || {};
+        if (cancelled) return;
+        if (tones && typeof tones === 'object') {
+          const merged = {
+            ...DEFAULT_APP_TONE_SETTINGS,
+            ...(tones as Partial<Record<AppToneAction, string>>),
+          };
+          setAppToneSettings(merged);
+        }
+        if (vibrations && typeof vibrations === 'object') {
+          setAppVibrationSettings({
+            ...DEFAULT_APP_VIBRATION_SETTINGS,
+            ...(vibrations as Partial<AppVibrationSettings>),
+          });
+        }
       } catch {}
     };
     loadRemoteToneSettings();
@@ -6621,6 +6837,46 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [appToneSettings],
   );
+
+  const saveAppVibrationSetting = useCallback(
+    async (action: AppToneAction, enabled: boolean) => {
+      const next = {
+        ...appVibrationSettings,
+        [action]: enabled,
+      };
+      setAppVibrationSettings(next);
+      try {
+        await AsyncStorage.setItem(
+          APP_VIBRATIONS_STORAGE_KEY,
+          JSON.stringify(next),
+        );
+      } catch {}
+      try {
+        const uid = auth?.()?.currentUser?.uid;
+        if (uid) {
+          await firestore()
+            .doc(`users/${uid}/settings/notifications`)
+            .set(
+              {
+                vibrations: {
+                  incoming_call:
+                    next.incoming_call ?? DEFAULT_APP_VIBRATION_SETTINGS.incoming_call,
+                  messages: next.messages ?? DEFAULT_APP_VIBRATION_SETTINGS.messages,
+                  live_invite:
+                    next.live_invite ?? DEFAULT_APP_VIBRATION_SETTINGS.live_invite,
+                  call_missed:
+                    next.call_missed ?? DEFAULT_APP_VIBRATION_SETTINGS.call_missed,
+                  general: next.general ?? DEFAULT_APP_VIBRATION_SETTINGS.general,
+                },
+                updatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+        }
+      } catch {}
+    },
+    [appVibrationSettings],
+  );
                     
   // Play falcon sound for ping notification
   const playFalconSound = useCallback(() => {
@@ -6722,6 +6978,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const stopIncomingCallRingtone = useCallback(() => {
     incomingCallRingtoneActiveRef.current = false;
+    stopToneVibration();
     const tone = incomingCallRingtoneRef.current;
     if (!tone) return;
     incomingCallRingtoneRef.current = null;
@@ -6745,6 +7002,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (incomingCallRingtoneActiveRef.current) return;
     incomingCallRingtoneActiveRef.current = true;
     if (incomingCallRingtoneRef.current) return;
+    vibrateForAction('incoming_call', { loop: true });
     const selectedCandidates = getToneCandidatesForAction('incoming_call');
     const candidates: Array<string | number> = [
       ...selectedCandidates,
@@ -6802,7 +7060,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
     tryLoad(0);
-  }, [getToneCandidatesForAction, stopIncomingCallRingtone]);
+  }, [getToneCandidatesForAction, stopIncomingCallRingtone, vibrateForAction]);
 
   const hideNativeIncomingCallNotification = useCallback(() => {
     if (Platform.OS !== 'android') return;
@@ -6947,13 +7205,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
         }
         setProfileBio(String(data?.bio || ''));
-        setProfileMinuteFameTitle(String(data?.minuteFameTitleLabel || data?.minuteFameTitle || ''));
-        setProfileReferralCode(String(data?.referralCode || ''));
-        setProfileReferralPendingCount(Math.max(0, Number(data?.referralPendingCount || 0)));
-        setProfileReferralQualifiedCount(Math.max(0, Number(data?.referralQualifiedCount || 0)));
-        setProfileReferralInvitedCount(Math.max(0, Number(data?.referralInvitedCount || 0)));
-        setProfileReferralRewardLabel(String(data?.referralRewardLabel || ''));
-        setIsReferralAdmin(hasReferralAdminAccess(data));
+        setProfileMinuteFameTitle(
+          String(
+            data?.minuteFameTitleLabel ||
+              data?.minuteFameTitle ||
+              getMinuteFameTitleLabelFromPoints(Number(data?.minuteFameCareerPoints || 0)),
+          ),
+        );
+        if (myUid && data?.minuteFameBadgeWelcomeSeen !== true) {
+          const startingTier = getMinuteFameTierForPoints(
+            Number(data?.minuteFameCareerPoints || 0),
+          );
+          firestore()
+            .collection('notifications')
+            .add({
+              type: 'minute_fame_badge',
+              toUserId: myUid,
+              fromUid: 'system',
+              fromName: 'CMEE',
+              fromUserHandle: 'CMEE',
+              message: `Your creator journey starts with the ${startingTier.label} badge ${startingTier.icon}.`,
+              read: false,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            })
+            .catch(() => {});
+          firestore().collection('users').doc(myUid).set(
+            {
+              minuteFameBadgeWelcomeSeen: true,
+            },
+            { merge: true },
+          ).catch(() => {});
+        }
       })
       .catch((error: any) => {
         console.error('Error loading user data:', error);
@@ -6965,125 +7247,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           setAccountCreationHandle(normalized);
           setProfileName(normalized);
         }
-        setIsReferralAdmin(false);
       });
     return () => {
       cancelled = true;
     };
   }, [user?.uid, normalizeUserHandle]);
-
-  const advanceReferralProgressForUid = useCallback(async (uid: string) => {
-    const activeUid = String(uid || '').trim();
-    if (!activeUid) return;
-    const dayKey = new Date().toISOString().slice(0, 10);
-    const userRef = firestore().collection('users').doc(activeUid);
-
-    await firestore().runTransaction(async tx => {
-      const userSnap = await tx.get(userRef);
-      if (!userSnap.exists) return;
-      const data = userSnap.data() || {};
-      const referrerUid = String(data.referredByUid || '').trim();
-      if (!referrerUid) return;
-
-      const previousDay = String(data.referralLastActiveDay || '').trim();
-      const previousCount = Math.max(0, Number(data.referralActiveDayCount || 0));
-      const alreadyQualified =
-        data.referralQualified === true ||
-        String(data.referralStatus || '').toLowerCase() === 'qualified';
-      const nextCount = previousDay === dayKey ? previousCount : previousCount + 1;
-
-      tx.set(
-        userRef,
-        {
-          referralLastActiveDay: dayKey,
-          referralActiveDayCount: nextCount,
-        },
-        { merge: true },
-      );
-
-      const referralRef = firestore().collection(`users/${referrerUid}/referrals`).doc(activeUid);
-      tx.set(
-        referralRef,
-        {
-          activeDayCount: nextCount,
-          lastActiveDay: dayKey,
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
-
-      if (alreadyQualified || nextCount < REFERRAL_MIN_ACTIVE_DAYS) {
-        return;
-      }
-
-      const referrerRef = firestore().collection('users').doc(referrerUid);
-      const referrerSnap = await tx.get(referrerRef);
-      const pendingCount = Math.max(0, Number(referrerSnap.data()?.referralPendingCount || 0));
-      const qualifiedCount = Math.max(0, Number(referrerSnap.data()?.referralQualifiedCount || 0));
-      const nextQualifiedCount = qualifiedCount + 1;
-      const unlockedRewardTier = getUnlockedReferralRewardTier(nextQualifiedCount);
-
-      tx.set(
-        userRef,
-        {
-          referralQualified: true,
-          referralStatus: 'qualified',
-          referralQualifiedAt: firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
-      tx.set(
-        referrerRef,
-        {
-          referralPendingCount: Math.max(0, pendingCount - 1),
-          referralQualifiedCount: nextQualifiedCount,
-          referralRewardLabel: unlockedRewardTier
-            ? `${unlockedRewardTier.label}: ${unlockedRewardTier.reward}`
-            : firestore.FieldValue.delete(),
-          referralRewardQualifiedCount: unlockedRewardTier
-            ? unlockedRewardTier.qualifiedUsers
-            : firestore.FieldValue.delete(),
-          referralRewardStatus: unlockedRewardTier ? 'pending_review' : firestore.FieldValue.delete(),
-          referralRewardEligibleAt: unlockedRewardTier
-            ? firestore.FieldValue.serverTimestamp()
-            : firestore.FieldValue.delete(),
-        },
-        { merge: true },
-      );
-      tx.set(
-        referralRef,
-        {
-          qualified: true,
-          status: 'qualified',
-          qualifiedAt: firestore.FieldValue.serverTimestamp(),
-          rewardUnlocked: nextQualifiedCount >= REFERRAL_REQUIRED_QUALIFIED_USERS,
-          rewardTierLabel: unlockedRewardTier
-            ? `${unlockedRewardTier.label}: ${unlockedRewardTier.reward}`
-            : null,
-        },
-        { merge: true },
-      );
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!myUid) return;
-    advanceReferralProgressForUid(myUid).catch(error => {
-      console.warn('Referral progress advance failed:', error);
-    });
-  }, [advanceReferralProgressForUid, myUid]);
-
-  useEffect(() => {
-    if (!myUid || profileReferralCode) return;
-    const seed = profileName || accountCreationHandle || auth()?.currentUser?.displayName || myUid;
-    reserveReferralCode(myUid, seed)
-      .then(code => {
-        setProfileReferralCode(code);
-      })
-      .catch(error => {
-        console.warn('Referral code reservation failed:', error);
-      });
-  }, [accountCreationHandle, myUid, profileName, profileReferralCode]);
 
   // Auto-focus reply input when a message is selected for reply
   useEffect(() => {
@@ -7131,7 +7299,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         bio: data?.bio || '',
         lastSeen: lastSeen,
         online: data?.online === true,
-        minuteFameTitle: data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
+        minuteFameTitle:
+          data?.minuteFameTitleLabel ||
+          data?.minuteFameTitle ||
+          getMinuteFameTitleLabelFromPoints(Number(data?.minuteFameCareerPoints || 0)),
       };
       setUserData(prev => {
         const existing = prev[userId];
@@ -7521,8 +7692,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Clear captured media after successful posting
       setCapturedMedia(null);
       setCapturedMediaEdits(defaultMediaEdits);
-      // Show success message for posting a MoMo
-      notifySuccess('You dropped a MoMo!');
+      // Show success message for posting a CMEE vibe
+      notifySuccess('You dropped a CMEE vibe!');
     },
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
   );
@@ -7664,6 +7835,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     () => getMinuteFameLevelForPoints(minuteFameCareerPoints),
     [minuteFameCareerPoints],
   );
+  const profileMinuteFameBadge = useMemo(
+    () => getMinuteFameBadgeFromLabel(profileMinuteFameTitle),
+    [profileMinuteFameTitle],
+  );
   const minuteFameNextLevel = useMemo(
     () => getNextMinuteFameLevel(minuteFameCareerPoints),
     [minuteFameCareerPoints],
@@ -7686,62 +7861,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCommandCentreSection('home');
     }
   }, [showBridge, stopTonePreview]);
-
-  const loadRewardReviewItems = useCallback(async () => {
-    setRewardReviewLoading(true);
-    try {
-      const snap = await firestore()
-        .collection('users')
-        .where('referralRewardStatus', '==', 'pending_review')
-        .limit(50)
-        .get();
-      const next = snap.docs.map(doc => {
-        const data = doc.data() || {};
-        return {
-          uid: doc.id,
-          name: String(data.username || data.displayName || data.userName || 'User'),
-          rewardLabel: String(data.referralRewardLabel || 'Referral reward'),
-          qualifiedCount: Math.max(0, Number(data.referralQualifiedCount || 0)),
-          status: String(data.referralRewardStatus || 'pending_review'),
-        };
-      });
-      setRewardReviewItems(next);
-    } catch (error) {
-      console.warn('Load reward review items failed:', error);
-      setRewardReviewItems([]);
-    } finally {
-      setRewardReviewLoading(false);
-    }
-  }, []);
-
-  const updateRewardReviewStatus = useCallback(
-    async (targetUid: string, status: 'approved' | 'issued' | 'rejected') => {
-      try {
-        await firestore().collection('users').doc(targetUid).set(
-          {
-            referralRewardStatus: status,
-            referralRewardReviewedAt: firestore.FieldValue.serverTimestamp(),
-            referralRewardReviewedBy: myUid || null,
-          },
-          { merge: true },
-        );
-        setRewardReviewItems(prev =>
-          prev.map(item => (item.uid === targetUid ? { ...item, status } : item)),
-        );
-        if (status !== 'pending_review') {
-          setRewardReviewItems(prev => prev.filter(item => item.uid !== targetUid));
-        }
-      } catch (error) {
-        Alert.alert('Review Failed', 'We could not update that reward status right now.');
-      }
-    },
-    [myUid],
-  );
-
-  useEffect(() => {
-    if (!showBridge || commandCentreSection !== 'rewards' || !isReferralAdmin) return;
-    loadRewardReviewItems().catch(() => {});
-  }, [commandCentreSection, isReferralAdmin, loadRewardReviewItems, showBridge]);
 
   useEffect(() => {
     if (!showMinuteFame) {
@@ -7840,36 +7959,56 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const hugs = Math.max(0, currentHugs - Number(base?.baseHugs || base?.baseSplashes || 0));
           const echoes = Math.max(0, currentEchoes - Number(base?.baseEchoes || 0));
           const views = Math.max(0, Math.max(currentViews - Number(base?.baseViews || 0), hugs + echoes));
-          const score = views + hugs * 8 + echoes * 12;
-          const tier = getMinuteFameTierForScore(score);
+          const score = getMinuteFameScoreFromEngagement({
+            views,
+            hugs,
+            echoes,
+          });
+          const previewTier = getMinuteFameTierForPoints(
+            Math.max(0, minuteFameCareerPoints + score),
+          );
           const statusLabel = getMinuteFameStatusForScore(score);
           setMinuteFameResults({
             views,
             hugs,
             echoes,
             score,
-            tier,
-            encouragement: tier.encouragement,
+            tier: previewTier,
+            encouragement: previewTier.encouragement,
           });
           if (myUid) {
             const userRef = firestore().doc(`users/${myUid}`);
+            const treasureRef = firestore().doc(`users/${myUid}/private/treasure`);
             const dayKey = getMinuteFameDayKey(new Date());
             let nextCareerPoints = score;
             let nextFeatureCount = 1;
             let nextLevel = getMinuteFameLevelForPoints(score);
+            let nextTier = getMinuteFameTierForPoints(score);
+            let previousTier = getMinuteFameTierForPoints(0);
+            let nextPendingCreatorValue = getMinuteFamePendingTreasureValue(score);
+            const earnedTreasureValue = getMinuteFamePendingTreasureValue(score);
             await firestore().runTransaction(async tx => {
               const userSnap = await tx.get(userRef);
+              const treasureSnap = await tx.get(treasureRef);
               const previousBest = Number(userSnap.data()?.minuteFameBestScore || 0);
               const previousCareerPoints = Number(userSnap.data()?.minuteFameCareerPoints || 0);
               const previousFeatureCount = Number(userSnap.data()?.minuteFameFeatureCount || 0);
+              const previousPendingCreatorValue = Number(
+                treasureSnap.data()?.pendingCreatorValue || 0,
+              );
+              previousTier = getMinuteFameTierForPoints(previousCareerPoints);
               nextCareerPoints = previousCareerPoints + score;
               nextFeatureCount = previousFeatureCount + 1;
               nextLevel = getMinuteFameLevelForPoints(nextCareerPoints);
+              nextTier = getMinuteFameTierForPoints(nextCareerPoints);
+              nextPendingCreatorValue = Number(
+                (previousPendingCreatorValue + earnedTreasureValue).toFixed(4),
+              );
               tx.set(
                 userRef,
                 {
-                  minuteFameTitle: tier.id,
-                  minuteFameTitleLabel: `${tier.icon} ${tier.label}`,
+                  minuteFameTitle: nextTier.id,
+                  minuteFameTitleLabel: `${nextTier.icon} ${nextTier.label}`,
                   minuteFameBestScore: Math.max(previousBest, score),
                   minuteFameLastScore: score,
                   minuteFameLastViews: views,
@@ -7889,6 +8028,44 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 },
                 { merge: true },
               );
+              tx.set(
+                treasureRef,
+                {
+                  pendingCreatorValue: nextPendingCreatorValue,
+                  creatorCareerPoints: nextCareerPoints,
+                  creatorRankLabel: `${nextTier.icon} ${nextTier.label}`,
+                  creatorCashoutEnabled: false,
+                  creatorRewardsStatus: 'Tracking only - payouts are not active yet.',
+                  creatorLastScore: score,
+                  creatorLastTreasureEarned: earnedTreasureValue,
+                  creatorLastUpdatedAt: firestore.FieldValue.serverTimestamp(),
+                },
+                { merge: true },
+              );
+            });
+            if (previousTier.id !== nextTier.id) {
+              await firestore()
+                .collection('notifications')
+                .add({
+                  type: 'minute_fame_badge',
+                  toUserId: myUid,
+                  fromUid: 'system',
+                  fromName: 'CMEE',
+                  fromUserHandle: 'CMEE',
+                  message: `You have reached ${nextTier.label} ${nextTier.icon}.`,
+                  read: false,
+                  createdAt: firestore.FieldValue.serverTimestamp(),
+                })
+                .catch(() => {});
+              Alert.alert('New Creator Badge', `${nextTier.icon} You have reached ${nextTier.label}.`);
+            }
+            setMinuteFameResults({
+              views,
+              hugs,
+              echoes,
+              score,
+              tier: nextTier,
+              encouragement: nextTier.encouragement,
             });
             await firestore().collection(`users/${myUid}/minute_fame_history`).add({
               waveId: selectedWaveId,
@@ -7898,10 +8075,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               echoes,
               category: minuteFameCategory,
               mode: minuteFameMode,
-              titleId: tier.id,
-              titleLabel: `${tier.icon} ${tier.label}`,
+              titleId: nextTier.id,
+              titleLabel: `${nextTier.icon} ${nextTier.label}`,
+              careerPoints: nextCareerPoints,
               levelLabel: nextLevel.label,
               statusLabel,
+              pendingTreasureValue: earnedTreasureValue,
               createdAt: firestore.FieldValue.serverTimestamp(),
             }).catch(() => {});
             const spotlightId = `${dayKey}_${myUid}_${selectedWaveId}`;
@@ -7920,8 +8099,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   views,
                   hugs,
                   echoes,
-                  titleId: tier.id,
-                  titleLabel: `${tier.icon} ${tier.label}`,
+                  titleId: nextTier.id,
+                  titleLabel: `${nextTier.icon} ${nextTier.label}`,
+                  careerPoints: nextCareerPoints,
                   levelLabel: nextLevel.label,
                   statusLabel,
                   captionText: selectedWave?.captionText || '',
@@ -7933,12 +8113,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 { merge: true },
               )
               .catch(() => {});
-            setProfileMinuteFameTitle(`${tier.icon} ${tier.label}`);
+            setProfileMinuteFameTitle(`${nextTier.icon} ${nextTier.label}`);
             setMinuteFameCareerPoints(nextCareerPoints);
             setMinuteFameFeatureCount(nextFeatureCount);
             setMinuteFameStatusLabel(statusLabel);
             setMinuteFameLevelLabel(nextLevel.label);
             setMinuteFameFrameLabel(nextLevel.frameLabel);
+            setTreasureStats(prev => ({
+              ...prev,
+              pendingCreatorValue: nextPendingCreatorValue,
+              creatorCareerPoints: nextCareerPoints,
+              creatorRankLabel: `${nextTier.icon} ${nextTier.label}`,
+              creatorCashoutEnabled: false,
+            }));
             setMinuteFameHistory(prev => [
               {
                 id: `${Date.now()}`,
@@ -7949,7 +8136,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 echoes,
                 category: minuteFameCategory,
                 mode: minuteFameMode,
-                titleLabel: `${tier.icon} ${tier.label}`,
+                titleLabel: `${nextTier.icon} ${nextTier.label}`,
                 levelLabel: nextLevel.label,
                 statusLabel,
                 createdAtMs: Date.now(),
@@ -7969,7 +8156,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 views,
                 hugs,
                 echoes,
-                titleLabel: `${tier.icon} ${tier.label}`,
+                titleLabel: `${nextTier.icon} ${nextTier.label}`,
                 levelLabel: nextLevel.label,
                 statusLabel,
                 captionText: selectedWave?.captionText || '',
@@ -7989,7 +8176,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 bio: prev[myUid]?.bio || profileBio || '',
                 lastSeen: prev[myUid]?.lastSeen || null,
                 online: prev[myUid]?.online,
-                minuteFameTitle: `${tier.icon} ${tier.label}`,
+                minuteFameTitle: `${nextTier.icon} ${nextTier.label}`,
               },
             }));
           }
@@ -7998,7 +8185,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             await firestore().collection('minute_fame').doc('active').delete().catch(() => {});
           }
         } catch {
-          const tier = getMinuteFameTierForScore(0);
+          const tier = getMinuteFameTierForPoints(0);
           setMinuteFameResults({
             views: 0,
             hugs: 0,
@@ -8016,6 +8203,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     return () => clearTimeout(timer);
   }, [
     activeMinuteFameSession,
+    minuteFameCareerPoints,
     minuteFameCategory,
     minuteFameChoices,
     minuteFameLiveSeconds,
@@ -8145,7 +8333,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               views: Number(data?.views || 0),
               hugs: Number(data?.hugs || 0),
               echoes: Number(data?.echoes || 0),
-              titleLabel: String(data?.titleLabel || 'Rising Star'),
+              titleLabel: String(
+                data?.titleLabel || getMinuteFameTitleLabelFromPoints(Number(data?.careerPoints || 0)),
+              ),
               levelLabel: data?.levelLabel ? String(data.levelLabel) : null,
               statusLabel: data?.statusLabel ? String(data.statusLabel) : null,
               captionText: data?.captionText ? String(data.captionText) : null,
@@ -8169,7 +8359,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               echoes: Number(data?.echoes || 0),
               category: String(data?.category || 'Talent'),
               mode: String(data?.mode || 'queue'),
-              titleLabel: String(data?.titleLabel || 'Rising Star'),
+              titleLabel: String(
+                data?.titleLabel || getMinuteFameTitleLabelFromPoints(Number(data?.careerPoints || 0)),
+              ),
               levelLabel: data?.levelLabel ? String(data.levelLabel) : null,
               statusLabel: data?.statusLabel ? String(data.statusLabel) : null,
               createdAtMs: toMillis(data?.createdAt) || Date.now(),
@@ -8193,6 +8385,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const storedCareerPoints = Math.max(0, Number(userDataDoc?.minuteFameCareerPoints || 0));
         const storedFeatureCount = Math.max(0, Number(userDataDoc?.minuteFameFeatureCount || historyRows.length));
         const derivedLevel = getMinuteFameLevelForPoints(storedCareerPoints);
+        const derivedTitleLabel = String(
+          userDataDoc?.minuteFameTitleLabel || getMinuteFameTitleLabelFromPoints(storedCareerPoints),
+        );
 
         setMinuteFameSpotlights(spotlightRows);
         setMinuteFameHistory(historyRows);
@@ -8201,6 +8396,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         setMinuteFameStatusLabel(String(userDataDoc?.minuteFameStatusLabel || getMinuteFameStatusForScore(Number(userDataDoc?.minuteFameLastScore || 0))));
         setMinuteFameLevelLabel(String(userDataDoc?.minuteFameLevelLabel || derivedLevel.label));
         setMinuteFameFrameLabel(String(userDataDoc?.minuteFameFrameLabel || derivedLevel.frameLabel));
+        setProfileMinuteFameTitle(derivedTitleLabel);
         setMinuteFameSupportMap(supportMap);
         setMinuteFameNominationMap(nominationMap);
       } catch (error) {
@@ -8216,11 +8412,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const shareMinuteFameCard = useCallback(
     async (entry?: Partial<MinuteFameSpotlightEntry> | null) => {
-      const title = entry?.titleLabel || profileMinuteFameTitle || 'Rising Creator';
-      const creatorName = entry?.ownerName || profileName || 'A creator on MoMo';
+      const title = entry?.titleLabel || profileMinuteFameTitle || getMinuteFameTitleLabelFromPoints(minuteFameCareerPoints);
+      const creatorName = entry?.ownerName || profileName || 'A creator on CMEE';
       const score = Number(entry?.score || minuteFameResults?.score || 0);
       const category = String(entry?.category || minuteFameCategory || 'Talent');
-      const body = `${creatorName} is building momentum on ${getMinuteFameDisplayName(resolvedLanguage)}.\n\nTitle: ${title}\nCategory: ${category}\nScore: ${score}\n\nRecognized on MoMo for creator growth, reach, and real audience response.`;
+      const body = `${creatorName} is building momentum on ${getMinuteFameDisplayName(resolvedLanguage)}.\n\nTitle: ${title}\nCategory: ${category}\nScore: ${score}\n\nRecognized on CMEE for creator growth, reach, and real audience response.`;
       try {
         await Share.share({
           title: `${getMinuteFameDisplayName(resolvedLanguage)} Card`,
@@ -8228,7 +8424,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         });
       } catch {}
     },
-    [minuteFameCategory, minuteFameResults?.score, profileMinuteFameTitle, profileName, resolvedLanguage],
+    [minuteFameCareerPoints, minuteFameCategory, minuteFameResults?.score, profileMinuteFameTitle, profileName, resolvedLanguage],
   );
 
   const supportMinuteFameSpotlight = useCallback(
@@ -9605,7 +9801,6 @@ type CommandCentreSection =
   | 'notifications'
   | 'performance'
   | 'appearance'
-  | 'rewards'
   | 'about';
                     
   const [bridge, setBridge] = useState<BridgeSettings>({
@@ -9874,7 +10069,7 @@ type CommandCentreSection =
         results.push({
           kind: 'vibe',
           id,
-          label: String(data.captionText || data.caption || data.authorName || 'MoMo'),
+          label: String(data.captionText || data.caption || data.authorName || 'CMEE'),
           extra: {
             caption: data.captionText || data.caption || '',
             authorName: data.authorName || data.ownerName || '',
@@ -11741,7 +11936,14 @@ type CommandCentreSection =
             mediaUri = await storageMod().ref(String(data.mediaPath)).getDownloadURL();
           } catch {}
         }
-        const finalUri = playbackUrl || mediaUri;
+        const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
+        const finalUri =
+          playbackUrl ||
+          mediaUri ||
+          (Array.isArray(mediaItems)
+            ? String(mediaItems.find(item => !!item?.uri)?.uri || '')
+            : '') ||
+          null;
         const ownerUid = (data?.ownerUid || data?.authorId || null) as any;
         let userInfo: { name: string; avatar: string | null; bio?: string | null } | null = null;
         if (ownerUid) {
@@ -11765,7 +11967,6 @@ type CommandCentreSection =
             };
           } catch {}
         }
-        const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
         return {
           id,
           media:
@@ -12079,7 +12280,7 @@ type CommandCentreSection =
               .replace(/[^A-Za-z0-9._-]+/g, '_')
               .replace(/^_+|_+$/g, '')
               .slice(0, 42) || 'momo';
-            const fileName = `MoMo_${safeBase}_${Date.now()}.${inferredExt}`;
+            const fileName = `CMEE_${safeBase}_${Date.now()}.${inferredExt}`;
             if (
               !(await ensureNetworkActionAllowed('download', {
                 label: 'save this post',
@@ -12532,10 +12733,23 @@ type CommandCentreSection =
             const reversedData = data.reverse().map((w: any) => {
               const hasOwner =
                 typeof w.ownerUid !== 'undefined' && w.ownerUid !== null;
+              const sanitizedMediaItems = Array.isArray(w.mediaItems)
+                ? w.mediaItems.filter((item: any) => isRenderableRemoteMediaUri(item?.uri))
+                : null;
+              const sanitizedMedia =
+                isRenderableRemoteMediaUri(w?.media?.uri)
+                  ? {
+                      uri: w.media.uri,
+                      type: w.media?.type,
+                      fileName: w.media?.fileName,
+                    }
+                  : null;
               const next = {
                 ...w,
-                mediaItems: Array.isArray(w.mediaItems)
-                  ? w.mediaItems.filter((item: any) => !!item?.uri)
+                media: sanitizedMedia,
+                mediaItems: sanitizedMediaItems,
+                playbackUrl: isRenderableRemoteMediaUri(w?.playbackUrl)
+                  ? w.playbackUrl
                   : null,
               };
               if (hasOwner) return next;
@@ -12581,24 +12795,26 @@ type CommandCentreSection =
         })();
         const compact = chronologicalFeed.map(w => ({
           id: w.id,
-          media: {
-            uri: w.media?.uri,
-            type: w.media?.type,
-            fileName: w.media?.fileName,
-          },
+          media: isRenderableRemoteMediaUri(w.media?.uri)
+            ? {
+                uri: w.media?.uri,
+                type: w.media?.type,
+                fileName: w.media?.fileName,
+              }
+            : null,
           mediaItems: Array.isArray(w.mediaItems)
             ? w.mediaItems.map(item => ({
                 uri: item?.uri,
                 type: item?.type,
                 fileName: item?.fileName,
-              }))
+              })).filter(item => isRenderableRemoteMediaUri(item?.uri))
             : null,
           audio: w.audio,
           captionText: w.captionText,
           postType: w.postType ?? null,
           link: (w as any).link ?? null,
           mediaEdits: w.mediaEdits ?? null,
-          playbackUrl: w.playbackUrl ?? null,
+          playbackUrl: isRenderableRemoteMediaUri(w.playbackUrl) ? w.playbackUrl : null,
           muxStatus: w.muxStatus ?? null,
           authorName:
             w.authorName ?? (profileName || accountCreationHandle || null),
@@ -12735,9 +12951,15 @@ type CommandCentreSection =
               } catch {}
             }
             // Show all vibes in public feed (my vibes and other users' vibes)
-            const finalUri = playbackUrl || mediaUri;
-            if (!finalUri && !data?.audioUrl) continue;
             const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
+            const finalUri =
+              playbackUrl ||
+              mediaUri ||
+              (Array.isArray(mediaItems)
+                ? String(mediaItems.find(item => !!item?.uri)?.uri || '')
+                : '') ||
+              null;
+            if (!finalUri && !data?.audioUrl) continue;
             out.push({
               id: id,
               media:
@@ -12788,7 +13010,10 @@ type CommandCentreSection =
                       name: data?.displayName || data?.name || data?.username || 'User',
                       avatar: avatarUrl,
                       bio: data?.bio || null,
-                      minuteFameTitle: data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
+                      minuteFameTitle:
+                        data?.minuteFameTitleLabel ||
+                        data?.minuteFameTitle ||
+                        getMinuteFameTitleLabelFromPoints(Number(data?.minuteFameCareerPoints || 0)),
                     };
                     console.log('User data loaded for', uid, ':', { name: userDataMap[uid].name, avatar: userDataMap[uid].avatar, bio: userDataMap[uid].bio });
                   } else {
@@ -12798,7 +13023,7 @@ type CommandCentreSection =
                       name: 'User',
                       avatar: null,
                       bio: null,
-                      minuteFameTitle: null,
+                      minuteFameTitle: getMinuteFameTitleLabelFromPoints(0),
                     };
                     console.log('User document not found for', uid);
                   }
@@ -12811,7 +13036,7 @@ type CommandCentreSection =
                     name: 'User',
                     avatar: null,
                     bio: null,
-                    minuteFameTitle: null,
+                    minuteFameTitle: getMinuteFameTitleLabelFromPoints(0),
                   };
                 });
               }
@@ -13001,9 +13226,15 @@ type CommandCentreSection =
             } catch {}
           }
           // Show all vibes in public feed (my vibes and other users' vibes)
-          const finalUri = playbackUrl || mediaUri;
-          if (!finalUri && !data?.audioUrl) continue;
           const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
+          const finalUri =
+            playbackUrl ||
+            mediaUri ||
+            (Array.isArray(mediaItems)
+              ? String(mediaItems.find(item => !!item?.uri)?.uri || '')
+              : '') ||
+            null;
+          if (!finalUri && !data?.audioUrl) continue;
           out.push({
             id: id,
             media:
@@ -13057,7 +13288,10 @@ type CommandCentreSection =
                       name: data?.displayName || data?.name || data?.username || 'User',
                       avatar: avatarUrl,
                       bio: data?.bio || null,
-                      minuteFameTitle: data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
+                      minuteFameTitle:
+                        data?.minuteFameTitleLabel ||
+                        data?.minuteFameTitle ||
+                        getMinuteFameTitleLabelFromPoints(Number(data?.minuteFameCareerPoints || 0)),
                     };
                   } else {
                     // User document doesn't exist, create default data
@@ -13066,7 +13300,7 @@ type CommandCentreSection =
                       name: 'User',
                       avatar: null,
                       bio: null,
-                      minuteFameTitle: null,
+                      minuteFameTitle: getMinuteFameTitleLabelFromPoints(0),
                     };
                   }
                 });
@@ -13078,7 +13312,7 @@ type CommandCentreSection =
                     name: 'User',
                     avatar: null,
                     bio: null,
-                    minuteFameTitle: null,
+                    minuteFameTitle: getMinuteFameTitleLabelFromPoints(0),
                   };
                 });
               }
@@ -14281,15 +14515,48 @@ type CommandCentreSection =
     } catch (e) {
       // Continue without profile data
     }
-                    
-    const createEchoFn = functions().httpsCallable('createEcho');
-    await createEchoFn({
-      waveId,
-      text: trimmed,
-      fromName,
-      fromPhoto,
-      replyToEchoId
-    });
+
+    const writeEchoDirectly = async () => {
+      await firestore()
+        .collection('waves')
+        .doc(waveId)
+        .collection('echoes')
+        .add({
+          userUid: uid,
+          userName: fromName ?? null,
+          userPhoto: fromPhoto ?? null,
+          text: trimmed,
+          replyToEchoId: replyToEchoId || null,
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        });
+    };
+
+    try {
+      const createEchoFn = functions().httpsCallable('createEcho');
+      await createEchoFn({
+        waveId,
+        text: trimmed,
+        fromName,
+        fromPhoto,
+        replyToEchoId
+      });
+    } catch (error: any) {
+      const debugText = String(
+        error?.message || error?.code || error || '',
+      ).toLowerCase();
+      const shouldFallback =
+        debugText.includes('internal') ||
+        debugText.includes('unavailable') ||
+        debugText.includes('deadline') ||
+        debugText.includes('network') ||
+        debugText.includes('timeout');
+      if (!shouldFallback) {
+        throw error;
+      }
+      console.warn('[ECHO] createEcho callable failed, falling back to direct Firestore write', error);
+      await writeEchoDirectly();
+    }
   };
   const onSendEcho = async () => {
     const rawText = echoTextRef.current || '';
@@ -14955,12 +15222,12 @@ type CommandCentreSection =
       if (!wave) {
         await Share.share({
           title: 'Cast Vibe',
-          message: `Check out MoMo on Google Play:\n${PLAY_STORE_URL}`,
+          message: `Check out CMEE on Google Play:\n${PLAY_STORE_URL}`,
         });
         return;
       }
       const caption = wave.captionText ? `"${wave.captionText}"` : 'my vibe';
-      const msg = `Check out ${caption} on MoMo.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      const msg = `Check out ${caption} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to cast the net right now.');
@@ -14968,9 +15235,9 @@ type CommandCentreSection =
   };
   const onShareWave = async (wave: Vibe) => {
     try {
-      const caption = wave.captionText ? `"${wave.captionText}"` : 'my MoMo';
-      const msg = `Check out ${caption} on MoMo.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
-      await Share.share({ title: 'Cast MoMo', message: msg });
+      const caption = wave.captionText ? `"${wave.captionText}"` : 'my CMEE post';
+      const msg = `Check out ${caption} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      await Share.share({ title: 'Share CMEE', message: msg });
     } catch {
       showOceanDialog(
         'Share Failed',
@@ -15222,13 +15489,7 @@ type CommandCentreSection =
         // Continue without profile data
       }
                     
-      const createEchoFn = functions().httpsCallable('createEcho');
-      await createEchoFn({
-        waveId,
-        text,
-        fromName,
-        fromPhoto
-      });
+      await sendEcho(waveId, text);
                     
       // Clear the input
       setPostEchoTexts(prev => ({ ...prev, [waveId]: '' }));
@@ -15971,15 +16232,15 @@ type CommandCentreSection =
   // Play notification tone only; notifications surface in VIBE ALERTS.
   const showNotificationPopup = (_message: string, _fromName: string, type: string, _avatar: any = null) => {
     const normalizedType = String(type || '').toLowerCase();
-    if (normalizedType === 'live_invite') {
-      return;
-    }
     const toneAction: AppToneAction =
       normalizedType === 'incoming_call'
         ? 'incoming_call'
         : normalizedType === 'call_missed'
         ? 'call_missed'
+        : normalizedType === 'live_invite'
+        ? 'live_invite'
         : 'messages';
+    vibrateForAction(toneAction);
     playToneCandidates(getToneCandidatesForAction(toneAction), {
       volume: 0.85,
       storeAsPreview: true,
@@ -16276,7 +16537,7 @@ type CommandCentreSection =
   const shareProfile = async () => {
     try {
       const name = profileName || accountCreationHandle || '@your_handle';
-      const msg = `Check out my Aura ${name} on MoMo.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      const msg = `Check out my Space ${name} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
@@ -16331,7 +16592,7 @@ type CommandCentreSection =
     try {
       await Share.share({
         title: 'Share Profile Link',
-        message: `Download MoMo on Google Play:\n${PLAY_STORE_URL}`,
+        message: `Download CMEE on Google Play:\n${PLAY_STORE_URL}`,
       });
     } catch {
       Alert.alert('Share failed', 'Unable to share the link right now.');
@@ -16462,11 +16723,24 @@ type CommandCentreSection =
         setTreasureStats({
           tipsTotal: Number(d.tipsTotal || 0),
           withdrawable: Number(d.withdrawable || 0),
+          pendingCreatorValue: Number(d.pendingCreatorValue || 0),
+          creatorCareerPoints: Math.max(0, Number(d.creatorCareerPoints || 0)),
+          creatorRankLabel: String(
+            d.creatorRankLabel || getMinuteFameTitleLabelFromPoints(Number(d.creatorCareerPoints || 0)),
+          ),
+          creatorCashoutEnabled: Boolean(d.creatorCashoutEnabled),
           lastPayout: d.lastPayout || null,
         });
       })
       .catch(() => {
-        setTreasureStats({ tipsTotal: 0, withdrawable: 0 });
+        setTreasureStats({
+          tipsTotal: 0,
+          withdrawable: 0,
+          pendingCreatorValue: 0,
+          creatorCareerPoints: 0,
+          creatorRankLabel: getMinuteFameTitleLabelFromPoints(0),
+          creatorCashoutEnabled: false,
+        });
       });
                     
     // Fetch recent tips. Prefer nested collection users/{uid}/private/treasure/tips; fallback to users/{uid}/tips
@@ -17128,6 +17402,70 @@ type CommandCentreSection =
     [],
   );
 
+  const isRecoverableStorageUploadError = useCallback((error: any) => {
+    const raw = String(error?.message || error?.code || error || '').toLowerCase();
+    return (
+      raw.includes('server has terminated the upload session') ||
+      raw.includes('storage/unknown') ||
+      raw.includes('network request failed') ||
+      raw.includes('retry-limit-exceeded') ||
+      raw.includes('timeout') ||
+      raw.includes('unavailable')
+    );
+  }, []);
+
+  const uploadFileWithRecovery = useCallback(
+    async (
+      storageMod: any,
+      filePath: string,
+      localPath: string,
+      metadata?: Record<string, any>,
+      trackUploadTask?: ((task: any, startPercent?: number, endPercent?: number) => Promise<void>) | null,
+      startPercent: number = 0,
+      endPercent: number = 100,
+      maxAttempts: number = 3,
+    ): Promise<string> => {
+      const fileRef = storageMod().ref(filePath);
+      let lastError: any = null;
+      const tryRecoverDownloadUrl = async () => {
+        for (let recoveryAttempt = 1; recoveryAttempt <= 3; recoveryAttempt += 1) {
+          try {
+            const recoveredUrl = await fileRef.getDownloadURL();
+            if (recoveredUrl) return recoveredUrl;
+          } catch {}
+          if (recoveryAttempt < 3) {
+            await new Promise(resolve => setTimeout(resolve, recoveryAttempt * 1200));
+          }
+        }
+        return null;
+      };
+      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+          const task = fileRef.putFile(localPath, metadata || {});
+          if (trackUploadTask) {
+            await trackUploadTask(task, startPercent, endPercent);
+          } else {
+            await task;
+          }
+          const completedUrl = await tryRecoverDownloadUrl();
+          if (completedUrl) return completedUrl;
+          throw new Error('Upload completed but no download URL was available yet.');
+        } catch (error: any) {
+          lastError = error;
+          const recoveredUrl = await tryRecoverDownloadUrl();
+          if (recoveredUrl) return recoveredUrl;
+          if (!isRecoverableStorageUploadError(error) || attempt >= maxAttempts) {
+            throw error;
+          }
+          console.warn(`Upload attempt ${attempt} failed for ${filePath}; retrying`, error);
+          await new Promise(resolve => setTimeout(resolve, Math.min(4000, attempt * 900)));
+        }
+      }
+      throw lastError || new Error('Upload failed');
+    },
+    [isRecoverableStorageUploadError],
+  );
+
   const uploadUnifiedPostAsset = useCallback(
     async (
       asset: Asset,
@@ -17208,13 +17546,15 @@ type CommandCentreSection =
         mimeType,
         shouldUseLightVideoUpload,
       );
-      const fileRef = storageMod().ref(filePath);
-      await trackUploadTask(
-        fileRef.putFile(localPath, { contentType: mimeType }),
+      const fileDownloadUrl = await uploadFileWithRecovery(
+        storageMod,
+        filePath,
+        localPath,
+        { contentType: mimeType },
+        trackUploadTask,
         startPercent,
         endPercent,
       );
-      const fileDownloadUrl = await fileRef.getDownloadURL();
       return {
         uri: fileDownloadUrl,
         type: mimeType,
@@ -17229,7 +17569,12 @@ type CommandCentreSection =
           : 'document',
       };
     },
-    [ensureNetworkActionAllowed, maybeCompressVideoForUpload, shouldUseLightVideoUpload],
+    [
+      ensureNetworkActionAllowed,
+      maybeCompressVideoForUpload,
+      shouldUseLightVideoUpload,
+      uploadFileWithRecovery,
+    ],
   );
 
   const handleUnifiedPost = async () => {
@@ -17419,13 +17764,15 @@ type CommandCentreSection =
             return;
           }
 
-          const fileRef = storageMod().ref(filePath);
-          await trackUploadTask(
-            fileRef.putFile(localPath, {
+          const fileDownloadUrl = await uploadFileWithRecovery(
+            storageMod,
+            filePath,
+            localPath,
+            {
               contentType: mimeType,
-            }),
+            },
+            trackUploadTask,
           );
-          const fileDownloadUrl = await fileRef.getDownloadURL();
           const docRef = await firestoreMod()
             .collection('waves')
             .add({
@@ -17583,11 +17930,13 @@ type CommandCentreSection =
           ? 'audio/flac'
           : 'audio/mpeg';
 
-        const audioRef = storageMod().ref(audioPath);
-        await trackUploadTask(
-          audioRef.putFile(audioLocal, { contentType: audioCt }),
+        const audioDownloadUrl = await uploadFileWithRecovery(
+          storageMod,
+          audioPath,
+          audioLocal,
+          { contentType: audioCt },
+          trackUploadTask,
         );
-        const audioDownloadUrl = await audioRef.getDownloadURL();
 
         const docRef = await firestoreMod()
           .collection('waves')
@@ -19218,6 +19567,7 @@ type CommandCentreSection =
     let audioDownloadUrl: string | null = null;
     let overlayAudioStoragePath: string | null = null;
     let serverDocId: string | null = null;
+    let releaseSucceeded = false;
     let storageMod: any = null;
     let firestoreMod: any = null;
     let authMod: any = null;
@@ -19418,6 +19768,7 @@ type CommandCentreSection =
               devSkipStorage: true,
             });
           serverDocId = docRef?.id || null;
+          releaseSucceeded = true;
           setReleasing(false);
           if (Platform.OS === 'android') {
             try {
@@ -19530,13 +19881,14 @@ type CommandCentreSection =
           return;
         }
                     
-        await storageMod()
-          .ref(filePath)
-          .putFile(uploadPath, { contentType: uploadContentType });
         uploadedPath = filePath;
-        try {
-          videoDownloadUrl = await storageMod().ref(filePath).getDownloadURL();
-        } catch {}
+        videoDownloadUrl = await uploadFileWithRecovery(
+          storageMod,
+          filePath,
+          uploadPath,
+          { contentType: uploadContentType },
+          null,
+        );
         if (attachedAudio?.uri) {
           if (isHttp(attachedAudio.uri)) {
             audioDownloadUrl = attachedAudio.uri; // remote URL pasted by user
@@ -19610,12 +19962,13 @@ type CommandCentreSection =
                 : /ogg$/i.test(audioExt)
                 ? 'audio/ogg'
                 : 'audio/mpeg';
-              await storageMod()
-                .ref(audioPath)
-                .putFile(audioLocal, { contentType: audioCt });
-              audioDownloadUrl = await storageMod()
-                .ref(audioPath)
-                .getDownloadURL();
+              audioDownloadUrl = await uploadFileWithRecovery(
+                storageMod,
+                audioPath,
+                audioLocal,
+                { contentType: audioCt },
+                null,
+              );
               overlayAudioStoragePath = audioPath;
             }
           }
@@ -19661,6 +20014,7 @@ type CommandCentreSection =
               : null,
           });
         serverDocId = docRef?.id || null;
+        releaseSucceeded = true;
         // Notify backend that a wave was posted (and request server merge if overlay exists)
         try {
           const cfgLocal = (() => {
@@ -19708,7 +20062,7 @@ type CommandCentreSection =
           } catch {}
         }
         // Use custom notification for better UX
-        notifySuccess('You dropped a vibe!');
+      notifySuccess('You dropped a vibe!');
       } else {
         Alert.alert(
           'Backend not ready',
@@ -19716,12 +20070,85 @@ type CommandCentreSection =
         );
       }
     } catch (e: any) {
-      console.warn('Release wave failed', e);
-      const msg =
-        (e && (e.message || (typeof e === 'string' ? e : ''))) ||
-        'Unknown error';
-      Alert.alert('Release failed', `Could not release your wave. ${msg}`);
+      const recoverableStorageFailure =
+        !!uploadedPath &&
+        !serverDocId &&
+        !!storageMod &&
+        !!firestoreMod &&
+        !!authMod;
+      if (recoverableStorageFailure) {
+        try {
+          const recoveredDownloadUrl = await storageMod()
+            .ref(uploadedPath)
+            .getDownloadURL();
+          if (recoveredDownloadUrl) {
+            videoDownloadUrl = recoveredDownloadUrl;
+            const a = authMod();
+            const uid = a.currentUser?.uid;
+            if (uid) {
+              const recoveredDocRef = await firestoreMod()
+                .collection('waves')
+                .add({
+                  authorId: uid,
+                  ownerUid: uid,
+                  authorName:
+                    profileName ||
+                    accountCreationHandle ||
+                    a.currentUser?.displayName ||
+                    null,
+                  mediaPath: uploadedPath,
+                  text: finalCaption,
+                  createdAt: firestoreMod.FieldValue?.serverTimestamp
+                    ? firestoreMod.FieldValue.serverTimestamp()
+                    : new Date(),
+                  audioUrl: audioDownloadUrl || null,
+                  muxMode: null,
+                  muxVideoStrategy: null,
+                  muxFps: null,
+                  muxStatus:
+                    overlayAudioStoragePath && isVideoAsset(capturedMedia)
+                      ? 'pending'
+                      : 'ready',
+                  playbackUrl:
+                    (overlayAudioStoragePath && isVideoAsset(capturedMedia)) ||
+                    !isVideoAsset(capturedMedia)
+                      ? null
+                      : recoveredDownloadUrl,
+                  mediaUrl: recoveredDownloadUrl,
+                  mediaType: capturedMedia?.type || null,
+                  postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
+                  isPublic: true,
+                  mediaEdits: sanitizedMediaEdits,
+                  editorState: sanitizedMediaEdits,
+                  edits: sanitizedMediaEdits,
+                  mergeRequested: false,
+                  mergeSourceVideoPath: null,
+                  mergeOverlayAudioPath: null,
+                });
+              serverDocId = recoveredDocRef?.id || null;
+              releaseSucceeded = true;
+              console.warn(
+                'Release wave recovered after interrupted upload session',
+                e,
+              );
+            }
+          }
+        } catch (recoveryError) {
+          console.warn('Release wave recovery failed', recoveryError);
+        }
+      }
+      if (!releaseSucceeded) {
+        console.warn('Release wave failed', e);
+        const msg =
+          (e && (e.message || (typeof e === 'string' ? e : ''))) ||
+          'Unknown error';
+        Alert.alert('Release failed', `Could not release your wave. ${msg}`);
+      }
     } finally {
+      if (!releaseSucceeded) {
+        setReleasing(false);
+        return;
+      }
       // Update local feed immediately (uses local media path)
       const newWave: Vibe = {
         id: serverDocId || new Date().toISOString(),
@@ -20099,6 +20526,8 @@ type CommandCentreSection =
                         setRevealedImages={setRevealedImages}
                         recordVideoReach={recordVideoReach}
                         recordImageReach={recordImageReach}
+                        markBuffering={markBuffering}
+                        onVideoPlaybackError={handleVideoPlaybackError}
                         setPreservedScrollPosition={setPreservedScrollPosition}
                         navigation={navigation}
                         ensureSplash={ensureSplash}
@@ -20660,17 +21089,32 @@ type CommandCentreSection =
                   }}
                 />
                 {!!profileMinuteFameTitle && (
-                  <Text
+                  <View
                     style={{
-                      color: '#FFFFFF',
                       marginTop: 10,
-                      textAlign: 'center',
-                      fontSize: 11,
-                      fontWeight: '800',
+                      alignSelf: 'center',
+                      minWidth: 42,
+                      height: 42,
+                      paddingHorizontal: 10,
+                      borderRadius: 999,
+                      backgroundColor: 'rgba(56, 189, 248, 0.16)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(56, 189, 248, 0.32)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
                     }}
                   >
-                    {t('profile.minuteFameTitle', { title: profileMinuteFameTitle })}
-                  </Text>
+                    <Text
+                      style={{
+                        color: '#FFFFFF',
+                        textAlign: 'center',
+                        fontSize: 20,
+                        fontWeight: '800',
+                      }}
+                    >
+                      {profileMinuteFameBadge}
+                    </Text>
+                  </View>
                 )}
                 <Pressable
                   style={({ pressed }) => [
@@ -20718,16 +21162,12 @@ type CommandCentreSection =
                       const currentSnap = await firestore().collection('users').doc(myUid).get();
                       const currentUsername = String(currentSnap.data()?.username || currentSnap.data()?.displayName || '').trim();
                       await reserveUniqueUsername(myUid, trimmedName, currentUsername);
-                      const ensuredReferralCode =
-                        String(currentSnap.data()?.referralCode || '').trim() ||
-                        (await reserveReferralCode(myUid, trimmedName));
                       await firestore().collection('users').doc(myUid).set({
                         bio: profileBio.trim(),
                       }, { merge: true });
                       try {
                         await auth().currentUser?.updateProfile({ displayName: trimmedName });
                       } catch {}
-                      setProfileReferralCode(ensuredReferralCode);
                       Alert.alert(t('profile.updatedTitle'), t('profile.updatedBody'));
                     } catch (e: any) {
                       if (String(e?.message || '').includes('username-taken')) {
@@ -20759,13 +21199,13 @@ type CommandCentreSection =
                     style={[
                       styles.logbookActionText,
                       {
-                        fontSize: 15,
+                        fontSize: 13,
                         textAlign: 'center',
                         width: '100%',
-                        lineHeight: 18,
+                        lineHeight: 15,
                       },
                     ]}
-                    numberOfLines={2}
+                    numberOfLines={1}
                     adjustsFontSizeToFit
                   >
                     {t('profile.myVibes')}
@@ -20787,45 +21227,16 @@ type CommandCentreSection =
                     style={[
                       styles.logbookActionText,
                       {
-                        fontSize: 15,
+                        fontSize: 13,
                         textAlign: 'center',
                         width: '100%',
-                        lineHeight: 18,
+                        lineHeight: 15,
                       },
                     ]}
-                    numberOfLines={2}
+                    numberOfLines={1}
                     adjustsFontSizeToFit
                   >
                     {t('profile.myTreasure')}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.logbookAction, styles.auraActionButton, styles.auraRewardsBtn]}
-                  onPress={() => {
-                    setShowProfile(false);
-                    setCommandCentreSection('rewards');
-                    setShowBridge(true);
-                  }}
-                  hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  activeOpacity={0.7}
-                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                >
-                  <Text
-                    style={[
-                      styles.logbookActionText,
-                      {
-                        fontSize: 15,
-                        textAlign: 'center',
-                        width: '100%',
-                        lineHeight: 18,
-                      },
-                    ]}
-                    numberOfLines={2}
-                    adjustsFontSizeToFit
-                  >
-                    {t('command.rewardsUserTitle')}
                   </Text>
                 </Pressable>
               </View>
@@ -20872,9 +21283,24 @@ type CommandCentreSection =
                       showFleetCount={false}
                     />
                     {!!userData[creatorProfileUid]?.minuteFameTitle && (
-                      <Text style={{ color: '#FFFFFF', marginTop: 10, fontSize: 12, fontWeight: '800' }}>
-                        {userData[creatorProfileUid]?.minuteFameTitle}
-                      </Text>
+                      <View
+                        style={{
+                          marginTop: 10,
+                          minWidth: 40,
+                          height: 40,
+                          paddingHorizontal: 10,
+                          borderRadius: 999,
+                          backgroundColor: 'rgba(56, 189, 248, 0.16)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(56, 189, 248, 0.32)',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>
+                          {getMinuteFameBadgeFromLabel(userData[creatorProfileUid]?.minuteFameTitle)}
+                        </Text>
+                      </View>
                     )}
                     {!!userData[creatorProfileUid]?.bio && (
                       <Text
@@ -20955,7 +21381,7 @@ type CommandCentreSection =
                       )}
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.logbookActionText} numberOfLines={2}>
-                          {post.captionText || post.authorName || 'Untitled MoMo'}
+                          {post.captionText || post.authorName || 'Untitled CMEE'}
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 6 }}>
                           {post.postType || (post.audio?.uri ? 'audio' : post.media ? 'media' : 'text')}
@@ -23896,7 +24322,7 @@ type CommandCentreSection =
                     </Text>
                     {!!profileMinuteFameTitle && (
                       <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#FFFFFF' }]}>
-                        Current spotlight title: {profileMinuteFameTitle}
+                        Current badge: {profileMinuteFameBadge}
                       </Text>
                     )}
                   </View>
@@ -23992,7 +24418,7 @@ type CommandCentreSection =
                           onPress={() => setMinuteFameSelectedWaveId(item.id)}
                         >
                           <Text style={styles.savedItemText} numberOfLines={2}>
-                            {item.captionText || item.authorName || 'Untitled MoMo'}
+                            {item.captionText || item.authorName || 'Untitled CMEE'}
                           </Text>
                           <Text style={[styles.sectionSubtle, { marginTop: 4 }]}>
                             Tap to prepare this post for spotlight review and creator growth.
@@ -24052,6 +24478,9 @@ type CommandCentreSection =
                     <Text style={styles.sectionHeader}>Today's Stars</Text>
                     <Text style={styles.sectionSubtle}>Top category: {minuteFameCategory}</Text>
                     <Text style={[styles.sectionSubtle, { marginTop: 6 }]}>
+                      ✨ Fresh Face from day one
+                    </Text>
+                    <Text style={styles.sectionSubtle}>
                       ⭐ Rising Star from 180 points
                     </Text>
                     <Text style={styles.sectionSubtle}>
@@ -24060,9 +24489,15 @@ type CommandCentreSection =
                     <Text style={styles.sectionSubtle}>
                       👑 Wave King from 1400 points
                     </Text>
+                    <Text style={styles.sectionSubtle}>
+                      ⚡ Trend Storm from 3200 points
+                    </Text>
+                    <Text style={styles.sectionSubtle}>
+                      🦈 Ocean Legend from 7000 points
+                    </Text>
                     {!!profileMinuteFameTitle && (
                       <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#FFFFFF' }]}>
-                        Your current title: {profileMinuteFameTitle}
+                        Your current badge: {profileMinuteFameBadge}
                       </Text>
                     )}
                     {minuteFameLoading ? (
@@ -24189,7 +24624,7 @@ type CommandCentreSection =
                     <Text style={styles.sectionHeader}>Fame Queue</Text>
                     <Text style={styles.sectionSubtle}>You are in line for your moment…</Text>
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
-                      Selected post: {minuteFameChoices.find(item => item.id === minuteFameSelectedWaveId)?.captionText || 'MoMo post'}
+                      Selected post: {minuteFameChoices.find(item => item.id === minuteFameSelectedWaveId)?.captionText || 'CMEE post'}
                     </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 10 }}>
                       #{minuteFameQueueSpot}
@@ -24239,6 +24674,9 @@ type CommandCentreSection =
                     <Text style={styles.sectionSubtle}>❤️ Hugs: {minuteFameResults.hugs}</Text>
                     <Text style={styles.sectionSubtle}>💬 Echoes: {minuteFameResults.echoes}</Text>
                     <Text style={styles.sectionSubtle}>🏁 Score: {minuteFameResults.score}</Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 4 }]}>
+                      Scoring uses harder weights: qualified views count lightly, hugs count stronger, echoes count strongest.
+                    </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 18, fontWeight: '900', marginTop: 12 }}>
                       {minuteFameResults.tier.icon} {minuteFameResults.tier.label}
                     </Text>
@@ -24250,6 +24688,9 @@ type CommandCentreSection =
                     </Text>
                     <Text style={styles.sectionSubtle}>
                       Career lane: {minuteFameLevelLabel} • Frame: {minuteFameFrameLabel}
+                    </Text>
+                    <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
+                      Pending creator treasure earned: ${getMinuteFamePendingTreasureValue(minuteFameResults.score).toFixed(4)}
                     </Text>
                   </View>
                   <View style={styles.toolGrid}>
@@ -24334,10 +24775,6 @@ type CommandCentreSection =
                   ? t('command.notificationsTitle')
                   : commandCentreSection === 'performance'
                   ? t('command.performanceTitle')
-                  : commandCentreSection === 'rewards'
-                  ? isReferralAdmin
-                    ? t('command.rewardsAdminTitle')
-                    : t('command.rewardsUserTitle')
                   : commandCentreSection === 'appearance'
                   ? t('command.appearanceTitle')
                   : t('command.aboutTitle')}
@@ -24363,15 +24800,6 @@ type CommandCentreSection =
                       ['privacy', t('command.privacyTitle'), t('menu.privacyDesc')],
                       ['notifications', t('command.notificationsTitle'), t('menu.notificationsDesc')],
                       ['performance', t('command.performanceTitle'), t('menu.performanceDesc')],
-                      [
-                        'rewards',
-                        isReferralAdmin
-                          ? t('command.rewardsAdminTitle')
-                          : t('command.rewardsUserTitle'),
-                        isReferralAdmin
-                          ? t('command.rewardsAdminSubtitle')
-                          : t('command.rewardsUserSubtitle'),
-                      ],
                       ['appearance', t('command.appearanceTitle'), t('menu.appearanceDesc')],
                       ['about', t('command.aboutTitle'), t('menu.aboutDesc')],
                     ].map(item => (
@@ -24396,166 +24824,6 @@ type CommandCentreSection =
                         </Text>
                       </Pressable>
                     ))}
-                  </View>
-                ) : null}
-                {commandCentreSection === 'rewards' ? (
-                  <View
-                    style={{
-                      paddingVertical: 12,
-                      borderBottomWidth: 1,
-                      borderBottomColor: 'rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    {isReferralAdmin ? (
-                      <>
-                        <Text style={[styles.logbookActionText, { fontSize: 18, marginBottom: 6 }]}>
-                          Reward Review Queue
-                        </Text>
-                        <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, marginBottom: 10 }}>
-                          Pending referral rewards are reviewed here before airtime, data, or promo benefits are issued.
-                        </Text>
-                        <Pressable
-                          style={[styles.bridgeSettingButton, { marginBottom: 10 }]}
-                          onPress={loadRewardReviewItems}
-                        >
-                          <Text style={styles.bridgeSettingButtonText}>
-                            {rewardReviewLoading ? 'Refreshing...' : 'Refresh Queue'}
-                          </Text>
-                        </Pressable>
-                        {rewardReviewLoading ? <ActivityIndicator color="#10c9ff" style={{ marginVertical: 12 }} /> : null}
-                        {rewardReviewItems.length === 0 && !rewardReviewLoading ? (
-                          <View style={styles.logbookAction}>
-                            <Text style={styles.logbookActionText}>No referral rewards are waiting for review right now.</Text>
-                          </View>
-                        ) : null}
-                        {rewardReviewItems.map(item => (
-                          <View key={`reward-review-${item.uid}`} style={styles.logbookAction}>
-                            <Text style={styles.logbookActionText}>{item.name}</Text>
-                            <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 4 }}>
-                              {item.rewardLabel}
-                            </Text>
-                            <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 4 }}>
-                              Qualified users: {item.qualifiedCount}  Status: {item.status}
-                            </Text>
-                            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                              <Pressable
-                                style={styles.bridgeSettingButton}
-                                onPress={() => updateRewardReviewStatus(item.uid, 'approved')}
-                              >
-                                <Text style={styles.bridgeSettingButtonText}>Approve</Text>
-                              </Pressable>
-                              <Pressable
-                                style={styles.bridgeSettingButton}
-                                onPress={() => updateRewardReviewStatus(item.uid, 'issued')}
-                              >
-                                <Text style={styles.bridgeSettingButtonText}>Mark Issued</Text>
-                              </Pressable>
-                              <Pressable
-                                style={styles.bridgeSettingButton}
-                                onPress={() => updateRewardReviewStatus(item.uid, 'rejected')}
-                              >
-                                <Text style={styles.bridgeSettingButtonText}>Reject</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        ))}
-                      </>
-                    ) : (
-                      <>
-                        <Text style={[styles.logbookActionText, { fontSize: 18, marginBottom: 6 }]}>
-                          {t('rewards.myTitle')}
-                        </Text>
-                        <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, marginBottom: 10 }}>
-                          {t('rewards.mySubtitle')}
-                        </Text>
-                        <View style={styles.logbookAction}>
-                          <Text style={styles.logbookActionText}>
-                            {profileReferralCode || t('profile.generatingReferralCode')}
-                          </Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 6 }}>
-                            {t('rewards.counts', {
-                              qualified: profileReferralQualifiedCount,
-                              pending: profileReferralPendingCount,
-                              invited: profileReferralInvitedCount,
-                            })}
-                          </Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 8, lineHeight: 17 }}>
-                            {t('rewards.ladder')}
-                          </Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 8, lineHeight: 17 }}>
-                            {t('rewards.qualifyRule', {
-                              days: REFERRAL_MIN_ACTIVE_DAYS,
-                            })}
-                          </Text>
-                          {!!profileReferralRewardLabel && (
-                            <Text style={{ color: '#FFFFFF', fontSize: 11, marginTop: 8, fontWeight: '800' }}>
-                              {t('rewards.currentUnlocked', {
-                                reward: profileReferralRewardLabel,
-                              })}
-                            </Text>
-                          )}
-                          {(() => {
-                            const nextRewardTier = getNextReferralRewardTier(profileReferralQualifiedCount);
-                            return (
-                              <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 8, lineHeight: 17 }}>
-                                {nextRewardTier
-                                  ? t('rewards.nextReward', {
-                                      count: nextRewardTier.qualifiedUsers,
-                                      reward: nextRewardTier.reward,
-                                    })
-                                  : t('rewards.highestTier')}
-                              </Text>
-                            );
-                          })()}
-                          <Pressable
-                            style={[styles.bridgeSettingButton, { marginTop: 10, alignSelf: 'flex-start' }]}
-                            onPress={async () => {
-                              if (!profileReferralCode) {
-                                Alert.alert(
-                                  t('rewards.codePreparingTitle'),
-                                  t('rewards.codePreparingBody'),
-                                );
-                                return;
-                              }
-                              try {
-                                await Share.share({
-                                  message: t('rewards.shareBody', {
-                                    storeUrl: PLAY_STORE_URL,
-                                    code: profileReferralCode,
-                                  }),
-                                });
-                              } catch {
-                                Alert.alert(
-                                  t('rewards.shareFailedTitle'),
-                                  t('rewards.shareFailedBody'),
-                                );
-                              }
-                            }}
-                          >
-                            <Text style={styles.bridgeSettingButtonText}>
-                              {t('profile.shareReferral')}
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            style={[styles.bridgeSettingButton, { marginTop: 10, alignSelf: 'flex-start' }]}
-                            onPress={async () => {
-                              try {
-                                await Linking.openURL(PLAY_STORE_URL);
-                              } catch {
-                                Alert.alert(
-                                  t('rewards.openPlayStore'),
-                                  t('rewards.playStoreUnavailable'),
-                                );
-                              }
-                            }}
-                          >
-                            <Text style={styles.bridgeSettingButtonText}>
-                              {t('rewards.openPlayStore')}
-                            </Text>
-                          </Pressable>
-                        </View>
-                      </>
-                    )}
                   </View>
                 ) : null}
                 {(commandCentreSection === 'profile' ||
@@ -24826,17 +25094,17 @@ type CommandCentreSection =
                                   { action: 'messages', label: t('settings.messages') },
                                   { action: 'live_invite', label: t('settings.liveInviteSilent') },
                                   { action: 'call_missed', label: t('settings.missedCalls') },
+                                  { action: 'general', label: t('settings.generalAlerts') },
                                 ].map(item => {
                                   const selectedId =
-                                    item.action === 'live_invite'
-                                      ? 'none'
-                                      : appToneSettings[item.action as AppToneAction] ||
-                                        DEFAULT_APP_TONE_SETTINGS[item.action as AppToneAction];
-                                  const selectedLabel =
-                                    APP_TONE_OPTIONS.find(opt => opt.id === selectedId)?.label ||
-                                    t('settings.notification');
+                                    appToneSettings[item.action as AppToneAction] ||
+                                    DEFAULT_APP_TONE_SETTINGS[item.action as AppToneAction];
+                                  const selectedLabel = getToneLabel(selectedId);
+                                  const vibrationEnabled =
+                                    appVibrationSettings[item.action as AppToneAction] ??
+                                    DEFAULT_APP_VIBRATION_SETTINGS[item.action as AppToneAction];
                                   return (
-                                    <Pressable
+                                    <View
                                       key={`tone-setting-${item.action}`}
                                       style={[
                                         styles.logbookAction,
@@ -24848,38 +25116,60 @@ type CommandCentreSection =
                                           borderRadius: 10,
                                         },
                                       ]}
-                                      disabled={item.action === 'live_invite'}
-                                      onPress={() => {
-                                        if (item.action === 'live_invite') {
-                                          return;
-                                        }
-                                        setTonePicker({
-                                          visible: true,
-                                          action: item.action as AppToneAction,
-                                          label: item.label,
-                                        });
-                                      }}
                                     >
                                       <View style={{ flex: 1, paddingRight: 10 }}>
                                         <Text style={styles.logbookActionText}>{item.label}</Text>
                                         <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11 }}>
                                           {t('settings.tone', { tone: selectedLabel })}
                                         </Text>
+                                        <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 2 }}>
+                                          {t('settings.vibration', {
+                                            state: vibrationEnabled ? t('common.on') : t('common.off'),
+                                          })}
+                                        </Text>
                                       </View>
-                                      <Text
-                                        style={[
-                                          styles.logbookActionText,
-                                          {
-                                            fontSize: 13,
-                                            opacity: item.action === 'live_invite' ? 0.8 : 0.65,
-                                          },
-                                        ]}
+                                      <View style={{ alignItems: 'flex-end', gap: 6 }}
                                       >
-                                        {item.action === 'live_invite'
-                                          ? t('settings.silent')
-                                          : t('common.open')}
-                                      </Text>
-                                    </Pressable>
+                                        <Pressable
+                                          style={[styles.bridgeSettingButton, { minWidth: 110 }]}
+                                          onPress={() => {
+                                            setTonePicker({
+                                              visible: true,
+                                              action: item.action as AppToneAction,
+                                              label: item.label,
+                                            });
+                                          }}
+                                        >
+                                          <Text style={styles.bridgeSettingButtonText}>{t('common.open')}</Text>
+                                        </Pressable>
+                                        <Pressable
+                                          style={[
+                                            styles.bridgeSettingButton,
+                                            {
+                                              minWidth: 110,
+                                              backgroundColor: vibrationEnabled
+                                                ? 'rgba(141,0,0,0.88)'
+                                                : 'rgba(255,255,255,0.08)',
+                                              borderColor: vibrationEnabled
+                                                ? '#8D0000'
+                                                : 'rgba(255,255,255,0.18)',
+                                            },
+                                          ]}
+                                          onPress={() =>
+                                            saveAppVibrationSetting(
+                                              item.action as AppToneAction,
+                                              !vibrationEnabled,
+                                            )
+                                          }
+                                        >
+                                          <Text style={styles.bridgeSettingButtonText}>
+                                            {vibrationEnabled
+                                              ? t('settings.vibrationOn')
+                                              : t('settings.vibrationOff')}
+                                          </Text>
+                                        </Pressable>
+                                      </View>
+                                    </View>
                                   );
                                 })}
                               </View>
@@ -25464,6 +25754,7 @@ type CommandCentreSection =
         animationType="fade"
         onRequestClose={() => {
           stopTonePreview();
+          stopToneVibration();
           setTonePicker({ visible: false, action: null, label: '' });
         }}
       >
@@ -25483,7 +25774,7 @@ type CommandCentreSection =
                 {tonePicker.label || 'Select Tone'}
               </Text>
               <Text style={{ color: 'rgba(255,255,255,0.6)', marginBottom: 10 }}>
-                Tap a tone to preview and apply.
+                {t('settings.tapToneToPreview')}
               </Text>
               <ScrollView>
                 {APP_TONE_OPTIONS.map(opt => {
@@ -25511,20 +25802,23 @@ type CommandCentreSection =
                       onPress={async () => {
                         if (!tonePicker.action) return;
                         await saveAppToneSetting(tonePicker.action, opt.id);
+                        vibrateForAction(tonePicker.action);
                         playToneCandidates(opt.candidates, {
                           volume: 0.9,
                           storeAsPreview: true,
                         });
                       }}
                     >
-                      <Text style={styles.logbookActionText}>{opt.label}</Text>
+                      <Text style={styles.logbookActionText}>
+                        {opt.id === 'none' ? t('settings.noTone') : opt.label}
+                      </Text>
                       <Text
                         style={[
                           styles.logbookActionText,
                           { fontSize: 13, opacity: isSelected ? 1 : 0.4 },
                         ]}
                       >
-                        {isSelected ? 'Selected' : ''}
+                        {isSelected ? t('common.selected') : ''}
                       </Text>
                     </Pressable>
                   );
@@ -25534,6 +25828,7 @@ type CommandCentreSection =
                 style={[styles.dismissBtn, { marginTop: 12, minHeight: 42, justifyContent: 'center' }]}
                 onPress={() => {
                   stopTonePreview();
+                  stopToneVibration();
                   setTonePicker({ visible: false, action: null, label: '' });
                 }}
               >
@@ -26078,25 +26373,25 @@ type CommandCentreSection =
               <Image source={paperTexture} style={styles.logbookBg} />
             )}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>My Collection</Text>
+              <Text style={styles.logbookTitle}>My Treasure</Text>
               <ScrollView>
                 <Pressable
                   style={styles.logbookAction}
                   onPress={() =>
                     Alert.alert(
-                      'View Earnings',
-                      'Earnings screen not implemented.',
+                      'Creator Treasure',
+                      'Creator treasure is being tracked now.',
                     )
                   }
                 >
-                  <Text style={styles.logbookActionText}>💰 View Earnings</Text>
+                  <Text style={styles.logbookActionText}>💰 Creator Treasure</Text>
                 </Pressable>
                 <Pressable
                   style={styles.logbookAction}
                   onPress={() =>
                     Alert.alert(
                       'Withdraw Funds',
-                      'Withdrawal screen not implemented.',
+                      'Cash payouts are not yet implemented.',
                     )
                   }
                 >
@@ -26132,6 +26427,21 @@ type CommandCentreSection =
                   </Text>
                   <Text style={{ color: 'lightgreen', fontWeight: '700' }}>
                     Withdrawable: ${treasureStats.withdrawable.toFixed(2)}
+                  </Text>
+                  <Text style={{ color: '#7DD3FC', fontWeight: '700', marginTop: 10 }}>
+                    Pending Creator Value: ${treasureStats.pendingCreatorValue.toFixed(4)}
+                  </Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', marginTop: 4 }}>
+                    Creator Badge: {getMinuteFameBadgeFromLabel(treasureStats.creatorRankLabel)}
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 4 }}>
+                    Career Points: {minuteFameCareerPoints || treasureStats.creatorCareerPoints}
+                  </Text>
+                  <Text style={{ color: '#FDE68A', fontSize: 11, marginTop: 8 }}>
+                    Creator treasure is being tracked now. Cash payouts are not yet implemented.
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 2 }}>
+                    Cash-out status: {treasureStats.creatorCashoutEnabled ? 'Enabled' : 'Coming soon'}
                   </Text>
                   {treasureStats.lastPayout && (
                     <Text
@@ -34191,7 +34501,6 @@ function SignUpScreen({ navigation }: any) {
   const { t } = useAppLanguage();
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
-  const [referralCodeInput, setReferralCodeInput] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
@@ -34210,7 +34519,6 @@ function SignUpScreen({ navigation }: any) {
   const signUp = async () => {
     const trimmedEmail = email.trim();
     const trimmedUsername = normalizeUniqueUsername(username);
-    const trimmedReferralCode = normalizeReferralCodeInput(referralCodeInput);
                     
     if (!trimmedEmail || !trimmedUsername || !password || !confirmPassword) {
       Alert.alert(t('alert.missingInfoTitle'), t('alert.missingInfoBody'));
@@ -34298,18 +34606,10 @@ function SignUpScreen({ navigation }: any) {
                       const firestoreMod = require('@react-native-firebase/firestore').default;
                       try {
                         await reserveUniqueUsername(result.user.uid, trimmedUsername);
-                        await reserveReferralCode(result.user.uid, trimmedUsername);
-                        if (trimmedReferralCode) {
-                          await attachReferralToNewUser(result.user.uid, trimmedReferralCode);
-                        }
                       } catch (usernameError: any) {
                         await result.user.delete().catch(() => {});
                         if (String(usernameError?.message || '').includes('username-taken')) {
                           Alert.alert('Username Taken', 'That username is already in use. Try another one.');
-                        } else if (String(usernameError?.message || '').includes('referral-code-invalid')) {
-                          Alert.alert('Invalid Referral Code', 'That referral code was not found. Please check it and try again.');
-                        } else if (String(usernameError?.message || '').includes('referral-code-self')) {
-                          Alert.alert('Invalid Referral Code', 'You cannot use your own referral code.');
                         } else {
                           Alert.alert('Sign Up Unavailable', 'We could not finish account setup right now. Please try again.');
                         }
@@ -34381,18 +34681,10 @@ function SignUpScreen({ navigation }: any) {
         const firestoreMod = require('@react-native-firebase/firestore').default;
         try {
           await reserveUniqueUsername(userCredential.user.uid, trimmedUsername);
-          await reserveReferralCode(userCredential.user.uid, trimmedUsername);
-          if (trimmedReferralCode) {
-            await attachReferralToNewUser(userCredential.user.uid, trimmedReferralCode);
-          }
         } catch (usernameError: any) {
           await userCredential.user.delete().catch(() => {});
           if (String(usernameError?.message || '').includes('username-taken')) {
             Alert.alert('Username Taken', 'That username is already in use. Try another one.');
-          } else if (String(usernameError?.message || '').includes('referral-code-invalid')) {
-            Alert.alert('Invalid Referral Code', 'That referral code was not found. Please check it and try again.');
-          } else if (String(usernameError?.message || '').includes('referral-code-self')) {
-            Alert.alert('Invalid Referral Code', 'You cannot use your own referral code.');
           } else {
             Alert.alert('Sign Up Unavailable', 'We could not finish account setup right now. Please try again.');
           }
@@ -34450,12 +34742,6 @@ function SignUpScreen({ navigation }: any) {
             label={t('auth.username')}
             value={username}
             onChangeText={setUsername}
-          />
-          <Field
-            label={t('auth.referralCode')}
-            value={referralCodeInput}
-            onChangeText={setReferralCodeInput}
-            autoCapitalize="characters"
           />
           <Field
             label={t('auth.password')}
@@ -34723,7 +35009,7 @@ function WelcomeAnimationScreen({ navigation }: any) {
       if (isMounted.current) {
         navigation.replace('AppHome');
       }
-    }, 4600);
+    }, 5200);
                     
     return () => {
       isMounted.current = false;
@@ -34761,30 +35047,21 @@ function WelcomeAnimationScreen({ navigation }: any) {
         }}
       >
         <Image
-          source={require('./assets/APP LOGO.png')}
+          source={require('./assets/cmee_logo_final.png')}
           style={{
-            width: 92,
-            height: 92,
+            width: 156,
+            height: 156,
             resizeMode: 'contain',
-            marginBottom: 18,
+            marginBottom: 22,
           }}
         />
         <Text
           style={{
-            color: '#FFFFFF',
-            fontSize: 34,
-            lineHeight: 42,
-            fontWeight: '900',
-            textAlign: 'center',
-          }}
-        >
-          {t('welcome.title')}
-        </Text>
-        <Text
-          style={{
-            marginTop: 14,
+            maxWidth: 280,
             color: '#C7EAFE',
-            fontSize: 14,
+            fontSize: 16,
+            lineHeight: 22,
+            fontWeight: '700',
             textAlign: 'center',
           }}
         >
@@ -35187,7 +35464,7 @@ function PostDetailScreen({ route, navigation }: any) {
           }}
         >
           <Text style={{ color: 'white', fontSize: 16 }}>
-            {isFollowing ? '✓ Connected' : '+ Connect MoMo'}
+            {isFollowing ? '✓ Connected' : '+ Connect CMEE'}
           </Text>
         </Pressable>
       )}

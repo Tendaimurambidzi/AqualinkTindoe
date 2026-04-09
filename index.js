@@ -6,7 +6,7 @@ import 'react-native-gesture-handler';
 // This fixes "[runtime not ready]" errors from worklets-driven libraries.
 import 'react-native-reanimated';
 import { AppRegistry } from 'react-native';
-import App from './App';
+import App from './App.tsx';
 import { name as appName } from './app.json';
 
 const PENDING_INCOMING_CALL_STORAGE_KEY = 'aqualink_pending_incoming_call_v1';

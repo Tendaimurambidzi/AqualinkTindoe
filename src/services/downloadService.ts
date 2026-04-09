@@ -62,7 +62,7 @@ export async function downloadWave(waveId: string, mediaUrl: string, fileName?: 
     if (downloadResult.statusCode === 200) {
       // Notify backend of download
       try {
-        const cfg = require('../liveConfig');
+        const cfg = require('../../liveConfig');
         const backendBase = cfg?.BACKEND_BASE_URL || '';
         if (backendBase) {
           await fetch(`${backendBase}/wave/download`, {
@@ -127,7 +127,7 @@ export async function shareDriftLink(liveId: string, channel: string, title?: st
     let shareMessage = `Join my Drift live session!`;
     
     try {
-      const cfg = require('../liveConfig');
+      const cfg = require('../../liveConfig');
       const backendBase = cfg?.BACKEND_BASE_URL || '';
       if (backendBase) {
         const response = await fetch(`${backendBase}/drift/share-link`, {

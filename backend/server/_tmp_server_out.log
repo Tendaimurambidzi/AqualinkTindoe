@@ -1,0 +1,29 @@
+Using Firebase service account: C:\Users\user\AqualinkTindoe\firebase\serviceAccountKey.json
+Starting Drift backend server on port 4000...
+AGORA_APP_ID: 02c4691ff2124a5997025c736f9d6ccf
+Proxy env cleared for Firebase Admin / Google APIs
+Press Ctrl+C to stop the server
+
+firebase-admin initialized
+Drift backend listening on :4000
+Available endpoints:
+  - /agora/token
+  - /live/recent, /live/start, /live/end
+  - /drift/request, /drift/accept, /drift/share-link
+  - /chartered-drift/* (start, end, passes, earnings, toggle-chat, share-promo, purchase-pass)
+  - /block-user, /unblock-user, /mute-user, /unmute-user
+  - /remove-from-drift, /kick-user, /drift/viewer-*
+  - /make-moderator, /remove-moderator, /moderators
+  - /timeout-user, /pin-user, /unpin-user
+  - /invite-cohost, /remove-cohost, /cohosts, /transfer-host
+  - /disable-chat, /enable-chat
+  - /send-private-message, /give-shoutout
+  - /award-badge, /user-badges, /feature-supporter
+  - /start-recording, /stop-recording, /recording-status, /recordings
+  - /notice-board/register
+  - /school/register, /school/list-zimbabwe, /school/info
+  - /teacher/register, /teacher/create-lesson, /teacher/lessons
+  - /wave/download
+  - /crew/join, /crew/leave, /crew/check
+  - /crew/:targetUid, /boarding/:fromUid
+  - /live/set-background, /live/get-background/:channel

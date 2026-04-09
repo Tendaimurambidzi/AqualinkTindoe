@@ -9,11 +9,13 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
 
 class CallNotificationService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "aqualink_calls_lg_cat_ring"
+        const val CHANNEL_ID = "aqualink_calls_lg_cat_ring_vibe"
+        const val LEGACY_CHANNEL_ID = "aqualink_calls_lg_cat_ring"
         const val NOTIFICATION_ID = 1001
         const val ACTION_ANSWER = "com.aqualink.tindo.ANSWER_CALL"
         const val ACTION_DECLINE = "com.aqualink.tindo.DECLINE_CALL"
@@ -73,6 +75,19 @@ class CallNotificationService : Service() {
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "Notifications for incoming calls"
+                setShowBadge(false)
+                setSound(soundUri, audioAttributes)
+                enableVibration(true)
+                vibrationPattern = longArrayOf(0, 1000, 500, 1000)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            }
+            val legacyChannel = NotificationChannel(
+                LEGACY_CHANNEL_ID,
+                "Incoming Calls (Legacy)",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Notifications for incoming calls"
+                setShowBadge(false)
                 setSound(soundUri, audioAttributes)
                 enableVibration(true)
                 vibrationPattern = longArrayOf(0, 1000, 500, 1000)
@@ -81,6 +96,7 @@ class CallNotificationService : Service() {
             
             val notificationManager = getSystemService(NotificationManager::class.java)
             notificationManager.createNotificationChannel(channel)
+            notificationManager.createNotificationChannel(legacyChannel)
         }
     }
 
@@ -91,7 +107,7 @@ class CallNotificationService : Service() {
             putExtra("action", "incoming_call")
         }
         val fullScreenPendingIntent = PendingIntent.getActivity(
-            this, 0, fullScreenIntent,
+            this, callId.hashCode(), fullScreenIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -100,7 +116,7 @@ class CallNotificationService : Service() {
             putExtra("callId", callId)
         }
         val answerPendingIntent = PendingIntent.getBroadcast(
-            this, 1, answerIntent,
+            this, callId.hashCode() + 1, answerIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -109,7 +125,7 @@ class CallNotificationService : Service() {
             putExtra("callId", callId)
         }
         val declinePendingIntent = PendingIntent.getBroadcast(
-            this, 2, declineIntent,
+            this, callId.hashCode() + 2, declineIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -120,21 +136,35 @@ class CallNotificationService : Service() {
         }
         
         val callTypeText = if (callType == "video") "Video Call" else "Audio Call"
+        val callerPerson = Person.Builder()
+            .setName(callerName)
+            .setImportant(true)
+            .build()
 
-        return NotificationCompat.Builder(this, CHANNEL_ID)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_call)
             .setContentTitle("Incoming $callTypeText")
             .setContentText("$callerName is calling...")
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setFullScreenIntent(fullScreenPendingIntent, true)
+            .setContentIntent(fullScreenPendingIntent)
             .setOngoing(true)
             .setAutoCancel(false)
             .setSound(soundUri)
             .setVibrate(longArrayOf(0, 1000, 500, 1000))
             .addAction(android.R.drawable.ic_menu_call, "Answer", answerPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePendingIntent)
-            .build()
+            .setStyle(
+                NotificationCompat.CallStyle.forIncomingCall(
+                    callerPerson,
+                    declinePendingIntent,
+                    answerPendingIntent,
+                )
+            )
+
+        return builder.build()
     }
 
     override fun onDestroy() {

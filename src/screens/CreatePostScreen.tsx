@@ -11,11 +11,18 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 const CreatePostScreen = ({ navigation, route }: any) => {
   const setCapturedMedia = route?.params?.setCapturedMedia;
   const handleSDCardPicker = route?.params?.handleSDCardPicker;
+  const pickerOptions = {
+    mediaType: 'mixed' as const,
+    selectionLimit: 1,
+    presentationStyle: 'fullScreen' as const,
+    videoQuality: 'medium' as const,
+    assetRepresentationMode: 'compatible' as const,
+  };
 
   const handleCamera = async () => {
     try {
       const result = await launchCamera({
-        mediaType: 'mixed',
+        ...pickerOptions,
         saveToPhotos: true,
       });
 
@@ -37,10 +44,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
 
   const handleGallery = async () => {
     try {
-      const result = await launchImageLibrary({
-        mediaType: 'mixed',
-        selectionLimit: 1,
-      });
+      const result = await launchImageLibrary(pickerOptions);
 
       if (result.didCancel) return;
       if (result.errorCode) {

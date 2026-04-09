@@ -4,6 +4,7 @@ import firestore from '@react-native-firebase/firestore';
 import functions from '@react-native-firebase/functions';
 import auth from '@react-native-firebase/auth';
 import { Platform } from 'react-native';
+import { Video as MediaVideoCompressor } from 'react-native-compressor';
 
 export interface SimpleMedia {
   uri: string;
@@ -30,6 +31,98 @@ const resolveRNFS = () => {
     RNFS = null;
   }
   return RNFS;
+};
+
+const maybeCompressVideoForUpload = async (localPath: string, mimeType?: string | null) => {
+  const type = String(mimeType || '').toLowerCase();
+  if (!type.startsWith('video/')) return localPath;
+
+  let resolvedPath = String(localPath || '').trim();
+  if (!resolvedPath) return localPath;
+  if (Platform.OS === 'android' && resolvedPath.startsWith('file://')) {
+    resolvedPath = resolvedPath.replace('file://', '');
+  }
+
+  try {
+    const rnfs = resolveRNFS();
+    const stats = rnfs ? await rnfs.stat(resolvedPath) : null;
+    const sizeBytes = Math.max(0, Number((stats as any)?.size || 0));
+    if (sizeBytes <= 8 * 1024 * 1024) {
+      return resolvedPath;
+    }
+
+    const compressedUri = await MediaVideoCompressor.compress(
+      Platform.OS === 'android' && !/^file:\/\//i.test(resolvedPath)
+        ? `file://${resolvedPath}`
+        : resolvedPath,
+      {
+        compressionMethod: 'auto',
+        maxSize: 960,
+        minimumFileSizeForCompress: 8,
+      },
+    );
+    if (!compressedUri) {
+      return resolvedPath;
+    }
+    return Platform.OS === 'android' && compressedUri.startsWith('file://')
+      ? compressedUri.replace('file://', '')
+      : compressedUri;
+  } catch (error) {
+    console.warn('Video compression failed in uploadPost, using original file:', error);
+    return resolvedPath;
+  }
+};
+
+const isRecoverableStorageUploadError = (error: any) => {
+  const raw = String(error?.message || error?.code || error || '').toLowerCase();
+  return (
+    raw.includes('server has terminated the upload session') ||
+    raw.includes('storage/unknown') ||
+    raw.includes('network request failed') ||
+    raw.includes('retry-limit-exceeded') ||
+    raw.includes('timeout') ||
+    raw.includes('unavailable')
+  );
+};
+
+const uploadFileWithRecovery = async (
+  filePath: string,
+  localPath: string,
+  metadata?: Record<string, any>,
+  maxAttempts: number = 3,
+) => {
+  const fileRef = storage().ref(filePath);
+  let lastError: any = null;
+  const tryRecoverDownloadUrl = async () => {
+    for (let recoveryAttempt = 1; recoveryAttempt <= 3; recoveryAttempt += 1) {
+      try {
+        const recoveredUrl = await fileRef.getDownloadURL();
+        if (recoveredUrl) return recoveredUrl;
+      } catch {}
+      if (recoveryAttempt < 3) {
+        await new Promise(resolve => setTimeout(resolve, recoveryAttempt * 1200));
+      }
+    }
+    return null;
+  };
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await fileRef.putFile(localPath, metadata || {});
+      const completedUrl = await tryRecoverDownloadUrl();
+      if (completedUrl) return completedUrl;
+      throw new Error('Upload completed but no download URL was available yet.');
+    } catch (error: any) {
+      lastError = error;
+      const recoveredUrl = await tryRecoverDownloadUrl();
+      if (recoveredUrl) return recoveredUrl;
+      if (!isRecoverableStorageUploadError(error) || attempt >= maxAttempts) {
+        throw error;
+      }
+      console.warn(`uploadPost retry ${attempt} for ${filePath}`, error);
+      await new Promise(resolve => setTimeout(resolve, Math.min(4000, attempt * 900)));
+    }
+  }
+  throw lastError || new Error('Upload failed');
 };
 
 /**
@@ -120,17 +213,16 @@ export async function uploadPost({ media, caption, link, authorName }: UploadPos
         throw error;
       }
     }
+    localPath = await maybeCompressVideoForUpload(localPath, type || mediaType);
 
     const uploadContentType =
       type && (type.startsWith('video/') || type.startsWith('image/'))
         ? type
         : 'application/octet-stream';
 
-    await storage().ref(filePath).putFile(localPath, {
+    mediaUrl = await uploadFileWithRecovery(filePath, localPath, {
       contentType: uploadContentType,
     });
-
-    mediaUrl = await storage().ref(filePath).getDownloadURL();
     mediaPath = filePath;
     mediaType = type || mediaType;
   }

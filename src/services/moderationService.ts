@@ -5,7 +5,7 @@ import { Alert } from 'react-native';
  */
 export async function blockUser(uid: string, targetUid: string): Promise<boolean> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -40,7 +40,7 @@ export async function blockUser(uid: string, targetUid: string): Promise<boolean
  */
 export async function unblockUser(uid: string, targetUid: string): Promise<boolean> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -75,7 +75,7 @@ export async function unblockUser(uid: string, targetUid: string): Promise<boole
  */
 export async function muteUser(liveId: string, targetUid: string, duration: number = 300): Promise<boolean> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -111,7 +111,7 @@ export async function muteUser(liveId: string, targetUid: string, duration: numb
  */
 export async function unmuteUser(liveId: string, targetUid: string): Promise<boolean> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -146,7 +146,7 @@ export async function unmuteUser(liveId: string, targetUid: string): Promise<boo
  */
 export async function removeFromDrift(liveId: string, targetUid: string): Promise<boolean> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -181,7 +181,7 @@ export async function removeFromDrift(liveId: string, targetUid: string): Promis
  */
 export async function getViewerCount(liveId: string): Promise<number> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -207,7 +207,7 @@ export async function getViewerCount(liveId: string): Promise<number> {
  */
 export async function notifyViewerJoin(liveId: string): Promise<void> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) return;
@@ -227,7 +227,7 @@ export async function notifyViewerJoin(liveId: string): Promise<void> {
  */
 export async function notifyViewerLeave(liveId: string): Promise<void> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) return;
@@ -247,7 +247,7 @@ export async function notifyViewerLeave(liveId: string): Promise<void> {
  */
 export async function getBlockedUsers(uid: string): Promise<string[]> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {

@@ -144,7 +144,8 @@ interface MainFeedItemProps {
   myUid: string | null;
   profileName: string;
   profileBio: string;
-  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }>;
+  profileMinuteFameTitle?: string;
+  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean; minuteFameTitle?: string | null }>;
   ensureUserData: (uid: string) => Promise<any>;
   waveStats: Record<string, any>;
   isInUserCrew: Record<string, boolean>;
@@ -172,12 +173,15 @@ interface MainFeedItemProps {
   currentIndex: number;
   displayHandle: (uid: string, name?: string) => string;
   formatDefiniteTime: (date: any) => string;
+  translate: (key: string, values?: Record<string, string | number>) => string;
   openWaveOptions: (item: Vibe) => void;
   handleToggleVibe: (targetUid: string, targetName?: string) => void;
   setExpandedPosts: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   setRevealedImages: React.Dispatch<React.SetStateAction<Set<string>>>;
   recordVideoReach: (id: string) => Promise<void>;
   recordImageReach: (id: string) => Promise<void>;
+  markBuffering: (id: string, isBuffering: boolean) => void;
+  onVideoPlaybackError: (id: string, code?: string) => void;
   setPreservedScrollPosition: (index: number) => void;
   navigation: any;
   ensureSplash: (id: string) => Promise<void>;
@@ -198,6 +202,7 @@ interface MainFeedItemProps {
   videoStyleFor: (id: string) => any;
   isVideoAsset: (asset: Asset | null | undefined) => boolean;
   onReplyToEcho: (waveId: string, echo: any) => void;
+  onOpenCreatorProfile: (userId: string, userName?: string | null) => void;
 }
 
 const MainFeedItem = memo<MainFeedItemProps>(({
@@ -206,6 +211,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   myUid,
   profileName,
   profileBio,
+  profileMinuteFameTitle,
   userData,
   ensureUserData,
   waveStats,
@@ -234,12 +240,15 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   currentIndex,
   displayHandle,
   formatDefiniteTime,
+  translate,
   openWaveOptions,
   handleToggleVibe,
   setExpandedPosts,
   setRevealedImages,
   recordVideoReach,
   recordImageReach,
+  markBuffering,
+  onVideoPlaybackError,
   setPreservedScrollPosition,
   navigation,
   ensureSplash,
@@ -260,6 +269,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   videoStyleFor,
   isVideoAsset,
   onReplyToEcho,
+  onOpenCreatorProfile,
 }) => {
   const [status, setStatus] = useState<string>('');
   const [isHereNow, setIsHereNow] = useState<boolean>(false);
@@ -358,7 +368,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
     if (!ownerUid) {
       setIsHereNow(false);
-      setStatus('Away Since: ...');
+      setStatus(translate('feed.awayUnknown'));
       return;
     }
 
@@ -385,7 +395,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       const online = onlineByFreshSignal;
       if (online) {
         setIsHereNow(true);
-        setStatus('Here Now!');
+        setStatus(translate('feed.hereNow'));
         return;
       }
       const resolvedLastSeen = mostRecentLastSeen || mostRecentActive || null;
@@ -393,7 +403,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         formatPresenceLastSeenExact(resolvedLastSeen) ||
         formatPresenceLastSeenExact(userData[ownerUid]?.lastSeen || null);
       setIsHereNow(false);
-      setStatus(exact ? `Away Since: ${exact}` : 'Away Since: ...');
+      setStatus(
+        exact
+          ? translate('feed.awaySince', { time: exact })
+          : translate('feed.awayUnknown'),
+      );
     };
 
     refreshStatus();
@@ -420,7 +434,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       unsubscribeFs();
       presenceRef.off('value', onPresence);
     };
-  }, [item.ownerUid, myUid, userData]);
+  }, [item.ownerUid, myUid, translate, userData]);
 
   // Calculate play conditions
   const isAnyModalOpen = showMakeWaves || showAudioModal || !!capturedMedia || showLive;
@@ -435,14 +449,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         600_000,
       );
 
-  const mediaUri = String(item.media?.uri || '').trim();
-  const mediaType = String(item.media?.type || '').toLowerCase();
   const galleryMediaItems = useMemo(() => {
     if (Array.isArray(item.mediaItems) && item.mediaItems.length > 0) {
       return item.mediaItems.filter(asset => !!asset?.uri);
     }
+    if (Array.isArray((item as any).galleryItems) && (item as any).galleryItems.length > 0) {
+      return (item as any).galleryItems.filter((asset: any) => !!asset?.uri);
+    }
     return item.media?.uri ? [item.media] : [];
-  }, [item.media, item.mediaItems]);
+  }, [item.media, item.mediaItems, (item as any).galleryItems]);
+  const primaryMedia = (galleryMediaItems[0] || item.media || null) as Asset | null;
+  const mediaUri = String(primaryMedia?.uri || '').trim();
+  const mediaType = String(primaryMedia?.type || '').toLowerCase();
   const hasMultiMediaGrid = galleryMediaItems.length > 1;
   const previewGridItems = galleryMediaItems.slice(0, 6);
   const hiddenGridCount = Math.max(0, galleryMediaItems.length - 6);
@@ -452,6 +470,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         .map((mediaItem, mediaIndex) => (isVideoAsset(mediaItem) ? mediaIndex : -1))
         .filter(mediaIndex => mediaIndex >= 0)
         .pop() ?? -1,
+    [galleryMediaItems, isVideoAsset],
+  );
+  const gridVideoCount = useMemo(
+    () => galleryMediaItems.filter(mediaItem => isVideoAsset(mediaItem)).length,
     [galleryMediaItems, isVideoAsset],
   );
   const explicitPostType = String(item.postType || '').toLowerCase();
@@ -466,23 +488,23 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     mediaType.includes('video/');
   const hasVideoMedia =
     isExplicitVideo ||
-    isVideoAsset(item.media) ||
-    (!isExplicitImage && !isImageAsset(item.media) && !!item.playbackUrl && playbackLooksVideo) ||
+    isVideoAsset(primaryMedia) ||
+    (!isExplicitImage && !isImageAsset(primaryMedia) && !!item.playbackUrl && playbackLooksVideo) ||
     (mediaUri.length > 0 && mediaType.startsWith('video/'));
   const hasImageMedia =
     mediaUri.length > 0 &&
-    (isExplicitImage || isImageAsset(item.media) || (!hasVideoMedia && mediaType.startsWith('image/')));
+    (isExplicitImage || isImageAsset(primaryMedia) || (!hasVideoMedia && mediaType.startsWith('image/')));
   const audioOnlyPost =
     (isExplicitAudio ||
       (!item.playbackUrl && !!item.audio?.uri && !hasVideoMedia && !hasImageMedia) ||
-      (!item.playbackUrl && !!item.media && isAudioAsset(item.media) && !hasVideoMedia && !hasImageMedia)) &&
+      (!item.playbackUrl && !!primaryMedia && isAudioAsset(primaryMedia) && !hasVideoMedia && !hasImageMedia)) &&
     !hasVideoMedia &&
     !hasImageMedia;
   const primaryVideoSource =
-    item.playbackUrl && playbackLooksVideo ? String(item.playbackUrl) : String(item.media?.uri || '');
+    item.playbackUrl && playbackLooksVideo ? String(item.playbackUrl) : String(primaryMedia?.uri || '');
   const fallbackVideoSource =
-    item.playbackUrl && playbackLooksVideo && item.media?.uri && item.media.uri !== item.playbackUrl
-      ? String(item.media.uri)
+    item.playbackUrl && playbackLooksVideo && primaryMedia?.uri && primaryMedia.uri !== item.playbackUrl
+      ? String(primaryMedia.uri)
       : '';
   const videoSourceUri =
     (preferFallbackVideoSource ? fallbackVideoSource || primaryVideoSource : primaryVideoSource || fallbackVideoSource) ||
@@ -497,14 +519,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     (!hasOverlayAudio || !hasVideoMedia || overlayAudioStarted);
   const shouldPreload = preloadedVideoIds.has(item.id);
   const near = Math.abs(index - currentIndex) <= 1;
+  const isGridPostInFocus = shouldPlay && index === currentIndex;
   const hasUnknownMediaFile =
-    !!item.media && mediaUri.length > 0 && !hasVideoMedia && !hasImageMedia && !audioOnlyPost;
+    !!primaryMedia && mediaUri.length > 0 && !hasVideoMedia && !hasImageMedia && !audioOnlyPost;
   const hasRenderableMedia = hasVideoMedia || audioOnlyPost || hasImageMedia || hasUnknownMediaFile;
-  const textOnlyStory = !item.media && !item.image && !item.audio?.uri;
+  const textOnlyStory = !primaryMedia && !item.image && !item.audio?.uri;
   const mediaEdits = item.mediaEdits || null;
   const fallbackAwayText = (() => {
     const exact = formatPresenceLastSeenExact(userData[item.ownerUid || '']?.lastSeen || null);
-    return exact ? `Away Since: ${exact}` : 'Away Since: ...';
+    return exact
+      ? translate('feed.awaySince', { time: exact })
+      : translate('feed.awayUnknown');
   })();
   const storyTheme = useMemo(() => {
     const seed = String(item.id || '')
@@ -621,13 +646,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   );
 
   const handleProfilePress = useCallback(() => {
+    if (!item.ownerUid) return;
     if (item.ownerUid === myUid) {
       navigation.navigate('Profile');
     } else {
-      // Navigate to user profile or show user modal
-      console.log('Pressed user avatar for:', item.ownerUid);
+      onOpenCreatorProfile(item.ownerUid, item.authorName || item.user?.name || null);
     }
-  }, [item.ownerUid, myUid, navigation]);
+  }, [item.authorName, item.ownerUid, item.user?.name, myUid, navigation, onOpenCreatorProfile]);
 
   const handleOnlineUserPress = useCallback((user: { uid: string; name: string }) => {
     setSelectedUserId(user.uid);
@@ -652,9 +677,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       Alert.alert('Chat', `Opening chat with ${userName}`);
     } catch (error) {
       console.log('Error opening chat:', error);
-      Alert.alert('Error', 'Could not open chat');
+      Alert.alert(
+        translate('feed.openChatFailedTitle'),
+        translate('feed.openChatFailedBody'),
+      );
     }
-  }, []);
+  }, [translate]);
 
   const handleBioPress = useCallback(() => {
     const bioToShow = item.ownerUid === myUid ? profileBio : userData[item.ownerUid]?.bio;
@@ -924,8 +952,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     const replies = echoReplies[echo.id] || [];
     const hasReplies = (echo.replyCount || 0) > 0;
     const isExpanded = expandedReplies[echo.id];
-    const replyCountLabel = `Reply(${echo.replyCount || 0})`;
-    const hugCountLabel = `Hug(${hugs})`;
+    const replyCountLabel = `${translate('feed.replyAction')}(${echo.replyCount || 0})`;
+    const hugCountLabel = `${translate('feed.hugAction')}(${hugs})`;
     
     return (
       <View
@@ -961,7 +989,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             {echo.text}
           </Text>
           <Text style={{ color: 'gray', fontSize: 10 }}>
-            {echo.createdAt ? formatDefiniteTime(echo.createdAt) : 'just now'}
+            {echo.createdAt ? formatDefiniteTime(echo.createdAt) : translate('feed.justNow')}
           </Text>
         </Pressable>
 
@@ -985,7 +1013,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   {reply.text}
                 </Text>
                 <Text style={{ color: 'gray', fontSize: 9 }}>
-                  {reply.createdAt ? formatDefiniteTime(reply.createdAt) : 'just now'}
+                  {reply.createdAt ? formatDefiniteTime(reply.createdAt) : translate('feed.justNow')}
                 </Text>
               </View>
             ))}
@@ -1024,7 +1052,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         )}
       </View>
     );
-  }, [activeEchoActionId, echoReplies, expandedReplies, fetchRepliesForEcho, getEchoHugState, handleEchoReply, toggleEchoHug, formatDefiniteTime, displayHandle]);
+  }, [activeEchoActionId, displayHandle, echoReplies, expandedReplies, fetchRepliesForEcho, formatDefiniteTime, getEchoHugState, handleEchoReply, toggleEchoHug, translate]);
 
   return (
     <Pressable>
@@ -1084,7 +1112,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
                   >
                     <Text style={styles.joinButtonText}>
-                      {isInUserCrew[item.ownerUid!] ? 'Leave Tide' : 'Join Tide'}
+                      {isInUserCrew[item.ownerUid!]
+                        ? translate('feed.leaveTide')
+                        : translate('feed.joinTide')}
                     </Text>
                   </Pressable>
                 )}
@@ -1133,6 +1163,54 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   return displayName;
                 })()}
               </Text>
+              {(() => {
+                const isCurrentUserPost = item.ownerUid === myUid;
+                const titleToShow = isCurrentUserPost
+                  ? profileMinuteFameTitle
+                  : userData[item.ownerUid!]?.minuteFameTitle;
+                const rawTitle = String(titleToShow || '').trim().toLowerCase();
+                const badgeToShow =
+                  rawTitle === 'fresh_face' || rawTitle.includes('fresh face')
+                    ? '✨'
+                    : rawTitle === 'rising_star' || rawTitle.includes('rising star')
+                    ? '⭐'
+                    : rawTitle === 'crowd_favorite' || rawTitle.includes('crowd favorite')
+                    ? '🔥'
+                    : rawTitle === 'wave_king' || rawTitle.includes('wave king')
+                    ? '👑'
+                    : rawTitle === 'trend_storm' || rawTitle.includes('trend storm')
+                    ? '⚡'
+                    : rawTitle === 'ocean_legend' || rawTitle.includes('ocean legend')
+                    ? '🦈'
+                    : String(titleToShow || '').trim().split(/\s+/)[0] || '';
+                return badgeToShow ? (
+                  <View
+                    style={{
+                      alignSelf: 'center',
+                      marginBottom: 4,
+                      minWidth: 30,
+                      height: 30,
+                      paddingHorizontal: 8,
+                      borderRadius: 999,
+                      backgroundColor: 'rgba(56, 189, 248, 0.16)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(56, 189, 248, 0.32)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: '#FFFFFF',
+                        fontSize: 15,
+                        fontWeight: '900',
+                      }}
+                    >
+                      {badgeToShow}
+                    </Text>
+                  </View>
+                ) : null;
+              })()}
               {(() => {
                 const isCurrentUserPost = item.ownerUid === myUid;
                 const bioToShow = isCurrentUserPost ? profileBio : userData[item.ownerUid!]?.bio;
@@ -1253,16 +1331,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                                 source={{ uri: String(mediaItem.uri) }}
                                 style={{ width: '100%', height: '100%' }}
                                 resizeMode="cover"
-                                paused={
-                                  !(
-                                    shouldPlay &&
-                                    item.id === activeVideoId &&
-                                    activeGridVideoIndex === mediaIndex
-                                  )
-                                }
-                                isActive={item.id === activeVideoId && activeGridVideoIndex === mediaIndex}
-                                shouldPreload={near}
+                                paused={!(isGridPostInFocus && activeGridVideoIndex === mediaIndex)}
+                                isActive={isGridPostInFocus && activeGridVideoIndex === mediaIndex}
+                                shouldPreload={near || mediaIndex === latestGridVideoIndex}
                                 hideTimeout={4000}
+                                muted={activeGridVideoIndex !== mediaIndex}
                                 onTap={() => setActiveGridVideoIndex(mediaIndex)}
                               />
                             ) : (
@@ -1301,7 +1374,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                                 }}
                               >
                                 <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
-                                  {galleryMediaItems.length} media
+                                  {galleryMediaItems.length} media{gridVideoCount > 0 ? ` • ${gridVideoCount} video${gridVideoCount > 1 ? 's' : ''}` : ''}
                                 </Text>
                               </View>
                             ) : null}
@@ -1322,6 +1395,23 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                               >
                                 <Text style={{ color: '#fff', fontSize: 11, fontWeight: '800' }}>Play</Text>
                               </Pressable>
+                            ) : null}
+                            {isVideo && mediaIndex === activeGridVideoIndex ? (
+                              <View
+                                style={{
+                                  position: 'absolute',
+                                  left: 8,
+                                  top: 8,
+                                  paddingHorizontal: 8,
+                                  paddingVertical: 4,
+                                  borderRadius: 999,
+                                  backgroundColor: isGridPostInFocus ? 'rgba(14,165,233,0.88)' : 'rgba(15,23,42,0.82)',
+                                }}
+                              >
+                                <Text style={{ color: isGridPostInFocus ? '#082f49' : '#e2e8f0', fontSize: 10, fontWeight: '900' }}>
+                                  {isGridPostInFocus ? 'Playing' : 'Ready'}
+                                </Text>
+                              </View>
                             ) : null}
                             {tileOverlayRender ? (
                               <View pointerEvents="none" style={tileOverlayRender.containerStyle}>
@@ -1386,10 +1476,26 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                         bufferForPlaybackMs: 220,
                         bufferForPlaybackAfterRebufferMs: 500,
                       }}
-                      onError={() => {
+                      onBuffer={(bufferData: any) => {
+                        markBuffering(item.id, !!bufferData?.isBuffering);
+                      }}
+                      onLoad={() => {
+                        markBuffering(item.id, false);
+                      }}
+                      onError={(err: any) => {
+                        markBuffering(item.id, false);
                         if (!preferFallbackVideoSource && fallbackVideoSource) {
                           setPreferFallbackVideoSource(true);
+                          return;
                         }
+                        const code = String(
+                          err?.error?.errorCode ||
+                            err?.error?.code ||
+                            err?.errorString ||
+                            err?.code ||
+                            '',
+                        ).trim();
+                        onVideoPlaybackError(item.id, code || undefined);
                       }}
                       onPlay={() => {
                         recordVideoReach(item.id).catch(error => {
@@ -1511,7 +1617,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   {renderMoMoBadge()}
                   {RNVideo ? (
                     <RNVideo
-                      source={{ uri: String(item.audio?.uri || item.media?.uri || '') }}
+                      source={{ uri: String(item.audio?.uri || primaryMedia?.uri || '') }}
                       audioOnly
                       controls={audioControlsVisible}
                       paused={!audioPlaySynced}
@@ -1729,6 +1835,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             onCast={handleCast}
             splashSyncStatus={splashSyncStatus}
             onRetrySplash={handleRetrySplashSync}
+            translate={translate}
           />
         </View>
 
@@ -1914,6 +2021,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 onCast={handleCast}
                 splashSyncStatus={splashSyncStatus}
                 onRetrySplash={handleRetrySplashSync}
+                translate={translate}
               />
             </View>
           </View>
@@ -1924,15 +2032,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             onPress={handleReachPress}
             style={({ pressed }) => [styles.statChip, pressed && styles.buttonPressed]}
           >
-            <Text style={styles.statLabel}>👁 Reach: </Text>
+            <Text style={styles.statLabel}>👁 {translate('feed.reach')}: </Text>
             <Text style={styles.statValue}>{reachCounts[item.id] || 0}</Text>
           </Pressable>
           {item.ownerUid !== myUid && (
             <Text style={[styles.presenceText, { color: isHereNow ? ui.colors.success : ui.colors.subtle }]}>
-              {isHereNow ? 'Here Now!' : (status || fallbackAwayText)}
+              {isHereNow ? translate('feed.hereNow') : (status || fallbackAwayText)}
             </Text>
           )}
-          {item.user?.name !== "Tendaimurambidzi" && <Text style={styles.moreFromCreator}>📚 More from creator</Text>}
         </ScrollView>
 
         {(postEchoLists[item.id] && postEchoLists[item.id].length > 0) ? (
@@ -1959,7 +2066,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                           disabled={echoExpansionInProgress[item.id]}
                         >
                           <Text style={styles.loadMoreEchoesText}>
-                            Load {Math.min(5, allEchoes.length - pageSize)} more echoes
+                            {translate('feed.loadMoreEchoes', {
+                              count: Math.min(5, allEchoes.length - pageSize),
+                            })}
                           </Text>
                         </Pressable>
                       )}
@@ -1993,7 +2102,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   disabled={echoExpansionInProgress[item.id]}
                 >
                   <Text style={styles.echoToggleText}>
-                    {expandedEchoes[item.id] ? 'View less' : `View all ${postEchoLists[item.id].length} echoes`}
+                    {expandedEchoes[item.id]
+                      ? translate('feed.viewLessEchoes')
+                      : translate('feed.viewAllEchoes', {
+                          count: postEchoLists[item.id].length,
+                        })}
                   </Text>
                 </Pressable>
               )}

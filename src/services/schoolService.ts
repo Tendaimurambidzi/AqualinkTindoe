@@ -12,7 +12,7 @@ export async function registerNoticeBoard(data: {
   uid?: string;
 }): Promise<{ ok: boolean; registrationId?: string; message?: string }> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -58,7 +58,7 @@ export async function registerSchool(data: {
   uid?: string;
 }): Promise<{ ok: boolean; schoolId?: string; message?: string }> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -104,7 +104,7 @@ export async function registerSchool(data: {
  */
 export async function getZimbabweSchools(): Promise<string[]> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -137,7 +137,7 @@ export async function registerTeacher(data: {
   uid?: string;
 }): Promise<{ ok: boolean; teacherId?: string; message?: string }> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
@@ -182,7 +182,7 @@ export async function createLesson(data: {
   scheduledTime?: string;
 }): Promise<{ ok: boolean; lessonId?: string; message?: string }> {
   try {
-    const cfg = require('../liveConfig');
+    const cfg = require('../../liveConfig');
     const backendBase = cfg?.BACKEND_BASE_URL || '';
     
     if (!backendBase) {
