@@ -1,5 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Share, Linking, TextInput, StyleSheet, Modal } from 'react-native';
+import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Linking, TextInput, StyleSheet, Modal } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
@@ -203,6 +203,7 @@ interface MainFeedItemProps {
   isVideoAsset: (asset: Asset | null | undefined) => boolean;
   onReplyToEcho: (waveId: string, echo: any) => void;
   onOpenCreatorProfile: (userId: string, userName?: string | null) => void;
+  onOpenProfilePicture: (uri: string) => void;
 }
 
 const MainFeedItem = memo<MainFeedItemProps>(({
@@ -270,6 +271,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   isVideoAsset,
   onReplyToEcho,
   onOpenCreatorProfile,
+  onOpenProfilePicture,
 }) => {
   const [status, setStatus] = useState<string>('');
   const [isHereNow, setIsHereNow] = useState<boolean>(false);
@@ -654,6 +656,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
   }, [item.authorName, item.ownerUid, item.user?.name, myUid, navigation, onOpenCreatorProfile]);
 
+  const handleAvatarPress = useCallback(() => {
+    const avatarUri =
+      (item.ownerUid ? userData[item.ownerUid]?.avatar : null) ||
+      item.user?.avatar ||
+      null;
+    if (avatarUri) {
+      onOpenProfilePicture(avatarUri);
+      return;
+    }
+    handleProfilePress();
+  }, [handleProfilePress, item.ownerUid, item.user?.avatar, onOpenProfilePicture, userData]);
+
   const handleOnlineUserPress = useCallback((user: { uid: string; name: string }) => {
     setSelectedUserId(user.uid);
     setShowProfilePreview(true);
@@ -683,15 +697,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       );
     }
   }, [translate]);
-
-  const handleBioPress = useCallback(() => {
-    const bioToShow = item.ownerUid === myUid ? profileBio : userData[item.ownerUid]?.bio;
-    if (bioToShow) {
-      Share.share({
-        message: `Check out this bio: "${bioToShow}"`,
-      }).catch(err => console.log('Share failed', err));
-    }
-  }, [item.ownerUid, myUid, profileBio, userData]);
 
   // Ensure user data is fetched for the post owner
   useEffect(() => {
@@ -1094,7 +1099,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
             </View>
 
             {/* Centered Profile Info */}
-            <View style={styles.centeredHeader}>
+            <Pressable
+              style={styles.centeredHeader}
+              onPress={handleProfilePress}
+              hitSlop={{ top: 14, bottom: 14, left: 18, right: 18 }}
+              android_ripple={{ color: 'rgba(255, 255, 255, 0.14)', borderless: false }}
+            >
               <View style={styles.headerTopRow}>
                 {/* Connect/Disconnect Button */}
                 {item.ownerUid !== myUid && (
@@ -1121,7 +1131,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
                 {/* Profile Avatar */}
                 <Pressable
-                  onPress={handleProfilePress}
+                  onPress={handleAvatarPress}
                   style={({ pressed }) => [
                     pressed && {
                       opacity: 0.8,
@@ -1215,18 +1225,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 const isCurrentUserPost = item.ownerUid === myUid;
                 const bioToShow = isCurrentUserPost ? profileBio : userData[item.ownerUid!]?.bio;
                 return bioToShow ? (
-                  <Pressable
-                    onPress={handleBioPress}
-                    style={({ pressed }) => [
-                      { marginTop: 2 },
-                      pressed && { opacity: 0.7 }
-                    ]}
-                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-                    delayPressIn={0}
-                    delayPressOut={0}
-                    activeOpacity={0.7}
-                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                  >
+                  <View style={{ marginTop: 2 }}>
                     <Text style={{
                       color: ui.colors.subtle,
                       fontSize: ui.type.caption,
@@ -1235,7 +1234,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     }}>
                       {bioToShow}
                     </Text>
-                  </Pressable>
+                  </View>
                 ) : null;
               })()}
               <Text style={{
@@ -1245,7 +1244,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               }}>
                 {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || null)}
               </Text>
-            </View>
+            </Pressable>
           </View>
 
           {/* Post Content - Text or Media */}

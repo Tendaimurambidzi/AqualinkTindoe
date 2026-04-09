@@ -7335,6 +7335,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
       setCreatorProfileUid(targetUid);
       setCreatorProfileName(String(fallbackName || ''));
+      setCreatorProfileLoadedPosts([]);
       setShowCreatorProfile(true);
       void ensureUserData(targetUid);
     },
@@ -7738,6 +7739,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showCreatorProfile, setShowCreatorProfile] = useState<boolean>(false);
   const [creatorProfileUid, setCreatorProfileUid] = useState<string | null>(null);
   const [creatorProfileName, setCreatorProfileName] = useState<string>('');
+  const [creatorProfileLoadedPosts, setCreatorProfileLoadedPosts] = useState<Vibe[]>([]);
+  const [creatorProfileLoading, setCreatorProfileLoading] = useState<boolean>(false);
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
   const [showTextComposer, setShowTextComposer] = useState<boolean>(false);
   const [textComposerText, setTextComposerText] = useState<string>('');
@@ -9645,6 +9648,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const lastBackPressTime = useRef<number>(0);
   useEffect(() => {
     const onBackPress = () => {
+      if (showInbox) {
+        if (selectedThread) {
+          resetInboxView();
+        } else {
+          closeInboxModal();
+        }
+        return true;
+      }
+      if (showCreatorProfile) {
+        setShowCreatorProfile(false);
+        return true;
+      }
+      if (showMyWaves) {
+        setShowMyWaves(false);
+        return true;
+      }
+      if (showEchoes) {
+        setShowEchoes(false);
+        return true;
+      }
       if (isFocused) {
         const now = Date.now();
         const timeSinceLastPress = now - lastBackPressTime.current;
@@ -9672,7 +9695,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
                     
     return () => subscription.remove();
-  }, [isFocused]);
+  }, [
+    closeInboxModal,
+    isFocused,
+    resetInboxView,
+    selectedThread,
+    showCreatorProfile,
+    showEchoes,
+    showInbox,
+    showMyWaves,
+  ]);
                     
   // ----- Profile photo handlers -----
   const uploadAndSave = async (uri: string) => {
@@ -11899,6 +11931,7 @@ type CommandCentreSection =
       : null;
 
   const creatorProfilePosts = useMemo(() => {
+    if (creatorProfileLoadedPosts.length > 0) return creatorProfileLoadedPosts;
     if (!creatorProfileUid) return [] as Vibe[];
     const seen = new Set<string>();
     return displayFeed.filter(wave => {
@@ -11907,7 +11940,7 @@ type CommandCentreSection =
       seen.add(wave.id);
       return true;
     });
-  }, [creatorProfileUid, displayFeed]);
+  }, [creatorProfileLoadedPosts, creatorProfileUid, displayFeed]);
 
   const buildWaveFromDoc = useCallback(
     async (docOrId: any): Promise<Vibe | null> => {
@@ -12001,6 +12034,177 @@ type CommandCentreSection =
     },
     [],
   );
+
+  const resetInboxView = useCallback(() => {
+    setInboxFilter('all');
+    setInboxSearchQuery('');
+    setIsThreadSending(false);
+    setThreadMessageAttachment(null);
+    setSelectedThread(null);
+    setSelectedMessageForReply(null);
+    setIsDeleteMode(false);
+    setSelectedNotifications(new Set());
+    setIsThreadSelectionMode(false);
+    setSelectedThreadMessages(new Set());
+    setQuickReplyText('');
+  }, []);
+
+  const closeInboxModal = useCallback(() => {
+    resetInboxView();
+    setShowInbox(false);
+  }, [resetInboxView]);
+
+  const focusWaveInFeed = useCallback(
+    async (
+      waveId: string,
+      options?: {
+        closeInbox?: boolean;
+        closeCreatorProfile?: boolean;
+        closeMyWaves?: boolean;
+        openEchoes?: boolean;
+      },
+    ) => {
+      const targetWaveId = String(waveId || '').trim();
+      if (!targetWaveId) return false;
+
+      if (options?.closeInbox) {
+        closeInboxModal();
+      }
+      if (options?.closeCreatorProfile) {
+        setShowCreatorProfile(false);
+      }
+      if (options?.closeMyWaves) {
+        setShowMyWaves(false);
+      }
+
+      setIsPaused(false);
+
+      let locatedIndex = displayFeedRef.current.findIndex(
+        wave => wave.id === targetWaveId,
+      );
+
+      if (locatedIndex < 0) {
+        const fetchedWave = await buildWaveFromDoc(targetWaveId);
+        if (!fetchedWave) {
+          return false;
+        }
+        setPostFeed(prev => mergeWaveCollectionsById([fetchedWave], prev));
+      }
+
+      const tryScrollToWave = (attempt = 0) => {
+        const actualIndex = displayFeedRef.current.findIndex(
+          wave => wave.id === targetWaveId,
+        );
+
+        if (actualIndex >= 0) {
+          setCurrentIndex(actualIndex);
+          setWaveKey(Date.now());
+          requestAnimationFrame(() => {
+            try {
+              if (actualIndex <= 0) {
+                feedRef.current?.scrollToOffset?.({
+                  offset: 0,
+                  animated: false,
+                });
+              } else {
+                feedRef.current?.scrollToIndex?.({
+                  index: actualIndex,
+                  animated: false,
+                });
+              }
+            } catch {}
+          });
+          showUiTemporarily();
+          if (options?.openEchoes) {
+            setEchoWaveId(targetWaveId);
+            setTimeout(() => {
+              setShowEchoes(true);
+            }, 250);
+          }
+          return;
+        }
+
+        if (attempt < 8) {
+          setTimeout(() => tryScrollToWave(attempt + 1), 120);
+          return;
+        }
+
+        setCurrentIndex(0);
+        setWaveKey(Date.now());
+        requestAnimationFrame(() => {
+          try {
+            feedRef.current?.scrollToOffset?.({ offset: 0, animated: false });
+          } catch {}
+        });
+        showUiTemporarily();
+      };
+
+      tryScrollToWave(locatedIndex >= 0 ? 8 : 0);
+      return true;
+    },
+    [
+      buildWaveFromDoc,
+      closeInboxModal,
+      setCurrentIndex,
+      setEchoWaveId,
+      setPostFeed,
+      setShowEchoes,
+      setShowMyWaves,
+      setShowCreatorProfile,
+      showUiTemporarily,
+    ],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!showCreatorProfile || !creatorProfileUid) {
+      setCreatorProfileLoadedPosts([]);
+      setCreatorProfileLoading(false);
+      return;
+    }
+
+    const loadCreatorPosts = async () => {
+      setCreatorProfileLoading(true);
+      try {
+        const firestoreMod = require('@react-native-firebase/firestore').default;
+        const snap = await firestoreMod()
+          .collection('waves')
+          .where('ownerUid', '==', creatorProfileUid)
+          .orderBy('createdAt', 'desc')
+          .limit(50)
+          .get()
+          .catch(async () =>
+            firestoreMod()
+              .collection('waves')
+              .where('ownerUid', '==', creatorProfileUid)
+              .limit(50)
+              .get(),
+          );
+
+        const docs = snap?.docs || [];
+        const built = await Promise.all(docs.map((doc: any) => buildWaveFromDoc(doc)));
+        const nextPosts = built.filter(Boolean) as Vibe[];
+        if (!cancelled) {
+          setCreatorProfileLoadedPosts(nextPosts);
+        }
+      } catch (error) {
+        console.warn('Failed to load creator profile posts:', error);
+        if (!cancelled) {
+          setCreatorProfileLoadedPosts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setCreatorProfileLoading(false);
+        }
+      }
+    };
+
+    void loadCreatorPosts();
+    return () => {
+      cancelled = true;
+    };
+  }, [buildWaveFromDoc, creatorProfileUid, showCreatorProfile]);
+
   const wavesCountDisplay = useMemo(
     () => {
       const feedCount = uniqueMyWaves.length;
@@ -13851,17 +14055,15 @@ type CommandCentreSection =
                     
   const handlePingAction = (ping: Ping) => {
     if (ping.waveId) {
-      const waveIndex = vibesFeed.findIndex(w => w.id === ping.waveId);
-      if (waveIndex !== -1) {
-        setShowPings(false);
-        setCurrentIndex(waveIndex);
-        setWaveKey(Date.now());
-      } else {
-        showOceanDialog(
-          'Wave Not Found',
-          'This wave may no longer be drifting in the sea.',
-        );
-      }
+      setShowPings(false);
+      void focusWaveInFeed(String(ping.waveId)).then(found => {
+        if (!found) {
+          showOceanDialog(
+            'Wave Not Found',
+            'This wave may no longer be drifting in the sea.',
+          );
+        }
+      });
     }
     // Could add 'follow' action here
   };
@@ -15943,6 +16145,52 @@ type CommandCentreSection =
     } catch (e) {
       console.error('Block user error:', e);
       notifyError('Could not block user right now');
+    }
+  };
+
+  const handleUnblockUser = async (targetUid: string, targetName?: string) => {
+    try {
+      const user = auth().currentUser;
+      if (!user) {
+        Alert.alert('Sign in required', 'Please sign in to unblock users.');
+        return;
+      }
+
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .collection('blocked')
+        .doc(targetUid)
+        .delete();
+
+      setBlockedUsers(prev => {
+        const next = new Set(prev);
+        next.delete(targetUid);
+        return next;
+      });
+
+      try {
+        const cfg = require('./liveConfig');
+        const backendUrl =
+          cfg?.BACKEND_BASE_URL ||
+          cfg?.USER_MGMT_ENDPOINT_BASE ||
+          cfg?.default?.BACKEND_BASE_URL;
+        if (backendUrl) {
+          await fetch(`${backendUrl}/unblock-user`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uid: user.uid, targetUid }),
+          });
+        }
+      } catch (backendErr) {
+        console.log('Backend unblock update skipped:', backendErr);
+      }
+
+      await loadBlockedAndRemovedUsers();
+      notifySuccess(`Unblocked ${targetName || 'user'}.`);
+    } catch (e) {
+      console.error('Unblock user error:', e);
+      notifyError('Could not unblock user right now');
     }
   };
                     
@@ -19079,25 +19327,15 @@ type CommandCentreSection =
         return;
       }
       if (data?.waveId) {
-        const waveIndex = displayFeed.findIndex(w => w.id === data.waveId);
-        if (waveIndex !== -1) {
-          setCurrentIndex(waveIndex);
-          setWaveKey(Date.now());
-          
-          // If this is an echo_reply notification, open the echoes modal
-          if (data?.type === 'echo_reply' || data?.type === 'echo') {
-            setEchoWaveId(data.waveId);
-            setTimeout(() => {
-              setShowEchoes(true);
-            }, 300);
-          }
-        }
+        void focusWaveInFeed(String(data.waveId), {
+          openEchoes: data?.type === 'echo_reply' || data?.type === 'echo',
+        });
       } else if (data?.type === 'ping' || data?.route === 'Pings') {
         setShowPings(true);
       }
     },
     [
-      displayFeed,
+      focusWaveInFeed,
       mapDirectCallDoc,
       myUid,
       hideNativeIncomingCallNotification,
@@ -20549,6 +20787,7 @@ type CommandCentreSection =
                         isVideoAsset={isVideoAsset}
                         onReplyToEcho={openReplyToPostEcho}
                         onOpenCreatorProfile={openCreatorProfile}
+                        onOpenProfilePicture={setZoomedProfilePic}
                       />
                     );
                   } catch (error) {
@@ -21257,12 +21496,13 @@ type CommandCentreSection =
         animationType="none"
         onRequestClose={() => setShowCreatorProfile(false)}
       >
-        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 14 }]}>
           <View
             style={[
               styles.logbookContainer,
               {
-                maxHeight: SCREEN_HEIGHT * 0.8,
+                width: '100%',
+                maxHeight: SCREEN_HEIGHT * 0.9,
                 borderRadius: 12,
                 overflow: 'hidden',
               },
@@ -21270,18 +21510,60 @@ type CommandCentreSection =
           >
             {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
             <View style={styles.logbookPage}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 8,
+                }}
+              >
+                <Pressable
+                  style={[styles.bridgeSettingButton, { paddingHorizontal: 14, minHeight: 38 }]}
+                  onPress={() => setShowCreatorProfile(false)}
+                >
+                  <Text style={styles.bridgeSettingButtonText}>{t('common.back')}</Text>
+                </Pressable>
+                <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11 }}>
+                  {creatorProfilePosts.length} posts
+                </Text>
+              </View>
               <Text style={styles.logbookTitle}>
                 {userData[creatorProfileUid || '']?.name || creatorProfileName || 'User'}
               </Text>
               <ScrollView>
                 {creatorProfileUid ? (
                   <View style={[styles.logbookAction, { alignItems: 'center' }]}>
-                    <ProfileAvatarWithCrew
-                      userId={creatorProfileUid}
-                      size={72}
-                      showCrewCount={true}
-                      showFleetCount={false}
-                    />
+                    <Pressable
+                      onPress={() => {
+                        const avatarUri = userData[creatorProfileUid]?.avatar || '';
+                        if (avatarUri) {
+                          setZoomedProfilePic(avatarUri);
+                        }
+                      }}
+                      style={{ alignItems: 'center', width: '100%' }}
+                    >
+                      <ProfileAvatarWithCrew
+                        userId={creatorProfileUid}
+                        size={72}
+                        showCrewCount={true}
+                        showFleetCount={false}
+                      />
+                    </Pressable>
+                    <Text
+                      style={{
+                        color: userData[creatorProfileUid]?.online ? '#86EFAC' : 'rgba(255,255,255,0.64)',
+                        fontSize: 12,
+                        marginTop: 10,
+                        fontWeight: '700',
+                      }}
+                    >
+                      {userData[creatorProfileUid]?.online
+                        ? 'Online now'
+                        : userData[creatorProfileUid]?.lastSeen
+                        ? `Last seen ${formatDefiniteTime(userData[creatorProfileUid]?.lastSeen)}`
+                        : 'Profile available'}
+                    </Text>
                     {!!userData[creatorProfileUid]?.minuteFameTitle && (
                       <View
                         style={{
@@ -21315,6 +21597,150 @@ type CommandCentreSection =
                         {userData[creatorProfileUid]?.bio}
                       </Text>
                     )}
+                    <View
+                      style={{
+                        width: '100%',
+                        marginTop: 14,
+                        gap: 10,
+                      }}
+                    >
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          gap: 8,
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Pressable
+                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
+                          onPress={() => {
+                            setShowCreatorProfile(false);
+                            openMessageThread(
+                              creatorProfileUid,
+                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                            );
+                          }}
+                        >
+                          <Text style={styles.bridgeSettingButtonText}>Message</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
+                          onPress={() => {
+                            setShowCreatorProfile(false);
+                            startDirectCall('audio', {
+                              uid: creatorProfileUid,
+                              name:
+                                userData[creatorProfileUid]?.name ||
+                                creatorProfileName ||
+                                'User',
+                            });
+                          }}
+                        >
+                          <Text style={styles.bridgeSettingButtonText}>Audio Call</Text>
+                        </Pressable>
+                      </View>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          gap: 8,
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Pressable
+                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
+                          onPress={() => {
+                            setShowCreatorProfile(false);
+                            startDirectCall('video', {
+                              uid: creatorProfileUid,
+                              name:
+                                userData[creatorProfileUid]?.name ||
+                                creatorProfileName ||
+                                'User',
+                            });
+                          }}
+                        >
+                          <Text style={styles.bridgeSettingButtonText}>Video Call</Text>
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.bridgeSettingButton,
+                            {
+                              flex: 1,
+                              minHeight: 40,
+                              backgroundColor: isInUserCrew[creatorProfileUid]
+                                ? 'rgba(13, 148, 136, 0.75)'
+                                : 'rgba(14, 116, 144, 0.78)',
+                            },
+                          ]}
+                          onPress={() =>
+                            handleToggleVibe(
+                              creatorProfileUid,
+                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                            )
+                          }
+                        >
+                          <Text style={styles.bridgeSettingButtonText}>
+                            {isInUserCrew[creatorProfileUid] ? 'Leave Tide' : 'Join Tide'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          gap: 8,
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Pressable
+                          style={[
+                            styles.bridgeSettingButton,
+                            {
+                              flex: 1,
+                              minHeight: 40,
+                              backgroundColor: blockedUsers.has(creatorProfileUid)
+                                ? 'rgba(22, 163, 74, 0.78)'
+                                : 'rgba(141, 0, 0, 0.78)',
+                            },
+                          ]}
+                          onPress={() => {
+                            const targetName =
+                              userData[creatorProfileUid]?.name || creatorProfileName || 'this user';
+                            if (blockedUsers.has(creatorProfileUid)) {
+                              Alert.alert(
+                                'Unblock User',
+                                `Unblock ${targetName}?`,
+                                [
+                                  { text: 'Cancel', style: 'cancel' },
+                                  {
+                                    text: 'Unblock',
+                                    onPress: () =>
+                                      handleUnblockUser(creatorProfileUid, targetName),
+                                  },
+                                ],
+                              );
+                              return;
+                            }
+                            Alert.alert(
+                              'Block User',
+                              `Block ${targetName}? They will be hidden from your feed.`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                {
+                                  text: 'Block',
+                                  style: 'destructive',
+                                  onPress: () =>
+                                    handleBlockUser(creatorProfileUid, targetName),
+                                },
+                              ],
+                            );
+                          }}
+                        >
+                          <Text style={styles.bridgeSettingButtonText}>
+                            {blockedUsers.has(creatorProfileUid) ? 'Unblock User' : 'Block User'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
                   </View>
                 ) : null}
 
@@ -21325,14 +21751,22 @@ type CommandCentreSection =
                   {t('creator.tapToOpen')}
                 </Text>
 
-                {creatorProfilePosts.length === 0 ? (
+                {creatorProfileLoading ? (
+                  <View style={styles.logbookAction}>
+                    <ActivityIndicator color="#7DD3FC" />
+                    <Text style={[styles.logbookActionText, { marginTop: 8 }]}>
+                      Loading posts...
+                    </Text>
+                  </View>
+                ) : null}
+
+                {!creatorProfileLoading && creatorProfilePosts.length === 0 ? (
                   <View style={styles.logbookAction}>
                     <Text style={styles.logbookActionText}>{t('creator.noPosts')}</Text>
                   </View>
                 ) : null}
 
                 {creatorProfilePosts.map(post => {
-                  const actualIndex = displayFeed.findIndex(feedItem => feedItem.id === post.id);
                   const previewUri = String(
                     post.image ||
                       post.media?.uri ||
@@ -21343,21 +21777,23 @@ type CommandCentreSection =
                   return (
                     <Pressable
                       key={`creator-post-${post.id}`}
-                      style={[styles.logbookAction, { flexDirection: 'row', gap: 12, alignItems: 'center' }]}
-                      onPress={() => {
-                        setShowCreatorProfile(false);
-                        if (actualIndex >= 0) {
-                          setCurrentIndex(actualIndex);
-                          setWaveKey(Date.now());
-                          requestAnimationFrame(() => {
-                            feedRef.current?.scrollToIndex?.({
-                              index: actualIndex,
-                              animated: false,
-                            });
-                          });
-                          showUiTemporarily();
-                        }
-                      }}
+                      style={[
+                        styles.logbookAction,
+                        {
+                          flexDirection: 'row',
+                          gap: 12,
+                          alignItems: 'center',
+                          borderRadius: 14,
+                          backgroundColor: 'rgba(255,255,255,0.04)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.08)',
+                        },
+                      ]}
+                      onPress={() =>
+                        void focusWaveInFeed(post.id, {
+                          closeCreatorProfile: true,
+                        })
+                      }
                     >
                       {previewUri ? (
                         <Image
@@ -21386,6 +21822,9 @@ type CommandCentreSection =
                         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 6 }}>
                           {post.postType || (post.audio?.uri ? 'audio' : post.media ? 'media' : 'text')}
                         </Text>
+                        <Text style={{ color: '#7DD3FC', fontSize: 11, marginTop: 6, fontWeight: '700' }}>
+                          Open in main feed
+                        </Text>
                       </View>
                     </Pressable>
                   );
@@ -21393,9 +21832,6 @@ type CommandCentreSection =
               </ScrollView>
             </View>
           </View>
-          <Pressable style={styles.dismissBtn} onPress={() => setShowCreatorProfile(false)}>
-            <Text style={styles.dismissText}>{t('common.back')}</Text>
-          </Pressable>
         </View>
       </Modal>
       
@@ -21405,14 +21841,11 @@ type CommandCentreSection =
         transparent
         animationType="none"
         onRequestClose={() => {
-          setShowInbox(false);
-          setInboxFilter('all');
-          setInboxSearchQuery('');
-          setIsThreadSending(false);
-          setThreadMessageAttachment(null);
-          setSelectedThread(null);
-          setIsDeleteMode(false);
-          setSelectedNotifications(new Set());
+          if (selectedThread) {
+            resetInboxView();
+            return;
+          }
+          closeInboxModal();
         }}
       >
         <View
@@ -21854,18 +22287,10 @@ type CommandCentreSection =
                                       [
                                         {
                                           text: 'Open post',
-                                          onPress: () => {
-                                            setShowInbox(false);
-                                            setInboxFilter('all');
-                                            setInboxSearchQuery('');
-                                            const waveIndex = displayFeed.findIndex(
-                                              w => w.id === waveId,
-                                            );
-                                            if (waveIndex !== -1) {
-                                              setCurrentIndex(waveIndex);
-                                              setWaveKey(Date.now());
-                                            }
-                                          },
+                                          onPress: () =>
+                                            void focusWaveInFeed(String(waveId), {
+                                              closeInbox: true,
+                                            }),
                                         },
                                         { text: 'Dismiss', style: 'cancel' },
                                       ],
@@ -22128,6 +22553,12 @@ type CommandCentreSection =
                 <>
                   <View style={styles.threadHeaderCard}>
                     <View style={styles.threadHeaderTopRow}>
+                      <Pressable
+                        style={[styles.threadCallIconBtn, { backgroundColor: '#8D0000' }]}
+                        onPress={resetInboxView}
+                      >
+                        <Text style={styles.threadCallIconText}>←</Text>
+                      </Pressable>
                       <Text style={styles.threadHeaderTitle}>
                         {String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}
                       </Text>
@@ -22704,18 +23135,16 @@ type CommandCentreSection =
           <Pressable
             style={styles.dismissBtn}
             onPress={() => {
-              setShowInbox(false);
-              setInboxFilter('all');
-              setInboxSearchQuery('');
-              setIsThreadSending(false);
-              setThreadMessageAttachment(null);
-              setSelectedThread(null);
-              setSelectedMessageForReply(null);
-              setIsDeleteMode(false);
-              setSelectedNotifications(new Set());
+              if (selectedThread) {
+                resetInboxView();
+                return;
+              }
+              closeInboxModal();
             }}
           >
-            <Text style={styles.dismissText}>{t('common.close')}</Text>
+            <Text style={styles.dismissText}>
+              {selectedThread ? t('common.back') : t('common.close')}
+            </Text>
           </Pressable>
         </View>
       </Modal>
@@ -22789,7 +23218,6 @@ type CommandCentreSection =
                   </Text>
                 ) : (
                   vibesFeed.filter(w => w.ownerUid === myUid).map((w, idx) => {
-                    const actualIndex = vibesFeed.findIndex(v => v.id === w.id);
                     return (
                     <View
                       key={w.id}
@@ -22801,21 +23229,11 @@ type CommandCentreSection =
                       }}
                     >
                       <Pressable
-                        onPress={() => {
-                          try {
-                            setShowMyWaves(false);
-                            setIsPaused(false);
-                            setCurrentIndex(actualIndex);
-                            setWaveKey(Date.now());
-                            requestAnimationFrame(() => {
-                              feedRef.current?.scrollToIndex?.({
-                                index: actualIndex,
-                                animated: false,
-                              });
-                            });
-                            showUiTemporarily();
-                          } catch {}
-                        }}
+                        onPress={() =>
+                          void focusWaveInFeed(w.id, {
+                            closeMyWaves: true,
+                          })
+                        }
                       >
                         <Image
                           source={{ uri: String(w.media?.uri || '') }}
@@ -22829,21 +23247,11 @@ type CommandCentreSection =
                       </Pressable>
                       <View style={{ flex: 1, marginLeft: 12 }}>
                         <Pressable
-                          onPress={() => {
-                            try {
-                              setShowMyWaves(false);
-                              setIsPaused(false);
-                              setCurrentIndex(actualIndex);
-                              setWaveKey(Date.now());
-                              requestAnimationFrame(() => {
-                                feedRef.current?.scrollToIndex?.({
-                                  index: actualIndex,
-                                  animated: false,
-                                });
-                              });
-                              showUiTemporarily();
-                            } catch {}
-                          }}
+                          onPress={() =>
+                            void focusWaveInFeed(w.id, {
+                              closeMyWaves: true,
+                            })
+                          }
                         >
                           <Text
                             style={{
@@ -26079,24 +26487,12 @@ type CommandCentreSection =
           <View style={[styles.modalContent, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.75 }]}> 
             <React.Suspense fallback={<ActivityIndicator color="#00C2FF" size="large" style={{ marginTop: 40 }} />}> 
               <VibeHuntUserSearch
+                myUid={myUid}
+                blockedUserIds={Array.from(blockedUsers)}
                 onProfilePhotoSelect={setProfilePhoto}
-                onChatUserSelect={(targetUser) => {
+                onOpenUserProfile={(targetUser) => {
                   setShowDeepSearch(false);
-                  openMessageThread(targetUser.uid, targetUser.name);
-                }}
-                onAudioCallUserSelect={(targetUser) => {
-                  setShowDeepSearch(false);
-                  startDirectCall('audio', {
-                    uid: targetUser.uid,
-                    name: targetUser.name,
-                  });
-                }}
-                onVideoCallUserSelect={(targetUser) => {
-                  setShowDeepSearch(false);
-                  startDirectCall('video', {
-                    uid: targetUser.uid,
-                    name: targetUser.name,
-                  });
+                  openCreatorProfile(targetUser.uid, targetUser.name);
                 }}
               /> 
             </React.Suspense> 
