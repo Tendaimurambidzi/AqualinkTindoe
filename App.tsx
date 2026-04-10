@@ -8925,6 +8925,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showFleetWaves, setShowFleetWaves] = useState(false);
   const [selectedFleetWaves, setSelectedFleetWaves] = useState<Vibe[]>([]);
   const [selectedFleetMeta, setSelectedFleetMeta] = useState<FleetSummary | null>(null);
+  const [fleetQuickActionsTarget, setFleetQuickActionsTarget] = useState<FleetSummary | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -9954,26 +9955,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   ]);
                     
   // ----- Profile photo handlers -----
+  const uploadImageToUserScopedPath = async (
+    uri: string,
+    storagePath: string,
+    label: string,
+  ) => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) {
+      throw new Error('Please sign in to upload a profile photo.');
+    }
+    if (
+      !(await ensureNetworkActionAllowed('upload', {
+        label,
+        kind: 'photos',
+        localPath: uri,
+      }))
+    ) {
+      throw new Error('Please use Wi-Fi to upload this photo.');
+    }
+
+    let localPath = String(uri || '');
+    try {
+      localPath = decodeURI(localPath);
+    } catch {}
+    if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+      localPath = localPath.replace('file://', '');
+    }
+    if (!localPath) {
+      throw new Error('Could not resolve a local path for this photo.');
+    }
+
+    const storageRef = storage().ref(storagePath);
+    await storageRef.putFile(localPath, { contentType: 'image/jpeg' });
+    return await storageRef.getDownloadURL();
+  };
+
   const uploadAndSave = async (uri: string) => {
     try {
       const uid = auth().currentUser?.uid;
       if (!uid) {
         throw new Error('Please sign in to upload a profile photo.');
       }
-      if (
-        !(await ensureNetworkActionAllowed('upload', {
-          label: 'upload your profile photo',
-          kind: 'photos',
-          localPath: uri,
-        }))
-      ) {
-        throw new Error('Please use Wi-Fi to upload your profile photo.');
-      }
-
-      // Upload to Firebase Storage
-      const storageRef = storage().ref(`users/${uid}/profile.jpg`);
-      await storageRef.putFile(uri);
-      const downloadURL = await storageRef.getDownloadURL();
+      const downloadURL = await uploadImageToUserScopedPath(
+        uri,
+        `users/${uid}/profile.jpg`,
+        'upload your profile photo',
+      );
 
       // Update Firestore
       await firestore()
@@ -15231,7 +15258,10 @@ type CommandCentreSection =
             recipientUid: ownerUid,
             type: 'echo',
             waveId: echoWaveId,
-            text: `${fromUsername} echoed your vibe!`,
+            text:
+              currentWave?.audience === 'fleet' || currentWave?.fleetId
+                ? `${fromUsername} echoed your Fleet Wave!`
+                : `${fromUsername} echoed your vibe!`,
             fromUid: currentUserUid,
             fromName: fromUsername,
             fromPhoto: profilePhoto || null,
@@ -15966,24 +15996,26 @@ type CommandCentreSection =
           ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
           : vibe
       ));
-                    
-      // Send notification to wave owner (only for new hugs, not unhugs)
-      // if (wave.ownerUid && wave.ownerUid !== user.uid) {
-      //   await firestore()
-      //     .collection('users')
-      //     .doc(wave.ownerUid)
-      //     .collection('pings')
-      //     .add({
-      //       type: 'splash',
-      //       message: `🐙 ${user.displayName || 'Someone'} sent an octopus hug on your vibe`,
-      //       fromUid: user.uid,
-      //       fromName: user.displayName || 'Someone',
-      //       waveId: wave.id,
-      //       splashType: splashType,
-      //       read: false,
-      //       createdAt: firestore.FieldValue.serverTimestamp(),
-      //     });
-      // }
+      if (wave.ownerUid && wave.ownerUid !== user.uid) {
+        try {
+          const fromUsername = await fetchUserUsername(user.uid);
+          const addPingFn = functions().httpsCallable('addPing');
+          await addPingFn({
+            recipientUid: wave.ownerUid,
+            type: 'splash',
+            waveId: wave.id,
+            text:
+              wave.audience === 'fleet' || wave.fleetId
+                ? `${fromUsername} hugged your Fleet Wave!`
+                : `${fromUsername} hugged your vibe!`,
+            fromUid: user.uid,
+            fromName: fromUsername,
+            fromPhoto: profilePhoto || user.photoURL || null,
+          });
+        } catch (pingError) {
+          console.error('Error sending hug notification:', pingError);
+        }
+      }
                     
       // Show success message immediately without any sound
       setLocalHuggedWaves(prev => {
@@ -19194,30 +19226,12 @@ type CommandCentreSection =
         const asset = result.assets?.[0];
         const sourceUri = asset?.uri;
         if (!sourceUri) return;
-        if (
-          !(await ensureNetworkActionAllowed('upload', {
-            label: 'upload this Fleet photo',
-            kind: 'photos',
-            localPath: sourceUri,
-          }))
-        ) {
-          return;
-        }
-        let localPath = String(sourceUri);
-        try {
-          localPath = decodeURI(localPath);
-        } catch {}
-        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
-          localPath = localPath.replace('file://', '');
-        }
-        if (!localPath) {
-          Alert.alert('Fleet Deck', 'We could not read that image right now.');
-          return;
-        }
         setFleetActionLoadingId(fleet.id);
-        const storageRef = storage().ref(`users/${uid}/fleets/${fleet.id}/profile.jpg`);
-        await storageRef.putFile(localPath, { contentType: 'image/jpeg' });
-        const photoURL = await storageRef.getDownloadURL();
+        const photoURL = await uploadImageToUserScopedPath(
+          String(sourceUri),
+          `users/${uid}/fleets/${fleet.id}/profile.jpg`,
+          'upload this Fleet photo',
+        );
         await firestore().collection('fleets').doc(fleet.id).set(
           {
             photoURL,
@@ -19243,7 +19257,7 @@ type CommandCentreSection =
         setFleetActionLoadingId(current => (current === fleet.id ? null : current));
       }
     },
-    [ensureNetworkActionAllowed, loadFleetThreads, notifySuccess],
+    [loadFleetThreads, notifySuccess, uploadImageToUserScopedPath],
   );
 
   const copyTextToClipboard = useCallback((value: string, title: string) => {
@@ -19486,62 +19500,9 @@ type CommandCentreSection =
 
   const openFleetQuickActions = useCallback(
     (fleet: FleetSummary) => {
-      const actions: Array<{
-        text: string;
-        style?: 'cancel' | 'destructive';
-        onPress?: () => void;
-      }> = [
-        {
-          text: 'Open crew chat',
-          onPress: () => {
-            setShowFleetWaves(false);
-            void openFleetThread(fleet);
-          },
-        },
-        {
-          text: 'Post to Fleet',
-          onPress: () => openFleetComposer(fleet),
-        },
-        {
-          text: 'Share invite',
-          onPress: () => void shareFleetInvite(fleet),
-        },
-        {
-          text: 'Copy invite code',
-          onPress: () => copyTextToClipboard(fleet.inviteCode, 'Invite code'),
-        },
-      ];
-      if (fleet.role !== 'crew') {
-        actions.push({
-          text: fleet.allowBoarding ? 'Require invite to board' : 'Allow direct boarding',
-          onPress: () => void setFleetBoarding(fleet, !fleet.allowBoarding),
-        });
-        actions.push({
-          text: 'Edit Fleet header',
-          onPress: () => void toggleFleetManager(fleet),
-        });
-      }
-      actions.push({
-        text: 'Leave Fleet',
-        style: 'destructive',
-        onPress: () => void leaveFleet(fleet),
-      });
-      actions.push({ text: 'Cancel', style: 'cancel' });
-      Alert.alert(
-        fleet.name,
-        `${fleet.crewCount} crew • Code ${fleet.inviteCode}`,
-        actions,
-      );
+      setFleetQuickActionsTarget(fleet);
     },
-    [
-      copyTextToClipboard,
-      leaveFleet,
-      openFleetComposer,
-      openFleetThread,
-      setFleetBoarding,
-      shareFleetInvite,
-      toggleFleetManager,
-    ],
+    [],
   );
 
   const createFleet = useCallback(async () => {
@@ -19858,7 +19819,7 @@ type CommandCentreSection =
 
   const handleFleetWaveHug = useCallback(async (wave: Vibe) => {
     if (localHuggedWaves.has(wave.id)) {
-      await handlePostHug(wave);
+      notifySuccess('you already hugged this vibe');
       return;
     }
     await handlePostHug(wave);
@@ -19876,7 +19837,7 @@ type CommandCentreSection =
           : item,
       ),
     );
-  }, [handlePostHug, localHuggedWaves]);
+  }, [handlePostHug, localHuggedWaves, notifySuccess]);
 
   const openFleetWaveEcho = useCallback((wave: Vibe) => {
     setEchoWaveId(wave.id);
@@ -25591,21 +25552,28 @@ type CommandCentreSection =
                         </Text>
                       </View>
                     </View>
-                    <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 12 }}>
-                      {`${Number(wave.counts?.hugs || wave.counts?.splashes || 0)} hugs • ${Number(wave.counts?.echoes || 0)} echoes`}
-                    </Text>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
                       <Pressable
-                        style={{ flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#991B1B' }}
+                        style={{
+                          flex: 1,
+                          borderRadius: 999,
+                          paddingVertical: 8,
+                          alignItems: 'center',
+                          backgroundColor: localHuggedWaves.has(wave.id) ? '#87CEEB' : '#991B1B',
+                        }}
                         onPress={() => void handleFleetWaveHug(wave)}
                       >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Hug</Text>
+                        <Text style={{ color: localHuggedWaves.has(wave.id) ? '#083358' : '#FFF', fontWeight: '800' }}>
+                          {`Hug (${Number(wave.counts?.hugs || wave.counts?.splashes || 0)})`}
+                        </Text>
                       </Pressable>
                       <Pressable
                         style={{ flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#0F4C81' }}
                         onPress={() => openFleetWaveEcho(wave)}
                       >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Echo</Text>
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                          {`Echo (${Number(wave.counts?.echoes || 0)})`}
+                        </Text>
                       </Pressable>
                     </View>
                   </View>
@@ -25617,6 +25585,127 @@ type CommandCentreSection =
             <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
+      </Modal>
+
+      <Modal
+        visible={!!fleetQuickActionsTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setFleetQuickActionsTarget(null)}
+      >
+        <Pressable
+          style={[styles.modalRoot, { justifyContent: 'center', padding: 18, backgroundColor: 'rgba(0,0,0,0.62)' }]}
+          onPress={() => setFleetQuickActionsTarget(null)}
+        >
+          <Pressable
+            onPress={() => {}}
+            style={[styles.logbookContainer, { width: '100%', borderRadius: 16, overflow: 'hidden' }]}
+          >
+            {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
+            <View style={[styles.logbookPage, { paddingBottom: 18 }]}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                <Pressable
+                  onPress={() => setFleetQuickActionsTarget(null)}
+                  style={{ borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.1)' }}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '800' }}>Back</Text>
+                </Pressable>
+                <View style={{ flex: 1, paddingHorizontal: 12 }}>
+                  <Text style={styles.logbookTitle}>{fleetQuickActionsTarget?.name || 'Fleet'}</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 2 }}>
+                    {fleetQuickActionsTarget
+                      ? `${fleetQuickActionsTarget.crewCount} crew • Code ${fleetQuickActionsTarget.inviteCode}`
+                      : ''}
+                  </Text>
+                </View>
+              </View>
+
+              {fleetQuickActionsTarget ? (
+                <View style={{ gap: 10 }}>
+                  <Pressable
+                    style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                    onPress={() => {
+                      const fleet = fleetQuickActionsTarget;
+                      setFleetQuickActionsTarget(null);
+                      if (fleet) {
+                        setShowFleetWaves(false);
+                        void openFleetThread(fleet);
+                      }
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Open crew chat</Text>
+                  </Pressable>
+                  <Pressable
+                    style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                    onPress={() => {
+                      const fleet = fleetQuickActionsTarget;
+                      setFleetQuickActionsTarget(null);
+                      if (fleet) openFleetComposer(fleet);
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Post to Fleet</Text>
+                  </Pressable>
+                  <Pressable
+                    style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                    onPress={() => {
+                      const fleet = fleetQuickActionsTarget;
+                      setFleetQuickActionsTarget(null);
+                      if (fleet) void shareFleetInvite(fleet);
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Share invite</Text>
+                  </Pressable>
+                  <Pressable
+                    style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                    onPress={() => {
+                      const fleet = fleetQuickActionsTarget;
+                      setFleetQuickActionsTarget(null);
+                      if (fleet) copyTextToClipboard(fleet.inviteCode, 'Invite code');
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Copy invite code</Text>
+                  </Pressable>
+                  {fleetQuickActionsTarget.role !== 'crew' ? (
+                    <>
+                      <Pressable
+                        style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                        onPress={() => {
+                          const fleet = fleetQuickActionsTarget;
+                          setFleetQuickActionsTarget(null);
+                          if (fleet) void setFleetBoarding(fleet, !fleet.allowBoarding);
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                          {fleetQuickActionsTarget.allowBoarding ? 'Require invite to board' : 'Allow direct boarding'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                        onPress={() => {
+                          const fleet = fleetQuickActionsTarget;
+                          setFleetQuickActionsTarget(null);
+                          if (fleet) void toggleFleetManager(fleet);
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Edit Fleet header</Text>
+                      </Pressable>
+                    </>
+                  ) : null}
+                  <Pressable
+                    style={{ borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, backgroundColor: 'rgba(127,29,29,0.78)' }}
+                    onPress={() => {
+                      const fleet = fleetQuickActionsTarget;
+                      setFleetQuickActionsTarget(null);
+                      if (fleet) void leaveFleet(fleet);
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Leave Fleet</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       {/* PROFILE PICTURE ZOOM MODAL */}
