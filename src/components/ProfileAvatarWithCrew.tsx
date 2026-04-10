@@ -25,6 +25,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [cacheBustKey, setCacheBustKey] = useState(Date.now());
+  const [imageFailed, setImageFailed] = useState(false);
   const [crewCount, setCrewCount] = useState(0);
   const [fleetCount, setFleetCount] = useState(0);
 
@@ -59,6 +60,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
             hasData: !!newUserData
           });
           setUserData(newUserData);
+          setImageFailed(false);
           
           // Update cache-busting key when photoURL changes
           const newPhotoURL = newUserData?.photoURL || newUserData?.userPhoto;
@@ -124,7 +126,12 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
     );
   }
 
-  const photoURL = userData?.photoURL || userData?.userPhoto || 'https://via.placeholder.com/50';
+  const photoURL =
+    userData?.photoURL ||
+    userData?.userPhoto ||
+    userData?.avatar ||
+    userData?.profilePicture ||
+    'https://via.placeholder.com/50';
   // Use stable cache-busting key that only updates when photoURL actually changes
   const photoURLWithCacheBust = photoURL && !photoURL.includes('via.placeholder.com')
     ? `${photoURL}?t=${cacheBustKey}`
@@ -169,10 +176,11 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
           ]}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          {photoURLWithCacheBust ? (
+          {photoURLWithCacheBust && !imageFailed ? (
             <Image
               source={{ uri: photoURLWithCacheBust }}
               style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+              onError={() => setImageFailed(true)}
             />
           ) : (
             <View
@@ -231,11 +239,12 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
             onPress={() => setShowModal(false)}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            {photoURLWithCacheBust ? (
+            {photoURLWithCacheBust && !imageFailed ? (
               <Image
                 source={{ uri: photoURLWithCacheBust }}
                 style={styles.fullSizeImage}
                 resizeMode="contain"
+                onError={() => setImageFailed(true)}
               />
             ) : (
               <View

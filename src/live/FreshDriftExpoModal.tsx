@@ -423,6 +423,7 @@ const FreshDriftExpoModal = ({
   const [screenShareOwnerRtcUid, setScreenShareOwnerRtcUid] = useState<number>(0);
   const [screenShareStarting, setScreenShareStarting] = useState(false);
   const [localScreenShareActive, setLocalScreenShareActive] = useState(false);
+  const allowPremiumScreenShare = false;
   const [pdfLocalPath, setPdfLocalPath] = useState<string | null>(null);
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [pdfPageIndex, setPdfPageIndex] = useState(0);
@@ -1405,6 +1406,9 @@ const FreshDriftExpoModal = ({
 
   const stopScreenShare = useCallback(
     async (options?: { syncRoom?: boolean }) => {
+      if (!allowPremiumScreenShare) {
+        return;
+      }
       const engine = engineRef.current;
       try {
         engine?.stopScreenCapture?.();
@@ -1437,10 +1441,25 @@ const FreshDriftExpoModal = ({
       }
       setStatusText('Live');
     },
-    [Agora?.VideoSourceType, activeDoc, cameraOff, isCurrentUserScreenSharer, micMuted, syncScreenShareRoomState],
+    [
+      Agora?.VideoSourceType,
+      activeDoc,
+      allowPremiumScreenShare,
+      cameraOff,
+      isCurrentUserScreenSharer,
+      micMuted,
+      syncScreenShareRoomState,
+    ],
   );
 
   const startScreenShare = useCallback(async () => {
+    if (!allowPremiumScreenShare) {
+      Alert.alert(
+        'Screen share disabled',
+        'Screen sharing has been removed from Aqua Premium. Use Share Files instead.',
+      );
+      return;
+    }
     if (!isPremiumRoom || !joined) return;
     if (Platform.OS !== 'android') {
       Alert.alert('Screen sharing unavailable', 'Aqua Premium screen sharing is currently available on Android only.');
@@ -2308,7 +2327,7 @@ const FreshDriftExpoModal = ({
   ]);
 
   const handleShareBlankDoc = useCallback(async () => {
-    if (screenShareActive) {
+    if (allowPremiumScreenShare && screenShareActive) {
       Alert.alert(
         'Stop screen sharing first',
         'End the live screen share before starting the in-room file presenter.',
@@ -2365,6 +2384,7 @@ const FreshDriftExpoModal = ({
       setDocBusy(false);
     }
   }, [
+    allowPremiumScreenShare,
     currentSharedDocId,
     currentSharedDocStage,
     ensureParticipantPresenceForShare,
@@ -4323,11 +4343,15 @@ const FreshDriftExpoModal = ({
   const visibleRemoteVideoUids = useMemo(() => {
     const limit = Math.max(1, MAX_VISIBLE_PREMIUM_GALLERY_TILES - 1);
     const visible = prioritizedRemoteRenderUids.slice(0, limit);
-    if (screenShareOwnerRtcUid > 0 && !visible.includes(screenShareOwnerRtcUid)) {
+    if (
+      allowPremiumScreenShare &&
+      screenShareOwnerRtcUid > 0 &&
+      !visible.includes(screenShareOwnerRtcUid)
+    ) {
       return [...visible, screenShareOwnerRtcUid];
     }
     return visible;
-  }, [prioritizedRemoteRenderUids, screenShareOwnerRtcUid]);
+  }, [allowPremiumScreenShare, prioritizedRemoteRenderUids, screenShareOwnerRtcUid]);
 
   const premiumGalleryTiles = useMemo(() => {
     const remoteTiles = prioritizedRemoteRenderUids.map(uid => ({ kind: 'remote' as const, uid }));
@@ -4338,11 +4362,19 @@ const FreshDriftExpoModal = ({
   const screenShareStageVisible = useMemo(
     () =>
       !!(
+        allowPremiumScreenShare &&
         isPremiumRoom &&
         ((screenShareActive && screenShareRenderRtcUid > 0) ||
           (localScreenShareActive && isCurrentUserScreenSharer))
       ),
-    [isCurrentUserScreenSharer, isPremiumRoom, localScreenShareActive, screenShareActive, screenShareRenderRtcUid],
+    [
+      allowPremiumScreenShare,
+      isCurrentUserScreenSharer,
+      isPremiumRoom,
+      localScreenShareActive,
+      screenShareActive,
+      screenShareRenderRtcUid,
+    ],
   );
   const sharedFileStageVisible = useMemo(
     () =>
@@ -4371,8 +4403,8 @@ const FreshDriftExpoModal = ({
     return prioritizedRemoteRenderUids.find(uid => uid !== screenShareRenderRtcUid) || 0;
   }, [prioritizedRemoteRenderUids, screenShareRenderRtcUid, screenShareStageVisible]);
   const localScreenShareStageVisible = useMemo(
-    () => !!(isPremiumRoom && (screenShareStarting || localScreenShareActive)),
-    [isPremiumRoom, localScreenShareActive, screenShareStarting],
+    () => !!(allowPremiumScreenShare && isPremiumRoom && (screenShareStarting || localScreenShareActive)),
+    [allowPremiumScreenShare, isPremiumRoom, localScreenShareActive, screenShareStarting],
   );
 
   const renderPremiumGallery = useCallback(() => {
@@ -4779,26 +4811,7 @@ const FreshDriftExpoModal = ({
                     <Text style={styles.railIcon}>Share Files</Text>
                   </Pressable>
                 ) : null}
-                {isPremiumRoom ? (
-                  <Pressable
-                    style={styles.railButton}
-                    onPress={() => {
-                      if (isCurrentUserScreenSharer) {
-                        void stopScreenShare();
-                      } else {
-                        void startScreenShare();
-                      }
-                    }}
-                  >
-                    <Text style={styles.railIcon}>
-                      {screenShareStarting
-                        ? 'Starting...'
-                        : isCurrentUserScreenSharer
-                        ? 'Stop Share'
-                        : 'Share Screen'}
-                    </Text>
-                  </Pressable>
-                ) : null}
+                {null}
               </View>
               {soundBadgeLabel && !isPremiumRoom ? (
                 <View style={styles.soundBadge}>

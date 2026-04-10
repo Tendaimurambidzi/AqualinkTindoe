@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Fuse from 'fuse.js';
 import {
   View,
@@ -12,6 +13,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import firestore from '@react-native-firebase/firestore';
+import ProfileAvatarWithCrew from './ProfileAvatarWithCrew';
 
 export type VibeUser = {
   uid: string;
@@ -30,6 +32,7 @@ interface VibeHuntUserSearchProps {
   blockedUserIds?: string[];
   onProfilePhotoSelect?: (photoURL: string | null) => void;
   onOpenUserProfile?: (user: { uid: string; name: string }) => void;
+  onOpenAvatarPreview?: (photoURL: string) => void;
 }
 
 const VIBE_HUNT_RECENT_KEY = 'vibe_hunt_recent_queries';
@@ -51,6 +54,13 @@ const toDateOrNull = (value: any): Date | null => {
   return null;
 };
 
+const normalizePhotoUrl = (value?: string | null) => {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  if (raw.toLowerCase() === 'null' || raw.toLowerCase() === 'undefined') return null;
+  return raw;
+};
+
 const formatStatusLine = (user: VibeUser) => {
   if (user.online) return 'Online now';
   if (user.lastSeen) {
@@ -62,7 +72,7 @@ const formatStatusLine = (user: VibeUser) => {
     const days = Math.floor(hours / 24);
     return `Last seen ${days}d ago`;
   }
-  return 'Profile available';
+  return null;
 };
 
 const sortUsers = (users: VibeUser[]) =>
@@ -82,6 +92,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   blockedUserIds = [],
   onProfilePhotoSelect,
   onOpenUserProfile,
+  onOpenAvatarPreview,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [directoryUsers, setDirectoryUsers] = useState<VibeUser[]>([]);
@@ -89,6 +100,8 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
+  const [brokenAvatarIds, setBrokenAvatarIds] = useState<Set<string>>(new Set());
+  const [selectedUser, setSelectedUser] = useState<VibeUser | null>(null);
 
   const blockedSet = useMemo(() => new Set(blockedUserIds), [blockedUserIds]);
 
@@ -227,10 +240,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const handleUserPress = (user: VibeUser) => {
     persistRecentQuery(searchQuery || user.username || user.email || '');
     onProfilePhotoSelect?.(user.photoURL || null);
-    onOpenUserProfile?.({
-      uid: user.uid,
-      name: String(user.username || user.email || 'User'),
-    });
+    setSelectedUser(user);
   };
 
   const getInitials = (user: VibeUser) => {
@@ -242,15 +252,40 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
 
   const renderUser = ({ item }: { item: VibeUser }) => {
     const isBlocked = blockedSet.has(item.uid);
+    const photoUrl = normalizePhotoUrl(item.photoURL);
+    const showPhoto = !!photoUrl && !brokenAvatarIds.has(item.uid);
+    const statusLine = formatStatusLine(item);
     return (
       <Pressable style={styles.userItem} onPress={() => handleUserPress(item)}>
-        {item.photoURL ? (
-          <Image source={{ uri: item.photoURL }} style={styles.avatar} />
-        ) : (
-          <View style={[styles.avatar, styles.avatarFallback]}>
-            <Text style={styles.initials}>{getInitials(item)}</Text>
+        <Pressable
+          onPress={() => {
+            if (photoUrl) {
+              onProfilePhotoSelect?.(photoUrl);
+              onOpenAvatarPreview?.(photoUrl);
+            }
+          }}
+          style={{ borderRadius: 26 }}
+        >
+          <View style={styles.avatarWrap}>
+            <View style={[styles.avatar, styles.avatarFallback]}>
+              <Text style={styles.initials}>{getInitials(item)}</Text>
+            </View>
+            {showPhoto ? (
+              <Image
+                source={{ uri: photoUrl as string }}
+                style={[styles.avatar, styles.avatarImage]}
+                onError={() => {
+                  setBrokenAvatarIds(prev => {
+                    if (prev.has(item.uid)) return prev;
+                    const next = new Set(prev);
+                    next.add(item.uid);
+                    return next;
+                  });
+                }}
+              />
+            ) : null}
           </View>
-        )}
+        </Pressable>
         <View style={styles.userInfo}>
           <View style={styles.userTitleRow}>
             <Text style={styles.displayName} numberOfLines={1}>
@@ -267,9 +302,11 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
               @{normalizeText(item.username)}
             </Text>
           )}
-          <Text style={styles.statusText} numberOfLines={1}>
-            {formatStatusLine(item)}
-          </Text>
+          {statusLine ? (
+            <Text style={styles.statusText} numberOfLines={1}>
+              {statusLine}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.metaCol}>
           <Text style={styles.pointsValue}>{Number(item.minuteFameCareerPoints || 0)}</Text>
@@ -278,6 +315,14 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       </Pressable>
     );
   };
+
+  const selectedBadge = useMemo(() => {
+    if (!selectedUser) return null;
+    const raw = String(selectedUser.minuteFameTitle || '').trim();
+    if (!raw) return '⭐';
+    const token = raw.split(' ')[0];
+    return token || '⭐';
+  }, [selectedUser]);
 
   return (
     <View style={styles.container}>
@@ -304,6 +349,75 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           <Text style={styles.searchButtonText}>Search</Text>
         </Pressable>
       </View>
+
+      {selectedUser ? (
+        <View style={styles.selectedCard}>
+          <Pressable
+            style={styles.selectedHeader}
+            onPress={() => {
+              onOpenUserProfile?.({
+                uid: selectedUser.uid,
+                name: String(selectedUser.username || selectedUser.email || 'User'),
+              });
+            }}
+          >
+            <View style={styles.selectedAvatarWrap}>
+              <ProfileAvatarWithCrew
+                userId={selectedUser.uid}
+                size={64}
+                showCrewCount={false}
+                showFleetCount={false}
+              />
+            </View>
+            <View style={styles.selectedInfo}>
+              <View style={styles.selectedTitleRow}>
+                <Text style={styles.selectedName} numberOfLines={1}>
+                  {selectedUser.username || selectedUser.email || 'User'}
+                </Text>
+                {selectedBadge ? (
+                  <View style={styles.selectedBadge}>
+                    <Text style={styles.selectedBadgeText}>{selectedBadge}</Text>
+                  </View>
+                ) : null}
+              </View>
+              {!!selectedUser.username && (
+                <Text style={styles.selectedHandle} numberOfLines={1}>
+                  @{normalizeText(selectedUser.username)}
+                </Text>
+              )}
+              {formatStatusLine(selectedUser) ? (
+                <Text style={styles.selectedStatus} numberOfLines={1}>
+                  {formatStatusLine(selectedUser)}
+                </Text>
+              ) : null}
+              {!!selectedUser.bio && (
+                <Text style={styles.selectedBio} numberOfLines={2}>
+                  {selectedUser.bio}
+                </Text>
+              )}
+            </View>
+          </Pressable>
+          <View style={styles.selectedActions}>
+            <Pressable
+              style={styles.selectedButton}
+              onPress={() => {
+                onOpenUserProfile?.({
+                  uid: selectedUser.uid,
+                  name: String(selectedUser.username || selectedUser.email || 'User'),
+                });
+              }}
+            >
+              <Text style={styles.selectedButtonText}>View Posts</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.selectedButton, styles.selectedCloseButton]}
+              onPress={() => setSelectedUser(null)}
+            >
+              <Text style={styles.selectedCloseText}>Back to results</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
       {recentQueries.length > 0 ? (
         <View style={styles.recentWrap}>
@@ -471,10 +585,19 @@ const styles = StyleSheet.create({
     borderRadius: 26,
     backgroundColor: '#082133',
   },
+  avatarWrap: {
+    width: 52,
+    height: 52,
+  },
   avatarFallback: {
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0F4C75',
+  },
+  avatarImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
   },
   initials: {
     color: '#FFFFFF',
@@ -531,6 +654,97 @@ const styles = StyleSheet.create({
     color: '#FFD4D4',
     fontSize: 10,
     fontWeight: '800',
+  },
+  selectedCard: {
+    marginTop: 10,
+    borderRadius: 14,
+    backgroundColor: 'rgba(8, 26, 44, 0.92)',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 194, 255, 0.3)',
+    padding: 12,
+  },
+  selectedHeader: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  selectedAvatarWrap: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectedInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  selectedTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  selectedName: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 16,
+    flex: 1,
+  },
+  selectedBadge: {
+    minWidth: 30,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: 'rgba(56, 189, 248, 0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(56, 189, 248, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  selectedBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  selectedHandle: {
+    color: '#81D4FA',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  selectedStatus: {
+    color: 'rgba(255,255,255,0.68)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  selectedBio: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  selectedActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  selectedButton: {
+    flex: 1,
+    backgroundColor: '#00C2FF',
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedButtonText: {
+    color: '#00192D',
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  selectedCloseButton: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  selectedCloseText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
   },
 });
 

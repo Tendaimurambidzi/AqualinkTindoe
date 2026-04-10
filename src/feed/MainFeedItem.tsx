@@ -657,16 +657,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   }, [item.authorName, item.ownerUid, item.user?.name, myUid, navigation, onOpenCreatorProfile]);
 
   const handleAvatarPress = useCallback(() => {
+    handleProfilePress();
+  }, [handleProfilePress]);
+
+  const handleAvatarLongPress = useCallback(() => {
     const avatarUri =
       (item.ownerUid ? userData[item.ownerUid]?.avatar : null) ||
       item.user?.avatar ||
       null;
     if (avatarUri) {
       onOpenProfilePicture(avatarUri);
-      return;
     }
-    handleProfilePress();
-  }, [handleProfilePress, item.ownerUid, item.user?.avatar, onOpenProfilePicture, userData]);
+  }, [item.ownerUid, item.user?.avatar, onOpenProfilePicture, userData]);
 
   const handleOnlineUserPress = useCallback((user: { uid: string; name: string }) => {
     setSelectedUserId(user.uid);
@@ -1132,6 +1134,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 {/* Profile Avatar */}
                 <Pressable
                   onPress={handleAvatarPress}
+                  onLongPress={handleAvatarLongPress}
+                  delayLongPress={320}
                   style={({ pressed }) => [
                     pressed && {
                       opacity: 0.8,

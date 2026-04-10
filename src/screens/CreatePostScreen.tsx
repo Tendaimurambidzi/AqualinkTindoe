@@ -11,6 +11,13 @@ import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
 const CreatePostScreen = ({ navigation, route }: any) => {
   const setCapturedMedia = route?.params?.setCapturedMedia;
   const handleSDCardPicker = route?.params?.handleSDCardPicker;
+  const onBackToMakeWaves = route?.params?.onBackToMakeWaves;
+  const handleBack = () => {
+    if (typeof onBackToMakeWaves === 'function') {
+      onBackToMakeWaves();
+    }
+    navigation.goBack();
+  };
   const pickerOptions = {
     mediaType: 'mixed' as const,
     selectionLimit: 1,
@@ -35,7 +42,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
       const asset = result.assets?.[0];
       if (asset?.uri && setCapturedMedia) {
         setCapturedMedia(asset);
-        navigation.goBack();
+        handleBack();
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to open camera');
@@ -55,7 +62,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
       const asset = result.assets?.[0];
       if (asset?.uri && setCapturedMedia) {
         setCapturedMedia(asset);
-        navigation.goBack();
+        handleBack();
       }
     } catch (error) {
       Alert.alert('Error', 'Failed to open gallery');
@@ -65,7 +72,7 @@ const CreatePostScreen = ({ navigation, route }: any) => {
   const handleSDCard = async () => {
     if (handleSDCardPicker) {
       await handleSDCardPicker();
-      navigation.goBack();
+      handleBack();
     }
   };
 
@@ -88,8 +95,8 @@ const CreatePostScreen = ({ navigation, route }: any) => {
         <Text style={styles.label}>SD Card</Text>
       </Pressable>
 
-      <Pressable style={styles.cancelButton} onPress={() => navigation.goBack()}>
-        <Text style={styles.cancelText}>Cancel</Text>
+      <Pressable style={styles.cancelButton} onPress={handleBack}>
+        <Text style={styles.cancelText}>Back</Text>
       </Pressable>
     </View>
   );

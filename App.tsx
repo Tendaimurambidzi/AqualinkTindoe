@@ -6028,7 +6028,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 const data = doc.data();
                 updates[uid] = {
                   name: data?.username || data?.name || data?.displayName || 'User',
-                  avatar: data?.avatar || data?.userPhoto || '',
+                  avatar:
+                    data?.avatar ||
+                    data?.userPhoto ||
+                    data?.photoURL ||
+                    data?.profilePicture ||
+                    '',
                   bio: data?.bio || '',
                 };
               } catch (e) {
@@ -7295,7 +7300,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
       const userInfo = {
         name: data?.name || data?.displayName || data?.username || 'User',
-        avatar: data?.avatar || data?.userPhoto || '',
+        avatar:
+          data?.avatar ||
+          data?.userPhoto ||
+          data?.photoURL ||
+          data?.profilePicture ||
+          '',
         bio: data?.bio || '',
         lastSeen: lastSeen,
         online: data?.online === true,
@@ -7407,7 +7417,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }
           updates[uid] = {
             name: data?.name || data?.displayName || 'User',
-            avatar: data?.avatar || data?.userPhoto || '',
+            avatar:
+              data?.avatar ||
+              data?.userPhoto ||
+              data?.photoURL ||
+              data?.profilePicture ||
+              '',
             bio: data?.bio || '',
             lastSeen,
             online: data?.online === true,
@@ -7741,6 +7756,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [creatorProfileName, setCreatorProfileName] = useState<string>('');
   const [creatorProfileLoadedPosts, setCreatorProfileLoadedPosts] = useState<Vibe[]>([]);
   const [creatorProfileLoading, setCreatorProfileLoading] = useState<boolean>(false);
+  const creatorProfileScrollRef = useRef<ScrollView | null>(null);
+  const [creatorProfilePostsAnchorY, setCreatorProfilePostsAnchorY] = useState<number>(0);
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
   const [showTextComposer, setShowTextComposer] = useState<boolean>(false);
   const [textComposerText, setTextComposerText] = useState<string>('');
@@ -8685,6 +8702,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       attachmentName?: string;
     }>;
   }>>([]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    try {
+      const count = Math.max(0, Number(unreadAlertsCount || 0));
+      NativeModules?.BadgeModule?.setBadge?.(count);
+    } catch {}
+  }, [unreadAlertsCount]);
   
   // Notification deletion state
   const [selectedNotifications, setSelectedNotifications] = useState<Set<string>>(new Set());
@@ -10487,6 +10512,7 @@ type CommandCentreSection =
   const unifiedPostMedia = unifiedPostMediaItems[0] || null;
   const [editingWave, setEditingWave] = useState<Vibe | null>(null);
   const [deletingWaveIds, setDeletingWaveIds] = useState<Record<string, boolean>>({});
+  const [returnToMakeWaves, setReturnToMakeWaves] = useState<boolean>(false);
                     
   // DM subscription - adds messages to pings automatically
   useEffect(() => {
@@ -12319,6 +12345,7 @@ type CommandCentreSection =
           String(target.postType || '').toLowerCase() === 'document';
         setEditingWave(target);
         if (!hasMedia) {
+          setReturnToMakeWaves(false);
           setShowMakeWaves(false);
           setCapturedMedia(null);
           setAttachedAudio(null);
@@ -12357,6 +12384,7 @@ type CommandCentreSection =
         setUnifiedPostError(null);
         setUnifiedPostProgress(null);
         setNeedsUnifiedCaptionReview(false);
+        setReturnToMakeWaves(false);
         setShowUnifiedPostModal(true);
       };
                     
@@ -18306,6 +18334,10 @@ type CommandCentreSection =
   
   const closeUnifiedPostModal = () => {
     setShowUnifiedPostModal(false);
+    if (returnToMakeWaves) {
+      setShowMakeWaves(true);
+    }
+    setReturnToMakeWaves(false);
     setUnifiedPostText('');
     setUnifiedPostMediaItems([]);
     setUnifiedPostAudio(null);
@@ -21528,75 +21560,99 @@ type CommandCentreSection =
                   {creatorProfilePosts.length} posts
                 </Text>
               </View>
-              <Text style={styles.logbookTitle}>
-                {userData[creatorProfileUid || '']?.name || creatorProfileName || 'User'}
-              </Text>
-              <ScrollView>
-                {creatorProfileUid ? (
+                <Text style={styles.logbookTitle}>
+                  {userData[creatorProfileUid || '']?.name || creatorProfileName || 'User'}
+                </Text>
+                <ScrollView ref={creatorProfileScrollRef}>
+                  {creatorProfileUid ? (
                   <View style={[styles.logbookAction, { alignItems: 'center' }]}>
                     <Pressable
                       onPress={() => {
-                        const avatarUri = userData[creatorProfileUid]?.avatar || '';
-                        if (avatarUri) {
-                          setZoomedProfilePic(avatarUri);
-                        }
+                        creatorProfileScrollRef.current?.scrollTo({
+                          y: creatorProfilePostsAnchorY,
+                          animated: true,
+                        });
                       }}
                       style={{ alignItems: 'center', width: '100%' }}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                     >
-                      <ProfileAvatarWithCrew
-                        userId={creatorProfileUid}
-                        size={72}
-                        showCrewCount={true}
-                        showFleetCount={false}
-                      />
-                    </Pressable>
-                    <Text
-                      style={{
-                        color: userData[creatorProfileUid]?.online ? '#86EFAC' : 'rgba(255,255,255,0.64)',
-                        fontSize: 12,
-                        marginTop: 10,
-                        fontWeight: '700',
-                      }}
-                    >
-                      {userData[creatorProfileUid]?.online
-                        ? 'Online now'
-                        : userData[creatorProfileUid]?.lastSeen
-                        ? `Last seen ${formatDefiniteTime(userData[creatorProfileUid]?.lastSeen)}`
-                        : 'Profile available'}
-                    </Text>
-                    {!!userData[creatorProfileUid]?.minuteFameTitle && (
-                      <View
-                        style={{
-                          marginTop: 10,
-                          minWidth: 40,
-                          height: 40,
-                          paddingHorizontal: 10,
-                          borderRadius: 999,
-                          backgroundColor: 'rgba(56, 189, 248, 0.16)',
-                          borderWidth: 1,
-                          borderColor: 'rgba(56, 189, 248, 0.32)',
-                          alignItems: 'center',
-                          justifyContent: 'center',
+                      <Pressable
+                        onPress={() => {
+                          const avatarUri = userData[creatorProfileUid]?.avatar || '';
+                          if (avatarUri) {
+                            setZoomedProfilePic(avatarUri);
+                          }
                         }}
+                        style={{ alignItems: 'center', width: '100%' }}
                       >
-                        <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>
-                          {getMinuteFameBadgeFromLabel(userData[creatorProfileUid]?.minuteFameTitle)}
+                        <ProfileAvatarWithCrew
+                          userId={creatorProfileUid}
+                          size={72}
+                          showCrewCount={true}
+                          showFleetCount={false}
+                        />
+                      </Pressable>
+                      {(() => {
+                        const statusLine = userData[creatorProfileUid]?.online
+                          ? 'Online now'
+                          : userData[creatorProfileUid]?.lastSeen
+                          ? `Last seen ${formatDefiniteTime(userData[creatorProfileUid]?.lastSeen)}`
+                          : '';
+                        if (!statusLine) return null;
+                        return (
+                          <Text
+                            style={{
+                              color: userData[creatorProfileUid]?.online ? '#86EFAC' : 'rgba(255,255,255,0.64)',
+                              fontSize: 12,
+                              marginTop: 10,
+                              fontWeight: '700',
+                            }}
+                          >
+                            {statusLine}
+                          </Text>
+                        );
+                      })()}
+                      {(() => {
+                        const badgeLabel =
+                          userData[creatorProfileUid]?.minuteFameTitle ||
+                          getMinuteFameTitleLabelFromPoints(0);
+                        const badgeIcon = getMinuteFameBadgeFromLabel(badgeLabel);
+                        if (!badgeIcon) return null;
+                        return (
+                          <View
+                            style={{
+                              marginTop: 10,
+                              minWidth: 40,
+                              height: 40,
+                              paddingHorizontal: 10,
+                              borderRadius: 999,
+                              backgroundColor: 'rgba(56, 189, 248, 0.16)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(56, 189, 248, 0.32)',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>
+                              {badgeIcon}
+                            </Text>
+                          </View>
+                        );
+                      })()}
+                      {!!userData[creatorProfileUid]?.bio && (
+                        <Text
+                          style={{
+                            color: 'rgba(255,255,255,0.72)',
+                            fontSize: 12,
+                            marginTop: 8,
+                            textAlign: 'center',
+                            fontStyle: 'italic',
+                          }}
+                        >
+                          {userData[creatorProfileUid]?.bio}
                         </Text>
-                      </View>
-                    )}
-                    {!!userData[creatorProfileUid]?.bio && (
-                      <Text
-                        style={{
-                          color: 'rgba(255,255,255,0.72)',
-                          fontSize: 12,
-                          marginTop: 8,
-                          textAlign: 'center',
-                          fontStyle: 'italic',
-                        }}
-                      >
-                        {userData[creatorProfileUid]?.bio}
-                      </Text>
-                    )}
+                      )}
+                    </Pressable>
                     <View
                       style={{
                         width: '100%',
@@ -21747,6 +21803,11 @@ type CommandCentreSection =
                 <Text style={[styles.logbookActionText, { fontSize: 18, marginTop: 8 }]}>
                   {t('creator.postsTitle')}
                 </Text>
+                <View
+                  onLayout={(event) => {
+                    setCreatorProfilePostsAnchorY(event.nativeEvent.layout.y);
+                  }}
+                />
                 <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4, marginBottom: 10 }}>
                   {t('creator.tapToOpen')}
                 </Text>
@@ -22553,14 +22614,8 @@ type CommandCentreSection =
                 <>
                   <View style={styles.threadHeaderCard}>
                     <View style={styles.threadHeaderTopRow}>
-                      <Pressable
-                        style={[styles.threadCallIconBtn, { backgroundColor: '#8D0000' }]}
-                        onPress={resetInboxView}
-                      >
-                        <Text style={styles.threadCallIconText}>←</Text>
-                      </Pressable>
                       <Text style={styles.threadHeaderTitle}>
-                        {String(selectedThread.senderName || '').replace(/\s+IJ$/, '')}
+                        {String(selectedThread.senderName || '')}
                       </Text>
                       <View style={styles.threadCallActionRow}>
                         <Pressable
@@ -22951,10 +23006,10 @@ type CommandCentreSection =
                     }}>
                       {selectedMessageForReply
                         ? t('thread.replyTo', {
-                            name: String(selectedThread.senderName || '').replace(/\s+IJ$/, ''),
+                            name: String(selectedThread.senderName || ''),
                           })
                         : t('thread.messageUser', {
-                            name: String(selectedThread.senderName || '').replace(/\s+IJ$/, ''),
+                            name: String(selectedThread.senderName || ''),
                           })}
                     </Text>
                     <Text
@@ -23400,7 +23455,7 @@ type CommandCentreSection =
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>{t('compose.makeVibesTitle')}</Text>
               <ScrollView>
-                <Pressable style={[styles.logbookAction, styles.makeWavesPrimaryAction]} onPress={() => { setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
+                <Pressable style={[styles.logbookAction, styles.makeWavesPrimaryAction]} onPress={() => { setReturnToMakeWaves(true); setShowMakeWaves(false); setShowUnifiedPostModal(true); }}
                   hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
                   pressRetentionOffset={{ top: 6, bottom: 6, left: 6, right: 6 }}
                   delayPressIn={0}
@@ -26494,6 +26549,7 @@ type CommandCentreSection =
                   setShowDeepSearch(false);
                   openCreatorProfile(targetUser.uid, targetUser.name);
                 }}
+                onOpenAvatarPreview={setZoomedProfilePic}
               /> 
             </React.Suspense> 
             <Pressable style={styles.closeBtn} onPress={() => setShowDeepSearch(false)}> 
@@ -28740,7 +28796,7 @@ type CommandCentreSection =
         </View>
       </Modal>
 
-      <DirectCallModal
+<DirectCallModal
         visible={
           !!activeDirectCall ||
           (!!outgoingDirectCall &&
@@ -28750,6 +28806,7 @@ type CommandCentreSection =
         call={activeDirectCall || outgoingDirectCall}
         role={activeDirectCallRole || (outgoingDirectCall ? 'caller' : null)}
         onEnd={endActiveDirectCall}
+        onConnected={stopCallRingback}
         styles={styles}
         bridge={bridge}
         dataSaver={dataSaver}
@@ -28874,6 +28931,7 @@ const DirectCallModal = ({
   call,
   role,
   onEnd,
+  onConnected,
   styles,
   bridge,
   dataSaver,
@@ -28883,6 +28941,7 @@ const DirectCallModal = ({
   call: DirectCallSession | null;
   role: 'caller' | 'callee' | null;
   onEnd: () => void;
+  onConnected?: () => void;
   styles: any;
   bridge: any;
   dataSaver: any;
@@ -28922,6 +28981,7 @@ const DirectCallModal = ({
   const [joinAttemptNonce, setJoinAttemptNonce] = useState(0);
   const autoRetryJoinTimerRef = useRef<any>(null);
   const autoRetryJoinCountRef = useRef(0);
+  const connectedOnceRef = useRef(false);
 
   const rtcUid = useMemo(() => {
     const source =
@@ -30009,6 +30069,17 @@ const LiveStreamModal = ({
       return null;
     }
   }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      connectedOnceRef.current = false;
+      return;
+    }
+    if (!connectedOnceRef.current && (isJoined || !!remoteUid)) {
+      connectedOnceRef.current = true;
+      onConnected?.();
+    }
+  }, [isJoined, onConnected, remoteUid, visible]);
   const cfg = (() => {
     try {
       return require('./liveConfig');
