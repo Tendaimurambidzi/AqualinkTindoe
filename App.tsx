@@ -478,6 +478,7 @@ type FleetSummary = {
   coverColor: string;
   photoURL?: string | null;
   visibility: 'open' | 'private';
+  allowBoarding: boolean;
   inviteCode: string;
   captainUid: string;
   captainName: string;
@@ -7946,6 +7947,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showLanguagePicker, setShowLanguagePicker] = useState<boolean>(false);
   const [showMinuteFame, setShowMinuteFame] = useState<boolean>(false);
   const [minuteFamePhase, setMinuteFamePhase] = useState<'home' | 'queue' | 'countdown' | 'live' | 'results'>('home');
+  const [minuteFameHomeView, setMinuteFameHomeView] = useState<'launch' | 'spotlight' | 'history'>('launch');
   const [minuteFameQueueSpot, setMinuteFameQueueSpot] = useState<number>(4);
   const [minuteFameSeconds, setMinuteFameSeconds] = useState<number>(10);
   const [minuteFameLiveSeconds, setMinuteFameLiveSeconds] = useState<number>(60);
@@ -8848,7 +8850,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showFleetDeck, setShowFleetDeck] = useState(false);
   const [fleetDeckName, setFleetDeckName] = useState('');
   const [fleetDeckDescription, setFleetDeckDescription] = useState('');
-  const [fleetDeckVisibility, setFleetDeckVisibility] = useState<'open' | 'private'>('open');
+  const [fleetDeckAllowBoarding, setFleetDeckAllowBoarding] = useState(true);
   const [fleetDeckMood, setFleetDeckMood] = useState('🦈');
   const [fleetDeckLoading, setFleetDeckLoading] = useState(false);
   const [fleetManagerExpandedId, setFleetManagerExpandedId] = useState<string | null>(null);
@@ -8856,8 +8858,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [fleetManageDrafts, setFleetManageDrafts] = useState<Record<string, {
     name: string;
     description: string;
-    visibility: 'open' | 'private';
     moodEmoji: string;
+    allowBoarding: boolean;
   }>>({});
   const [fleetMemberLoadingId, setFleetMemberLoadingId] = useState<string | null>(null);
   const [fleetActionLoadingId, setFleetActionLoadingId] = useState<string | null>(null);
@@ -12858,6 +12860,7 @@ type CommandCentreSection =
   const handleMinuteFame = useCallback(() => {
     showTopBar();
     setMinuteFamePhase('home');
+    setMinuteFameHomeView('launch');
     setMinuteFameQueueSpot(4);
     setMinuteFameSeconds(10);
     setMinuteFameLiveSeconds(60);
@@ -18779,6 +18782,7 @@ type CommandCentreSection =
             coverColor: String(doc.coverColor || '#0F4C81'),
             photoURL: doc.photoURL || null,
             visibility: doc.visibility === 'private' ? 'private' : 'open',
+            allowBoarding: doc.allowBoarding !== false,
             inviteCode: String(doc.inviteCode || '').trim(),
             captainUid: String(doc.captainUid || ''),
             captainName: String(doc.captainName || 'Captain'),
@@ -18814,7 +18818,6 @@ type CommandCentreSection =
 
       const directorySnapshot = await firestore()
         .collection('fleets')
-        .where('visibility', '==', 'open')
         .limit(30)
         .get();
       const directory = directorySnapshot.docs
@@ -18827,7 +18830,8 @@ type CommandCentreSection =
             moodEmoji: String(data.moodEmoji || '🦈'),
             coverColor: String(data.coverColor || '#0F4C81'),
             photoURL: data.photoURL || null,
-            visibility: 'open' as const,
+            visibility: data.visibility === 'private' ? 'private' : 'open',
+            allowBoarding: data.allowBoarding !== false,
             inviteCode: String(data.inviteCode || '').trim(),
             captainUid: String(data.captainUid || ''),
             captainName: String(data.captainName || 'Captain'),
@@ -19010,8 +19014,8 @@ type CommandCentreSection =
         [fleet.id]: {
           name: fleet.name,
           description: fleet.description || '',
-          visibility: fleet.visibility,
           moodEmoji: fleet.moodEmoji || '🦈',
+          allowBoarding: fleet.allowBoarding !== false,
         },
       }));
       await loadFleetMembers(fleet);
@@ -19037,9 +19041,10 @@ type CommandCentreSection =
           {
             name: nextName,
             description: draft.description.trim(),
-            visibility: draft.visibility,
+            visibility: 'open',
             moodEmoji: moodMeta.emoji,
             coverColor: moodMeta.color,
+            allowBoarding: draft.allowBoarding !== false,
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -19049,9 +19054,23 @@ type CommandCentreSection =
             fleetName: nextName,
             moodEmoji: moodMeta.emoji,
             coverColor: moodMeta.color,
-            visibility: draft.visibility,
+            visibility: 'open',
+            allowBoarding: draft.allowBoarding !== false,
           },
           { merge: true },
+        );
+        setSelectedFleetMeta(current =>
+          current?.id === fleet.id
+            ? {
+                ...current,
+                name: nextName,
+                description: draft.description.trim(),
+                moodEmoji: moodMeta.emoji,
+                coverColor: moodMeta.color,
+                allowBoarding: draft.allowBoarding !== false,
+                visibility: 'open',
+              }
+            : current,
         );
         await loadFleetThreads();
         notifySuccess('Fleet updated.');
@@ -19108,6 +19127,9 @@ type CommandCentreSection =
           },
           { merge: true },
         );
+        setSelectedFleetMeta(current =>
+          current?.id === fleet.id ? { ...current, photoURL } : current,
+        );
         await loadFleetThreads();
         notifySuccess('Fleet photo updated.');
       } catch (error) {
@@ -19118,6 +19140,64 @@ type CommandCentreSection =
       }
     },
     [ensureNetworkActionAllowed, loadFleetThreads, notifySuccess],
+  );
+
+  const copyTextToClipboard = useCallback((value: string, title: string) => {
+    const text = String(value || '').trim();
+    if (!text) return;
+    try {
+      const clipboardModule = require('@react-native-clipboard/clipboard');
+      const setString =
+        clipboardModule?.default?.setString || clipboardModule?.setString;
+      if (typeof setString === 'function') {
+        setString(text);
+        notifySuccess(`${title} copied.`);
+        return;
+      }
+    } catch {}
+    Alert.alert(title, text);
+  }, [notifySuccess]);
+
+  const shareFleetInvite = useCallback(async (fleet: FleetSummary) => {
+    try {
+      await Share.share({
+        title: `${fleet.name} invite`,
+        message: `${fleet.name}\nInvite code: ${fleet.inviteCode}\n${
+          fleet.allowBoarding ? 'Boarding is open.' : 'Ask the captain to approve boarding.'
+        }`,
+      });
+    } catch (error) {
+      console.error('Share fleet invite error:', error);
+      Alert.alert('Fleet Deck', 'We could not share that Fleet invite right now.');
+    }
+  }, []);
+
+  const setFleetBoarding = useCallback(
+    async (fleet: FleetSummary, allowBoarding: boolean) => {
+      if (fleet.role === 'crew') return;
+      try {
+        setFleetActionLoadingId(fleet.id);
+        await firestore().collection('fleets').doc(fleet.id).set(
+          {
+            allowBoarding,
+            visibility: 'open',
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        await loadFleetThreads();
+        setSelectedFleetMeta(current =>
+          current?.id === fleet.id ? { ...current, allowBoarding, visibility: 'open' } : current,
+        );
+        notifySuccess(allowBoarding ? 'Boarding opened.' : 'Boarding now needs an invite.');
+      } catch (error) {
+        console.error('Set fleet boarding error:', error);
+        Alert.alert('Fleet Deck', 'We could not update boarding right now.');
+      } finally {
+        setFleetActionLoadingId(current => (current === fleet.id ? null : current));
+      }
+    },
+    [loadFleetThreads, notifySuccess],
   );
 
   const updateFleetMemberRole = useCallback(
@@ -19300,6 +19380,66 @@ type CommandCentreSection =
     [],
   );
 
+  const openFleetQuickActions = useCallback(
+    (fleet: FleetSummary) => {
+      const actions: Array<{
+        text: string;
+        style?: 'cancel' | 'destructive';
+        onPress?: () => void;
+      }> = [
+        {
+          text: 'Open crew chat',
+          onPress: () => {
+            setShowFleetWaves(false);
+            void openFleetThread(fleet);
+          },
+        },
+        {
+          text: 'Post to Fleet',
+          onPress: () => openFleetComposer(fleet),
+        },
+        {
+          text: 'Share invite',
+          onPress: () => void shareFleetInvite(fleet),
+        },
+        {
+          text: 'Copy invite code',
+          onPress: () => copyTextToClipboard(fleet.inviteCode, 'Invite code'),
+        },
+      ];
+      if (fleet.role !== 'crew') {
+        actions.push({
+          text: fleet.allowBoarding ? 'Require invite to board' : 'Allow direct boarding',
+          onPress: () => void setFleetBoarding(fleet, !fleet.allowBoarding),
+        });
+        actions.push({
+          text: 'Edit Fleet header',
+          onPress: () => void toggleFleetManager(fleet),
+        });
+      }
+      actions.push({
+        text: 'Leave Fleet',
+        style: 'destructive',
+        onPress: () => void leaveFleet(fleet),
+      });
+      actions.push({ text: 'Cancel', style: 'cancel' });
+      Alert.alert(
+        fleet.name,
+        `${fleet.crewCount} crew • Code ${fleet.inviteCode}`,
+        actions,
+      );
+    },
+    [
+      copyTextToClipboard,
+      leaveFleet,
+      openFleetComposer,
+      openFleetThread,
+      setFleetBoarding,
+      shareFleetInvite,
+      toggleFleetManager,
+    ],
+  );
+
   const createFleet = useCallback(async () => {
     const user = auth().currentUser;
     if (!user) {
@@ -19328,7 +19468,8 @@ type CommandCentreSection =
         moodEmoji: moodMeta.emoji,
         coverColor: moodMeta.color,
         photoURL: null,
-        visibility: fleetDeckVisibility,
+        visibility: 'open',
+        allowBoarding: fleetDeckAllowBoarding,
         inviteCode,
         captainUid: user.uid,
         captainName,
@@ -19356,7 +19497,8 @@ type CommandCentreSection =
         moodEmoji: moodMeta.emoji,
         coverColor: moodMeta.color,
         role: 'captain',
-        visibility: fleetDeckVisibility,
+        visibility: 'open',
+        allowBoarding: fleetDeckAllowBoarding,
         inviteCode,
         joinedAt: firestore.FieldValue.serverTimestamp(),
         lastReadAt: firestore.FieldValue.serverTimestamp(),
@@ -19372,7 +19514,7 @@ type CommandCentreSection =
       await loadFleetThreads();
       setFleetDeckName('');
       setFleetDeckDescription('');
-      setFleetDeckVisibility('open');
+      setFleetDeckAllowBoarding(true);
       setFleetDeckMood('🦈');
       notifySuccess('Fleet launched.');
     } catch (error: any) {
@@ -19386,66 +19528,12 @@ type CommandCentreSection =
     fleetDeckDescription,
     fleetDeckMood,
     fleetDeckName,
-    fleetDeckVisibility,
+    fleetDeckAllowBoarding,
     loadFleetThreads,
     notifySuccess,
     profilePhoto,
     profileName,
   ]);
-
-  const joinFleet = useCallback(async (fleet: FleetSummary) => {
-    const user = auth().currentUser;
-    if (!user) {
-      Alert.alert('Sign in required', 'Please sign in to board this Fleet.');
-      return;
-    }
-    try {
-      const alreadyInFleet = myFleets.some(item => item.id === fleet.id);
-      if (alreadyInFleet) {
-        openFleetThread(fleet);
-        return;
-      }
-      const crewRef = firestore().collection('fleets').doc(fleet.id).collection('crew').doc(user.uid);
-      await crewRef.set({
-        uid: user.uid,
-        role: 'crew',
-        name: profileName || accountCreationHandle || auth().currentUser?.displayName || 'Crew',
-        photo: profilePhoto || auth().currentUser?.photoURL || null,
-        joinedAt: firestore.FieldValue.serverTimestamp(),
-        status: 'active',
-      });
-      await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).set({
-        fleetId: fleet.id,
-        fleetName: fleet.name,
-        moodEmoji: fleet.moodEmoji,
-        coverColor: fleet.coverColor,
-        role: 'crew',
-        visibility: fleet.visibility,
-        inviteCode: fleet.inviteCode,
-        joinedAt: firestore.FieldValue.serverTimestamp(),
-        lastReadAt: firestore.FieldValue.serverTimestamp(),
-      });
-      await firestore().collection('fleets').doc(fleet.id).set({
-        crewCount: firestore.FieldValue.increment(1),
-        lastActivityText: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet`,
-        lastActivityAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-      await firestore().collection('fleets').doc(fleet.id).collection('messages').add({
-        text: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet.`,
-        fromUid: user.uid,
-        fromName: profileName || accountCreationHandle || 'Crew',
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        type: 'system',
-        route: 'Fleet Deck',
-      });
-      await loadFleetThreads();
-      notifySuccess('You boarded the Fleet.');
-    } catch (error) {
-      console.error('Join fleet error:', error);
-      Alert.alert('Boarding failed', 'We could not join this Fleet right now.');
-    }
-  }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetThread, profileName, profilePhoto]);
 
   const leaveFleet = useCallback(async (fleet: FleetSummary | null) => {
     const user = auth().currentUser;
@@ -19585,6 +19673,72 @@ type CommandCentreSection =
       } catch {}
     };
   }, [selectedFleetMeta?.id, selectedFleetMeta?.name, showFleetWaves]);
+
+  const joinFleet = useCallback(async (fleet: FleetSummary) => {
+    const user = auth().currentUser;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to board this Fleet.');
+      return;
+    }
+    try {
+      const alreadyInFleet = myFleets.some(item => item.id === fleet.id);
+      if (alreadyInFleet) {
+        await openFleetWaves(fleet);
+        return;
+      }
+      if (fleet.allowBoarding === false) {
+        Alert.alert(
+          'Invite needed',
+          `${fleet.name} is visible to everyone, but direct boarding is off. Ask the captain for invite code ${fleet.inviteCode}.`,
+        );
+        return;
+      }
+      const crewRef = firestore().collection('fleets').doc(fleet.id).collection('crew').doc(user.uid);
+      await crewRef.set({
+        uid: user.uid,
+        role: 'crew',
+        name: profileName || accountCreationHandle || auth().currentUser?.displayName || 'Crew',
+        photo: profilePhoto || auth().currentUser?.photoURL || null,
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+        status: 'active',
+      });
+      await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).set({
+        fleetId: fleet.id,
+        fleetName: fleet.name,
+        moodEmoji: fleet.moodEmoji,
+        coverColor: fleet.coverColor,
+        role: 'crew',
+        visibility: fleet.visibility,
+        allowBoarding: fleet.allowBoarding !== false,
+        inviteCode: fleet.inviteCode,
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+        lastReadAt: firestore.FieldValue.serverTimestamp(),
+      });
+      await firestore().collection('fleets').doc(fleet.id).set({
+        crewCount: firestore.FieldValue.increment(1),
+        lastActivityText: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet`,
+        lastActivityAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      await firestore().collection('fleets').doc(fleet.id).collection('messages').add({
+        text: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet.`,
+        fromUid: user.uid,
+        fromName: profileName || accountCreationHandle || 'Crew',
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        type: 'system',
+        route: 'Fleet Deck',
+      });
+      await loadFleetThreads();
+      notifySuccess('You boarded the Fleet.');
+      await openFleetWaves({
+        ...fleet,
+        role: 'crew',
+      });
+    } catch (error) {
+      console.error('Join fleet error:', error);
+      Alert.alert('Boarding failed', 'We could not join this Fleet right now.');
+    }
+  }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetWaves, profileName, profilePhoto]);
 
   const handleFleetWaveHug = useCallback(async (wave: Vibe) => {
     if (localHuggedWaves.has(wave.id)) {
@@ -24814,7 +24968,7 @@ type CommandCentreSection =
             <ScrollView style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>FLEET DECK</Text>
               <Text style={{ color: 'rgba(255,255,255,0.72)', marginBottom: 12, textAlign: 'center' }}>
-                Start a Fleet, board open Fleets, and keep your Crew connected.
+                Start a Fleet, discover other Fleets, and keep your Crew connected.
               </Text>
 
               <View style={[styles.logbookAction, { gap: 10 }]}>
@@ -24854,20 +25008,24 @@ type CommandCentreSection =
                     </Pressable>
                   ))}
                 </ScrollView>
-                <View style={{ flexDirection: 'row', gap: 8 }}>
-                  <Pressable
-                    onPress={() => setFleetDeckVisibility('open')}
-                    style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: fleetDeckVisibility === 'open' ? '#0EA5E9' : 'rgba(255,255,255,0.08)' }}
-                  >
-                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Open Fleet</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => setFleetDeckVisibility('private')}
-                    style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: fleetDeckVisibility === 'private' ? '#0EA5E9' : 'rgba(255,255,255,0.08)' }}
-                  >
-                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Private Fleet</Text>
-                  </Pressable>
-                </View>
+                <Pressable
+                  onPress={() => setFleetDeckAllowBoarding(prev => !prev)}
+                  style={{
+                    borderRadius: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 12,
+                    backgroundColor: fleetDeckAllowBoarding ? 'rgba(14,165,233,0.18)' : 'rgba(255,255,255,0.08)',
+                    borderWidth: 1,
+                    borderColor: fleetDeckAllowBoarding ? 'rgba(125,211,252,0.6)' : 'rgba(255,255,255,0.14)',
+                  }}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                    {fleetDeckAllowBoarding ? 'Anyone can board this Fleet' : 'This Fleet needs an invite to board'}
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
+                    All Fleets stay discoverable. This only controls whether someone can board immediately.
+                  </Text>
+                </Pressable>
                 <Pressable
                   onPress={() => void createFleet()}
                   disabled={fleetDeckLoading}
@@ -24881,10 +25039,17 @@ type CommandCentreSection =
 
               <View style={[styles.logbookAction, { marginTop: 14, gap: 10 }]}>
                 <Text style={styles.logbookActionText}>My Fleets</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 12 }}>
+                  Tap a Fleet to open its posts. Crew options live inside the Fleet header.
+                </Text>
                 {myFleets.length === 0 ? (
                   <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No Fleets yet. Start one above.</Text>
                 ) : myFleets.map(fleet => (
-                  <View key={`my-fleet-${fleet.id}`} style={{ borderRadius: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                  <Pressable
+                    key={`my-fleet-${fleet.id}`}
+                    onPress={() => void openFleetWaves(fleet)}
+                    style={{ borderRadius: 14, padding: 12, backgroundColor: 'rgba(255,255,255,0.06)' }}
+                  >
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                       {fleet.photoURL ? (
                         <Image
@@ -24910,314 +25075,59 @@ type CommandCentreSection =
                           {fleet.name}
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
-                          {fleet.crewCount} crew • {fleet.role.replace(/_/g, ' ')} • Code: {fleet.inviteCode}
+                          {fleet.crewCount} crew • {fleet.role.replace(/_/g, ' ')} • {fleet.allowBoarding ? 'boarding open' : 'invite only'}
                         </Text>
                       </View>
+                      <Text style={{ color: 'rgba(255,255,255,0.44)', fontSize: 18, fontWeight: '900' }}>›</Text>
                     </View>
                     {!!fleet.description && (
                       <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 6 }}>
                         {fleet.description}
                       </Text>
                     )}
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                      <Pressable
-                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#B91C1C' }}
-                        onPress={() => openFleetComposer(fleet)}
-                      >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Post to Fleet</Text>
-                      </Pressable>
-                      <Pressable
-                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0EA5E9' }}
-                        onPress={() => {
-                          setShowFleetDeck(false);
-                          void openFleetThread(fleet);
-                        }}
-                      >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Open Fleet</Text>
-                      </Pressable>
-                      <Pressable
-                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
-                        onPress={() => void openFleetWaves(fleet)}
-                      >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Fleet Posts</Text>
-                      </Pressable>
-                      <Pressable
-                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)' }}
-                        onPress={() => void toggleFleetManager(fleet)}
-                      >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                          {fleetManagerExpandedId === fleet.id ? 'Hide Manage' : 'Manage Fleet'}
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        style={{ width: '100%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: 'rgba(185,28,28,0.88)' }}
-                        onPress={() => void leaveFleet(fleet)}
-                      >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Leave Fleet</Text>
-                      </Pressable>
-                    </View>
-                    {fleetManagerExpandedId === fleet.id && (
-                      <View
-                        style={{
-                          marginTop: 12,
-                          padding: 12,
-                          borderRadius: 12,
-                          backgroundColor: 'rgba(0,0,0,0.18)',
-                          borderWidth: 1,
-                          borderColor: 'rgba(255,255,255,0.1)',
-                        }}
-                      >
-                        <Text style={{ color: '#FECACA', fontSize: 13, fontWeight: '800', marginBottom: 10 }}>
-                          Fleet control
-                        </Text>
-                        <TextInput
-                          value={fleetManageDrafts[fleet.id]?.name || ''}
-                          onChangeText={value =>
-                            setFleetManageDrafts(prev => ({
-                              ...prev,
-                              [fleet.id]: {
-                                ...(prev[fleet.id] || {
-                                  name: fleet.name,
-                                  description: fleet.description,
-                                  visibility: fleet.visibility,
-                                  moodEmoji: fleet.moodEmoji,
-                                }),
-                                name: value,
-                              },
-                            }))
-                          }
-                          placeholder="Fleet name"
-                          placeholderTextColor="rgba(255,255,255,0.45)"
-                          editable={fleet.role !== 'crew'}
-                          style={{ color: '#FFF', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 }}
-                        />
-                        <TextInput
-                          value={fleetManageDrafts[fleet.id]?.description || ''}
-                          onChangeText={value =>
-                            setFleetManageDrafts(prev => ({
-                              ...prev,
-                              [fleet.id]: {
-                                ...(prev[fleet.id] || {
-                                  name: fleet.name,
-                                  description: fleet.description,
-                                  visibility: fleet.visibility,
-                                  moodEmoji: fleet.moodEmoji,
-                                }),
-                                description: value,
-                              },
-                            }))
-                          }
-                          placeholder="Fleet description"
-                          placeholderTextColor="rgba(255,255,255,0.45)"
-                          multiline
-                          editable={fleet.role !== 'crew'}
-                          style={{ color: '#FFF', minHeight: 74, marginTop: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: 'top' }}
-                        />
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 10 }}>
-                          {FLEET_MOODS.map(item => (
-                            <Pressable
-                              key={`manage-fleet-mood-${fleet.id}-${item.emoji}`}
-                              onPress={() =>
-                                setFleetManageDrafts(prev => ({
-                                  ...prev,
-                                  [fleet.id]: {
-                                    ...(prev[fleet.id] || {
-                                      name: fleet.name,
-                                      description: fleet.description,
-                                      visibility: fleet.visibility,
-                                      moodEmoji: fleet.moodEmoji,
-                                    }),
-                                    moodEmoji: item.emoji,
-                                  },
-                                }))
-                              }
-                              style={{
-                                width: 40,
-                                height: 40,
-                                borderRadius: 20,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor:
-                                  (fleetManageDrafts[fleet.id]?.moodEmoji || fleet.moodEmoji) === item.emoji
-                                    ? item.color
-                                    : 'rgba(255,255,255,0.08)',
-                                borderWidth: 1,
-                                borderColor:
-                                  (fleetManageDrafts[fleet.id]?.moodEmoji || fleet.moodEmoji) === item.emoji
-                                    ? '#FECACA'
-                                    : 'rgba(255,255,255,0.2)',
-                              }}
-                            >
-                              <Text style={{ fontSize: 20 }}>{item.emoji}</Text>
-                            </Pressable>
-                          ))}
-                        </ScrollView>
-                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                          <Pressable
-                            onPress={() =>
-                              setFleetManageDrafts(prev => ({
-                                ...prev,
-                                [fleet.id]: {
-                                  ...(prev[fleet.id] || {
-                                    name: fleet.name,
-                                    description: fleet.description,
-                                    visibility: fleet.visibility,
-                                    moodEmoji: fleet.moodEmoji,
-                                  }),
-                                  visibility: 'open',
-                                },
-                              }))
-                            }
-                            style={{
-                              flex: 1,
-                              borderRadius: 999,
-                              paddingVertical: 8,
-                              alignItems: 'center',
-                              backgroundColor:
-                                (fleetManageDrafts[fleet.id]?.visibility || fleet.visibility) === 'open'
-                                  ? '#0EA5E9'
-                                  : 'rgba(255,255,255,0.08)',
-                            }}
-                          >
-                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Open Fleet</Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() =>
-                              setFleetManageDrafts(prev => ({
-                                ...prev,
-                                [fleet.id]: {
-                                  ...(prev[fleet.id] || {
-                                    name: fleet.name,
-                                    description: fleet.description,
-                                    visibility: fleet.visibility,
-                                    moodEmoji: fleet.moodEmoji,
-                                  }),
-                                  visibility: 'private',
-                                },
-                              }))
-                            }
-                            style={{
-                              flex: 1,
-                              borderRadius: 999,
-                              paddingVertical: 8,
-                              alignItems: 'center',
-                              backgroundColor:
-                                (fleetManageDrafts[fleet.id]?.visibility || fleet.visibility) === 'private'
-                                  ? '#0EA5E9'
-                                  : 'rgba(255,255,255,0.08)',
-                            }}
-                          >
-                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Private Fleet</Text>
-                          </Pressable>
-                        </View>
-                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                          <Pressable
-                            style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#7C2D12' }}
-                            onPress={() => void updateFleetPhoto(fleet)}
-                            disabled={fleetActionLoadingId === fleet.id || fleet.role === 'crew'}
-                          >
-                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Fleet Photo</Text>
-                          </Pressable>
-                          <Pressable
-                            style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#991B1B' }}
-                            onPress={() => openFleetComposer(fleet)}
-                          >
-                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Post Media</Text>
-                          </Pressable>
-                          <Pressable
-                            style={{ width: '100%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
-                            onPress={() => void saveFleetSettings(fleet)}
-                            disabled={fleetActionLoadingId === fleet.id || fleet.role === 'crew'}
-                          >
-                            <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                              {fleetActionLoadingId === fleet.id ? 'Saving…' : 'Save Fleet Settings'}
-                            </Text>
-                          </Pressable>
-                        </View>
-                        {fleet.role === 'crew' ? (
-                          <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 8 }}>
-                            Only captains and co-captains can change Fleet settings.
-                          </Text>
-                        ) : null}
-                        <Text style={{ color: '#FECACA', fontSize: 12, fontWeight: '800', marginTop: 14, marginBottom: 8 }}>
-                          Crew roster
-                        </Text>
-                        {fleetMemberLoadingId === fleet.id ? (
-                          <Text style={{ color: 'rgba(255,255,255,0.65)' }}>Loading crew…</Text>
-                        ) : (fleetMembersByFleetId[fleet.id] || []).length === 0 ? (
-                          <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No crew members found yet.</Text>
-                        ) : (
-                          (fleetMembersByFleetId[fleet.id] || []).map(member => (
-                            <Pressable
-                              key={`fleet-member-${fleet.id}-${member.uid}`}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 10,
-                                paddingVertical: 8,
-                                borderTopWidth: 1,
-                                borderTopColor: 'rgba(255,255,255,0.08)',
-                              }}
-                              onPress={() => openFleetMemberActions(fleet, member)}
-                              disabled={fleetActionLoadingId === fleet.id}
-                            >
-                              {member.photo ? (
-                                <Image source={{ uri: member.photo }} style={{ width: 34, height: 34, borderRadius: 17 }} />
-                              ) : (
-                                <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}>
-                                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                                    {String(member.name || 'C').charAt(0).toUpperCase()}
-                                  </Text>
-                                </View>
-                              )}
-                              <View style={{ flex: 1 }}>
-                                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
-                                  {member.name}
-                                </Text>
-                                <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }}>
-                                  {member.role.replace(/_/g, ' ')}
-                                </Text>
-                              </View>
-                              {fleet.captainUid === myUid && member.uid !== fleet.captainUid ? (
-                                <Text style={{ color: '#FCA5A5', fontSize: 11, fontWeight: '800' }}>
-                                  Manage
-                                </Text>
-                              ) : null}
-                            </Pressable>
-                          ))
-                        )}
-                      </View>
-                    )}
-                  </View>
+                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12, marginTop: 8 }}>
+                      {fleet.lastWaveText || fleet.lastActivityText || 'Open to see Fleet posts and replies.'}
+                    </Text>
+                  </Pressable>
                 ))}
               </View>
 
               <View style={[styles.logbookAction, { marginTop: 14, gap: 10 }]}>
-                <Text style={styles.logbookActionText}>Open Fleets</Text>
+                <Text style={styles.logbookActionText}>Discover Fleets</Text>
                 {fleetDirectory.length === 0 ? (
-                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No open Fleets found right now.</Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No Fleets found right now.</Text>
                 ) : fleetDirectory.map(fleet => (
-                  <View key={`open-fleet-${fleet.id}`} style={{ borderRadius: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>
-                      {fleet.moodEmoji} {fleet.name}
-                    </Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
-                      Captained by {fleet.captainName} • {fleet.crewCount} crew
-                    </Text>
+                  <Pressable
+                    key={`open-fleet-${fleet.id}`}
+                    style={{ borderRadius: 14, padding: 12, backgroundColor: 'rgba(255,255,255,0.06)' }}
+                    onPress={() => void joinFleet(fleet)}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      {fleet.photoURL ? (
+                        <Image source={{ uri: fleet.photoURL }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+                      ) : (
+                        <View style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: fleet.coverColor || '#0F4C81' }}>
+                          <Text style={{ fontSize: 21 }}>{fleet.moodEmoji}</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>
+                          {fleet.name}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
+                          Captained by {fleet.captainName} • {fleet.crewCount} crew • {fleet.allowBoarding ? 'board now' : 'invite only'}
+                        </Text>
+                      </View>
+                      <Text style={{ color: '#8DD8FF', fontSize: 12, fontWeight: '900' }}>
+                        {fleet.allowBoarding ? 'BOARD' : 'INVITE'}
+                      </Text>
+                    </View>
                     {!!fleet.description && (
-                      <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 6 }}>
+                      <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 8 }}>
                         {fleet.description}
                       </Text>
                     )}
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                      <Pressable
-                        style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
-                        onPress={() => void joinFleet(fleet)}
-                      >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Board Fleet</Text>
-                      </Pressable>
-                    </View>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             </ScrollView>
@@ -25238,9 +25148,279 @@ type CommandCentreSection =
           <View style={[styles.logbookContainer, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.8, borderRadius: 12, overflow: 'hidden' }]}>
             {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
             <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>
-                {selectedFleetMeta ? `${selectedFleetMeta.moodEmoji} ${selectedFleetMeta.name}` : 'Fleet Waves'}
-              </Text>
+              <View
+                style={{
+                  borderRadius: 18,
+                  padding: 14,
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.08)',
+                  marginBottom: 12,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                  <Pressable
+                    onPress={() => {
+                      if (selectedFleetMeta?.photoURL) {
+                        setZoomedProfilePic(selectedFleetMeta.photoURL);
+                        return;
+                      }
+                      if (selectedFleetMeta && selectedFleetMeta.role !== 'crew') {
+                        void updateFleetPhoto(selectedFleetMeta);
+                      }
+                    }}
+                  >
+                    {selectedFleetMeta?.photoURL ? (
+                      <Image source={{ uri: selectedFleetMeta.photoURL }} style={{ width: 58, height: 58, borderRadius: 29 }} />
+                    ) : (
+                      <View style={{ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: selectedFleetMeta?.coverColor || '#0F4C81' }}>
+                        <Text style={{ fontSize: 28 }}>{selectedFleetMeta?.moodEmoji || '🦈'}</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.logbookTitle}>
+                      {selectedFleetMeta ? selectedFleetMeta.name : 'Fleet Waves'}
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 2 }}>
+                      {selectedFleetMeta
+                        ? `${selectedFleetMeta.crewCount} crew • ${selectedFleetMeta.allowBoarding ? 'boarding open' : 'invite only'} • code ${selectedFleetMeta.inviteCode}`
+                        : 'Fleet posts'}
+                    </Text>
+                  </View>
+                  {selectedFleetMeta ? (
+                    <Pressable
+                      style={{ paddingHorizontal: 10, paddingVertical: 8 }}
+                      onPress={() => openFleetQuickActions(selectedFleetMeta)}
+                    >
+                      <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '900' }}>•••</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+                {!!selectedFleetMeta?.description && (
+                  <Text style={{ color: 'rgba(255,255,255,0.78)', fontSize: 13, lineHeight: 19, marginTop: 10 }}>
+                    {selectedFleetMeta.description}
+                  </Text>
+                )}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
+                  <Pressable
+                    style={{ flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                    onPress={() => {
+                      if (!selectedFleetMeta) return;
+                      setShowFleetWaves(false);
+                      void openFleetThread(selectedFleetMeta);
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Crew Chat</Text>
+                  </Pressable>
+                  <Pressable
+                    style={{ flex: 1, borderRadius: 999, paddingVertical: 10, alignItems: 'center', backgroundColor: '#8D0000' }}
+                    onPress={() => selectedFleetMeta && openFleetComposer(selectedFleetMeta)}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Drop a Wave</Text>
+                  </Pressable>
+                </View>
+              </View>
+              {selectedFleetMeta && fleetManagerExpandedId === selectedFleetMeta.id ? (
+                <View
+                  style={{
+                    marginBottom: 12,
+                    padding: 12,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(0,0,0,0.18)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <Text style={{ color: '#FECACA', fontSize: 13, fontWeight: '800', marginBottom: 10 }}>
+                    Edit Fleet header
+                  </Text>
+                  <TextInput
+                    value={fleetManageDrafts[selectedFleetMeta.id]?.name || ''}
+                    onChangeText={value =>
+                      setFleetManageDrafts(prev => ({
+                        ...prev,
+                        [selectedFleetMeta.id]: {
+                          ...(prev[selectedFleetMeta.id] || {
+                            name: selectedFleetMeta.name,
+                            description: selectedFleetMeta.description,
+                            moodEmoji: selectedFleetMeta.moodEmoji,
+                            allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                          }),
+                          name: value,
+                        },
+                      }))
+                    }
+                    placeholder="Fleet name"
+                    placeholderTextColor="rgba(255,255,255,0.45)"
+                    editable={selectedFleetMeta.role !== 'crew'}
+                    style={{ color: '#FFF', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 }}
+                  />
+                  <TextInput
+                    value={fleetManageDrafts[selectedFleetMeta.id]?.description || ''}
+                    onChangeText={value =>
+                      setFleetManageDrafts(prev => ({
+                        ...prev,
+                        [selectedFleetMeta.id]: {
+                          ...(prev[selectedFleetMeta.id] || {
+                            name: selectedFleetMeta.name,
+                            description: selectedFleetMeta.description,
+                            moodEmoji: selectedFleetMeta.moodEmoji,
+                            allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                          }),
+                          description: value,
+                        },
+                      }))
+                    }
+                    placeholder="Fleet description"
+                    placeholderTextColor="rgba(255,255,255,0.45)"
+                    multiline
+                    editable={selectedFleetMeta.role !== 'crew'}
+                    style={{ color: '#FFF', minHeight: 74, marginTop: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: 'top' }}
+                  />
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 10 }}>
+                    {FLEET_MOODS.map(item => (
+                      <Pressable
+                        key={`manage-fleet-mood-${selectedFleetMeta.id}-${item.emoji}`}
+                        onPress={() =>
+                          setFleetManageDrafts(prev => ({
+                            ...prev,
+                            [selectedFleetMeta.id]: {
+                              ...(prev[selectedFleetMeta.id] || {
+                                name: selectedFleetMeta.name,
+                                description: selectedFleetMeta.description,
+                                moodEmoji: selectedFleetMeta.moodEmoji,
+                                allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                              }),
+                              moodEmoji: item.emoji,
+                            },
+                          }))
+                        }
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 20,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor:
+                            (fleetManageDrafts[selectedFleetMeta.id]?.moodEmoji || selectedFleetMeta.moodEmoji) === item.emoji
+                              ? item.color
+                              : 'rgba(255,255,255,0.08)',
+                          borderWidth: 1,
+                          borderColor:
+                            (fleetManageDrafts[selectedFleetMeta.id]?.moodEmoji || selectedFleetMeta.moodEmoji) === item.emoji
+                              ? '#FECACA'
+                              : 'rgba(255,255,255,0.2)',
+                        }}
+                      >
+                        <Text style={{ fontSize: 20 }}>{item.emoji}</Text>
+                      </Pressable>
+                    ))}
+                  </ScrollView>
+                  <Pressable
+                    onPress={() =>
+                      setFleetManageDrafts(prev => ({
+                        ...prev,
+                        [selectedFleetMeta.id]: {
+                          ...(prev[selectedFleetMeta.id] || {
+                            name: selectedFleetMeta.name,
+                            description: selectedFleetMeta.description,
+                            moodEmoji: selectedFleetMeta.moodEmoji,
+                            allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                          }),
+                          allowBoarding: !(prev[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding),
+                        },
+                      }))
+                    }
+                    style={{
+                      marginTop: 10,
+                      borderRadius: 12,
+                      paddingHorizontal: 12,
+                      paddingVertical: 12,
+                      backgroundColor:
+                        (fleetManageDrafts[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding)
+                          ? 'rgba(14,165,233,0.18)'
+                          : 'rgba(255,255,255,0.08)',
+                      borderWidth: 1,
+                      borderColor:
+                        (fleetManageDrafts[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding)
+                          ? 'rgba(125,211,252,0.6)'
+                          : 'rgba(255,255,255,0.12)',
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                      {(fleetManageDrafts[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding)
+                        ? 'Anyone can board this Fleet'
+                        : 'This Fleet needs an invite to board'}
+                    </Text>
+                  </Pressable>
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    <Pressable
+                      style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#7C2D12' }}
+                      onPress={() => void updateFleetPhoto(selectedFleetMeta)}
+                      disabled={fleetActionLoadingId === selectedFleetMeta.id || selectedFleetMeta.role === 'crew'}
+                    >
+                      <Text style={{ color: '#FFF', fontWeight: '800' }}>Change Photo</Text>
+                    </Pressable>
+                    <Pressable
+                      style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                      onPress={() => void saveFleetSettings(selectedFleetMeta)}
+                      disabled={fleetActionLoadingId === selectedFleetMeta.id || selectedFleetMeta.role === 'crew'}
+                    >
+                      <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                        {fleetActionLoadingId === selectedFleetMeta.id ? 'Saving…' : 'Save Header'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  <Text style={{ color: '#FECACA', fontSize: 12, fontWeight: '800', marginTop: 14, marginBottom: 8 }}>
+                    Crew roster
+                  </Text>
+                  {fleetMemberLoadingId === selectedFleetMeta.id ? (
+                    <Text style={{ color: 'rgba(255,255,255,0.65)' }}>Loading crew…</Text>
+                  ) : (fleetMembersByFleetId[selectedFleetMeta.id] || []).length === 0 ? (
+                    <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No crew members found yet.</Text>
+                  ) : (
+                    (fleetMembersByFleetId[selectedFleetMeta.id] || []).map(member => (
+                      <Pressable
+                        key={`fleet-member-${selectedFleetMeta.id}-${member.uid}`}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 10,
+                          paddingVertical: 8,
+                          borderTopWidth: 1,
+                          borderTopColor: 'rgba(255,255,255,0.08)',
+                        }}
+                        onPress={() => openFleetMemberActions(selectedFleetMeta, member)}
+                        disabled={fleetActionLoadingId === selectedFleetMeta.id}
+                      >
+                        {member.photo ? (
+                          <Image source={{ uri: member.photo }} style={{ width: 34, height: 34, borderRadius: 17 }} />
+                        ) : (
+                          <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}>
+                            <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                              {String(member.name || 'C').charAt(0).toUpperCase()}
+                            </Text>
+                          </View>
+                        )}
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                            {member.name}
+                          </Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }}>
+                            {member.role.replace(/_/g, ' ')}
+                          </Text>
+                        </View>
+                        {selectedFleetMeta.captainUid === myUid && member.uid !== selectedFleetMeta.captainUid ? (
+                          <Text style={{ color: '#FCA5A5', fontSize: 11, fontWeight: '800' }}>
+                            Manage
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    ))
+                  )}
+                </View>
+              ) : null}
               <ScrollView>
                 {selectedFleetWaves.length === 0 ? (
                   <Text style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 20 }}>
@@ -26820,9 +27000,32 @@ type CommandCentreSection =
                   </Pressable>
                 ))}
               </View>
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+                {([
+                  { key: 'launch', label: 'Launch' },
+                  { key: 'spotlight', label: 'Spotlight' },
+                  { key: 'history', label: 'History' },
+                ] as const).map(item => (
+                  <Pressable
+                    key={item.key}
+                    style={{
+                      flex: 1,
+                      borderRadius: 999,
+                      paddingVertical: 10,
+                      alignItems: 'center',
+                      backgroundColor: minuteFameHomeView === item.key ? '#8D0000' : '#133047',
+                    }}
+                    onPress={() => setMinuteFameHomeView(item.key)}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>{item.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
 
               {minuteFamePhase === 'home' ? (
                 <View style={{ marginTop: 16, gap: 12 }}>
+                  {minuteFameHomeView === 'launch' ? (
+                    <>
                   <View
                     style={[
                       styles.logbookAction,
@@ -26964,6 +27167,24 @@ type CommandCentreSection =
                       <Pressable
                         style={[
                           styles.toolButton,
+                          { flex: 1, minHeight: 58, backgroundColor: '#8D0000' },
+                        ]}
+                        disabled={!minuteFameSelectedWaveId}
+                        onPress={() => {
+                          minuteFameSessionStartedRef.current = false;
+                          setMinuteFameMode('queue');
+                          setMinuteFameQueueSpot(4);
+                          setMinuteFameSeconds(10);
+                          setMinuteFameLiveSeconds(60);
+                          setMinuteFamePhase('queue');
+                        }}
+                      >
+                        <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Start My Minute</Text>
+                        <Text style={[styles.toolButtonHint, { color: '#FFD7D7' }]}>Full queue with a full minute of reach</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.toolButton,
                           { flex: 1, minHeight: 56, backgroundColor: '#0EA5D9' },
                         ]}
                         onPress={() => shareMinuteFameCard()}
@@ -27006,53 +27227,48 @@ type CommandCentreSection =
                       ))
                     )}
                   </View>
-                  <View style={styles.toolGrid}>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
                     <Pressable
-                      style={[styles.toolButton, { backgroundColor: '#8D0000' }]}
-                      disabled={!minuteFameSelectedWaveId}
+                      style={[styles.toolButton, { flex: 1, backgroundColor: '#133047' }]}
                       onPress={() => {
-                        minuteFameSessionStartedRef.current = false;
-                        setMinuteFameMode('queue');
-                        setMinuteFameQueueSpot(4);
-                        setMinuteFameSeconds(10);
-                        setMinuteFameLiveSeconds(60);
-                        setMinuteFamePhase('queue');
+                        Alert.alert(
+                          'More modes',
+                          'Choose a faster launch style for this post.',
+                          [
+                            {
+                              text: 'Silent Fame',
+                              onPress: () => {
+                                minuteFameSessionStartedRef.current = false;
+                                setMinuteFameMode('silent');
+                                setMinuteFameQueueSpot(2);
+                                setMinuteFameSeconds(5);
+                                setMinuteFameLiveSeconds(60);
+                                setMinuteFamePhase('queue');
+                              },
+                            },
+                            {
+                              text: 'Flash Fame',
+                              onPress: () => {
+                                minuteFameSessionStartedRef.current = false;
+                                setMinuteFameMode('flash');
+                                setMinuteFameQueueSpot(2);
+                                setMinuteFameSeconds(5);
+                                setMinuteFameLiveSeconds(30);
+                                setMinuteFamePhase('queue');
+                              },
+                            },
+                            { text: 'Cancel', style: 'cancel' },
+                          ],
+                        );
                       }}
                     >
-                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Join Fame Queue</Text>
-                      <Text style={[styles.toolButtonHint, { color: '#FFD7D7' }]}>Wait in line for a full minute</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.toolButton, { backgroundColor: '#0EA5D9' }]}
-                      disabled={!minuteFameSelectedWaveId}
-                      onPress={() => {
-                        minuteFameSessionStartedRef.current = false;
-                        setMinuteFameMode('silent');
-                        setMinuteFameQueueSpot(2);
-                        setMinuteFameSeconds(5);
-                        setMinuteFameLiveSeconds(60);
-                        setMinuteFamePhase('queue');
-                      }}
-                    >
-                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Silent Fame</Text>
-                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>A surprise push without noise</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.toolButton, { backgroundColor: '#133047' }]}
-                      disabled={!minuteFameSelectedWaveId}
-                      onPress={() => {
-                        minuteFameSessionStartedRef.current = false;
-                        setMinuteFameMode('flash');
-                        setMinuteFameQueueSpot(2);
-                        setMinuteFameSeconds(5);
-                        setMinuteFameLiveSeconds(30);
-                        setMinuteFamePhase('queue');
-                      }}
-                    >
-                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Flash Fame</Text>
-                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>30 seconds of faster reach</Text>
+                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>More Modes</Text>
+                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Silent Fame and Flash Fame live here</Text>
                     </Pressable>
                   </View>
+                  </>
+                  ) : null}
+                  {minuteFameHomeView === 'spotlight' ? (
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
                     <Text style={styles.sectionHeader}>Today's Stars</Text>
                     <Text style={styles.sectionSubtle}>Top category: {minuteFameCategory}</Text>
@@ -27158,7 +27374,8 @@ type CommandCentreSection =
                       </View>
                     )}
                   </View>
-
+                  ) : null}
+                  {minuteFameHomeView === 'history' ? (
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
                     <Text style={styles.sectionHeader}>Fame History</Text>
                     {minuteFameHistory.length === 0 ? (
@@ -27194,6 +27411,7 @@ type CommandCentreSection =
                       ))
                     )}
                   </View>
+                  ) : null}
                 </View>
               ) : null}
 

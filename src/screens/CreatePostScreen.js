@@ -54,10 +54,17 @@ var react_1 = __importDefault(require("react"));
 var react_native_1 = require("react-native");
 var react_native_image_picker_1 = require("react-native-image-picker");
 var CreatePostScreen = function (_a) {
-    var _b, _c;
+    var _b, _c, _d;
     var navigation = _a.navigation, route = _a.route;
     var setCapturedMedia = (_b = route === null || route === void 0 ? void 0 : route.params) === null || _b === void 0 ? void 0 : _b.setCapturedMedia;
     var handleSDCardPicker = (_c = route === null || route === void 0 ? void 0 : route.params) === null || _c === void 0 ? void 0 : _c.handleSDCardPicker;
+    var onBackToMakeWaves = (_d = route === null || route === void 0 ? void 0 : route.params) === null || _d === void 0 ? void 0 : _d.onBackToMakeWaves;
+    var handleBack = function () {
+        if (typeof onBackToMakeWaves === 'function') {
+            onBackToMakeWaves();
+        }
+        navigation.goBack();
+    };
     var pickerOptions = {
         mediaType: 'mixed',
         selectionLimit: 1,
@@ -84,7 +91,7 @@ var CreatePostScreen = function (_a) {
                     asset = (_a = result.assets) === null || _a === void 0 ? void 0 : _a[0];
                     if ((asset === null || asset === void 0 ? void 0 : asset.uri) && setCapturedMedia) {
                         setCapturedMedia(asset);
-                        navigation.goBack();
+                        handleBack();
                     }
                     return [3 /*break*/, 3];
                 case 2:
@@ -114,7 +121,7 @@ var CreatePostScreen = function (_a) {
                     asset = (_a = result.assets) === null || _a === void 0 ? void 0 : _a[0];
                     if ((asset === null || asset === void 0 ? void 0 : asset.uri) && setCapturedMedia) {
                         setCapturedMedia(asset);
-                        navigation.goBack();
+                        handleBack();
                     }
                     return [3 /*break*/, 3];
                 case 2:
@@ -133,7 +140,7 @@ var CreatePostScreen = function (_a) {
                     return [4 /*yield*/, handleSDCardPicker()];
                 case 1:
                     _a.sent();
-                    navigation.goBack();
+                    handleBack();
                     _a.label = 2;
                 case 2: return [2 /*return*/];
             }
@@ -157,8 +164,8 @@ var CreatePostScreen = function (_a) {
         <react_native_1.Text style={styles.label}>SD Card</react_native_1.Text>
       </react_native_1.Pressable>
 
-      <react_native_1.Pressable style={styles.cancelButton} onPress={function () { return navigation.goBack(); }}>
-        <react_native_1.Text style={styles.cancelText}>Cancel</react_native_1.Text>
+      <react_native_1.Pressable style={styles.cancelButton} onPress={handleBack}>
+        <react_native_1.Text style={styles.cancelText}>Back</react_native_1.Text>
       </react_native_1.Pressable>
     </react_native_1.View>);
 };

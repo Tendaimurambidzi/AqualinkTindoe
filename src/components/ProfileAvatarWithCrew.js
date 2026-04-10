@@ -46,8 +46,9 @@ var ProfileAvatarWithCrew = function (_a) {
     var _f = (0, react_1.useState)(true), loading = _f[0], setLoading = _f[1];
     var _g = (0, react_1.useState)(false), showModal = _g[0], setShowModal = _g[1];
     var _h = (0, react_1.useState)(Date.now()), cacheBustKey = _h[0], setCacheBustKey = _h[1];
-    var _j = (0, react_1.useState)(0), crewCount = _j[0], setCrewCount = _j[1];
-    var _k = (0, react_1.useState)(0), fleetCount = _k[0], setFleetCount = _k[1];
+    var _j = (0, react_1.useState)(false), imageFailed = _j[0], setImageFailed = _j[1];
+    var _k = (0, react_1.useState)(0), crewCount = _k[0], setCrewCount = _k[1];
+    var _l = (0, react_1.useState)(0), fleetCount = _l[0], setFleetCount = _l[1];
     // Debug logging for state changes
     (0, react_1.useEffect)(function () {
         console.log("[DEBUG] ProfileAvatarWithCrew fleetCount changed to ".concat(fleetCount, " for user ").concat(userId));
@@ -75,6 +76,7 @@ var ProfileAvatarWithCrew = function (_a) {
                     hasData: !!newUserData
                 });
                 setUserData(newUserData);
+                setImageFailed(false);
                 // Update cache-busting key when photoURL changes
                 var newPhotoURL = (newUserData === null || newUserData === void 0 ? void 0 : newUserData.photoURL) || (newUserData === null || newUserData === void 0 ? void 0 : newUserData.userPhoto);
                 var currentPhotoURL = (userData === null || userData === void 0 ? void 0 : userData.photoURL) || (userData === null || userData === void 0 ? void 0 : userData.userPhoto);
@@ -128,7 +130,11 @@ var ProfileAvatarWithCrew = function (_a) {
         {showFleetCount && (<react_native_1.Text style={styles.fleetText}>Fleet: ...</react_native_1.Text>)}
       </react_native_1.View>);
     }
-    var photoURL = (userData === null || userData === void 0 ? void 0 : userData.photoURL) || (userData === null || userData === void 0 ? void 0 : userData.userPhoto) || 'https://via.placeholder.com/50';
+    var photoURL = (userData === null || userData === void 0 ? void 0 : userData.photoURL) ||
+        (userData === null || userData === void 0 ? void 0 : userData.userPhoto) ||
+        (userData === null || userData === void 0 ? void 0 : userData.avatar) ||
+        (userData === null || userData === void 0 ? void 0 : userData.profilePicture) ||
+        'https://via.placeholder.com/50';
     // Use stable cache-busting key that only updates when photoURL actually changes
     var photoURLWithCacheBust = photoURL && !photoURL.includes('via.placeholder.com')
         ? "".concat(photoURL, "?t=").concat(cacheBustKey)
@@ -170,7 +176,7 @@ var ProfileAvatarWithCrew = function (_a) {
                 },
             ];
         }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          {photoURLWithCacheBust ? (<react_native_1.Image source={{ uri: photoURLWithCacheBust }} style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}/>) : (<react_native_1.View style={[
+          {photoURLWithCacheBust && !imageFailed ? (<react_native_1.Image source={{ uri: photoURLWithCacheBust }} style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]} onError={function () { return setImageFailed(true); }}/>) : (<react_native_1.View style={[
                 styles.avatar,
                 {
                     width: size,
@@ -209,7 +215,7 @@ var ProfileAvatarWithCrew = function (_a) {
 
           {/* Image or initials in modal */}
           <react_native_1.Pressable style={styles.modalContent} onPress={function () { return setShowModal(false); }} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-            {photoURLWithCacheBust ? (<react_native_1.Image source={{ uri: photoURLWithCacheBust }} style={styles.fullSizeImage} resizeMode="contain"/>) : (<react_native_1.View style={{
+            {photoURLWithCacheBust && !imageFailed ? (<react_native_1.Image source={{ uri: photoURLWithCacheBust }} style={styles.fullSizeImage} resizeMode="contain" onError={function () { return setImageFailed(true); }}/>) : (<react_native_1.View style={{
                 width: '100%',
                 height: '100%',
                 justifyContent: 'center',

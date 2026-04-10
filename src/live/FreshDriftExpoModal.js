@@ -348,6 +348,7 @@ var FreshDriftExpoModal = function (_a) {
     var _34 = (0, react_1.useState)(0), screenShareOwnerRtcUid = _34[0], setScreenShareOwnerRtcUid = _34[1];
     var _35 = (0, react_1.useState)(false), screenShareStarting = _35[0], setScreenShareStarting = _35[1];
     var _36 = (0, react_1.useState)(false), localScreenShareActive = _36[0], setLocalScreenShareActive = _36[1];
+    var allowPremiumScreenShare = false;
     var _37 = (0, react_1.useState)(null), pdfLocalPath = _37[0], setPdfLocalPath = _37[1];
     var _38 = (0, react_1.useState)(0), pdfPageCount = _38[0], setPdfPageCount = _38[1];
     var _39 = (0, react_1.useState)(0), pdfPageIndex = _39[0], setPdfPageIndex = _39[1];
@@ -1321,6 +1322,9 @@ var FreshDriftExpoModal = function (_a) {
         return __generator(this, function (_h) {
             switch (_h.label) {
                 case 0:
+                    if (!allowPremiumScreenShare) {
+                        return [2 /*return*/];
+                    }
                     engine = engineRef.current;
                     try {
                         (_a = engine === null || engine === void 0 ? void 0 : engine.stopScreenCapture) === null || _a === void 0 ? void 0 : _a.call(engine);
@@ -1362,13 +1366,25 @@ var FreshDriftExpoModal = function (_a) {
                     return [2 /*return*/];
             }
         });
-    }); }, [Agora === null || Agora === void 0 ? void 0 : Agora.VideoSourceType, activeDoc, cameraOff, isCurrentUserScreenSharer, micMuted, syncScreenShareRoomState]);
+    }); }, [
+        Agora === null || Agora === void 0 ? void 0 : Agora.VideoSourceType,
+        activeDoc,
+        allowPremiumScreenShare,
+        cameraOff,
+        isCurrentUserScreenSharer,
+        micMuted,
+        syncScreenShareRoomState,
+    ]);
     var startScreenShare = (0, react_1.useCallback)(function () { return __awaiter(void 0, void 0, void 0, function () {
         var engine, projectionResult, parsedProjectionResult, captureResult, error_3;
         var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
         return __generator(this, function (_o) {
             switch (_o.label) {
                 case 0:
+                    if (!allowPremiumScreenShare) {
+                        react_native_1.Alert.alert('Screen share disabled', 'Screen sharing has been removed from Aqua Premium. Use Share Files instead.');
+                        return [2 /*return*/];
+                    }
                     if (!isPremiumRoom || !joined)
                         return [2 /*return*/];
                     if (react_native_1.Platform.OS !== 'android') {
@@ -2279,7 +2295,7 @@ var FreshDriftExpoModal = function (_a) {
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    if (screenShareActive) {
+                    if (allowPremiumScreenShare && screenShareActive) {
                         react_native_1.Alert.alert('Stop screen sharing first', 'End the live screen share before starting the in-room file presenter.');
                         return [2 /*return*/];
                     }
@@ -2345,6 +2361,7 @@ var FreshDriftExpoModal = function (_a) {
             }
         });
     }); }, [
+        allowPremiumScreenShare,
         currentSharedDocId,
         currentSharedDocStage,
         ensureParticipantPresenceForShare,
@@ -4519,21 +4536,31 @@ var FreshDriftExpoModal = function (_a) {
     var visibleRemoteVideoUids = (0, react_1.useMemo)(function () {
         var limit = Math.max(1, MAX_VISIBLE_PREMIUM_GALLERY_TILES - 1);
         var visible = prioritizedRemoteRenderUids.slice(0, limit);
-        if (screenShareOwnerRtcUid > 0 && !visible.includes(screenShareOwnerRtcUid)) {
+        if (allowPremiumScreenShare &&
+            screenShareOwnerRtcUid > 0 &&
+            !visible.includes(screenShareOwnerRtcUid)) {
             return __spreadArray(__spreadArray([], visible, true), [screenShareOwnerRtcUid], false);
         }
         return visible;
-    }, [prioritizedRemoteRenderUids, screenShareOwnerRtcUid]);
+    }, [allowPremiumScreenShare, prioritizedRemoteRenderUids, screenShareOwnerRtcUid]);
     var premiumGalleryTiles = (0, react_1.useMemo)(function () {
         var remoteTiles = prioritizedRemoteRenderUids.map(function (uid) { return ({ kind: 'remote', uid: uid }); });
         var localTile = { kind: 'local', uid: myRtcUid || 0 };
         return __spreadArray(__spreadArray([], remoteTiles, true), [localTile], false);
     }, [myRtcUid, prioritizedRemoteRenderUids]);
     var screenShareStageVisible = (0, react_1.useMemo)(function () {
-        return !!(isPremiumRoom &&
+        return !!(allowPremiumScreenShare &&
+            isPremiumRoom &&
             ((screenShareActive && screenShareRenderRtcUid > 0) ||
                 (localScreenShareActive && isCurrentUserScreenSharer)));
-    }, [isCurrentUserScreenSharer, isPremiumRoom, localScreenShareActive, screenShareActive, screenShareRenderRtcUid]);
+    }, [
+        allowPremiumScreenShare,
+        isCurrentUserScreenSharer,
+        isPremiumRoom,
+        localScreenShareActive,
+        screenShareActive,
+        screenShareRenderRtcUid,
+    ]);
     var sharedFileStageVisible = (0, react_1.useMemo)(function () {
         return !!(isPremiumRoom &&
             !activeDoc &&
@@ -4556,7 +4583,7 @@ var FreshDriftExpoModal = function (_a) {
             return 0;
         return prioritizedRemoteRenderUids.find(function (uid) { return uid !== screenShareRenderRtcUid; }) || 0;
     }, [prioritizedRemoteRenderUids, screenShareRenderRtcUid, screenShareStageVisible]);
-    var localScreenShareStageVisible = (0, react_1.useMemo)(function () { return !!(isPremiumRoom && (screenShareStarting || localScreenShareActive)); }, [isPremiumRoom, localScreenShareActive, screenShareStarting]);
+    var localScreenShareStageVisible = (0, react_1.useMemo)(function () { return !!(allowPremiumScreenShare && isPremiumRoom && (screenShareStarting || localScreenShareActive)); }, [allowPremiumScreenShare, isPremiumRoom, localScreenShareActive, screenShareStarting]);
     var renderPremiumGallery = (0, react_1.useCallback)(function () {
         var visibleTiles = premiumGalleryTiles.slice(0, MAX_VISIBLE_PREMIUM_GALLERY_TILES);
         var hiddenCount = Math.max(0, premiumGalleryTiles.length - visibleTiles.length);
@@ -4890,22 +4917,7 @@ var FreshDriftExpoModal = function (_a) {
                 }}>
                     <react_native_1.Text style={styles.railIcon}>Share Files</react_native_1.Text>
                   </react_native_1.Pressable>) : null}
-                {isPremiumRoom ? (<react_native_1.Pressable style={styles.railButton} onPress={function () {
-                    if (isCurrentUserScreenSharer) {
-                        void stopScreenShare();
-                    }
-                    else {
-                        void startScreenShare();
-                    }
-                }}>
-                    <react_native_1.Text style={styles.railIcon}>
-                      {screenShareStarting
-                    ? 'Starting...'
-                    : isCurrentUserScreenSharer
-                        ? 'Stop Share'
-                        : 'Share Screen'}
-                    </react_native_1.Text>
-                  </react_native_1.Pressable>) : null}
+                {null}
               </react_native_1.View>
               {soundBadgeLabel && !isPremiumRoom ? (<react_native_1.View style={styles.soundBadge}>
                   <react_native_1.Text style={styles.soundBadgeText}>{soundBadgeLabel}</react_native_1.Text>
