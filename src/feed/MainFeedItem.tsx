@@ -1131,21 +1131,15 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   </Pressable>
                 )}
 
-                {/* Profile Avatar */}
+                {/* Profile Header */}
                 <Pressable
-                  onPress={handleAvatarPress}
+                  onPress={handleProfilePress}
                   onLongPress={handleAvatarLongPress}
                   delayLongPress={320}
-                  style={({ pressed }) => [
-                    pressed && {
-                      opacity: 0.8,
-                      transform: [{ scale: 0.95 }],
-                    }
-                  ]}
+                  style={{ alignItems: 'center', flex: 1 }}
                   hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
                   delayPressIn={0}
                   delayPressOut={0}
-                  activeOpacity={0.7}
                   android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
                 >
                   <ProfileAvatarWithCrew
@@ -1156,17 +1150,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     showFleetCount={false}
                     optimisticCrewCount={optimisticCrewCounts[item.ownerUid!]}
                   />
-                </Pressable>
-              </View>
-
-              {/* Username and Bio directly under avatar */}
-              <Text style={{
-                fontWeight: '700',
-                fontSize: ui.type.title,
-                color: ui.colors.heading,
-                textAlign: 'center',
-                marginBottom: 2
-              }}>
+                  <Text style={{
+                    fontWeight: '700',
+                    fontSize: ui.type.title,
+                    color: ui.colors.heading,
+                    textAlign: 'center',
+                    marginTop: 8,
+                    marginBottom: 2
+                  }}>
                 {(() => {
                   const isCurrentUserPost = item.ownerUid === myUid;
                   if (isCurrentUserPost) {
@@ -1176,7 +1167,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                   const displayName = userInfo?.name || item.authorName || 'User';
                   return displayName;
                 })()}
-              </Text>
+                  </Text>
               {(() => {
                 const isCurrentUserPost = item.ownerUid === myUid;
                 const titleToShow = isCurrentUserPost
@@ -1198,31 +1189,16 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     ? '🦈'
                     : String(titleToShow || '').trim().split(/\s+/)[0] || '';
                 return badgeToShow ? (
-                  <View
+                  <Text
                     style={{
-                      alignSelf: 'center',
+                      color: '#FFFFFF',
+                      fontSize: 17,
+                      fontWeight: '900',
                       marginBottom: 4,
-                      minWidth: 30,
-                      height: 30,
-                      paddingHorizontal: 8,
-                      borderRadius: 999,
-                      backgroundColor: 'rgba(56, 189, 248, 0.16)',
-                      borderWidth: 1,
-                      borderColor: 'rgba(56, 189, 248, 0.32)',
-                      alignItems: 'center',
-                      justifyContent: 'center',
                     }}
                   >
-                    <Text
-                      style={{
-                        color: '#FFFFFF',
-                        fontSize: 15,
-                        fontWeight: '900',
-                      }}
-                    >
-                      {badgeToShow}
-                    </Text>
-                  </View>
+                    {badgeToShow}
+                  </Text>
                 ) : null;
               })()}
               {(() => {
@@ -1248,6 +1224,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               }}>
                 {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || null)}
               </Text>
+                </Pressable>
+              </View>
             </Pressable>
           </View>
 
@@ -2171,10 +2149,16 @@ const styles = StyleSheet.create({
   },
   centeredHeader: {
     alignItems: 'center',
+    width: '100%',
+    minHeight: 118,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
     marginBottom: ui.spacing.sm,
   },
   joinButton: {

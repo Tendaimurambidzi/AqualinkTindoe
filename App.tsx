@@ -429,6 +429,13 @@ const LOCAL_HUGGED_WAVES_KEY_PREFIX = 'local_hugged_waves_';
 const LOCAL_HUGS_MADE_KEY_PREFIX = 'local_hugs_made_';
 const ADVENTURE_QUICK_TOPICS = ['travel ideas', 'tech trends', 'business insights', 'nearby events'];
 const STUDY_QUICK_TOPICS = ['mathematics', 'science', 'history', 'english grammar'];
+const FLEET_MOODS = [
+  { emoji: '🦈', color: '#0F4C81' },
+  { emoji: '🌊', color: '#0EA5E9' },
+  { emoji: '🐋', color: '#1D4ED8' },
+  { emoji: '⚓', color: '#155E75' },
+  { emoji: '🔥', color: '#B91C1C' },
+];
                     
 type Vibe = {
   id: string;
@@ -455,6 +462,53 @@ type Vibe = {
     echoes?: number;
     hugs?: number;
   };
+  fleetId?: string | null;
+  fleetName?: string | null;
+  audience?: 'public' | 'fleet' | null;
+};
+
+type FleetRole = 'captain' | 'co_captain' | 'crew';
+
+type FleetSummary = {
+  id: string;
+  name: string;
+  description: string;
+  moodEmoji: string;
+  coverColor: string;
+  visibility: 'open' | 'private';
+  inviteCode: string;
+  captainUid: string;
+  captainName: string;
+  crewCount: number;
+  role: FleetRole;
+  lastActivityText: string;
+  lastActivityAt: any;
+  lastWaveText?: string | null;
+  lastWaveAt?: any;
+};
+
+type FleetThread = {
+  fleetId: string;
+  fleetName: string;
+  moodEmoji: string;
+  crewCount: number;
+  role: FleetRole;
+  lastMessage: string;
+  lastMessageTime: any;
+  unreadCount: number;
+  messages: Array<any>;
+};
+
+type SelectedInboxThread = {
+  kind: 'direct' | 'fleet';
+  senderUid?: string;
+  senderName: string;
+  senderAvatar: any;
+  messages: Array<any>;
+  fleetId?: string;
+  fleetMoodEmoji?: string;
+  fleetRole?: FleetRole;
+  fleetCrewCount?: number;
 };
 
 type MinuteFameSession = {
@@ -775,6 +829,62 @@ const MinuteFameWordmark: React.FC<{
       >
         {getMinuteFameDisplayName(language)}
       </Text>
+    );
+  }
+
+  if (variant === 'topbar') {
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+        <Text
+          style={{
+            color,
+            fontSize: 15,
+            lineHeight: 15,
+            fontWeight: '900',
+            includeFontPadding: false,
+          }}
+        >
+          1
+        </Text>
+        <View
+          style={{
+            marginLeft: 1,
+            marginRight: 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: 16,
+          }}
+        >
+          {['N', 'I', 'M'].map((letter, index) => (
+            <Text
+              key={`topbar-min-${letter}`}
+              style={{
+                color: '#8D0000',
+                fontSize: 7,
+                lineHeight: 7,
+                fontWeight: '900',
+                includeFontPadding: false,
+                marginVertical: index === 1 ? -2 : -1,
+                transform: [{ rotate: '-90deg' }],
+              }}
+            >
+              {letter}
+            </Text>
+          ))}
+        </View>
+        <Text
+          style={{
+            color,
+            fontSize: 11,
+            lineHeight: 11,
+            fontWeight: '900',
+            letterSpacing: 0.15,
+            includeFontPadding: false,
+          }}
+        >
+          FAME
+        </Text>
+      </View>
     );
   }
 
@@ -7467,6 +7577,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const waves: Vibe[] = [];
         snapshot?.forEach((doc: any) => {
           const data = doc.data();
+          if (data?.audience === 'fleet' || data?.isPublic === false || data?.fleetId) {
+            return;
+          }
           const mediaUri = data.playbackUrl || data.mediaUrl || null;
           const mediaType = data.mediaType || null;
           const isAudioPost =
@@ -8702,6 +8815,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       attachmentName?: string;
     }>;
   }>>([]);
+  const [fleetThreads, setFleetThreads] = useState<FleetThread[]>([]);
+  const [myFleets, setMyFleets] = useState<FleetSummary[]>([]);
+  const [fleetDirectory, setFleetDirectory] = useState<FleetSummary[]>([]);
+  const [showFleetDeck, setShowFleetDeck] = useState(false);
+  const [fleetDeckName, setFleetDeckName] = useState('');
+  const [fleetDeckDescription, setFleetDeckDescription] = useState('');
+  const [fleetDeckVisibility, setFleetDeckVisibility] = useState<'open' | 'private'>('open');
+  const [fleetDeckMood, setFleetDeckMood] = useState('🦈');
+  const [fleetDeckLoading, setFleetDeckLoading] = useState(false);
+  const [activeFleetPostContext, setActiveFleetPostContext] = useState<{
+    fleetId: string;
+    fleetName: string;
+    moodEmoji: string;
+  } | null>(null);
+  const [showFleetWaves, setShowFleetWaves] = useState(false);
+  const [selectedFleetWaves, setSelectedFleetWaves] = useState<Vibe[]>([]);
+  const [selectedFleetMeta, setSelectedFleetMeta] = useState<FleetSummary | null>(null);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -8722,12 +8852,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showInbox, setShowInbox] = useState(false);
   const [inboxFilter, setInboxFilter] = useState<'all' | 'messages' | 'activity' | 'calls'>('all');
   const [inboxSearchQuery, setInboxSearchQuery] = useState('');
-  const [selectedThread, setSelectedThread] = useState<{
-    senderUid: string;
-    senderName: string;
-    senderAvatar: any;
-    messages: Array<any>;
-  } | null>(null);
+  const [selectedThread, setSelectedThread] = useState<SelectedInboxThread | null>(null);
   const [incomingDirectCall, setIncomingDirectCall] =
     useState<DirectCallSession | null>(null);
   const [outgoingDirectCall, setOutgoingDirectCall] =
@@ -8757,6 +8882,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   useEffect(() => {
     loadMessageThreads();
   }, []);
+
+  useEffect(() => {
+    loadFleetThreads();
+  }, [loadFleetThreads]);
                     
   // Ocean Dialog state
   const [oceanDialog, setOceanDialog] = useState<{
@@ -18316,6 +18445,7 @@ type CommandCentreSection =
     );
 
     setSelectedThread({
+      kind: 'direct',
       senderUid: targetUid,
       senderName: cleanThreadName(existingThread?.senderName) || resolvedName,
       senderAvatar:
@@ -18346,13 +18476,393 @@ type CommandCentreSection =
     setEditingWave(null);
   };
 
+  const loadFleetThreads = useCallback(async () => {
+    try {
+      const user = auth().currentUser;
+      if (!user) return;
+      const membershipSnapshot = await firestore()
+        .collection(`users/${user.uid}/fleets`)
+        .get();
+
+      const membershipDocs = membershipSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...(doc.data() || {}),
+      }));
+
+      const fleetIds = membershipDocs
+        .map(item => String(item.fleetId || item.id || '').trim())
+        .filter(Boolean);
+
+      const fleetDocs = fleetIds.length
+        ? await Promise.all(
+            fleetIds.map(async fleetId => {
+              try {
+                const snap = await firestore().collection('fleets').doc(fleetId).get();
+                if (!snap.exists) return null;
+                return {
+                  id: snap.id,
+                  ...(snap.data() || {}),
+                };
+              } catch {
+                return null;
+              }
+            }),
+          )
+        : [];
+
+      const fleets: FleetSummary[] = fleetDocs
+        .map((doc: any) => {
+          if (!doc?.id) return null;
+          const membership = membershipDocs.find(
+            item => String(item.fleetId || item.id || '').trim() === doc.id,
+          );
+          return {
+            id: doc.id,
+            name: String(doc.name || 'Fleet').trim(),
+            description: String(doc.description || '').trim(),
+            moodEmoji: String(doc.moodEmoji || '🦈'),
+            coverColor: String(doc.coverColor || '#0F4C81'),
+            visibility: doc.visibility === 'private' ? 'private' : 'open',
+            inviteCode: String(doc.inviteCode || '').trim(),
+            captainUid: String(doc.captainUid || ''),
+            captainName: String(doc.captainName || 'Captain'),
+            crewCount: Math.max(1, Number(doc.crewCount || 1)),
+            role: (membership?.role || 'crew') as FleetRole,
+            lastActivityText: String(doc.lastActivityText || 'Fleet ready'),
+            lastActivityAt: doc.lastActivityAt || doc.createdAt || null,
+            lastWaveText: doc.lastWaveText || null,
+            lastWaveAt: doc.lastWaveAt || null,
+          } as FleetSummary;
+        })
+        .filter(Boolean) as FleetSummary[];
+
+      const threads: FleetThread[] = fleets.map(fleet => ({
+        fleetId: fleet.id,
+        fleetName: fleet.name,
+        moodEmoji: fleet.moodEmoji,
+        crewCount: fleet.crewCount,
+        role: fleet.role,
+        lastMessage: fleet.lastActivityText || 'Fleet ready',
+        lastMessageTime: fleet.lastActivityAt || new Date(),
+        unreadCount: 0,
+        messages: [],
+      }));
+
+      setMyFleets(fleets.sort((a, b) => {
+        const aTime = a.lastActivityAt?.toDate?.() || new Date(a.lastActivityAt || 0);
+        const bTime = b.lastActivityAt?.toDate?.() || new Date(b.lastActivityAt || 0);
+        return bTime.getTime() - aTime.getTime();
+      }));
+      setFleetThreads(threads);
+
+      const directorySnapshot = await firestore()
+        .collection('fleets')
+        .where('visibility', '==', 'open')
+        .limit(30)
+        .get();
+      const directory = directorySnapshot.docs
+        .map(doc => {
+          const data = doc.data() || {};
+          return {
+            id: doc.id,
+            name: String(data.name || 'Fleet').trim(),
+            description: String(data.description || '').trim(),
+            moodEmoji: String(data.moodEmoji || '🦈'),
+            coverColor: String(data.coverColor || '#0F4C81'),
+            visibility: 'open' as const,
+            inviteCode: String(data.inviteCode || '').trim(),
+            captainUid: String(data.captainUid || ''),
+            captainName: String(data.captainName || 'Captain'),
+            crewCount: Math.max(1, Number(data.crewCount || 1)),
+            role: (membershipDocs.find(item => String(item.fleetId || item.id || '').trim() === doc.id)?.role || 'crew') as FleetRole,
+            lastActivityText: String(data.lastActivityText || 'Fleet ready'),
+            lastActivityAt: data.lastActivityAt || data.createdAt || null,
+            lastWaveText: data.lastWaveText || null,
+            lastWaveAt: data.lastWaveAt || null,
+          };
+        })
+        .filter(item => !fleets.some(fleet => fleet.id === item.id));
+      setFleetDirectory(directory);
+    } catch (error) {
+      console.error('Load fleets error:', error);
+    }
+  }, []);
+
+  const openFleetThread = useCallback(
+    async (fleet: FleetSummary | FleetThread) => {
+      const fleetId = 'fleetId' in fleet ? fleet.fleetId : fleet.id;
+      if (!fleetId) return;
+      const fleetName = 'fleetName' in fleet ? fleet.fleetName : fleet.name;
+      const fleetMoodEmoji = 'moodEmoji' in fleet ? fleet.moodEmoji : fleet.moodEmoji;
+      const fleetCrewCount = 'crewCount' in fleet ? fleet.crewCount : fleet.crewCount;
+      const fleetRole = 'role' in fleet ? fleet.role : fleet.role;
+      setSelectedThread({
+        kind: 'fleet',
+        senderName: fleetName,
+        senderAvatar: { text: fleetMoodEmoji, backgroundColor: '#0F4C81', color: '#FFFFFF' },
+        messages: [],
+        fleetId,
+        fleetMoodEmoji,
+        fleetRole,
+        fleetCrewCount,
+      });
+      setSelectedMessageForReply(null);
+      setQuickReplyText('');
+      setThreadMessageAttachment(null);
+      setIsThreadSending(false);
+      setIsThreadSelectionMode(false);
+      setSelectedThreadMessages(new Set());
+      setShowPings(false);
+      setShowSendMessage(false);
+      setShowInbox(true);
+    },
+    [],
+  );
+
+  const createFleet = useCallback(async () => {
+    const user = auth().currentUser;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to start a Fleet.');
+      return;
+    }
+    const fleetName = fleetDeckName.trim();
+    if (!fleetName) {
+      Alert.alert('Fleet name needed', 'Give your Fleet a name first.');
+      return;
+    }
+    try {
+      setFleetDeckLoading(true);
+      const codeSeed = `${fleetName}_${Date.now()}`.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      const inviteCode = `FLEET-${codeSeed.slice(0, 6)}`;
+      const moodMeta = FLEET_MOODS.find(item => item.emoji === fleetDeckMood) || FLEET_MOODS[0];
+      const captainName =
+        profileName ||
+        accountCreationHandle ||
+        auth().currentUser?.displayName ||
+        'Captain';
+      const fleetRef = firestore().collection('fleets').doc();
+      const fleetPayload = {
+        name: fleetName,
+        description: fleetDeckDescription.trim(),
+        moodEmoji: moodMeta.emoji,
+        coverColor: moodMeta.color,
+        visibility: fleetDeckVisibility,
+        inviteCode,
+        captainUid: user.uid,
+        captainName,
+        coCaptainUids: [],
+        crewCount: 1,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+        lastActivityText: `${captainName} started the Fleet`,
+        lastActivityAt: firestore.FieldValue.serverTimestamp(),
+        lastWaveText: null,
+        lastWaveAt: null,
+      };
+      await fleetRef.set(fleetPayload);
+      await fleetRef.collection('crew').doc(user.uid).set({
+        uid: user.uid,
+        role: 'captain',
+        name: captainName,
+        photo: auth().currentUser?.photoURL || null,
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+        status: 'active',
+      });
+      await firestore().collection(`users/${user.uid}/fleets`).doc(fleetRef.id).set({
+        fleetId: fleetRef.id,
+        fleetName,
+        moodEmoji: moodMeta.emoji,
+        coverColor: moodMeta.color,
+        role: 'captain',
+        visibility: fleetDeckVisibility,
+        inviteCode,
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+        lastReadAt: firestore.FieldValue.serverTimestamp(),
+      });
+      await fleetRef.collection('messages').add({
+        text: `${captainName} launched the Fleet.`,
+        fromUid: user.uid,
+        fromName: captainName,
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        type: 'system',
+        route: 'Fleet Deck',
+      });
+      await loadFleetThreads();
+      setFleetDeckName('');
+      setFleetDeckDescription('');
+      setFleetDeckVisibility('open');
+      setFleetDeckMood('🦈');
+      notifySuccess('Fleet launched.');
+    } catch (error: any) {
+      console.error('Create fleet error:', error);
+      Alert.alert('Fleet failed', 'We could not start your Fleet right now.');
+    } finally {
+      setFleetDeckLoading(false);
+    }
+  }, [
+    accountCreationHandle,
+    fleetDeckDescription,
+    fleetDeckMood,
+    fleetDeckName,
+    fleetDeckVisibility,
+    loadFleetThreads,
+    notifySuccess,
+    profileName,
+  ]);
+
+  const joinFleet = useCallback(async (fleet: FleetSummary) => {
+    const user = auth().currentUser;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to board this Fleet.');
+      return;
+    }
+    try {
+      const alreadyInFleet = myFleets.some(item => item.id === fleet.id);
+      if (alreadyInFleet) {
+        openFleetThread(fleet);
+        return;
+      }
+      const crewRef = firestore().collection('fleets').doc(fleet.id).collection('crew').doc(user.uid);
+      await crewRef.set({
+        uid: user.uid,
+        role: 'crew',
+        name: profileName || accountCreationHandle || auth().currentUser?.displayName || 'Crew',
+        photo: auth().currentUser?.photoURL || null,
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+        status: 'active',
+      });
+      await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).set({
+        fleetId: fleet.id,
+        fleetName: fleet.name,
+        moodEmoji: fleet.moodEmoji,
+        coverColor: fleet.coverColor,
+        role: 'crew',
+        visibility: fleet.visibility,
+        inviteCode: fleet.inviteCode,
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+        lastReadAt: firestore.FieldValue.serverTimestamp(),
+      });
+      await firestore().collection('fleets').doc(fleet.id).set({
+        crewCount: firestore.FieldValue.increment(1),
+        lastActivityText: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet`,
+        lastActivityAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      await firestore().collection('fleets').doc(fleet.id).collection('messages').add({
+        text: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet.`,
+        fromUid: user.uid,
+        fromName: profileName || accountCreationHandle || 'Crew',
+        createdAt: firestore.FieldValue.serverTimestamp(),
+        type: 'system',
+        route: 'Fleet Deck',
+      });
+      await loadFleetThreads();
+      notifySuccess('You boarded the Fleet.');
+    } catch (error) {
+      console.error('Join fleet error:', error);
+      Alert.alert('Boarding failed', 'We could not join this Fleet right now.');
+    }
+  }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetThread, profileName]);
+
+  const leaveFleet = useCallback(async (fleet: FleetSummary | null) => {
+    const user = auth().currentUser;
+    if (!user || !fleet) return;
+    try {
+      await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).delete();
+      await firestore().collection('fleets').doc(fleet.id).collection('crew').doc(user.uid).delete();
+      await firestore().collection('fleets').doc(fleet.id).set({
+        crewCount: Math.max(0, Number(fleet.crewCount || 1) - 1),
+        lastActivityText: `${profileName || accountCreationHandle || 'A crew member'} left the Fleet`,
+        lastActivityAt: firestore.FieldValue.serverTimestamp(),
+        updatedAt: firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      if (selectedThread?.kind === 'fleet' && selectedThread.fleetId === fleet.id) {
+        setSelectedThread(null);
+      }
+      await loadFleetThreads();
+      notifySuccess('You left the Fleet.');
+    } catch (error) {
+      console.error('Leave fleet error:', error);
+      Alert.alert('Exit failed', 'We could not leave this Fleet right now.');
+    }
+  }, [accountCreationHandle, loadFleetThreads, notifySuccess, profileName, selectedThread]);
+
+  const sendFleetMessage = useCallback(async (fleetId: string, text: string) => {
+    const user = auth().currentUser;
+    if (!user) throw new Error('User not signed in');
+    const cleanText = text.trim();
+    if (!cleanText) throw new Error('Message cannot be empty');
+    const senderName =
+      profileName ||
+      accountCreationHandle ||
+      auth().currentUser?.displayName ||
+      'Crew';
+    await firestore().collection('fleets').doc(fleetId).collection('messages').add({
+      text: cleanText,
+      fromUid: user.uid,
+      fromName: senderName,
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      type: 'fleet_message',
+      route: 'Fleet Deck',
+    });
+    await firestore().collection('fleets').doc(fleetId).set({
+      lastActivityText: cleanText,
+      lastActivityAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }, [accountCreationHandle, profileName]);
+
+  const openFleetWaves = useCallback(async (fleet: FleetSummary | null) => {
+    if (!fleet) return;
+    try {
+      const snapshot = await firestore()
+        .collection('waves')
+        .where('fleetId', '==', fleet.id)
+        .limit(50)
+        .get();
+      const rows: Vibe[] = snapshot.docs.map(doc => {
+        const data = doc.data() || {};
+        const mediaUri = data.playbackUrl || data.mediaUrl || null;
+        const mediaType = data.mediaType || null;
+        return {
+          id: doc.id,
+          media: mediaUri ? ({ uri: mediaUri, type: mediaType || undefined } as any) : null,
+          mediaItems: buildWaveMediaItems(data),
+          audio: data.audioUrl ? { uri: data.audioUrl } : null,
+          captionText: data.captionText || data.caption || data.text || '',
+          postType: data.postType || null,
+          playbackUrl: data.playbackUrl || null,
+          muxStatus: data.muxStatus || 'ready',
+          authorName: data.authorName || null,
+          ownerUid: data.ownerUid || null,
+          counts: data.counts || {},
+          fleetId: data.fleetId || fleet.id,
+          fleetName: data.fleetName || fleet.name,
+          audience: 'fleet',
+        };
+      }).sort((a, b) => {
+        const aTime = (a as any)?.createdAt?.toDate?.() || new Date((a as any)?.createdAt || 0);
+        const bTime = (b as any)?.createdAt?.toDate?.() || new Date((b as any)?.createdAt || 0);
+        return bTime.getTime() - aTime.getTime();
+      });
+      setSelectedFleetMeta(fleet);
+      setSelectedFleetWaves(rows);
+      setShowFleetWaves(true);
+    } catch (error) {
+      console.error('Load fleet waves error:', error);
+      Alert.alert('Fleet Waves', 'We could not load Fleet Waves right now.');
+    }
+  }, []);
+
   useEffect(() => {
     if (!showInbox) return;
     loadMessageThreads();
+    loadFleetThreads();
   }, [showInbox]);
 
   useEffect(() => {
-    if (!showInbox || !selectedThread?.senderUid || !myUid) return;
+    if (!showInbox || !selectedThread || !myUid) return;
+    if (selectedThread.kind !== 'direct' || !selectedThread.senderUid) return;
 
     const senderUid = selectedThread.senderUid;
     const cleanThreadName = (rawName?: string) =>
@@ -18419,7 +18929,57 @@ type CommandCentreSection =
         unsubscribe();
       } catch {}
     };
-  }, [showInbox, selectedThread?.senderUid, myUid, userData]);
+  }, [showInbox, selectedThread?.kind, selectedThread?.senderUid, myUid, userData]);
+
+  useEffect(() => {
+    if (!showInbox || !selectedThread || selectedThread.kind !== 'fleet' || !selectedThread.fleetId) {
+      return;
+    }
+    const fleetId = selectedThread.fleetId;
+    const unsubscribe = firestore()
+      .collection('fleets')
+      .doc(fleetId)
+      .collection('messages')
+      .orderBy('createdAt', 'asc')
+      .limit(200)
+      .onSnapshot(
+        snapshot => {
+          const liveMessages = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setSelectedThread(prev => {
+            if (!prev || prev.kind !== 'fleet' || prev.fleetId !== fleetId) return prev;
+            return {
+              ...prev,
+              messages: liveMessages,
+            };
+          });
+          setFleetThreads(prev =>
+            prev.map(thread =>
+              thread.fleetId === fleetId
+                ? {
+                    ...thread,
+                    messages: liveMessages,
+                    lastMessage:
+                      String((liveMessages[liveMessages.length - 1] as any)?.text || thread.lastMessage || 'Fleet ready'),
+                    lastMessageTime:
+                      (liveMessages[liveMessages.length - 1] as any)?.createdAt || thread.lastMessageTime || null,
+                  }
+                : thread,
+            ),
+          );
+        },
+        error => {
+          console.error('Fleet thread subscription error:', error);
+        },
+      );
+    return () => {
+      try {
+        unsubscribe();
+      } catch {}
+    };
+  }, [showInbox, selectedThread?.kind, selectedThread?.fleetId, myUid]);
 
   const clearCallDocSubscription = useCallback(() => {
     if (callDocUnsubRef.current) {
@@ -18634,7 +19194,7 @@ type CommandCentreSection =
       targetUser?: { uid: string; name?: string } | null,
     ) => {
       const targetUid = String(
-        targetUser?.uid || selectedThread?.senderUid || '',
+        targetUser?.uid || (selectedThread?.kind === 'direct' ? selectedThread?.senderUid : '') || '',
       ).trim();
       if (!myUid || !targetUid) {
         Alert.alert('Call unavailable', 'Open a chat thread or pick a user.');
@@ -19906,7 +20466,10 @@ type CommandCentreSection =
             muxStatus: 'ready',
             playbackUrl: null,
             mediaUrl: primaryItem?.uri || null,
-            isPublic: true,
+            isPublic: activeFleetPostContext ? false : true,
+            audience: activeFleetPostContext ? 'fleet' : 'public',
+            fleetId: activeFleetPostContext?.fleetId || null,
+            fleetName: activeFleetPostContext?.fleetName || null,
             mediaEdits: sanitizedMediaEdits,
             editorState: sanitizedMediaEdits,
             edits: sanitizedMediaEdits,
@@ -19930,7 +20493,30 @@ type CommandCentreSection =
           ownerUid: uid,
           postType: gridPostType,
           mediaEdits: sanitizedMediaEdits,
+          fleetId: activeFleetPostContext?.fleetId || null,
+          fleetName: activeFleetPostContext?.fleetName || null,
+          audience: activeFleetPostContext ? 'fleet' : 'public',
         });
+        if (activeFleetPostContext?.fleetId) {
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
+            lastActivityText: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+            lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+            lastWaveText: finalCaption || 'Fleet Wave',
+            lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
+            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
+            text: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+            fromUid: uid,
+            fromName: profileName || accountCreationHandle || 'Crew',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            type: 'fleet_wave',
+            waveId: serverDocId || null,
+            route: 'Fleet Deck',
+          });
+          setActiveFleetPostContext(null);
+          await loadFleetThreads();
+        }
         notifySuccess('You dropped a vibe!');
         setCapturedMedia(null);
         setCapturedMediaGrid([]);
@@ -20031,7 +20617,10 @@ type CommandCentreSection =
               mediaUrl: capturedMedia.uri || null,
               mediaType: capturedMedia.type || null,
               postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
-              isPublic: true,
+              isPublic: activeFleetPostContext ? false : true,
+              audience: activeFleetPostContext ? 'fleet' : 'public',
+              fleetId: activeFleetPostContext?.fleetId || null,
+              fleetName: activeFleetPostContext?.fleetName || null,
               mediaEdits: sanitizedMediaEdits,
               editorState: sanitizedMediaEdits,
               edits: sanitizedMediaEdits,
@@ -20273,7 +20862,10 @@ type CommandCentreSection =
             mediaUrl: videoDownloadUrl || null,
             mediaType: type || null,
             postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
-            isPublic: true,
+            isPublic: activeFleetPostContext ? false : true,
+            audience: activeFleetPostContext ? 'fleet' : 'public',
+            fleetId: activeFleetPostContext?.fleetId || null,
+            fleetName: activeFleetPostContext?.fleetName || null,
             mediaEdits: sanitizedMediaEdits,
             editorState: sanitizedMediaEdits,
             edits: sanitizedMediaEdits,
@@ -20331,6 +20923,26 @@ type CommandCentreSection =
             );
           } catch {}
         }
+        if (activeFleetPostContext?.fleetId && serverDocId) {
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
+            lastActivityText: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+            lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+            lastWaveText: finalCaption || 'Fleet Wave',
+            lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
+            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
+            text: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+            fromUid: uid,
+            fromName: profileName || accountCreationHandle || 'Crew',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            type: 'fleet_wave',
+            waveId: serverDocId,
+            route: 'Fleet Deck',
+          });
+          setActiveFleetPostContext(null);
+          await loadFleetThreads();
+        }
         // Use custom notification for better UX
       notifySuccess('You dropped a vibe!');
       } else {
@@ -20387,7 +20999,10 @@ type CommandCentreSection =
                   mediaUrl: recoveredDownloadUrl,
                   mediaType: capturedMedia?.type || null,
                   postType: isVideoAsset(capturedMedia) ? 'video' : 'image',
-                  isPublic: true,
+                  isPublic: activeFleetPostContext ? false : true,
+                  audience: activeFleetPostContext ? 'fleet' : 'public',
+                  fleetId: activeFleetPostContext?.fleetId || null,
+                  fleetName: activeFleetPostContext?.fleetName || null,
                   mediaEdits: sanitizedMediaEdits,
                   editorState: sanitizedMediaEdits,
                   edits: sanitizedMediaEdits,
@@ -20888,7 +21503,7 @@ type CommandCentreSection =
                     <View style={styles.topArtRagRight} />
                     <View style={styles.topArtFuse} />
                     <View style={styles.topArtCap} />
-                    <Text style={styles.dolphinIcon}>✨</Text>
+                    <Text style={styles.dolphinIcon}>🦈</Text>
                     <Text style={styles.topLabel}>{t('top.dropWave')}</Text>
                   </View>
                 </Pressable>
@@ -21546,16 +22161,10 @@ type CommandCentreSection =
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
-                  justifyContent: 'space-between',
+                  justifyContent: 'flex-end',
                   marginBottom: 8,
                 }}
               >
-                <Pressable
-                  style={[styles.bridgeSettingButton, { paddingHorizontal: 14, minHeight: 38 }]}
-                  onPress={() => setShowCreatorProfile(false)}
-                >
-                  <Text style={styles.bridgeSettingButtonText}>{t('common.back')}</Text>
-                </Pressable>
                 <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11 }}>
                   {creatorProfilePosts.length} posts
                 </Text>
@@ -21619,24 +22228,9 @@ type CommandCentreSection =
                         const badgeIcon = getMinuteFameBadgeFromLabel(badgeLabel);
                         if (!badgeIcon) return null;
                         return (
-                          <View
-                            style={{
-                              marginTop: 10,
-                              minWidth: 40,
-                              height: 40,
-                              paddingHorizontal: 10,
-                              borderRadius: 999,
-                              backgroundColor: 'rgba(56, 189, 248, 0.16)',
-                              borderWidth: 1,
-                              borderColor: 'rgba(56, 189, 248, 0.32)',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <Text style={{ color: '#FFFFFF', fontSize: 20, fontWeight: '800' }}>
-                              {badgeIcon}
-                            </Text>
-                          </View>
+                          <Text style={{ color: '#FFFFFF', fontSize: 24, fontWeight: '800', marginTop: 10 }}>
+                            {badgeIcon}
+                          </Text>
                         );
                       })()}
                       {!!userData[creatorProfileUid]?.bio && (
@@ -21893,6 +22487,21 @@ type CommandCentreSection =
               </ScrollView>
             </View>
           </View>
+          <Pressable
+            style={[
+              styles.closeBtn,
+              {
+                position: 'absolute',
+                right: 20,
+                bottom: 16,
+                backgroundColor: '#B91C1C',
+                borderColor: '#EF4444',
+              },
+            ]}
+            onPress={() => setShowCreatorProfile(false)}
+          >
+            <Text style={styles.closeText}>{t('common.back')}</Text>
+          </Pressable>
         </View>
       </Modal>
       
@@ -21931,8 +22540,27 @@ type CommandCentreSection =
                   {t('inbox.title')}
                 </Text>
                 <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
-                  <Text style={{ color: '#8D0000' }}>{t('inbox.header')}</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + callHistory.length})</Text>
+                  <Text style={{ color: '#8D0000' }}>{t('inbox.header')}</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + fleetThreads.length + callHistory.length})</Text>
                 </Text>
+                {!selectedThread ? (
+                  <Pressable
+                    onPress={() => setShowFleetDeck(true)}
+                    style={{
+                      alignSelf: 'flex-start',
+                      marginTop: 10,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 999,
+                      backgroundColor: '#0F4C81',
+                      borderWidth: 1,
+                      borderColor: '#38BDF8',
+                    }}
+                  >
+                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
+                      Fleet Deck
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
 
               {!selectedThread ? (
@@ -21997,6 +22625,20 @@ type CommandCentreSection =
                   }));
                   
                   const unifiedNotifications = [
+                    ...fleetThreads.map(thread => ({
+                      id: `fleet_${thread.fleetId}`,
+                      type: 'fleet' as const,
+                      senderName: thread.fleetName,
+                      senderAvatar: {
+                        text: thread.moodEmoji,
+                        backgroundColor: '#0F4C81',
+                        color: '#FFFFFF',
+                      },
+                      message: thread.lastMessage,
+                      timestamp: thread.lastMessageTime,
+                      unread: thread.unreadCount > 0,
+                      fleetData: thread,
+                    })),
                     ...messageThreads.map(thread => ({
                       id: `thread_${thread.senderUid}`,
                       type: 'thread' as const,
@@ -22068,13 +22710,13 @@ type CommandCentreSection =
                     return timeB.getTime() - timeA.getTime(); // Most recent first
                   });
 
-                  const messageCount = unifiedNotifications.filter(item => item.type === 'thread').length;
+                  const messageCount = unifiedNotifications.filter(item => item.type === 'thread' || item.type === 'fleet').length;
                   const activityCount = unifiedNotifications.filter(item => item.type === 'notification').length;
                   const query = inboxSearchQuery.trim().toLowerCase();
                   const filteredNotifications = unifiedNotifications.filter(item => {
                     const matchesFilter =
                       inboxFilter === 'all' ||
-                      (inboxFilter === 'messages' && item.type === 'thread') ||
+                      (inboxFilter === 'messages' && (item.type === 'thread' || item.type === 'fleet')) ||
                       (inboxFilter === 'activity' && item.type === 'notification') ||
                       (inboxFilter === 'calls' && item.type === 'call');
                     if (!matchesFilter) return false;
@@ -22254,8 +22896,11 @@ type CommandCentreSection =
                                 }
                                 setSelectedNotifications(newSelected);
                               } else {
-                                if (item.type === 'thread') {
+                                if (item.type === 'fleet') {
+                                  openFleetThread(item.fleetData);
+                                } else if (item.type === 'thread') {
                                   setSelectedThread({
+                                    kind: 'direct',
                                     senderUid: item.threadData.senderUid,
                                     senderName: item.threadData.senderName,
                                     senderAvatar: item.threadData.senderAvatar,
@@ -22617,23 +23262,57 @@ type CommandCentreSection =
                       <Text style={styles.threadHeaderTitle}>
                         {String(selectedThread.senderName || '')}
                       </Text>
-                      <View style={styles.threadCallActionRow}>
-                        <Pressable
-                          style={[styles.threadCallIconBtn, styles.threadCallAudioBtn]}
-                          disabled={!!outgoingDirectCall || !!activeDirectCall}
-                          onPress={() => startDirectCall('audio')}
-                        >
-                          <Text style={styles.threadCallIconText}>📞</Text>
-                        </Pressable>
-                        <Pressable
-                          style={[styles.threadCallIconBtn, styles.threadCallVideoBtn]}
-                          disabled={!!outgoingDirectCall || !!activeDirectCall}
-                          onPress={() => startDirectCall('video')}
-                        >
-                          <Text style={styles.threadCallIconText}>🎥</Text>
-                        </Pressable>
-                      </View>
+                      {selectedThread.kind === 'fleet' ? (
+                        <View style={styles.threadCallActionRow}>
+                          <Pressable
+                            style={[styles.threadCallIconBtn, styles.threadCallAudioBtn]}
+                            onPress={() => {
+                              const fleet = myFleets.find(item => item.id === selectedThread.fleetId) || selectedFleetMeta;
+                              if (fleet) void openFleetWaves(fleet);
+                            }}
+                          >
+                            <Text style={styles.threadCallIconText}>🌊</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.threadCallIconBtn, styles.threadCallVideoBtn]}
+                            onPress={() => {
+                              if (!selectedThread.fleetId) return;
+                              setActiveFleetPostContext({
+                                fleetId: selectedThread.fleetId,
+                                fleetName: selectedThread.senderName,
+                                moodEmoji: selectedThread.fleetMoodEmoji || '🦈',
+                              });
+                              setShowInbox(false);
+                              setShowMakeWaves(true);
+                            }}
+                          >
+                            <Text style={styles.threadCallIconText}>📝</Text>
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <View style={styles.threadCallActionRow}>
+                          <Pressable
+                            style={[styles.threadCallIconBtn, styles.threadCallAudioBtn]}
+                            disabled={!!outgoingDirectCall || !!activeDirectCall}
+                            onPress={() => startDirectCall('audio')}
+                          >
+                            <Text style={styles.threadCallIconText}>📞</Text>
+                          </Pressable>
+                          <Pressable
+                            style={[styles.threadCallIconBtn, styles.threadCallVideoBtn]}
+                            disabled={!!outgoingDirectCall || !!activeDirectCall}
+                            onPress={() => startDirectCall('video')}
+                          >
+                            <Text style={styles.threadCallIconText}>🎥</Text>
+                          </Pressable>
+                        </View>
+                      )}
                     </View>
+                    {selectedThread.kind === 'fleet' ? (
+                      <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 6 }}>
+                        {`${selectedThread.fleetMoodEmoji || '🦈'} ${selectedThread.fleetCrewCount || 0} crew • ${String(selectedThread.fleetRole || 'crew').replace(/_/g, ' ')}`}
+                      </Text>
+                    ) : null}
                     {!!outgoingDirectCall && !activeDirectCall && (
                       <View style={styles.threadRingingInline}>
                         <Text style={styles.threadCallStatusTitle}>
@@ -23008,6 +23687,8 @@ type CommandCentreSection =
                         ? t('thread.replyTo', {
                             name: String(selectedThread.senderName || ''),
                           })
+                        : selectedThread.kind === 'fleet'
+                        ? `Message ${String(selectedThread.senderName || 'Fleet')}`
                         : t('thread.messageUser', {
                             name: String(selectedThread.senderName || ''),
                           })}
@@ -23062,11 +23743,22 @@ type CommandCentreSection =
                           try {
                             setIsThreadSending(true);
                             const outgoingText = quickReplyText.trim();
-                            const sendResult = await sendMessage(
-                              selectedThread.senderUid,
-                              outgoingText,
-                              threadMessageAttachment,
-                            );
+                            const sendResult =
+                              selectedThread.kind === 'fleet'
+                                ? (await sendFleetMessage(
+                                    String(selectedThread.fleetId || ''),
+                                    outgoingText,
+                                  ),
+                                  {
+                                    attachmentUrl: null,
+                                    attachmentType: null,
+                                    attachmentName: null,
+                                  })
+                                : await sendMessage(
+                                    selectedThread.senderUid || '',
+                                    outgoingText,
+                                    threadMessageAttachment,
+                                  );
 
                             const messageData = {
                               id: `local_${Date.now()}`,
@@ -23085,6 +23777,9 @@ type CommandCentreSection =
                             setSelectedThread(updatedThread);
 
                             setMessageThreads(prev => {
+                              if (selectedThread.kind === 'fleet') {
+                                return prev;
+                              }
                               const idx = prev.findIndex(
                                 thread => thread.senderUid === selectedThread.senderUid,
                               );
@@ -23111,6 +23806,25 @@ type CommandCentreSection =
                                 ...prev,
                               ];
                             });
+
+                            if (selectedThread.kind === 'fleet' && selectedThread.fleetId) {
+                              setFleetThreads(prev => {
+                                const idx = prev.findIndex(
+                                  thread => thread.fleetId === selectedThread.fleetId,
+                                );
+                                if (idx >= 0) {
+                                  const next = [...prev];
+                                  next[idx] = {
+                                    ...next[idx],
+                                    lastMessage: outgoingText,
+                                    lastMessageTime: { toDate: () => new Date() },
+                                    messages: updatedThread.messages,
+                                  };
+                                  return next;
+                                }
+                                return prev;
+                              });
+                            }
 
                             setQuickReplyText('');
                             setThreadMessageAttachment(null);
@@ -23141,7 +23855,7 @@ type CommandCentreSection =
                         </Text>
                       </Pressable>
                     </View>
-                    {threadMessageAttachment ? (
+                    {threadMessageAttachment && selectedThread.kind !== 'fleet' ? (
                       <View style={{ marginTop: 10, padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}>
                         <Text style={{ color: 'white', fontSize: 12 }}>
                           📎 {threadMessageAttachment.fileName || threadMessageAttachment.uri}
@@ -23151,6 +23865,7 @@ type CommandCentreSection =
                         </Pressable>
                       </View>
                     ) : null}
+                    {selectedThread.kind !== 'fleet' ? (
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                       <Pressable
                         style={[styles.attachActionBtn, { flex: 1 }]}
@@ -23181,6 +23896,11 @@ type CommandCentreSection =
                         <Text style={styles.attachActionBtnText}>Attach SD Card</Text>
                       </Pressable>
                     </View>
+                    ) : (
+                      <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 10 }}>
+                        Fleet chat is live for text right now. Use Fleet Waves to drop media to your crew.
+                      </Text>
+                    )}
                   </View>
                 </ScrollView>
                 </>
@@ -23200,6 +23920,201 @@ type CommandCentreSection =
             <Text style={styles.dismissText}>
               {selectedThread ? t('common.back') : t('common.close')}
             </Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showFleetDeck}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFleetDeck(false)}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 18 }]}>
+          <View style={[styles.logbookContainer, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.84, borderRadius: 12, overflow: 'hidden' }]}>
+            {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
+            <ScrollView style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>FLEET DECK</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.72)', marginBottom: 12, textAlign: 'center' }}>
+                Start a Fleet, board open Fleets, and keep your Crew connected.
+              </Text>
+
+              <View style={[styles.logbookAction, { gap: 10 }]}>
+                <Text style={styles.logbookActionText}>Start a Fleet</Text>
+                <TextInput
+                  value={fleetDeckName}
+                  onChangeText={setFleetDeckName}
+                  placeholder="Fleet name"
+                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  style={{ color: '#FFF', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 }}
+                />
+                <TextInput
+                  value={fleetDeckDescription}
+                  onChangeText={setFleetDeckDescription}
+                  placeholder="What is this Fleet about?"
+                  placeholderTextColor="rgba(255,255,255,0.45)"
+                  multiline
+                  style={{ color: '#FFF', minHeight: 78, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: 'top' }}
+                />
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                  {FLEET_MOODS.map(item => (
+                    <Pressable
+                      key={`fleet-mood-${item.emoji}`}
+                      onPress={() => setFleetDeckMood(item.emoji)}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 22,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        backgroundColor: fleetDeckMood === item.emoji ? item.color : 'rgba(255,255,255,0.08)',
+                        borderWidth: 1,
+                        borderColor: fleetDeckMood === item.emoji ? '#BAE6FD' : 'rgba(255,255,255,0.2)',
+                      }}
+                    >
+                      <Text style={{ fontSize: 22 }}>{item.emoji}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <Pressable
+                    onPress={() => setFleetDeckVisibility('open')}
+                    style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: fleetDeckVisibility === 'open' ? '#0EA5E9' : 'rgba(255,255,255,0.08)' }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Open Fleet</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setFleetDeckVisibility('private')}
+                    style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: fleetDeckVisibility === 'private' ? '#0EA5E9' : 'rgba(255,255,255,0.08)' }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Private Fleet</Text>
+                  </Pressable>
+                </View>
+                <Pressable
+                  onPress={() => void createFleet()}
+                  disabled={fleetDeckLoading}
+                  style={{ borderRadius: 999, paddingVertical: 11, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '900' }}>
+                    {fleetDeckLoading ? 'Launching…' : 'Launch Fleet'}
+                  </Text>
+                </Pressable>
+              </View>
+
+              <View style={[styles.logbookAction, { marginTop: 14, gap: 10 }]}>
+                <Text style={styles.logbookActionText}>My Fleets</Text>
+                {myFleets.length === 0 ? (
+                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No Fleets yet. Start one above.</Text>
+                ) : myFleets.map(fleet => (
+                  <View key={`my-fleet-${fleet.id}`} style={{ borderRadius: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>
+                      {fleet.moodEmoji} {fleet.name}
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
+                      {fleet.crewCount} crew • {fleet.role.replace(/_/g, ' ')} • Code: {fleet.inviteCode}
+                    </Text>
+                    {!!fleet.description && (
+                      <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 6 }}>
+                        {fleet.description}
+                      </Text>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                      <Pressable
+                        style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0EA5E9' }}
+                        onPress={() => {
+                          setShowFleetDeck(false);
+                          void openFleetThread(fleet);
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Open Fleet</Text>
+                      </Pressable>
+                      <Pressable
+                        style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: 'rgba(185,28,28,0.88)' }}
+                        onPress={() => void leaveFleet(fleet)}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Leave Fleet</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+
+              <View style={[styles.logbookAction, { marginTop: 14, gap: 10 }]}>
+                <Text style={styles.logbookActionText}>Open Fleets</Text>
+                {fleetDirectory.length === 0 ? (
+                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No open Fleets found right now.</Text>
+                ) : fleetDirectory.map(fleet => (
+                  <View key={`open-fleet-${fleet.id}`} style={{ borderRadius: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.06)' }}>
+                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>
+                      {fleet.moodEmoji} {fleet.name}
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
+                      Captained by {fleet.captainName} • {fleet.crewCount} crew
+                    </Text>
+                    {!!fleet.description && (
+                      <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 6 }}>
+                        {fleet.description}
+                      </Text>
+                    )}
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                      <Pressable
+                        style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                        onPress={() => void joinFleet(fleet)}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Board Fleet</Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+          <Pressable style={styles.dismissBtn} onPress={() => setShowFleetDeck(false)}>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showFleetWaves}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFleetWaves(false)}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 18 }]}>
+          <View style={[styles.logbookContainer, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.8, borderRadius: 12, overflow: 'hidden' }]}>
+            {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>
+                {selectedFleetMeta ? `${selectedFleetMeta.moodEmoji} ${selectedFleetMeta.name}` : 'Fleet Waves'}
+              </Text>
+              <ScrollView>
+                {selectedFleetWaves.length === 0 ? (
+                  <Text style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 20 }}>
+                    No Fleet Waves yet.
+                  </Text>
+                ) : selectedFleetWaves.map(wave => (
+                  <Pressable
+                    key={`fleet-wave-${wave.id}`}
+                    style={[styles.logbookAction, { marginBottom: 10 }]}
+                    onPress={() => {
+                      setShowFleetWaves(false);
+                      anchorWave(wave);
+                    }}
+                  >
+                    <Text style={styles.logbookActionText}>
+                      {wave.authorName || 'Crew'} dropped a Fleet Wave
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 4 }}>
+                      {String(wave.captionText || 'Tap to open this Fleet Wave')}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+          <Pressable style={styles.dismissBtn} onPress={() => setShowFleetWaves(false)}>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>

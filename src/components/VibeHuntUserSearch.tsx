@@ -101,7 +101,6 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
   const [brokenAvatarIds, setBrokenAvatarIds] = useState<Set<string>>(new Set());
-  const [selectedUser, setSelectedUser] = useState<VibeUser | null>(null);
 
   const blockedSet = useMemo(() => new Set(blockedUserIds), [blockedUserIds]);
 
@@ -240,7 +239,10 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const handleUserPress = (user: VibeUser) => {
     persistRecentQuery(searchQuery || user.username || user.email || '');
     onProfilePhotoSelect?.(user.photoURL || null);
-    setSelectedUser(user);
+    onOpenUserProfile?.({
+      uid: user.uid,
+      name: String(user.username || user.email || 'User'),
+    });
   };
 
   const getInitials = (user: VibeUser) => {
@@ -259,6 +261,9 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       <Pressable style={styles.userItem} onPress={() => handleUserPress(item)}>
         <Pressable
           onPress={() => {
+            handleUserPress(item);
+          }}
+          onLongPress={() => {
             if (photoUrl) {
               onProfilePhotoSelect?.(photoUrl);
               onOpenAvatarPreview?.(photoUrl);
@@ -316,14 +321,6 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
     );
   };
 
-  const selectedBadge = useMemo(() => {
-    if (!selectedUser) return null;
-    const raw = String(selectedUser.minuteFameTitle || '').trim();
-    if (!raw) return '⭐';
-    const token = raw.split(' ')[0];
-    return token || '⭐';
-  }, [selectedUser]);
-
   return (
     <View style={styles.container}>
       <View style={styles.searchBar}>
@@ -349,75 +346,6 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           <Text style={styles.searchButtonText}>Search</Text>
         </Pressable>
       </View>
-
-      {selectedUser ? (
-        <View style={styles.selectedCard}>
-          <Pressable
-            style={styles.selectedHeader}
-            onPress={() => {
-              onOpenUserProfile?.({
-                uid: selectedUser.uid,
-                name: String(selectedUser.username || selectedUser.email || 'User'),
-              });
-            }}
-          >
-            <View style={styles.selectedAvatarWrap}>
-              <ProfileAvatarWithCrew
-                userId={selectedUser.uid}
-                size={64}
-                showCrewCount={false}
-                showFleetCount={false}
-              />
-            </View>
-            <View style={styles.selectedInfo}>
-              <View style={styles.selectedTitleRow}>
-                <Text style={styles.selectedName} numberOfLines={1}>
-                  {selectedUser.username || selectedUser.email || 'User'}
-                </Text>
-                {selectedBadge ? (
-                  <View style={styles.selectedBadge}>
-                    <Text style={styles.selectedBadgeText}>{selectedBadge}</Text>
-                  </View>
-                ) : null}
-              </View>
-              {!!selectedUser.username && (
-                <Text style={styles.selectedHandle} numberOfLines={1}>
-                  @{normalizeText(selectedUser.username)}
-                </Text>
-              )}
-              {formatStatusLine(selectedUser) ? (
-                <Text style={styles.selectedStatus} numberOfLines={1}>
-                  {formatStatusLine(selectedUser)}
-                </Text>
-              ) : null}
-              {!!selectedUser.bio && (
-                <Text style={styles.selectedBio} numberOfLines={2}>
-                  {selectedUser.bio}
-                </Text>
-              )}
-            </View>
-          </Pressable>
-          <View style={styles.selectedActions}>
-            <Pressable
-              style={styles.selectedButton}
-              onPress={() => {
-                onOpenUserProfile?.({
-                  uid: selectedUser.uid,
-                  name: String(selectedUser.username || selectedUser.email || 'User'),
-                });
-              }}
-            >
-              <Text style={styles.selectedButtonText}>View Posts</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.selectedButton, styles.selectedCloseButton]}
-              onPress={() => setSelectedUser(null)}
-            >
-              <Text style={styles.selectedCloseText}>Back to results</Text>
-            </Pressable>
-          </View>
-        </View>
-      ) : null}
 
       {recentQueries.length > 0 ? (
         <View style={styles.recentWrap}>
@@ -749,3 +677,4 @@ const styles = StyleSheet.create({
 });
 
 export default VibeHuntUserSearch;
+
