@@ -896,14 +896,14 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
           {/* Post Header */}
           <react_native_1.View style={styles.postHeader}>
             {/* Menu button positioned absolutely in top-right */}
-            <react_native_1.View style={styles.menuButtonWrap}>
+            <react_native_1.View pointerEvents="box-none" style={styles.menuButtonWrap}>
               <react_native_1.Pressable onPress={function () { return openWaveOptions(item); }} style={function (_a) {
             var pressed = _a.pressed;
             return [
                 styles.iconPress,
                 pressed && styles.iconPressActive,
             ];
-        }} hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }} delayPressIn={0} delayPressOut={0} activeOpacity={0.7} android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
+        }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} delayPressIn={0} delayPressOut={0} activeOpacity={0.7} android_ripple={{ color: 'rgba(186, 230, 253, 0.18)', borderless: false }}>
                 <react_native_1.Text style={styles.menuIcon}>⋮</react_native_1.Text>
               </react_native_1.Pressable>
             </react_native_1.View>
@@ -1515,28 +1515,42 @@ var styles = react_native_1.StyleSheet.create({
     },
     menuButtonWrap: {
         position: 'absolute',
-        top: 0,
+        top: 4,
         right: ui.spacing.sm,
+        zIndex: 30,
+        elevation: 8,
     },
     iconPress: {
-        padding: 10,
-        borderRadius: ui.radius.md,
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(14, 165, 233, 0.14)',
+        borderWidth: 1,
+        borderColor: 'rgba(186, 230, 253, 0.24)',
+        shadowColor: '#0EA5E9',
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
     },
     iconPressActive: {
-        opacity: 0.8,
-        transform: [{ scale: 0.96 }],
-        backgroundColor: 'rgba(15, 23, 42, 0.08)',
+        opacity: 0.82,
+        transform: [{ scale: 0.95 }],
     },
     menuIcon: {
-        fontSize: 28,
-        color: ui.colors.body,
-        fontWeight: '700',
+        fontSize: 22,
+        color: '#FFFFFF',
+        fontWeight: '900',
+        lineHeight: 22,
     },
     centeredHeader: {
         alignItems: 'center',
         width: '100%',
         minHeight: 118,
         paddingHorizontal: 10,
+        paddingRight: 58,
         paddingVertical: 8,
     },
     headerTopRow: {

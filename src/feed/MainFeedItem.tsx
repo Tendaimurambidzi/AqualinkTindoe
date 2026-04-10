@@ -145,7 +145,7 @@ interface MainFeedItemProps {
   profileName: string;
   profileBio: string;
   profileMinuteFameTitle?: string;
-  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean; minuteFameTitle?: string | null }>;
+  userData: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; lastActiveAt?: Date | null; online?: boolean; minuteFameTitle?: string | null }>;
   ensureUserData: (uid: string) => Promise<any>;
   waveStats: Record<string, any>;
   isInUserCrew: Record<string, boolean>;
@@ -342,7 +342,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       return;
     }
 
-    const ONLINE_GRACE_MS = 60 * 1000;
+    const ONLINE_GRACE_MS = 20 * 1000;
     const postFallbackTs = (item as any)?.createdAt || (item as any)?.timestamp || new Date();
 
     const toMillis = (input: any): number => {
@@ -379,7 +379,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     let rtdbOnline = false;
     let firestoreLastSeen: any = fallbackLastSeen;
     let rtdbLastSeen: any = null;
-    let firestoreLastActiveAt: any = null;
+    let firestoreLastActiveAt: any = userData[ownerUid]?.lastActiveAt || null;
     let rtdbLastActiveAt: any = null;
 
     const chooseMostRecent = (a: any, b: any) => {
@@ -419,7 +419,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
       const data = doc?.data() || {};
       firestoreOnline = data?.online === true;
       firestoreLastSeen = data?.lastSeen || fallbackLastSeen;
-      firestoreLastActiveAt = data?.lastActiveAt || data?.lastHeartbeat || null;
+      firestoreLastActiveAt =
+        data?.lastActiveAt || data?.lastHeartbeat || userData[ownerUid]?.lastActiveAt || null;
       refreshStatus();
     });
     const presenceRef = database().ref(`/presence/${ownerUid}`);
@@ -1083,18 +1084,18 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           {/* Post Header */}
           <View style={styles.postHeader}>
             {/* Menu button positioned absolutely in top-right */}
-            <View style={styles.menuButtonWrap}>
+            <View pointerEvents="box-none" style={styles.menuButtonWrap}>
               <Pressable
                 onPress={() => openWaveOptions(item)}
                 style={({ pressed }) => [
                   styles.iconPress,
                   pressed && styles.iconPressActive,
                 ]}
-                hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 delayPressIn={0}
                 delayPressOut={0}
                 activeOpacity={0.7}
-                android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                android_ripple={{ color: 'rgba(186, 230, 253, 0.18)', borderless: false }}
               >
                 <Text style={styles.menuIcon}>⋮</Text>
               </Pressable>
@@ -2130,40 +2131,42 @@ const styles = StyleSheet.create({
   },
   menuButtonWrap: {
     position: 'absolute',
-    top: 0,
+    top: 4,
     right: ui.spacing.sm,
+    zIndex: 30,
+    elevation: 8,
   },
   iconPress: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(14, 165, 233, 0.26)',
+    backgroundColor: 'rgba(14, 165, 233, 0.14)',
     borderWidth: 1,
-    borderColor: 'rgba(186, 230, 253, 0.45)',
+    borderColor: 'rgba(186, 230, 253, 0.24)',
     shadowColor: '#0EA5E9',
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   iconPressActive: {
-    opacity: 0.95,
-    transform: [{ scale: 0.96 }],
-    backgroundColor: 'rgba(14, 165, 233, 0.38)',
+    opacity: 0.82,
+    transform: [{ scale: 0.95 }],
   },
   menuIcon: {
-    fontSize: 28,
+    fontSize: 22,
     color: '#FFFFFF',
     fontWeight: '900',
-    lineHeight: 28,
+    lineHeight: 22,
   },
   centeredHeader: {
     alignItems: 'center',
     width: '100%',
     minHeight: 118,
     paddingHorizontal: 10,
+    paddingRight: 58,
     paddingVertical: 8,
   },
   headerTopRow: {

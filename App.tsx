@@ -7405,7 +7405,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [vibesFeed, setVibesFeed] = useState<Vibe[]>([]);
   const [postFeed, setPostFeed] = useState<Vibe[]>([]);
   const [wavesFeed, setWavesFeed] = useState<Vibe[]>([]);
-  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean; minuteFameTitle?: string | null }>>({});
+  const [userData, setUserData] = useState<Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; lastActiveAt?: Date | null; online?: boolean; minuteFameTitle?: string | null }>>({});
 
   // Helper function to ensure user data is available for a given user ID
   const ensureUserData = async (userId: string) => {
@@ -7423,6 +7423,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const doc = await firestoreMod().doc(`users/${userId}`).get();
       const data = doc.data();
       let lastSeen = null;
+      let lastActiveAt = null;
       if (data?.lastSeen) {
         if (typeof data.lastSeen.toDate === 'function') {
           lastSeen = data.lastSeen.toDate();
@@ -7430,6 +7431,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           lastSeen = new Date(data.lastSeen);
         } else if (typeof data.lastSeen === 'string') {
           lastSeen = new Date(data.lastSeen);
+        }
+      }
+      if (data?.lastActiveAt) {
+        if (typeof data.lastActiveAt.toDate === 'function') {
+          lastActiveAt = data.lastActiveAt.toDate();
+        } else if (typeof data.lastActiveAt === 'number') {
+          lastActiveAt = new Date(data.lastActiveAt);
+        } else if (typeof data.lastActiveAt === 'string') {
+          lastActiveAt = new Date(data.lastActiveAt);
         }
       }
       const userInfo = {
@@ -7442,6 +7452,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           '',
         bio: data?.bio || '',
         lastSeen: lastSeen,
+        lastActiveAt,
         online: data?.online === true,
         minuteFameTitle:
           data?.minuteFameTitleLabel ||
@@ -7458,6 +7469,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           } else if (existing.lastSeen && !updatedUserInfo.lastSeen) {
             // Keep existing if new is null
             updatedUserInfo.lastSeen = existing.lastSeen;
+          }
+          if (existing.lastActiveAt && updatedUserInfo.lastActiveAt) {
+            updatedUserInfo.lastActiveAt =
+              updatedUserInfo.lastActiveAt > existing.lastActiveAt
+                ? updatedUserInfo.lastActiveAt
+                : existing.lastActiveAt;
+          } else if (existing.lastActiveAt && !updatedUserInfo.lastActiveAt) {
+            updatedUserInfo.lastActiveAt = existing.lastActiveAt;
           }
           // If existing is null, use updated (which may be null or set)
         }
@@ -7534,12 +7553,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!firestoreMod) return;
 
     const fetchUsers = async () => {
-      const updates: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; online?: boolean }> = {};
+      const updates: Record<string, { name: string; avatar: string; bio: string; lastSeen: Date | null; lastActiveAt?: Date | null; online?: boolean }> = {};
       for (const uid of missingUids) {
         try {
           const doc = await firestoreMod().doc(`users/${uid}`).get();
           const data = doc.data();
           let lastSeen: Date | null = null;
+          let lastActiveAt: Date | null = null;
           if (data?.lastSeen) {
             if (typeof data.lastSeen.toDate === 'function') {
               lastSeen = data.lastSeen.toDate();
@@ -7547,6 +7567,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               lastSeen = new Date(data.lastSeen);
             } else if (typeof data.lastSeen === 'string') {
               lastSeen = new Date(data.lastSeen);
+            }
+          }
+          if (data?.lastActiveAt) {
+            if (typeof data.lastActiveAt.toDate === 'function') {
+              lastActiveAt = data.lastActiveAt.toDate();
+            } else if (typeof data.lastActiveAt === 'number') {
+              lastActiveAt = new Date(data.lastActiveAt);
+            } else if (typeof data.lastActiveAt === 'string') {
+              lastActiveAt = new Date(data.lastActiveAt);
             }
           }
           updates[uid] = {
@@ -7559,11 +7588,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               '',
             bio: data?.bio || '',
             lastSeen,
+            lastActiveAt,
             online: data?.online === true,
           };
         } catch (e) {
           console.warn('Failed to fetch user data for', uid, e);
-          updates[uid] = { name: 'User', avatar: '', bio: '', lastSeen: null, online: false };
+          updates[uid] = { name: 'User', avatar: '', bio: '', lastSeen: null, lastActiveAt: null, online: false };
         }
       }
       setUserData(prev => {
@@ -7577,6 +7607,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               existing?.lastSeen && !next.lastSeen
                 ? existing.lastSeen
                 : next.lastSeen,
+            lastActiveAt:
+              existing?.lastActiveAt && !next.lastActiveAt
+                ? existing.lastActiveAt
+                : next.lastActiveAt,
           };
         });
         return merged;
@@ -23216,16 +23250,26 @@ type CommandCentreSection =
                         />
                       </Pressable>
                       {(() => {
-                        const statusLine = userData[creatorProfileUid]?.online
-                          ? 'Online now'
-                          : userData[creatorProfileUid]?.lastSeen
-                          ? `Last seen ${formatDefiniteTime(userData[creatorProfileUid]?.lastSeen)}`
+                        const activeAt = userData[creatorProfileUid]?.lastActiveAt || null;
+                        const lastSeenAt = userData[creatorProfileUid]?.lastSeen || null;
+                        const freshestTs = Math.max(
+                          activeAt ? new Date(activeAt).getTime() : 0,
+                          lastSeenAt ? new Date(lastSeenAt).getTime() : 0,
+                        );
+                        const isHereNow =
+                          userData[creatorProfileUid]?.online === true &&
+                          freshestTs > 0 &&
+                          Date.now() - freshestTs <= 20000;
+                        const statusLine = isHereNow
+                          ? 'Here now!'
+                          : lastSeenAt
+                          ? `Away since ${formatDefiniteTime(lastSeenAt)}`
                           : '';
                         if (!statusLine) return null;
                         return (
                           <Text
                             style={{
-                              color: userData[creatorProfileUid]?.online ? '#86EFAC' : 'rgba(255,255,255,0.64)',
+                              color: isHereNow ? '#86EFAC' : 'rgba(255,255,255,0.64)',
                               fontSize: 12,
                               marginTop: 10,
                               fontWeight: '700',
