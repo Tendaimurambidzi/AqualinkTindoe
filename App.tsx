@@ -1816,6 +1816,26 @@ const buildWaveMediaItems = (data: any): Asset[] => {
   return [{ uri: fallbackUri, type: mediaType }] as Asset[];
 };
 
+const extractWaveCaptionText = (data: any): string => {
+  const directCaption =
+    typeof data?.captionText === 'string'
+      ? data.captionText
+      : typeof data?.text === 'string'
+      ? data.text
+      : typeof data?.caption === 'string'
+      ? data.caption
+      : typeof data?.caption?.text === 'string'
+      ? data.caption.text
+      : '';
+  return String(directCaption || '').trim();
+};
+
+const extractWaveAuthorAvatar = (data: any): string | null => {
+  const avatar = data?.userPhoto || data?.photoURL || data?.avatar || data?.user?.avatar || null;
+  const uri = String(avatar || '').trim();
+  return uri || null;
+};
+
 const buildWavePreviewImage = (data: any, mediaItems?: Asset[] | null): string | null => {
   const directPreview = [
     data?.image,
@@ -9958,10 +9978,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Update Firestore
       await firestore()
         .doc(`users/${uid}`)
-        .set({ userPhoto: downloadURL }, { merge: true });
+        .set({ userPhoto: downloadURL, photoURL: downloadURL }, { merge: true });
 
       // Update local state
       setProfilePhoto(downloadURL);
+      setUserData(prev => ({
+        ...prev,
+        [uid]: {
+          ...prev[uid],
+          name: prev[uid]?.name || profileName || accountCreationHandle || 'User',
+          avatar: downloadURL,
+          bio: prev[uid]?.bio || profileBio || '',
+          lastSeen: prev[uid]?.lastSeen || null,
+          lastActiveAt: prev[uid]?.lastActiveAt || null,
+          online: prev[uid]?.online,
+          minuteFameTitle: prev[uid]?.minuteFameTitle || null,
+        },
+      }));
+      try {
+        await auth().currentUser?.updateProfile({ photoURL: downloadURL });
+      } catch {}
     } catch (error) {
       console.error('Error uploading profile photo:', error);
       throw error;
@@ -17457,10 +17493,30 @@ type CommandCentreSection =
             displayName: profileName,
             username_lc: profileName.replace(/^[\/]+/, '').toLowerCase(),
             userPhoto: finalPhotoUrl || null,
+            photoURL: finalPhotoUrl || null,
             bio: profileBio,
           },
           { merge: true },
         );
+      setUserData(prev => ({
+        ...prev,
+        [uid]: {
+          ...prev[uid],
+          name: profileName || prev[uid]?.name || 'User',
+          avatar: finalPhotoUrl || '',
+          bio: profileBio || prev[uid]?.bio || '',
+          lastSeen: prev[uid]?.lastSeen || null,
+          lastActiveAt: prev[uid]?.lastActiveAt || null,
+          online: prev[uid]?.online,
+          minuteFameTitle: prev[uid]?.minuteFameTitle || null,
+        },
+      }));
+      try {
+        await authMod()?.currentUser?.updateProfile({
+          displayName: profileName || null,
+          photoURL: finalPhotoUrl || null,
+        });
+      } catch {}
       setProfilePhoto(finalPhotoUrl || null);
       setShowEditShore(false);
       showOceanDialog(
@@ -18362,6 +18418,7 @@ type CommandCentreSection =
                 accountCreationHandle ||
                 a.currentUser?.displayName ||
                 null,
+              userPhoto: profilePhoto || a.currentUser?.photoURL || null,
               mediaPath: filePath,
               mediaType: mimeType,
               postType: 'document',
@@ -18554,6 +18611,7 @@ type CommandCentreSection =
               accountCreationHandle ||
               a.currentUser?.displayName ||
               null,
+            userPhoto: profilePhoto || a.currentUser?.photoURL || null,
             mediaPath: audioPath,
             mediaType: audioCt,
             postType: 'audio',
@@ -18637,6 +18695,7 @@ type CommandCentreSection =
               ownerUid,
               authorId: ownerUid,
               authorName: author,
+              userPhoto: profilePhoto || auth?.()?.currentUser?.photoURL || null,
               text: trimmedText,
               link: null,
               mediaUrl: null,
@@ -19121,6 +19180,11 @@ type CommandCentreSection =
   const updateFleetPhoto = useCallback(
     async (fleet: FleetSummary) => {
       try {
+        const uid = auth().currentUser?.uid;
+        if (!uid) {
+          Alert.alert('Fleet Deck', 'Please sign in to update this Fleet photo.');
+          return;
+        }
         const result = await launchImageLibrary({
           mediaType: 'photo',
           selectionLimit: 1,
@@ -19151,13 +19215,19 @@ type CommandCentreSection =
           return;
         }
         setFleetActionLoadingId(fleet.id);
-        const storageRef = storage().ref(`fleets/${fleet.id}/profile_${Date.now()}.jpg`);
+        const storageRef = storage().ref(`users/${uid}/fleets/${fleet.id}/profile.jpg`);
         await storageRef.putFile(localPath, { contentType: 'image/jpeg' });
         const photoURL = await storageRef.getDownloadURL();
         await firestore().collection('fleets').doc(fleet.id).set(
           {
             photoURL,
             updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        await firestore().collection(`users/${uid}/fleets`).doc(fleet.id).set(
+          {
+            photoURL,
           },
           { merge: true },
         );
@@ -19629,17 +19699,23 @@ type CommandCentreSection =
         const data = doc.data() || {};
         const mediaUri = data.playbackUrl || data.mediaUrl || null;
         const mediaType = data.mediaType || null;
+        const authorName = data.authorName || null;
+        const authorAvatar =
+          extractWaveAuthorAvatar(data) ||
+          userData[String(data.ownerUid || '').trim()]?.avatar ||
+          null;
         return {
           id: doc.id,
           media: mediaUri ? ({ uri: mediaUri, type: mediaType || undefined } as any) : null,
           mediaItems: buildWaveMediaItems(data),
           audio: data.audioUrl ? { uri: data.audioUrl } : null,
-          captionText: data.captionText || data.caption || data.text || '',
+          captionText: extractWaveCaptionText(data),
           postType: data.postType || null,
           playbackUrl: data.playbackUrl || null,
           muxStatus: data.muxStatus || 'ready',
-          authorName: data.authorName || null,
+          authorName,
           ownerUid: data.ownerUid || null,
+          user: authorName || authorAvatar ? { name: authorName || 'Crew', avatar: authorAvatar } : null,
           counts: data.counts || {},
           createdAt: data.createdAt || null,
           fleetId: data.fleetId || fleet.id,
@@ -19658,7 +19734,7 @@ type CommandCentreSection =
       console.error('Load fleet waves error:', error);
       Alert.alert('Fleet Waves', 'We could not load Fleet Waves right now.');
     }
-  }, []);
+  }, [userData]);
 
   useEffect(() => {
     if (!showFleetWaves || !selectedFleetMeta?.id) return;
@@ -19672,17 +19748,23 @@ type CommandCentreSection =
               const data = doc.data() || {};
               const mediaUri = data.playbackUrl || data.mediaUrl || null;
               const mediaType = data.mediaType || null;
+              const authorName = data.authorName || null;
+              const authorAvatar =
+                extractWaveAuthorAvatar(data) ||
+                userData[String(data.ownerUid || '').trim()]?.avatar ||
+                null;
               return {
                 id: doc.id,
                 media: mediaUri ? ({ uri: mediaUri, type: mediaType || undefined } as any) : null,
                 mediaItems: buildWaveMediaItems(data),
                 audio: data.audioUrl ? { uri: data.audioUrl } : null,
-                captionText: data.captionText || data.caption || data.text || '',
+                captionText: extractWaveCaptionText(data),
                 postType: data.postType || null,
                 playbackUrl: data.playbackUrl || null,
                 muxStatus: data.muxStatus || 'ready',
-                authorName: data.authorName || null,
+                authorName,
                 ownerUid: data.ownerUid || null,
+                user: authorName || authorAvatar ? { name: authorName || 'Crew', avatar: authorAvatar } : null,
                 counts: data.counts || {},
                 createdAt: data.createdAt || null,
                 fleetId: data.fleetId || selectedFleetMeta.id,
@@ -19706,7 +19788,7 @@ type CommandCentreSection =
         unsubscribe();
       } catch {}
     };
-  }, [selectedFleetMeta?.id, selectedFleetMeta?.name, showFleetWaves]);
+  }, [selectedFleetMeta?.id, selectedFleetMeta?.name, showFleetWaves, userData]);
 
   const joinFleet = useCallback(async (fleet: FleetSummary) => {
     const user = auth().currentUser;
@@ -21499,6 +21581,7 @@ type CommandCentreSection =
               accountCreationHandle ||
               a.currentUser?.displayName ||
               null,
+            userPhoto: profilePhoto || a.currentUser?.photoURL || null,
             mediaItems: storedGridItems,
             galleryItems: storedGridItems,
             gridItemCount: storedGridItems.length,
@@ -21649,6 +21732,7 @@ type CommandCentreSection =
               authorId: uid,
               ownerUid: uid,
               authorName: profileName || a.currentUser?.displayName || null,
+              userPhoto: profilePhoto || a.currentUser?.photoURL || null,
               mediaPath: capturedMedia.uri || null,
               text: finalCaption,
               createdAt: firestoreMod.FieldValue?.serverTimestamp
@@ -21893,6 +21977,7 @@ type CommandCentreSection =
               accountCreationHandle ||
               a.currentUser?.displayName ||
               null,
+            userPhoto: profilePhoto || a.currentUser?.photoURL || null,
             mediaPath: filePath,
             text: finalCaption,
             createdAt: firestoreMod.FieldValue?.serverTimestamp
@@ -25475,36 +25560,52 @@ type CommandCentreSection =
                     key={`fleet-wave-${wave.id}`}
                     style={[styles.logbookAction, { marginBottom: 10, gap: 10 }]}
                   >
-                    <Text style={styles.logbookActionText}>
-                      {wave.authorName || 'Crew'} dropped a Fleet Wave
-                    </Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20 }}>
-                      {String(wave.captionText || 'No text attached to this Fleet Wave yet.')}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                      {wave.user?.avatar ? (
+                        <Image
+                          source={{ uri: wave.user.avatar }}
+                          style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 42,
+                            height: 42,
+                            borderRadius: 21,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: 'rgba(14,165,233,0.22)',
+                          }}
+                        >
+                          <Text style={{ color: '#FFF', fontWeight: '900' }}>
+                            {String(wave.authorName || wave.user?.name || 'C').charAt(0).toUpperCase()}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.logbookActionText}>
+                          {wave.authorName || wave.user?.name || 'Crew'} dropped a Fleet Wave
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20, marginTop: 4 }}>
+                          {wave.captionText || 'No text attached to this Fleet Wave yet.'}
+                        </Text>
+                      </View>
+                    </View>
                     <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 12 }}>
                       {`${Number(wave.counts?.hugs || wave.counts?.splashes || 0)} hugs • ${Number(wave.counts?.echoes || 0)} echoes`}
                     </Text>
-                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
                       <Pressable
-                        style={{ flexBasis: '31%', borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#991B1B' }}
+                        style={{ flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#991B1B' }}
                         onPress={() => void handleFleetWaveHug(wave)}
                       >
                         <Text style={{ color: '#FFF', fontWeight: '800' }}>Hug</Text>
                       </Pressable>
                       <Pressable
-                        style={{ flexBasis: '31%', borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                        style={{ flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#0F4C81' }}
                         onPress={() => openFleetWaveEcho(wave)}
                       >
                         <Text style={{ color: '#FFF', fontWeight: '800' }}>Echo</Text>
-                      </Pressable>
-                      <Pressable
-                        style={{ flexBasis: '31%', borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}
-                        onPress={() => {
-                          setShowFleetWaves(false);
-                          anchorWave(wave);
-                        }}
-                      >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Open</Text>
                       </Pressable>
                     </View>
                   </View>

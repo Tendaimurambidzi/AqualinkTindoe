@@ -903,7 +903,7 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                 styles.iconPress,
                 pressed && styles.iconPressActive,
             ];
-        }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} delayPressIn={0} delayPressOut={0} activeOpacity={0.7} android_ripple={{ color: 'rgba(186, 230, 253, 0.18)', borderless: false }}>
+        }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} delayPressIn={0} delayPressOut={0}>
                 <react_native_1.Text style={styles.menuIcon}>⋮</react_native_1.Text>
               </react_native_1.Pressable>
             </react_native_1.View>

@@ -1094,8 +1094,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 delayPressIn={0}
                 delayPressOut={0}
-                activeOpacity={0.7}
-                android_ripple={{ color: 'rgba(186, 230, 253, 0.18)', borderless: false }}
               >
                 <Text style={styles.menuIcon}>⋮</Text>
               </Pressable>
