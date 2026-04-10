@@ -30,6 +30,16 @@ service cloud.firestore {
         && getAfter(/databases/$(database)/documents/premium_shows/$(showId)).data.hostUid == request.auth.uid;
     }
 
+    function isFleetMember(fleetId) {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/fleets/$(fleetId)/crew/$(request.auth.uid));
+    }
+
+    function isFleetCaptain(fleetId) {
+      return isAuthed()
+        && get(/databases/$(database)/documents/fleets/$(fleetId)).data.captainUid == request.auth.uid;
+    }
+
     function isPremiumTicketClaim() {
       return isAuthed()
         && resource.data.claimedByUid == null
@@ -186,6 +196,10 @@ service cloud.firestore {
         allow update: if false;
       }
 
+      match /fleets/{fleetId} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
+
       match /recentPosters/{posterId} {
         allow read: if isOwner(uid);
         allow create, update, delete: if isOwner(uid);
@@ -229,6 +243,69 @@ service cloud.firestore {
             resource.data.fromUid == request.auth.uid
           )
         );
+      }
+    }
+
+    match /fleets/{fleetId} {
+      allow read: if isAuthed()
+        && (
+          resource.data.visibility == 'open' ||
+          isFleetMember(fleetId)
+        );
+
+      allow create: if isAuthed()
+        && request.resource.data.captainUid == request.auth.uid
+        && request.resource.data.crewCount is number
+        && request.resource.data.crewCount == 1;
+
+      allow update: if isAuthed() && (
+        isFleetCaptain(fleetId) ||
+        (
+          isFleetMember(fleetId) &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'crewCount',
+            'lastActivityText',
+            'lastActivityAt',
+            'updatedAt',
+            'lastWaveText',
+            'lastWaveAt'
+          ])
+        )
+      );
+
+      allow delete: if isFleetCaptain(fleetId);
+
+      match /crew/{uid} {
+        allow read: if isAuthed()
+          && (
+            get(/databases/$(database)/documents/fleets/$(fleetId)).data.visibility == 'open' ||
+            isFleetMember(fleetId)
+          );
+
+        allow create: if isAuthed()
+          && (
+            uid == request.auth.uid ||
+            isFleetCaptain(fleetId)
+          )
+          && (
+            get(/databases/$(database)/documents/fleets/$(fleetId)).data.visibility == 'open' ||
+            isFleetCaptain(fleetId)
+          );
+
+        allow update, delete: if isAuthed()
+          && (
+            uid == request.auth.uid ||
+            isFleetCaptain(fleetId)
+          );
+      }
+
+      match /messages/{messageId} {
+        allow read: if isFleetMember(fleetId);
+
+        allow create: if isFleetMember(fleetId)
+          && request.resource.data.fromUid == request.auth.uid;
+
+        allow update, delete: if false;
       }
     }
 

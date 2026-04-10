@@ -81,7 +81,12 @@ class MainApplication : Application(), ReactApplication {
             "General notifications for Aqualink"
           }
           setShowBadge(!callStyle)
-          lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+          lockscreenVisibility =
+            if (callStyle) {
+              android.app.Notification.VISIBILITY_PUBLIC
+            } else {
+              android.app.Notification.VISIBILITY_PRIVATE
+            }
           enableLights(true)
           val vibration = if (callStyle) {
             longArrayOf(0, 500, 300, 500, 300, 500)

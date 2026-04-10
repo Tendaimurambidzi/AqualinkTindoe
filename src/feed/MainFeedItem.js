@@ -976,27 +976,14 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                                 : rawTitle === 'ocean_legend' || rawTitle.includes('ocean legend')
                                     ? '🦈'
                                     : (String(titleToShow || '').trim().split(/\s+/)[0] || '');
-            return badgeToShow ? (<react_native_1.View style={{
-                    alignSelf: 'center',
-                    marginBottom: 4,
-                    minWidth: 30,
-                    height: 30,
-                    paddingHorizontal: 8,
-                    borderRadius: 999,
-                    backgroundColor: 'rgba(56, 189, 248, 0.16)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(56, 189, 248, 0.32)',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                }}>
-                    <react_native_1.Text style={{
+            return badgeToShow ? (<react_native_1.Text style={{
                     color: '#FFFFFF',
-                    fontSize: 15,
+                    fontSize: 17,
                     fontWeight: '900',
+                    marginBottom: 4,
                 }}>
-                      {badgeToShow}
-                    </react_native_1.Text>
-                </react_native_1.View>) : null;
+                    {badgeToShow}
+                </react_native_1.Text>) : null;
         })()}
               {(function () {
             var _a;

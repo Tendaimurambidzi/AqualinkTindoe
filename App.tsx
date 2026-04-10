@@ -436,6 +436,7 @@ const FLEET_MOODS = [
   { emoji: '⚓', color: '#155E75' },
   { emoji: '🔥', color: '#B91C1C' },
 ];
+const TYPING_EXPIRY_MS = 10000;
                     
 type Vibe = {
   id: string;
@@ -475,16 +476,27 @@ type FleetSummary = {
   description: string;
   moodEmoji: string;
   coverColor: string;
+  photoURL?: string | null;
   visibility: 'open' | 'private';
   inviteCode: string;
   captainUid: string;
   captainName: string;
+  coCaptainUids?: string[];
   crewCount: number;
   role: FleetRole;
   lastActivityText: string;
   lastActivityAt: any;
   lastWaveText?: string | null;
   lastWaveAt?: any;
+};
+
+type FleetMember = {
+  uid: string;
+  name: string;
+  photo?: string | null;
+  role: FleetRole;
+  joinedAt?: any;
+  status?: string;
 };
 
 type FleetThread = {
@@ -3655,7 +3667,7 @@ function useAppVersionInfo() {
 }
                     
 type WaveOptionItem = {
-  key: 'edit' | 'delete' | 'copy_link' | 'share' | 'save' | 'report';
+  key: 'edit' | 'delete' | 'copy_link' | 'share' | 'fleet_deck' | 'save' | 'report';
   label: string;
   description: string;
 };
@@ -3685,6 +3697,11 @@ const getWaveOptionMenu = (
           key: 'share',
           label: t('feed.optionShare'),
           description: t('feed.optionShareDesc'),
+        },
+        {
+          key: 'fleet_deck',
+          label: 'Fleet Deck',
+          description: 'Open your Fleet Deck from this post.',
         },
       ]
     : [
@@ -6470,6 +6487,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [accountCreationHandle, setAccountCreationHandle] =
     useState<string>('');
   const [quickReplyText, setQuickReplyText] = useState<string>('');
+  const [directTypingName, setDirectTypingName] = useState<string | null>(null);
+  const [fleetTypingMembers, setFleetTypingMembers] = useState<
+    Array<{ uid: string; name: string }>
+  >([]);
   const [threadMessageAttachment, setThreadMessageAttachment] =
     useState<Asset | null>(null);
   const [isThreadSending, setIsThreadSending] = useState<boolean>(false);
@@ -6480,6 +6501,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     Record<string, number>
   >({});
   const [selectedMessageForReply, setSelectedMessageForReply] = useState<any>(null);
+  const directTypingWriteTimeoutRef = useRef<any>(null);
+  const fleetTypingWriteTimeoutRef = useRef<any>(null);
                     
   // Clear user-specific state when user changes
   useEffect(() => {
@@ -7801,14 +7824,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
   const handlePostPublished = useCallback(
     (wave: Vibe) => {
-      setPostFeed(prev => {
-        if (prev.some(w => w.id === wave.id)) return prev;
-        return [wave, ...prev];
-      });
-      setVibesFeed(prev => {
-        if (prev.some(w => w.id === wave.id)) return prev;
-        return [wave, ...prev];
-      });
+      const isFleetOnlyWave =
+        wave.audience === 'fleet' || !!wave.fleetId;
+      if (!isFleetOnlyWave) {
+        setPostFeed(prev => {
+          if (prev.some(w => w.id === wave.id)) return prev;
+          return [wave, ...prev];
+        });
+        setVibesFeed(prev => {
+          if (prev.some(w => w.id === wave.id)) return prev;
+          return [wave, ...prev];
+        });
+      }
       setCurrentIndex(0);
       setWaveKey(Date.now());
       try {
@@ -8824,6 +8851,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [fleetDeckVisibility, setFleetDeckVisibility] = useState<'open' | 'private'>('open');
   const [fleetDeckMood, setFleetDeckMood] = useState('🦈');
   const [fleetDeckLoading, setFleetDeckLoading] = useState(false);
+  const [fleetManagerExpandedId, setFleetManagerExpandedId] = useState<string | null>(null);
+  const [fleetMembersByFleetId, setFleetMembersByFleetId] = useState<Record<string, FleetMember[]>>({});
+  const [fleetManageDrafts, setFleetManageDrafts] = useState<Record<string, {
+    name: string;
+    description: string;
+    visibility: 'open' | 'private';
+    moodEmoji: string;
+  }>>({});
+  const [fleetMemberLoadingId, setFleetMemberLoadingId] = useState<string | null>(null);
+  const [fleetActionLoadingId, setFleetActionLoadingId] = useState<string | null>(null);
   const [activeFleetPostContext, setActiveFleetPostContext] = useState<{
     fleetId: string;
     fleetName: string;
@@ -8850,7 +8887,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isThreadSelectionMode, setIsThreadSelectionMode] = useState(false);
   
   const [showInbox, setShowInbox] = useState(false);
-  const [inboxFilter, setInboxFilter] = useState<'all' | 'messages' | 'activity' | 'calls'>('all');
+  const [inboxFilter, setInboxFilter] = useState<'all' | 'messages' | 'fleets' | 'activity' | 'calls'>('all');
   const [inboxSearchQuery, setInboxSearchQuery] = useState('');
   const [selectedThread, setSelectedThread] = useState<SelectedInboxThread | null>(null);
   const [incomingDirectCall, setIncomingDirectCall] =
@@ -10104,6 +10141,9 @@ type CommandCentreSection =
   const [showEchoes, setShowEchoes] = useState<boolean>(false);
   const [echoWaveId, setEchoWaveId] = useState<string | null>(null);
   const [echoPostData, setEchoPostData] = useState<Vibe | null>(null);
+  const [postTypingUsers, setPostTypingUsers] = useState<
+    Array<{ uid: string; name: string; waveId: string }>
+  >([]);
   const [mainEchoSending, setMainEchoSending] = useState<boolean>(false);
   const [postEchoTexts, setPostEchoTexts] = useState<{[postId: string]: string}>({});
   const [postEchoLists, setPostEchoLists] = useState<{[postId: string]: any[]}>({});
@@ -10111,6 +10151,7 @@ type CommandCentreSection =
   const [unreadPingsCount, setUnreadPingsCount] = useState(0);
   const [pings, setPings] = useState<Ping[]>([]);
   const notificationInitRef = useRef<string | null>(null);
+  const postTypingWriteTimeoutRef = useRef<any>(null);
                     
   // Load pings from AsyncStorage on mount
   useEffect(() => {
@@ -10527,6 +10568,26 @@ type CommandCentreSection =
     },
     [setEchoText],
   );
+  const describeFleetTyping = useCallback((members: Array<{ uid: string; name: string }>) => {
+    if (!members.length) return null;
+    if (members.length === 1) {
+      return `${members[0].name} is making waves...`;
+    }
+    if (members.length === 2) {
+      return `${members[0].name} and ${members[1].name} are making waves...`;
+    }
+    return `${members[0].name} and ${members.length - 1} others are making waves...`;
+  }, []);
+  const describePostTyping = useCallback((users: Array<{ uid: string; name: string; waveId: string }>) => {
+    if (!users.length) return null;
+    if (users.length === 1) {
+      return `${users[0].name} is surfacing a reply...`;
+    }
+    if (users.length === 2) {
+      return `${users[0].name} and ${users[1].name} are surfacing replies...`;
+    }
+    return `${users[0].name} and ${users.length - 1} others are surfacing replies...`;
+  }, []);
                     
   const handleAIEchoSuggest = useCallback(async () => {
     setIsAIEchoSuggesting(true);
@@ -11841,7 +11902,7 @@ type CommandCentreSection =
                     
     loadPostData();
   }, [showEchoes, echoWaveId]);
-                    
+
   // Adjust right-side bubble vertical anchor to fit up to 3 stacks
   const rightBubblesTop = useMemo(() => {
     // Base at 45% of screen height; nudge upward as more stacks are shown
@@ -12084,6 +12145,60 @@ type CommandCentreSection =
     displayFeed.length > 0 && currentIndex >= 0
       ? displayFeed[currentIndex]
       : null;
+  const activeReplyWaveId = showEchoes ? echoWaveId : currentWave?.id || null;
+  const activeReplyOwnerUid = showEchoes
+    ? echoPostData?.ownerUid || null
+    : currentWave?.ownerUid || null;
+
+  useEffect(() => {
+    if (postTypingWriteTimeoutRef.current) {
+      clearTimeout(postTypingWriteTimeoutRef.current);
+      postTypingWriteTimeoutRef.current = null;
+    }
+    if (!showEchoes || !echoWaveId || !activeReplyOwnerUid || !myUid) {
+      return;
+    }
+    postTypingWriteTimeoutRef.current = setTimeout(() => {
+      void writePostTyping(echoWaveId, String(activeReplyOwnerUid || ''), echoText);
+    }, 280);
+    return () => {
+      if (postTypingWriteTimeoutRef.current) {
+        clearTimeout(postTypingWriteTimeoutRef.current);
+        postTypingWriteTimeoutRef.current = null;
+      }
+      void writePostTyping(echoWaveId, String(activeReplyOwnerUid || ''), '');
+    };
+  }, [activeReplyOwnerUid, echoText, echoWaveId, myUid, showEchoes, writePostTyping]);
+
+  useEffect(() => {
+    if (!myUid || !activeReplyWaveId || !activeReplyOwnerUid || String(activeReplyOwnerUid) !== String(myUid)) {
+      setPostTypingUsers([]);
+      return;
+    }
+    const unsubscribe = firestore()
+      .collection(`users/${myUid}/post_typing`)
+      .where('waveId', '==', activeReplyWaveId)
+      .onSnapshot(
+        snapshot => {
+          const next = snapshot.docs
+            .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
+            .filter(item => String(item.fromUid || '') !== String(myUid) && Number(item.expiresAtMs || 0) > Date.now())
+            .map(item => ({
+              uid: String(item.fromUid || ''),
+              name: String(item.fromName || 'Someone'),
+              waveId: String(item.waveId || activeReplyWaveId),
+            }));
+          setPostTypingUsers(next);
+        },
+        () => setPostTypingUsers([]),
+      );
+    return () => {
+      setPostTypingUsers([]);
+      try {
+        unsubscribe();
+      } catch {}
+    };
+  }, [activeReplyOwnerUid, activeReplyWaveId, myUid]);
 
   const creatorProfilePosts = useMemo(() => {
     if (creatorProfileLoadedPosts.length > 0) return creatorProfileLoadedPosts;
@@ -12431,10 +12546,12 @@ type CommandCentreSection =
   );
                     
   const handleWaveOptionSelect = useCallback(
-    async (label: string) => {
+    async (selectedOption: WaveOptionItem) => {
       if (!waveOptionsTarget) return;
       const isOwnPost = !!waveOptionsTarget.ownerUid && waveOptionsTarget.ownerUid === myUid;
-      const entry = getWaveOptionMenu(isOwnPost, t).find(item => item.label === label);
+      const entry =
+        getWaveOptionMenu(isOwnPost, t).find(item => item.key === selectedOption.key) ||
+        selectedOption;
       setWaveOptionsTarget(null);
       const waveLink = `aqualink://wave/${encodeURIComponent(waveOptionsTarget.id)}`;
 
@@ -12694,21 +12811,29 @@ type CommandCentreSection =
         } catch {}
         return;
       }
+
+      if (entry?.key === 'fleet_deck') {
+        setShowFleetDeck(true);
+        return;
+      }
       
-      if (label === 'Gem') {
+      if (selectedOption.label === 'Gem') {
         setShowGemDropdown(true);
         return;
       }
       
       if (entry?.key === 'report') {
         Alert.alert(
-          entry?.label || label,
+          entry?.label || selectedOption.label,
           entry?.description || t('feed.reportQueued'),
         );
         return;
       }
                     
-      Alert.alert(entry?.label || label, entry?.description || t('feed.comingSoon'));
+      Alert.alert(
+        entry?.label || selectedOption.label,
+        entry?.description || t('feed.comingSoon'),
+      );
     },
     [waveOptionsTarget, myUid, notifySuccess, isSavingWave, t],
   );
@@ -13289,6 +13414,9 @@ type CommandCentreSection =
           for (const d of docs) {
             const data = d.data() || {};
             const id = d.id;
+            if (data?.audience === 'fleet' || data?.isPublic === false || data?.fleetId) {
+              continue;
+            }
             const feedText = data?.text || ''; // Feed text from "say something"
             const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
             const cap = data?.caption || { x: 0, y: 0 };
@@ -13564,6 +13692,9 @@ type CommandCentreSection =
         for (const d of docs) {
           const data = d.data() || {};
           const id = d.id;
+          if (data?.audience === 'fleet' || data?.isPublic === false || data?.fleetId) {
+            continue;
+          }
           const feedText = data?.text || ''; // Feed text from "say something"
           const mediaCaption = data?.mediaCaption || ''; // Media overlay text from Sonar Captions
           const cap = data?.caption || { x: 0, y: 0 };
@@ -14802,18 +14933,18 @@ type CommandCentreSection =
             });
           }
           // Send ping notification to wave owner
-          if (currentWave.ownerUid && currentWave.ownerUid !== user.uid) {
+          if (wave.ownerUid && wave.ownerUid !== user.uid) {
             const userName = profileName || user.displayName || 'Someone';
             const splashEmoji = splashType === 'octopus_hug' ? '🐙' : '💦';
             const splashText = splashType === 'octopus_hug' ? 'sent a hug' : 'sent a hug';
             // Always use the poster's name from the feed for notifications
             let posterName = '';
-            const isOwnWave = currentWave.ownerUid === user.uid;
-            if (currentWave && !isOwnWave) {
-              posterName = currentWave.authorName || (currentWave as any).posterName || (currentWave as any).ownerName || (currentWave as any).ownerDisplayName || 'Someone';
+            const isOwnWave = wave.ownerUid === user.uid;
+            if (wave && !isOwnWave) {
+              posterName = wave.authorName || (wave as any).posterName || (wave as any).ownerName || (wave as any).ownerDisplayName || 'Someone';
               await firestore()
                 .collection('users')
-                .doc(currentWave.ownerUid)
+                .doc(wave.ownerUid)
                 .collection('pings')
                 .add({
                   type: 'splash',
@@ -14821,8 +14952,8 @@ type CommandCentreSection =
                   fromUid: user.uid,
                   fromName: userName,
                   fromPhoto: user.photoURL || null,
-                  waveId: currentWave.id,
-                  waveTitle: currentWave.title || 'Untitled Wave',
+                  waveId: wave.id,
+                  waveTitle: (wave as any).title || 'Untitled Wave',
                   splashType: splashType || 'regular',
                   read: false,
                   createdAt: firestore.FieldValue.serverTimestamp(),
@@ -15039,6 +15170,9 @@ type CommandCentreSection =
                     
       // Clear input and hide echo UI before showing success
       updateEchoText('');
+      if (targetWaveId && ownerUid) {
+        void writePostTyping(targetWaveId, String(ownerUid), '');
+      }
       setReplyingToEcho(null);
       setMyEcho({ text });
       setMainEchoSending(false);
@@ -15852,6 +15986,9 @@ type CommandCentreSection =
                     
       // Clear the input
       setPostEchoTexts(prev => ({ ...prev, [waveId]: '' }));
+      if (currentWave?.ownerUid) {
+        void writePostTyping(waveId, String(currentWave.ownerUid), '');
+      }
                     
       // Close the echo input immediately after sending
       setExpandedEchoPost(null);
@@ -18199,7 +18336,10 @@ type CommandCentreSection =
               muxStatus: 'ready',
               playbackUrl: null,
               mediaUrl: fileDownloadUrl,
-              isPublic: true,
+              isPublic: activeFleetPostContext ? false : true,
+              audience: activeFleetPostContext ? 'fleet' : 'public',
+              fleetId: activeFleetPostContext?.fleetId || null,
+              fleetName: activeFleetPostContext?.fleetName || null,
             });
 
           handlePostPublished({
@@ -18216,7 +18356,31 @@ type CommandCentreSection =
               a.currentUser?.displayName ||
               null,
             ownerUid: uid,
+            fleetId: activeFleetPostContext?.fleetId || null,
+            fleetName: activeFleetPostContext?.fleetName || null,
+            audience: activeFleetPostContext ? 'fleet' : 'public',
           });
+
+          if (activeFleetPostContext?.fleetId) {
+            await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
+              lastActivityText: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+              lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+              lastWaveText: trimmedText || 'Fleet Wave',
+              lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
+              updatedAt: firestoreMod.FieldValue.serverTimestamp(),
+            }, { merge: true });
+            await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
+              text: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+              fromUid: uid,
+              fromName: profileName || accountCreationHandle || 'Crew',
+              createdAt: firestoreMod.FieldValue.serverTimestamp(),
+              type: 'fleet_wave',
+              waveId: docRef?.id || null,
+              route: 'Fleet Deck',
+            });
+            setActiveFleetPostContext(null);
+            await loadFleetThreads();
+          }
 
           setUnifiedPostText('');
           setUnifiedPostMediaItems([]);
@@ -18364,7 +18528,10 @@ type CommandCentreSection =
             muxStatus: 'ready',
             playbackUrl: null,
             mediaUrl: audioDownloadUrl,
-            isPublic: true,
+            isPublic: activeFleetPostContext ? false : true,
+            audience: activeFleetPostContext ? 'fleet' : 'public',
+            fleetId: activeFleetPostContext?.fleetId || null,
+            fleetName: activeFleetPostContext?.fleetName || null,
           });
 
         handlePostPublished({
@@ -18381,7 +18548,31 @@ type CommandCentreSection =
             a.currentUser?.displayName ||
             null,
           ownerUid: uid,
+          fleetId: activeFleetPostContext?.fleetId || null,
+          fleetName: activeFleetPostContext?.fleetName || null,
+          audience: activeFleetPostContext ? 'fleet' : 'public',
         });
+
+        if (activeFleetPostContext?.fleetId) {
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
+            lastActivityText: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+            lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+            lastWaveText: trimmedText || 'Fleet Wave',
+            lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
+            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
+            text: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
+            fromUid: uid,
+            fromName: profileName || accountCreationHandle || 'Crew',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            type: 'fleet_wave',
+            waveId: docRef?.id || null,
+            route: 'Fleet Deck',
+          });
+          setActiveFleetPostContext(null);
+          await loadFleetThreads();
+        }
 
         setUnifiedPostText('');
         setUnifiedPostMediaItems([]);
@@ -18389,24 +18580,87 @@ type CommandCentreSection =
         setShowUnifiedPostModal(false);
       } else {
         // Handle text-only post
-        const result = await uploadPost({ 
-          caption: trimmedText,
-          authorName: profileName || accountCreationHandle || auth?.()?.currentUser?.displayName || null
-        });
-        
         const ownerUid = auth?.()?.currentUser?.uid || null;
         const author = profileName || accountCreationHandle || auth?.()?.currentUser?.displayName || null;
-        handlePostPublished({
-          id: result.id,
-          media: null,
-          mediaItems: null,
-          audio: null,
-          captionText: trimmedText,
-          playbackUrl: null,
-          muxStatus: null,
-          authorName: author,
-          ownerUid,
-        });
+        if (activeFleetPostContext?.fleetId) {
+          let firestoreMod: any = null;
+          try {
+            firestoreMod = require('@react-native-firebase/firestore').default;
+          } catch {}
+          if (!firestoreMod || !ownerUid) {
+            Alert.alert(
+              t('compose.backendNotReadyTitle'),
+              t('compose.createPostFailedFallback'),
+            );
+            return;
+          }
+          const docRef = await firestoreMod()
+            .collection('waves')
+            .add({
+              ownerUid,
+              authorId: ownerUid,
+              authorName: author,
+              text: trimmedText,
+              link: null,
+              mediaUrl: null,
+              mediaPath: null,
+              mediaType: null,
+              createdAt: firestoreMod.FieldValue.serverTimestamp(),
+              caption: { x: 0, y: 0 },
+              isPublic: false,
+              audience: 'fleet',
+              fleetId: activeFleetPostContext.fleetId,
+              fleetName: activeFleetPostContext.fleetName,
+            });
+          handlePostPublished({
+            id: docRef.id,
+            media: null,
+            mediaItems: null,
+            audio: null,
+            captionText: trimmedText,
+            playbackUrl: null,
+            muxStatus: null,
+            authorName: author,
+            ownerUid,
+            fleetId: activeFleetPostContext.fleetId,
+            fleetName: activeFleetPostContext.fleetName,
+            audience: 'fleet',
+          });
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
+            lastActivityText: `${author || 'Crew'} dropped a Fleet Wave`,
+            lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+            lastWaveText: trimmedText || 'Fleet Wave',
+            lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
+            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
+          }, { merge: true });
+          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
+            text: `${author || 'Crew'} dropped a Fleet Wave`,
+            fromUid: ownerUid,
+            fromName: author || 'Crew',
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            type: 'fleet_wave',
+            waveId: docRef.id,
+            route: 'Fleet Deck',
+          });
+          setActiveFleetPostContext(null);
+          await loadFleetThreads();
+        } else {
+          const result = await uploadPost({
+            caption: trimmedText,
+            authorName: author,
+          });
+          handlePostPublished({
+            id: result.id,
+            media: null,
+            mediaItems: null,
+            audio: null,
+            captionText: trimmedText,
+            playbackUrl: null,
+            muxStatus: null,
+            authorName: author,
+            ownerUid,
+          });
+        }
         
         // Reset and close
         setUnifiedPostText('');
@@ -18474,6 +18728,7 @@ type CommandCentreSection =
     setUnifiedPostError(null);
     setUnifiedPostProgress(null);
     setEditingWave(null);
+    setActiveFleetPostContext(null);
   };
 
   const loadFleetThreads = useCallback(async () => {
@@ -18522,10 +18777,12 @@ type CommandCentreSection =
             description: String(doc.description || '').trim(),
             moodEmoji: String(doc.moodEmoji || '🦈'),
             coverColor: String(doc.coverColor || '#0F4C81'),
+            photoURL: doc.photoURL || null,
             visibility: doc.visibility === 'private' ? 'private' : 'open',
             inviteCode: String(doc.inviteCode || '').trim(),
             captainUid: String(doc.captainUid || ''),
             captainName: String(doc.captainName || 'Captain'),
+            coCaptainUids: Array.isArray(doc.coCaptainUids) ? doc.coCaptainUids : [],
             crewCount: Math.max(1, Number(doc.crewCount || 1)),
             role: (membership?.role || 'crew') as FleetRole,
             lastActivityText: String(doc.lastActivityText || 'Fleet ready'),
@@ -18569,10 +18826,12 @@ type CommandCentreSection =
             description: String(data.description || '').trim(),
             moodEmoji: String(data.moodEmoji || '🦈'),
             coverColor: String(data.coverColor || '#0F4C81'),
+            photoURL: data.photoURL || null,
             visibility: 'open' as const,
             inviteCode: String(data.inviteCode || '').trim(),
             captainUid: String(data.captainUid || ''),
             captainName: String(data.captainName || 'Captain'),
+            coCaptainUids: Array.isArray(data.coCaptainUids) ? data.coCaptainUids : [],
             crewCount: Math.max(1, Number(data.crewCount || 1)),
             role: (membershipDocs.find(item => String(item.fleetId || item.id || '').trim() === doc.id)?.role || 'crew') as FleetRole,
             lastActivityText: String(data.lastActivityText || 'Fleet ready'),
@@ -18587,6 +18846,428 @@ type CommandCentreSection =
       console.error('Load fleets error:', error);
     }
   }, []);
+
+  const loadFleetMembers = useCallback(async (fleet: FleetSummary | null) => {
+    if (!fleet?.id) return;
+    try {
+      setFleetMemberLoadingId(fleet.id);
+      const crewSnapshot = await firestore()
+        .collection('fleets')
+        .doc(fleet.id)
+        .collection('crew')
+        .get();
+      const members = crewSnapshot.docs
+        .map(doc => {
+          const data = doc.data() || {};
+          return {
+            uid: String(data.uid || doc.id || ''),
+            name: String(data.name || 'Crew'),
+            photo: data.photo || null,
+            role: ((data.role || 'crew') as FleetRole),
+            joinedAt: data.joinedAt || null,
+            status: String(data.status || 'active'),
+          } as FleetMember;
+        })
+        .filter(member => !!member.uid)
+        .sort((a, b) => {
+          const priority = { captain: 0, co_captain: 1, crew: 2 };
+          return priority[a.role] - priority[b.role];
+        });
+      setFleetMembersByFleetId(prev => ({ ...prev, [fleet.id]: members }));
+    } catch (error) {
+      console.error('Load fleet members error:', error);
+      Alert.alert('Fleet Deck', 'We could not load this crew right now.');
+    } finally {
+      setFleetMemberLoadingId(current => (current === fleet.id ? null : current));
+    }
+  }, []);
+
+  const writeDirectTyping = useCallback(
+    async (targetUid: string, text: string) => {
+      if (!myUid || !targetUid) return;
+      const trimmed = text.trim();
+      const ref = firestore().collection(`users/${targetUid}/typing`).doc(myUid);
+      if (!trimmed) {
+        try {
+          await ref.delete();
+        } catch {}
+        return;
+      }
+      const fromName =
+        profileName ||
+        accountCreationHandle ||
+        auth().currentUser?.displayName ||
+        'Someone';
+      await ref.set(
+        {
+          fromUid: myUid,
+          targetUid,
+          fromName,
+          mode: 'direct',
+          statusText: 'sending_ripples',
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+          expiresAtMs: Date.now() + TYPING_EXPIRY_MS,
+        },
+        { merge: true },
+      );
+    },
+    [accountCreationHandle, myUid, profileName],
+  );
+
+  const writeFleetTyping = useCallback(
+    async (fleetId: string, text: string) => {
+      if (!myUid || !fleetId) return;
+      const trimmed = text.trim();
+      const ref = firestore().collection('fleets').doc(fleetId).collection('typing').doc(myUid);
+      if (!trimmed) {
+        try {
+          await ref.delete();
+        } catch {}
+        return;
+      }
+      const fromName =
+        profileName ||
+        accountCreationHandle ||
+        auth().currentUser?.displayName ||
+        'Crew';
+      await ref.set(
+        {
+          uid: myUid,
+          name: fromName,
+          statusText: 'making_waves',
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+          expiresAtMs: Date.now() + TYPING_EXPIRY_MS,
+        },
+        { merge: true },
+      );
+    },
+    [accountCreationHandle, myUid, profileName],
+  );
+
+  const writePostTyping = useCallback(
+    async (waveId: string, ownerUid: string, text: string) => {
+      if (!myUid || !waveId || !ownerUid || ownerUid === myUid) return;
+      const trimmed = text.trim();
+      const ref = firestore()
+        .collection(`users/${ownerUid}/post_typing`)
+        .doc(`${waveId}_${myUid}`);
+      if (!trimmed) {
+        try {
+          await ref.delete();
+        } catch {}
+        return;
+      }
+      const fromName =
+        profileName ||
+        accountCreationHandle ||
+        auth().currentUser?.displayName ||
+        'Someone';
+      await ref.set(
+        {
+          fromUid: myUid,
+          fromName,
+          waveId,
+          ownerUid,
+          statusText: 'surfacing_reply',
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+          expiresAtMs: Date.now() + TYPING_EXPIRY_MS,
+        },
+        { merge: true },
+      );
+    },
+    [accountCreationHandle, myUid, profileName],
+  );
+
+  const openFleetComposer = useCallback(
+    (fleet: FleetSummary | FleetThread | null) => {
+      if (!fleet) return;
+      const fleetId = 'fleetId' in fleet ? fleet.fleetId : fleet.id;
+      const fleetName = 'fleetName' in fleet ? fleet.fleetName : fleet.name;
+      const moodEmoji = 'moodEmoji' in fleet ? fleet.moodEmoji : fleet.moodEmoji;
+      if (!fleetId) return;
+      setActiveFleetPostContext({
+        fleetId,
+        fleetName,
+        moodEmoji: moodEmoji || '🦈',
+      });
+      setReturnToMakeWaves(false);
+      setShowMakeWaves(false);
+      setShowInbox(false);
+      setShowFleetDeck(false);
+      setUnifiedPostError(null);
+      setShowUnifiedPostModal(true);
+    },
+    [],
+  );
+
+  const toggleFleetManager = useCallback(
+    async (fleet: FleetSummary) => {
+      const nextId = fleetManagerExpandedId === fleet.id ? null : fleet.id;
+      setFleetManagerExpandedId(nextId);
+      if (!nextId) return;
+      setFleetManageDrafts(prev => ({
+        ...prev,
+        [fleet.id]: {
+          name: fleet.name,
+          description: fleet.description || '',
+          visibility: fleet.visibility,
+          moodEmoji: fleet.moodEmoji || '🦈',
+        },
+      }));
+      await loadFleetMembers(fleet);
+    },
+    [fleetManagerExpandedId, loadFleetMembers],
+  );
+
+  const saveFleetSettings = useCallback(
+    async (fleet: FleetSummary) => {
+      const user = auth().currentUser;
+      const draft = fleetManageDrafts[fleet.id];
+      if (!user || !draft) return;
+      const nextName = draft.name.trim();
+      if (!nextName) {
+        Alert.alert('Fleet name needed', 'Give your Fleet a name first.');
+        return;
+      }
+      const moodMeta =
+        FLEET_MOODS.find(item => item.emoji === draft.moodEmoji) || FLEET_MOODS[0];
+      try {
+        setFleetActionLoadingId(fleet.id);
+        await firestore().collection('fleets').doc(fleet.id).set(
+          {
+            name: nextName,
+            description: draft.description.trim(),
+            visibility: draft.visibility,
+            moodEmoji: moodMeta.emoji,
+            coverColor: moodMeta.color,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).set(
+          {
+            fleetName: nextName,
+            moodEmoji: moodMeta.emoji,
+            coverColor: moodMeta.color,
+            visibility: draft.visibility,
+          },
+          { merge: true },
+        );
+        await loadFleetThreads();
+        notifySuccess('Fleet updated.');
+      } catch (error) {
+        console.error('Save fleet settings error:', error);
+        Alert.alert('Fleet Deck', 'We could not save this Fleet right now.');
+      } finally {
+        setFleetActionLoadingId(current => (current === fleet.id ? null : current));
+      }
+    },
+    [fleetManageDrafts, loadFleetThreads, notifySuccess],
+  );
+
+  const updateFleetPhoto = useCallback(
+    async (fleet: FleetSummary) => {
+      try {
+        const result = await launchImageLibrary({
+          mediaType: 'photo',
+          selectionLimit: 1,
+          includeBase64: false,
+          presentationStyle: 'fullScreen',
+        });
+        const asset = result.assets?.[0];
+        const sourceUri = asset?.uri;
+        if (!sourceUri) return;
+        if (
+          !(await ensureNetworkActionAllowed('upload', {
+            label: 'upload this Fleet photo',
+            kind: 'photos',
+            localPath: sourceUri,
+          }))
+        ) {
+          return;
+        }
+        let localPath = String(sourceUri);
+        try {
+          localPath = decodeURI(localPath);
+        } catch {}
+        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+          localPath = localPath.replace('file://', '');
+        }
+        if (!localPath) {
+          Alert.alert('Fleet Deck', 'We could not read that image right now.');
+          return;
+        }
+        setFleetActionLoadingId(fleet.id);
+        const storageRef = storage().ref(`fleets/${fleet.id}/profile_${Date.now()}.jpg`);
+        await storageRef.putFile(localPath, { contentType: 'image/jpeg' });
+        const photoURL = await storageRef.getDownloadURL();
+        await firestore().collection('fleets').doc(fleet.id).set(
+          {
+            photoURL,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        await loadFleetThreads();
+        notifySuccess('Fleet photo updated.');
+      } catch (error) {
+        console.error('Update fleet photo error:', error);
+        Alert.alert('Fleet Deck', 'We could not update this Fleet photo right now.');
+      } finally {
+        setFleetActionLoadingId(current => (current === fleet.id ? null : current));
+      }
+    },
+    [ensureNetworkActionAllowed, loadFleetThreads, notifySuccess],
+  );
+
+  const updateFleetMemberRole = useCallback(
+    async (
+      fleet: FleetSummary,
+      member: FleetMember,
+      nextRole: FleetRole,
+    ) => {
+      try {
+        setFleetActionLoadingId(fleet.id);
+        const batch = firestore().batch();
+        const fleetRef = firestore().collection('fleets').doc(fleet.id);
+        batch.set(
+          fleetRef.collection('crew').doc(member.uid),
+          { role: nextRole },
+          { merge: true },
+        );
+        batch.set(
+          firestore().collection(`users/${member.uid}/fleets`).doc(fleet.id),
+          { role: nextRole },
+          { merge: true },
+        );
+        const currentCoCaptains = Array.isArray(fleet.coCaptainUids)
+          ? fleet.coCaptainUids
+          : [];
+        const nextCoCaptains =
+          nextRole === 'co_captain'
+            ? Array.from(new Set([...currentCoCaptains, member.uid]))
+            : currentCoCaptains.filter(uid => uid !== member.uid);
+        batch.set(
+          fleetRef,
+          {
+            coCaptainUids: nextCoCaptains,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        await batch.commit();
+        await loadFleetThreads();
+        await loadFleetMembers(fleet);
+        notifySuccess('Fleet role updated.');
+      } catch (error) {
+        console.error('Update fleet role error:', error);
+        Alert.alert('Fleet Deck', 'We could not update this role right now.');
+      } finally {
+        setFleetActionLoadingId(current => (current === fleet.id ? null : current));
+      }
+    },
+    [loadFleetMembers, loadFleetThreads, notifySuccess],
+  );
+
+  const transferFleetCaptain = useCallback(
+    async (fleet: FleetSummary, member: FleetMember) => {
+      if (member.uid === fleet.captainUid) return;
+      try {
+        setFleetActionLoadingId(fleet.id);
+        const currentCaptainRoleTarget = auth().currentUser?.uid || fleet.captainUid;
+        const previousCoCaptains = Array.isArray(fleet.coCaptainUids)
+          ? fleet.coCaptainUids.filter(uid => uid !== member.uid)
+          : [];
+        const nextCoCaptains = Array.from(
+          new Set([...previousCoCaptains, currentCaptainRoleTarget]),
+        );
+        const fleetRef = firestore().collection('fleets').doc(fleet.id);
+        const batch = firestore().batch();
+        batch.set(
+          fleetRef,
+          {
+            captainUid: member.uid,
+            captainName: member.name,
+            coCaptainUids: nextCoCaptains,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+            lastActivityText: `${member.name} is now captain of the Fleet`,
+            lastActivityAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        batch.set(
+          fleetRef.collection('crew').doc(member.uid),
+          { role: 'captain' },
+          { merge: true },
+        );
+        batch.set(
+          firestore().collection(`users/${member.uid}/fleets`).doc(fleet.id),
+          { role: 'captain' },
+          { merge: true },
+        );
+        batch.set(
+          fleetRef.collection('crew').doc(currentCaptainRoleTarget),
+          { role: 'co_captain' },
+          { merge: true },
+        );
+        batch.set(
+          firestore().collection(`users/${currentCaptainRoleTarget}/fleets`).doc(fleet.id),
+          { role: 'co_captain' },
+          { merge: true },
+        );
+        await batch.commit();
+        await fleetRef.collection('messages').add({
+          text: `${member.name} is now captain of the Fleet.`,
+          fromUid: auth().currentUser?.uid || member.uid,
+          fromName: profileName || accountCreationHandle || 'Fleet Deck',
+          createdAt: firestore.FieldValue.serverTimestamp(),
+          type: 'system',
+          route: 'Fleet Deck',
+        });
+        await loadFleetThreads();
+        await loadFleetMembers(fleet);
+        notifySuccess('Fleet captain updated.');
+      } catch (error) {
+        console.error('Transfer fleet captain error:', error);
+        Alert.alert('Fleet Deck', 'We could not change the captain right now.');
+      } finally {
+        setFleetActionLoadingId(current => (current === fleet.id ? null : current));
+      }
+    },
+    [accountCreationHandle, loadFleetMembers, loadFleetThreads, notifySuccess, profileName],
+  );
+
+  const openFleetMemberActions = useCallback(
+    (fleet: FleetSummary, member: FleetMember) => {
+      if (member.uid === auth().currentUser?.uid && fleet.captainUid !== member.uid) {
+        Alert.alert('Fleet role', `You are ${member.role.replace(/_/g, ' ')} in this Fleet.`);
+        return;
+      }
+      const buttons: Array<{ text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }> = [];
+      if (fleet.captainUid === auth().currentUser?.uid && member.uid !== fleet.captainUid) {
+        buttons.push({
+          text: member.role === 'co_captain' ? 'Make Crew' : 'Make Co-captain',
+          onPress: () =>
+            void updateFleetMemberRole(
+              fleet,
+              member,
+              member.role === 'co_captain' ? 'crew' : 'co_captain',
+            ),
+        });
+        buttons.push({
+          text: 'Make Captain',
+          onPress: () => void transferFleetCaptain(fleet, member),
+        });
+      }
+      buttons.push({ text: 'Cancel', style: 'cancel' });
+      Alert.alert(
+        member.name,
+        `${member.role.replace(/_/g, ' ')} in ${fleet.name}`,
+        buttons,
+      );
+    },
+    [transferFleetCaptain, updateFleetMemberRole],
+  );
 
   const openFleetThread = useCallback(
     async (fleet: FleetSummary | FleetThread) => {
@@ -18646,6 +19327,7 @@ type CommandCentreSection =
         description: fleetDeckDescription.trim(),
         moodEmoji: moodMeta.emoji,
         coverColor: moodMeta.color,
+        photoURL: null,
         visibility: fleetDeckVisibility,
         inviteCode,
         captainUid: user.uid,
@@ -18664,7 +19346,7 @@ type CommandCentreSection =
         uid: user.uid,
         role: 'captain',
         name: captainName,
-        photo: auth().currentUser?.photoURL || null,
+        photo: profilePhoto || auth().currentUser?.photoURL || null,
         joinedAt: firestore.FieldValue.serverTimestamp(),
         status: 'active',
       });
@@ -18707,6 +19389,7 @@ type CommandCentreSection =
     fleetDeckVisibility,
     loadFleetThreads,
     notifySuccess,
+    profilePhoto,
     profileName,
   ]);
 
@@ -18727,7 +19410,7 @@ type CommandCentreSection =
         uid: user.uid,
         role: 'crew',
         name: profileName || accountCreationHandle || auth().currentUser?.displayName || 'Crew',
-        photo: auth().currentUser?.photoURL || null,
+        photo: profilePhoto || auth().currentUser?.photoURL || null,
         joinedAt: firestore.FieldValue.serverTimestamp(),
         status: 'active',
       });
@@ -18762,20 +19445,20 @@ type CommandCentreSection =
       console.error('Join fleet error:', error);
       Alert.alert('Boarding failed', 'We could not join this Fleet right now.');
     }
-  }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetThread, profileName]);
+  }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetThread, profileName, profilePhoto]);
 
   const leaveFleet = useCallback(async (fleet: FleetSummary | null) => {
     const user = auth().currentUser;
     if (!user || !fleet) return;
     try {
-      await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).delete();
-      await firestore().collection('fleets').doc(fleet.id).collection('crew').doc(user.uid).delete();
       await firestore().collection('fleets').doc(fleet.id).set({
         crewCount: Math.max(0, Number(fleet.crewCount || 1) - 1),
         lastActivityText: `${profileName || accountCreationHandle || 'A crew member'} left the Fleet`,
         lastActivityAt: firestore.FieldValue.serverTimestamp(),
         updatedAt: firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
+      await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).delete();
+      await firestore().collection('fleets').doc(fleet.id).collection('crew').doc(user.uid).delete();
       if (selectedThread?.kind === 'fleet' && selectedThread.fleetId === fleet.id) {
         setSelectedThread(null);
       }
@@ -18836,6 +19519,7 @@ type CommandCentreSection =
           authorName: data.authorName || null,
           ownerUid: data.ownerUid || null,
           counts: data.counts || {},
+          createdAt: data.createdAt || null,
           fleetId: data.fleetId || fleet.id,
           fleetName: data.fleetName || fleet.name,
           audience: 'fleet',
@@ -18852,6 +19536,83 @@ type CommandCentreSection =
       console.error('Load fleet waves error:', error);
       Alert.alert('Fleet Waves', 'We could not load Fleet Waves right now.');
     }
+  }, []);
+
+  useEffect(() => {
+    if (!showFleetWaves || !selectedFleetMeta?.id) return;
+    const unsubscribe = firestore()
+      .collection('waves')
+      .where('fleetId', '==', selectedFleetMeta.id)
+      .onSnapshot(
+        snapshot => {
+          const rows: Vibe[] = snapshot.docs
+            .map(doc => {
+              const data = doc.data() || {};
+              const mediaUri = data.playbackUrl || data.mediaUrl || null;
+              const mediaType = data.mediaType || null;
+              return {
+                id: doc.id,
+                media: mediaUri ? ({ uri: mediaUri, type: mediaType || undefined } as any) : null,
+                mediaItems: buildWaveMediaItems(data),
+                audio: data.audioUrl ? { uri: data.audioUrl } : null,
+                captionText: data.captionText || data.caption || data.text || '',
+                postType: data.postType || null,
+                playbackUrl: data.playbackUrl || null,
+                muxStatus: data.muxStatus || 'ready',
+                authorName: data.authorName || null,
+                ownerUid: data.ownerUid || null,
+                counts: data.counts || {},
+                createdAt: data.createdAt || null,
+                fleetId: data.fleetId || selectedFleetMeta.id,
+                fleetName: data.fleetName || selectedFleetMeta.name,
+                audience: 'fleet',
+              } as Vibe;
+            })
+            .sort((a, b) => {
+              const aTime = (a as any)?.createdAt?.toDate?.() || new Date((a as any)?.createdAt || 0);
+              const bTime = (b as any)?.createdAt?.toDate?.() || new Date((b as any)?.createdAt || 0);
+              return bTime.getTime() - aTime.getTime();
+            });
+          setSelectedFleetWaves(rows);
+        },
+        error => {
+          console.error('Fleet waves live subscription error:', error);
+        },
+      );
+    return () => {
+      try {
+        unsubscribe();
+      } catch {}
+    };
+  }, [selectedFleetMeta?.id, selectedFleetMeta?.name, showFleetWaves]);
+
+  const handleFleetWaveHug = useCallback(async (wave: Vibe) => {
+    if (localHuggedWaves.has(wave.id)) {
+      await handlePostHug(wave);
+      return;
+    }
+    await handlePostHug(wave);
+    setSelectedFleetWaves(prev =>
+      prev.map(item =>
+        item.id === wave.id
+          ? {
+              ...item,
+              counts: {
+                ...(item.counts || {}),
+                hugs: Number(item.counts?.hugs || 0) + 1,
+                splashes: Number(item.counts?.splashes || 0) + 1,
+              },
+            }
+          : item,
+      ),
+    );
+  }, [handlePostHug, localHuggedWaves]);
+
+  const openFleetWaveEcho = useCallback((wave: Vibe) => {
+    setEchoWaveId(wave.id);
+    setEchoPostData(wave);
+    setShowFleetWaves(false);
+    setShowEchoes(true);
   }, []);
 
   useEffect(() => {
@@ -18932,6 +19693,33 @@ type CommandCentreSection =
   }, [showInbox, selectedThread?.kind, selectedThread?.senderUid, myUid, userData]);
 
   useEffect(() => {
+    if (!showInbox || !selectedThread || !myUid) return;
+    if (selectedThread.kind !== 'direct' || !selectedThread.senderUid) return;
+    const senderUid = selectedThread.senderUid;
+    const unsubscribe = firestore()
+      .collection(`users/${myUid}/typing`)
+      .doc(senderUid)
+      .onSnapshot(
+        snapshot => {
+          const data = snapshot.data() || {};
+          const expiresAtMs = Number(data.expiresAtMs || 0);
+          if (!snapshot.exists || expiresAtMs <= Date.now()) {
+            setDirectTypingName(null);
+            return;
+          }
+          setDirectTypingName(String(data.fromName || selectedThread.senderName || 'Someone'));
+        },
+        () => setDirectTypingName(null),
+      );
+    return () => {
+      setDirectTypingName(null);
+      try {
+        unsubscribe();
+      } catch {}
+    };
+  }, [myUid, selectedThread?.kind, selectedThread?.senderName, selectedThread?.senderUid, showInbox]);
+
+  useEffect(() => {
     if (!showInbox || !selectedThread || selectedThread.kind !== 'fleet' || !selectedThread.fleetId) {
       return;
     }
@@ -18980,6 +19768,78 @@ type CommandCentreSection =
       } catch {}
     };
   }, [showInbox, selectedThread?.kind, selectedThread?.fleetId, myUid]);
+
+  useEffect(() => {
+    if (!showInbox || !selectedThread || selectedThread.kind !== 'fleet' || !selectedThread.fleetId || !myUid) {
+      return;
+    }
+    const fleetId = selectedThread.fleetId;
+    const unsubscribe = firestore()
+      .collection('fleets')
+      .doc(fleetId)
+      .collection('typing')
+      .onSnapshot(
+        snapshot => {
+          const next = snapshot.docs
+            .map(doc => ({ id: doc.id, ...(doc.data() || {}) }))
+            .filter(item => item.id !== myUid && Number(item.expiresAtMs || 0) > Date.now())
+            .map(item => ({
+              uid: String(item.uid || item.id || ''),
+              name: String(item.name || 'Crew'),
+            }));
+          setFleetTypingMembers(next);
+        },
+        () => setFleetTypingMembers([]),
+      );
+    return () => {
+      setFleetTypingMembers([]);
+      try {
+        unsubscribe();
+      } catch {}
+    };
+  }, [myUid, selectedThread?.fleetId, selectedThread?.kind, showInbox]);
+
+  useEffect(() => {
+    if (directTypingWriteTimeoutRef.current) {
+      clearTimeout(directTypingWriteTimeoutRef.current);
+      directTypingWriteTimeoutRef.current = null;
+    }
+    if (!showInbox || !selectedThread || selectedThread.kind !== 'direct' || !selectedThread.senderUid || !myUid) {
+      return;
+    }
+    const targetUid = selectedThread.senderUid;
+    directTypingWriteTimeoutRef.current = setTimeout(() => {
+      void writeDirectTyping(targetUid, quickReplyText);
+    }, 280);
+    return () => {
+      if (directTypingWriteTimeoutRef.current) {
+        clearTimeout(directTypingWriteTimeoutRef.current);
+        directTypingWriteTimeoutRef.current = null;
+      }
+      void writeDirectTyping(targetUid, '');
+    };
+  }, [myUid, quickReplyText, selectedThread?.kind, selectedThread?.senderUid, showInbox, writeDirectTyping]);
+
+  useEffect(() => {
+    if (fleetTypingWriteTimeoutRef.current) {
+      clearTimeout(fleetTypingWriteTimeoutRef.current);
+      fleetTypingWriteTimeoutRef.current = null;
+    }
+    if (!showInbox || !selectedThread || selectedThread.kind !== 'fleet' || !selectedThread.fleetId || !myUid) {
+      return;
+    }
+    const fleetId = selectedThread.fleetId;
+    fleetTypingWriteTimeoutRef.current = setTimeout(() => {
+      void writeFleetTyping(fleetId, quickReplyText);
+    }, 280);
+    return () => {
+      if (fleetTypingWriteTimeoutRef.current) {
+        clearTimeout(fleetTypingWriteTimeoutRef.current);
+        fleetTypingWriteTimeoutRef.current = null;
+      }
+      void writeFleetTyping(fleetId, '');
+    };
+  }, [myUid, quickReplyText, selectedThread?.fleetId, selectedThread?.kind, showInbox, writeFleetTyping]);
 
   const clearCallDocSubscription = useCallback(() => {
     if (callDocUnsubRef.current) {
@@ -22542,25 +23402,6 @@ type CommandCentreSection =
                 <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold', textAlign: 'left' }}>
                   <Text style={{ color: '#8D0000' }}>{t('inbox.header')}</Text><Text style={{ color: 'white' }}>({notifications.length + messageThreads.length + fleetThreads.length + callHistory.length})</Text>
                 </Text>
-                {!selectedThread ? (
-                  <Pressable
-                    onPress={() => setShowFleetDeck(true)}
-                    style={{
-                      alignSelf: 'flex-start',
-                      marginTop: 10,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 999,
-                      backgroundColor: '#0F4C81',
-                      borderWidth: 1,
-                      borderColor: '#38BDF8',
-                    }}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '800' }}>
-                      Fleet Deck
-                    </Text>
-                  </Pressable>
-                ) : null}
               </View>
 
               {!selectedThread ? (
@@ -22711,12 +23552,14 @@ type CommandCentreSection =
                   });
 
                   const messageCount = unifiedNotifications.filter(item => item.type === 'thread' || item.type === 'fleet').length;
+                  const fleetCount = unifiedNotifications.filter(item => item.type === 'fleet').length;
                   const activityCount = unifiedNotifications.filter(item => item.type === 'notification').length;
                   const query = inboxSearchQuery.trim().toLowerCase();
                   const filteredNotifications = unifiedNotifications.filter(item => {
                     const matchesFilter =
                       inboxFilter === 'all' ||
                       (inboxFilter === 'messages' && (item.type === 'thread' || item.type === 'fleet')) ||
+                      (inboxFilter === 'fleets' && item.type === 'fleet') ||
                       (inboxFilter === 'activity' && item.type === 'notification') ||
                       (inboxFilter === 'calls' && item.type === 'call');
                     if (!matchesFilter) return false;
@@ -22775,6 +23618,21 @@ type CommandCentreSection =
                           >
                             <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
                               {t('inbox.filterMessages')} ({messageCount})
+                            </Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => setInboxFilter('fleets')}
+                            style={{
+                              paddingHorizontal: 10,
+                              paddingVertical: 6,
+                              borderRadius: 14,
+                              backgroundColor: inboxFilter === 'fleets' ? '#0F4C81' : 'rgba(15,76,129,0.28)',
+                              borderWidth: 1,
+                              borderColor: '#38BDF8',
+                            }}
+                          >
+                            <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                              Fleet ({fleetCount})
                             </Text>
                           </Pressable>
                           <Pressable
@@ -23277,13 +24135,17 @@ type CommandCentreSection =
                             style={[styles.threadCallIconBtn, styles.threadCallVideoBtn]}
                             onPress={() => {
                               if (!selectedThread.fleetId) return;
-                              setActiveFleetPostContext({
+                              openFleetComposer({
                                 fleetId: selectedThread.fleetId,
                                 fleetName: selectedThread.senderName,
                                 moodEmoji: selectedThread.fleetMoodEmoji || '🦈',
+                                crewCount: selectedThread.fleetCrewCount || 0,
+                                role: selectedThread.fleetRole || 'crew',
+                                lastMessage: '',
+                                lastMessageTime: new Date(),
+                                unreadCount: 0,
+                                messages: [],
                               });
-                              setShowInbox(false);
-                              setShowMakeWaves(true);
                             }}
                           >
                             <Text style={styles.threadCallIconText}>📝</Text>
@@ -23311,6 +24173,16 @@ type CommandCentreSection =
                     {selectedThread.kind === 'fleet' ? (
                       <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 6 }}>
                         {`${selectedThread.fleetMoodEmoji || '🦈'} ${selectedThread.fleetCrewCount || 0} crew • ${String(selectedThread.fleetRole || 'crew').replace(/_/g, ' ')}`}
+                      </Text>
+                    ) : null}
+                    {selectedThread.kind === 'direct' && directTypingName ? (
+                      <Text style={{ color: '#FCA5A5', fontSize: 12, fontWeight: '700', marginTop: 6 }}>
+                        {`${directTypingName} is sending ripples...`}
+                      </Text>
+                    ) : null}
+                    {selectedThread.kind === 'fleet' && describeFleetTyping(fleetTypingMembers) ? (
+                      <Text style={{ color: '#FCA5A5', fontSize: 12, fontWeight: '700', marginTop: 6 }}>
+                        {describeFleetTyping(fleetTypingMembers)}
                       </Text>
                     ) : null}
                     {!!outgoingDirectCall && !activeDirectCall && (
@@ -23759,6 +24631,12 @@ type CommandCentreSection =
                                     outgoingText,
                                     threadMessageAttachment,
                                   );
+                            if (selectedThread.kind === 'fleet' && selectedThread.fleetId) {
+                              void writeFleetTyping(String(selectedThread.fleetId), '');
+                            }
+                            if (selectedThread.kind === 'direct' && selectedThread.senderUid) {
+                              void writeDirectTyping(String(selectedThread.senderUid), '');
+                            }
 
                             const messageData = {
                               id: `local_${Date.now()}`,
@@ -24007,20 +24885,49 @@ type CommandCentreSection =
                   <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No Fleets yet. Start one above.</Text>
                 ) : myFleets.map(fleet => (
                   <View key={`my-fleet-${fleet.id}`} style={{ borderRadius: 12, padding: 12, backgroundColor: 'rgba(255,255,255,0.06)' }}>
-                    <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>
-                      {fleet.moodEmoji} {fleet.name}
-                    </Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
-                      {fleet.crewCount} crew • {fleet.role.replace(/_/g, ' ')} • Code: {fleet.inviteCode}
-                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      {fleet.photoURL ? (
+                        <Image
+                          source={{ uri: fleet.photoURL }}
+                          style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 46,
+                            height: 46,
+                            borderRadius: 23,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: fleet.coverColor || '#0F4C81',
+                          }}
+                        >
+                          <Text style={{ fontSize: 22 }}>{fleet.moodEmoji}</Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFF', fontSize: 16, fontWeight: '800' }}>
+                          {fleet.name}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
+                          {fleet.crewCount} crew • {fleet.role.replace(/_/g, ' ')} • Code: {fleet.inviteCode}
+                        </Text>
+                      </View>
+                    </View>
                     {!!fleet.description && (
                       <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 6 }}>
                         {fleet.description}
                       </Text>
                     )}
-                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                       <Pressable
-                        style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0EA5E9' }}
+                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#B91C1C' }}
+                        onPress={() => openFleetComposer(fleet)}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Post to Fleet</Text>
+                      </Pressable>
+                      <Pressable
+                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0EA5E9' }}
                         onPress={() => {
                           setShowFleetDeck(false);
                           void openFleetThread(fleet);
@@ -24029,12 +24936,258 @@ type CommandCentreSection =
                         <Text style={{ color: '#FFF', fontWeight: '800' }}>Open Fleet</Text>
                       </Pressable>
                       <Pressable
-                        style={{ flex: 1, borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: 'rgba(185,28,28,0.88)' }}
+                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                        onPress={() => void openFleetWaves(fleet)}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Fleet Posts</Text>
+                      </Pressable>
+                      <Pressable
+                        style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)' }}
+                        onPress={() => void toggleFleetManager(fleet)}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                          {fleetManagerExpandedId === fleet.id ? 'Hide Manage' : 'Manage Fleet'}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={{ width: '100%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: 'rgba(185,28,28,0.88)' }}
                         onPress={() => void leaveFleet(fleet)}
                       >
                         <Text style={{ color: '#FFF', fontWeight: '800' }}>Leave Fleet</Text>
                       </Pressable>
                     </View>
+                    {fleetManagerExpandedId === fleet.id && (
+                      <View
+                        style={{
+                          marginTop: 12,
+                          padding: 12,
+                          borderRadius: 12,
+                          backgroundColor: 'rgba(0,0,0,0.18)',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.1)',
+                        }}
+                      >
+                        <Text style={{ color: '#FECACA', fontSize: 13, fontWeight: '800', marginBottom: 10 }}>
+                          Fleet control
+                        </Text>
+                        <TextInput
+                          value={fleetManageDrafts[fleet.id]?.name || ''}
+                          onChangeText={value =>
+                            setFleetManageDrafts(prev => ({
+                              ...prev,
+                              [fleet.id]: {
+                                ...(prev[fleet.id] || {
+                                  name: fleet.name,
+                                  description: fleet.description,
+                                  visibility: fleet.visibility,
+                                  moodEmoji: fleet.moodEmoji,
+                                }),
+                                name: value,
+                              },
+                            }))
+                          }
+                          placeholder="Fleet name"
+                          placeholderTextColor="rgba(255,255,255,0.45)"
+                          editable={fleet.role !== 'crew'}
+                          style={{ color: '#FFF', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10 }}
+                        />
+                        <TextInput
+                          value={fleetManageDrafts[fleet.id]?.description || ''}
+                          onChangeText={value =>
+                            setFleetManageDrafts(prev => ({
+                              ...prev,
+                              [fleet.id]: {
+                                ...(prev[fleet.id] || {
+                                  name: fleet.name,
+                                  description: fleet.description,
+                                  visibility: fleet.visibility,
+                                  moodEmoji: fleet.moodEmoji,
+                                }),
+                                description: value,
+                              },
+                            }))
+                          }
+                          placeholder="Fleet description"
+                          placeholderTextColor="rgba(255,255,255,0.45)"
+                          multiline
+                          editable={fleet.role !== 'crew'}
+                          style={{ color: '#FFF', minHeight: 74, marginTop: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, textAlignVertical: 'top' }}
+                        />
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, marginTop: 10 }}>
+                          {FLEET_MOODS.map(item => (
+                            <Pressable
+                              key={`manage-fleet-mood-${fleet.id}-${item.emoji}`}
+                              onPress={() =>
+                                setFleetManageDrafts(prev => ({
+                                  ...prev,
+                                  [fleet.id]: {
+                                    ...(prev[fleet.id] || {
+                                      name: fleet.name,
+                                      description: fleet.description,
+                                      visibility: fleet.visibility,
+                                      moodEmoji: fleet.moodEmoji,
+                                    }),
+                                    moodEmoji: item.emoji,
+                                  },
+                                }))
+                              }
+                              style={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: 20,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor:
+                                  (fleetManageDrafts[fleet.id]?.moodEmoji || fleet.moodEmoji) === item.emoji
+                                    ? item.color
+                                    : 'rgba(255,255,255,0.08)',
+                                borderWidth: 1,
+                                borderColor:
+                                  (fleetManageDrafts[fleet.id]?.moodEmoji || fleet.moodEmoji) === item.emoji
+                                    ? '#FECACA'
+                                    : 'rgba(255,255,255,0.2)',
+                              }}
+                            >
+                              <Text style={{ fontSize: 20 }}>{item.emoji}</Text>
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                          <Pressable
+                            onPress={() =>
+                              setFleetManageDrafts(prev => ({
+                                ...prev,
+                                [fleet.id]: {
+                                  ...(prev[fleet.id] || {
+                                    name: fleet.name,
+                                    description: fleet.description,
+                                    visibility: fleet.visibility,
+                                    moodEmoji: fleet.moodEmoji,
+                                  }),
+                                  visibility: 'open',
+                                },
+                              }))
+                            }
+                            style={{
+                              flex: 1,
+                              borderRadius: 999,
+                              paddingVertical: 8,
+                              alignItems: 'center',
+                              backgroundColor:
+                                (fleetManageDrafts[fleet.id]?.visibility || fleet.visibility) === 'open'
+                                  ? '#0EA5E9'
+                                  : 'rgba(255,255,255,0.08)',
+                            }}
+                          >
+                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Open Fleet</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() =>
+                              setFleetManageDrafts(prev => ({
+                                ...prev,
+                                [fleet.id]: {
+                                  ...(prev[fleet.id] || {
+                                    name: fleet.name,
+                                    description: fleet.description,
+                                    visibility: fleet.visibility,
+                                    moodEmoji: fleet.moodEmoji,
+                                  }),
+                                  visibility: 'private',
+                                },
+                              }))
+                            }
+                            style={{
+                              flex: 1,
+                              borderRadius: 999,
+                              paddingVertical: 8,
+                              alignItems: 'center',
+                              backgroundColor:
+                                (fleetManageDrafts[fleet.id]?.visibility || fleet.visibility) === 'private'
+                                  ? '#0EA5E9'
+                                  : 'rgba(255,255,255,0.08)',
+                            }}
+                          >
+                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Private Fleet</Text>
+                          </Pressable>
+                        </View>
+                        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                          <Pressable
+                            style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#7C2D12' }}
+                            onPress={() => void updateFleetPhoto(fleet)}
+                            disabled={fleetActionLoadingId === fleet.id || fleet.role === 'crew'}
+                          >
+                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Fleet Photo</Text>
+                          </Pressable>
+                          <Pressable
+                            style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#991B1B' }}
+                            onPress={() => openFleetComposer(fleet)}
+                          >
+                            <Text style={{ color: '#FFF', fontWeight: '800' }}>Post Media</Text>
+                          </Pressable>
+                          <Pressable
+                            style={{ width: '100%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                            onPress={() => void saveFleetSettings(fleet)}
+                            disabled={fleetActionLoadingId === fleet.id || fleet.role === 'crew'}
+                          >
+                            <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                              {fleetActionLoadingId === fleet.id ? 'Saving…' : 'Save Fleet Settings'}
+                            </Text>
+                          </Pressable>
+                        </View>
+                        {fleet.role === 'crew' ? (
+                          <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 8 }}>
+                            Only captains and co-captains can change Fleet settings.
+                          </Text>
+                        ) : null}
+                        <Text style={{ color: '#FECACA', fontSize: 12, fontWeight: '800', marginTop: 14, marginBottom: 8 }}>
+                          Crew roster
+                        </Text>
+                        {fleetMemberLoadingId === fleet.id ? (
+                          <Text style={{ color: 'rgba(255,255,255,0.65)' }}>Loading crew…</Text>
+                        ) : (fleetMembersByFleetId[fleet.id] || []).length === 0 ? (
+                          <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No crew members found yet.</Text>
+                        ) : (
+                          (fleetMembersByFleetId[fleet.id] || []).map(member => (
+                            <Pressable
+                              key={`fleet-member-${fleet.id}-${member.uid}`}
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                gap: 10,
+                                paddingVertical: 8,
+                                borderTopWidth: 1,
+                                borderTopColor: 'rgba(255,255,255,0.08)',
+                              }}
+                              onPress={() => openFleetMemberActions(fleet, member)}
+                              disabled={fleetActionLoadingId === fleet.id}
+                            >
+                              {member.photo ? (
+                                <Image source={{ uri: member.photo }} style={{ width: 34, height: 34, borderRadius: 17 }} />
+                              ) : (
+                                <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}>
+                                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                                    {String(member.name || 'C').charAt(0).toUpperCase()}
+                                  </Text>
+                                </View>
+                              )}
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                                  {member.name}
+                                </Text>
+                                <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }}>
+                                  {member.role.replace(/_/g, ' ')}
+                                </Text>
+                              </View>
+                              {fleet.captainUid === myUid && member.uid !== fleet.captainUid ? (
+                                <Text style={{ color: '#FCA5A5', fontSize: 11, fontWeight: '800' }}>
+                                  Manage
+                                </Text>
+                              ) : null}
+                            </Pressable>
+                          ))
+                        )}
+                      </View>
+                    )}
                   </View>
                 ))}
               </View>
@@ -24094,21 +25247,43 @@ type CommandCentreSection =
                     No Fleet Waves yet.
                   </Text>
                 ) : selectedFleetWaves.map(wave => (
-                  <Pressable
+                  <View
                     key={`fleet-wave-${wave.id}`}
-                    style={[styles.logbookAction, { marginBottom: 10 }]}
-                    onPress={() => {
-                      setShowFleetWaves(false);
-                      anchorWave(wave);
-                    }}
+                    style={[styles.logbookAction, { marginBottom: 10, gap: 10 }]}
                   >
                     <Text style={styles.logbookActionText}>
                       {wave.authorName || 'Crew'} dropped a Fleet Wave
                     </Text>
-                    <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 4 }}>
-                      {String(wave.captionText || 'Tap to open this Fleet Wave')}
+                    <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20 }}>
+                      {String(wave.captionText || 'No text attached to this Fleet Wave yet.')}
                     </Text>
-                  </Pressable>
+                    <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 12 }}>
+                      {`${Number(wave.counts?.hugs || wave.counts?.splashes || 0)} hugs • ${Number(wave.counts?.echoes || 0)} echoes`}
+                    </Text>
+                    <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      <Pressable
+                        style={{ flexBasis: '31%', borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#991B1B' }}
+                        onPress={() => void handleFleetWaveHug(wave)}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Hug</Text>
+                      </Pressable>
+                      <Pressable
+                        style={{ flexBasis: '31%', borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#0F4C81' }}
+                        onPress={() => openFleetWaveEcho(wave)}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Echo</Text>
+                      </Pressable>
+                      <Pressable
+                        style={{ flexBasis: '31%', borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}
+                        onPress={() => {
+                          setShowFleetWaves(false);
+                          anchorWave(wave);
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>Open</Text>
+                      </Pressable>
+                    </View>
+                  </View>
                 ))}
               </ScrollView>
             </View>
@@ -24349,7 +25524,10 @@ type CommandCentreSection =
         visible={showMakeWaves}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowMakeWaves(false)}
+        onRequestClose={() => {
+          setShowMakeWaves(false);
+          setActiveFleetPostContext(null);
+        }}
       >
         <View
           style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
@@ -24483,7 +25661,10 @@ type CommandCentreSection =
           </View>
           <Pressable
             style={styles.dismissBtn}
-            onPress={() => setShowMakeWaves(false)}
+            onPress={() => {
+              setShowMakeWaves(false);
+              setActiveFleetPostContext(null);
+            }}
           >
             <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
@@ -24618,6 +25799,26 @@ type CommandCentreSection =
                         </Text>
                       </Pressable>
                     ) : null}
+                  </View>
+                )}
+
+                {activeFleetPostContext && (
+                  <View
+                    style={{
+                      marginBottom: 16,
+                      padding: 12,
+                      borderRadius: 10,
+                      backgroundColor: 'rgba(185,28,28,0.16)',
+                      borderWidth: 1,
+                      borderColor: 'rgba(248,113,113,0.45)',
+                    }}
+                  >
+                    <Text style={{ color: '#FECACA', fontSize: 13, fontWeight: '800' }}>
+                      {`${activeFleetPostContext.moodEmoji || '🦈'} Posting only to ${activeFleetPostContext.fleetName}`}
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.82)', fontSize: 12, marginTop: 4 }}>
+                      This image, video, audio, or file stays in this Fleet and does not go to the main feed.
+                    </Text>
                   </View>
                 )}
 
@@ -27887,12 +29088,41 @@ type CommandCentreSection =
         </View>
       </Modal>
                     
+      {!showEchoes &&
+      !showInbox &&
+      currentWave?.ownerUid === myUid &&
+      describePostTyping(postTypingUsers) ? (
+        <View
+          style={{
+            position: 'absolute',
+            left: 20,
+            right: 20,
+            bottom: Math.max(insets.bottom + 92, 118),
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 999,
+            backgroundColor: 'rgba(153,27,27,0.92)',
+            borderWidth: 1,
+            borderColor: 'rgba(252,165,165,0.6)',
+            alignItems: 'center',
+            zIndex: 40,
+          }}
+        >
+          <Text style={{ color: '#FFF', fontSize: 12, fontWeight: '800' }}>
+            {describePostTyping(postTypingUsers)}
+          </Text>
+        </View>
+      ) : null}
+
       {/* ECHOES */}
       <Modal
         visible={showEchoes}
         transparent
         animationType="fade"
         onRequestClose={() => {
+          if (echoWaveId && activeReplyOwnerUid) {
+            void writePostTyping(echoWaveId, String(activeReplyOwnerUid), '');
+          }
           setShowEchoes(false);
           setEditingEcho(null);
           setReplyingToEcho(null);
@@ -27930,6 +29160,11 @@ type CommandCentreSection =
                   placeholderTextColor="rgba(255,255,255,0.4)"
                   multiline
                 />
+                {describePostTyping(postTypingUsers) ? (
+                  <Text style={{ color: '#FCA5A5', fontSize: 12, fontWeight: '700', marginTop: 10 }}>
+                    {describePostTyping(postTypingUsers)}
+                  </Text>
+                ) : null}
                 <Pressable
                   style={[styles.primaryBtn, { marginTop: 16 }, mainEchoSending && { opacity: 0.7 }]}
                   onPress={editingEcho ? onSaveEditedEcho : onSendEcho}
@@ -27999,6 +29234,9 @@ type CommandCentreSection =
           <Pressable
             style={styles.dismissBtn}
             onPress={() => {
+              if (echoWaveId && activeReplyOwnerUid) {
+                void writePostTyping(echoWaveId, String(activeReplyOwnerUid), '');
+              }
               setShowEchoes(false);
               setEditingEcho(null);
               setReplyingToEcho(null);
@@ -29499,9 +30737,16 @@ type CommandCentreSection =
                 <Pressable
                   key={option.label}
                   style={styles.waveOptionsItem}
-                  onPress={() => handleWaveOptionSelect(option.label)}
+                  onPress={() => handleWaveOptionSelect(option)}
                 >
-                  <Text style={styles.waveOptionsItemTitle}>{option.label}</Text>
+                  <Text
+                    style={[
+                      styles.waveOptionsItemTitle,
+                      option.key === 'fleet_deck' && { color: '#EF4444' },
+                    ]}
+                  >
+                    {option.label}
+                  </Text>
                   <Text style={styles.waveOptionsItemDescription}>
                     {option.description}
                   </Text>
