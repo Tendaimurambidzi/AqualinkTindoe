@@ -8932,6 +8932,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [selectedFleetWaves, setSelectedFleetWaves] = useState<Vibe[]>([]);
   const [selectedFleetMeta, setSelectedFleetMeta] = useState<FleetSummary | null>(null);
   const [fleetQuickActionsTarget, setFleetQuickActionsTarget] = useState<FleetSummary | null>(null);
+  const [fleetWaveDebugMessage, setFleetWaveDebugMessage] = useState<string>('');
+  const [localEchoedWaves, setLocalEchoedWaves] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -15392,6 +15394,16 @@ type CommandCentreSection =
       if (targetWaveId && ownerUid) {
         void writePostTyping(targetWaveId, String(ownerUid), '');
       }
+      if (targetWaveMeta?.audience === 'fleet' || targetWaveMeta?.fleetId) {
+        setLocalEchoedWaves(prev => {
+          const next = new Set(prev);
+          next.add(targetWaveId);
+          return next;
+        });
+        setFleetWaveDebugMessage(
+          `Echo saved. Fleet echoes: ${Math.max(0, Number(waveStats[targetWaveId]?.echoes || 0) + 1)}.`,
+        );
+      }
       setReplyingToEcho(null);
       setMyEcho({ text });
       setMainEchoSending(false);
@@ -15408,7 +15420,11 @@ type CommandCentreSection =
         return;
       }
       setMainEchoSending(false);
-      Alert.alert('Error', `Could not send echo: ${e?.message || e || 'Unknown error'}`);
+      if (echoPostData?.audience === 'fleet' || echoPostData?.fleetId) {
+        Alert.alert('Fleet Echo Error', `Could not send echo: ${e?.message || e || 'Unknown error'}`);
+      } else {
+        Alert.alert('Error', `Could not send echo: ${e?.message || e || 'Unknown error'}`);
+      }
     }
   };
                     
@@ -16151,10 +16167,16 @@ type CommandCentreSection =
         persistLocalHugsMade(next.hugsMade);
         return next;
       });
-      notifySuccess('you have hugged this vibe');
+      if (!(wave.audience === 'fleet' || wave.fleetId)) {
+        notifySuccess('you have hugged this vibe');
+      }
     } catch (error) {
       console.error('Hug error:', error);
-      notifyError('We could not hug this vibe right now.');
+      if (wave.audience === 'fleet' || wave.fleetId) {
+        Alert.alert('Fleet Hug Error', 'We could not hug this Fleet Wave right now.');
+      } else {
+        notifyError('We could not hug this vibe right now.');
+      }
     }
   };
                     
@@ -19835,6 +19857,7 @@ type CommandCentreSection =
       }));
       setSelectedFleetMeta(fleet);
       setSelectedFleetWaves(rows);
+      setFleetWaveDebugMessage('');
       setShowFleetWaves(true);
     } catch (error) {
       console.error('Load fleet waves error:', error);
@@ -19898,6 +19921,7 @@ type CommandCentreSection =
               ]),
             ),
           }));
+          setFleetWaveDebugMessage('');
           setSelectedFleetWaves(rows);
         },
         error => {
@@ -19987,13 +20011,14 @@ type CommandCentreSection =
       currentFleetHugs,
       alreadyHugged: localHuggedWaves.has(wave.id),
     });
-    notifySuccess(`Fleet hug tapped: ${currentFleetHugs} -> ${currentFleetHugs + 1}`);
     if (localHuggedWaves.has(wave.id)) {
-      notifySuccess('you already hugged this vibe');
+      setFleetWaveDebugMessage(`Already hugged. Fleet hugs stay at ${currentFleetHugs}.`);
       return;
     }
+    setFleetWaveDebugMessage(`Sending hug for this Fleet Wave. Current hugs: ${currentFleetHugs}.`);
     await handlePostHug(wave);
-  }, [handlePostHug, localHuggedWaves, notifySuccess, waveStats]);
+    setFleetWaveDebugMessage(`Hug saved. Fleet hugs: ${currentFleetHugs + 1}.`);
+  }, [handlePostHug, localHuggedWaves, waveStats]);
 
   const openFleetWaveEcho = useCallback((wave: Vibe) => {
     setEchoWaveId(wave.id);
@@ -25752,6 +25777,23 @@ type CommandCentreSection =
                   )}
                 </View>
               ) : null}
+              {!!fleetWaveDebugMessage && (
+                <View
+                  style={{
+                    marginBottom: 12,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                    backgroundColor: 'rgba(127,29,29,0.18)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(185,28,28,0.45)',
+                  }}
+                >
+                  <Text style={{ color: '#FECACA', fontSize: 12, fontWeight: '800' }}>
+                    {fleetWaveDebugMessage}
+                  </Text>
+                </View>
+              )}
               <ScrollView>
                 {selectedFleetWaves.length === 0 ? (
                   <Text style={{ color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 20 }}>
@@ -25767,6 +25809,8 @@ type CommandCentreSection =
                       0,
                       Number(waveStats[wave.id]?.echoes ?? wave.counts?.echoes ?? 0),
                     );
+                    const isFleetHugged = localHuggedWaves.has(wave.id);
+                    const isFleetEchoed = localEchoedWaves.has(wave.id);
                     return (
                   <View
                     key={`fleet-wave-${wave.id}`}
@@ -25810,20 +25854,33 @@ type CommandCentreSection =
                           borderRadius: 999,
                           paddingVertical: 8,
                           alignItems: 'center',
-                          backgroundColor: localHuggedWaves.has(wave.id) ? '#87CEEB' : '#991B1B',
+                          backgroundColor: isFleetHugged ? 'rgba(135,206,235,0.18)' : 'rgba(127,29,29,0.12)',
+                          borderWidth: 1,
+                          borderColor: isFleetHugged ? '#87CEEB' : '#B91C1C',
                         }}
                         onPress={() => void handleFleetWaveHug(wave)}
                       >
-                        <Text style={{ color: localHuggedWaves.has(wave.id) ? '#083358' : '#FFF', fontWeight: '800' }}>
-                          {`Hug (${liveHugs})`}
+                        <Text style={{ color: isFleetHugged ? '#0F4C81' : '#B91C1C', fontWeight: '800' }}>
+                          {`${isFleetHugged ? 'Hugged' : 'Hug'} (${liveHugs})`}
                         </Text>
                       </Pressable>
                       <Pressable
-                        style={{ flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: '#0F4C81' }}
-                        onPress={() => openFleetWaveEcho(wave)}
+                        style={{
+                          flex: 1,
+                          borderRadius: 999,
+                          paddingVertical: 8,
+                          alignItems: 'center',
+                          backgroundColor: isFleetEchoed ? 'rgba(135,206,235,0.18)' : 'rgba(127,29,29,0.12)',
+                          borderWidth: 1,
+                          borderColor: isFleetEchoed ? '#87CEEB' : '#B91C1C',
+                        }}
+                        onPress={() => {
+                          setFleetWaveDebugMessage(`Opening echo thread. Fleet echoes: ${liveEchoes}.`);
+                          openFleetWaveEcho(wave);
+                        }}
                       >
-                        <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                          {`Echo (${liveEchoes})`}
+                        <Text style={{ color: isFleetEchoed ? '#0F4C81' : '#B91C1C', fontWeight: '800' }}>
+                          {`${isFleetEchoed ? 'Echoed' : 'Echo'} (${liveEchoes})`}
                         </Text>
                       </Pressable>
                     </View>
@@ -27485,28 +27542,6 @@ type CommandCentreSection =
                   </Pressable>
                 ))}
               </View>
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
-                {([
-                  { key: 'launch', label: 'Launch' },
-                  { key: 'spotlight', label: 'Spotlight' },
-                  { key: 'history', label: 'History' },
-                ] as const).map(item => (
-                  <Pressable
-                    key={item.key}
-                    style={{
-                      flex: 1,
-                      borderRadius: 999,
-                      paddingVertical: 10,
-                      alignItems: 'center',
-                      backgroundColor: minuteFameHomeView === item.key ? '#8D0000' : '#133047',
-                    }}
-                    onPress={() => setMinuteFameHomeView(item.key)}
-                  >
-                    <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>{item.label}</Text>
-                  </Pressable>
-                ))}
-              </View>
-
               {minuteFamePhase === 'home' ? (
                 <View style={{ marginTop: 16, gap: 12 }}>
                   {minuteFameHomeView === 'launch' ? (
