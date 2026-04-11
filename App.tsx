@@ -1108,7 +1108,7 @@ const formatCount = (n: number) => {
 
 // URL parsing and clickable text component
 const parseUrls = (text: string) => {
-  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  const urlRegex = /((?:https?:\/\/|www\.)[^\s]+)/g;
   const parts = text.split(urlRegex);
   
   return parts.map((part, index) => {
@@ -1117,6 +1117,16 @@ const parseUrls = (text: string) => {
     }
     return { type: 'text', content: part, key: index };
   });
+};
+
+const cleanDetectedUrl = (value: string) =>
+  String(value || '').replace(/[),.;!?]+$/, '');
+
+const normalizeDetectedUrl = (value: string) => {
+  const cleaned = cleanDetectedUrl(value);
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  if (/^www\./i.test(cleaned)) return `https://${cleaned}`;
+  return cleaned;
 };
 
 const ClickableTextWithLinks = ({ text, style, numberOfLines }: { text: string; style?: any; numberOfLines?: number }) => {
@@ -1131,12 +1141,12 @@ const ClickableTextWithLinks = ({ text, style, numberOfLines }: { text: string; 
               key={part.key}
               style={{ color: '#1976D2', textDecorationLine: 'underline' }}
               onPress={() => {
-                Linking.openURL(part.content).catch(err => 
+                Linking.openURL(normalizeDetectedUrl(part.content)).catch(err => 
                   console.log('Failed to open link:', err)
                 );
               }}
             >
-              {part.content}
+              {cleanDetectedUrl(part.content)}
             </Text>
           );
         }
@@ -7950,6 +7960,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const lastEndReachedTsRef = useRef(0);
                     
   const [showProfile, setShowProfile] = useState<boolean>(false);
+  const [showBlockedUsersModal, setShowBlockedUsersModal] = useState<boolean>(false);
+  const [blockedProfiles, setBlockedProfiles] = useState<Array<{
+    uid: string;
+    name: string;
+    bio?: string;
+    avatar?: string | null;
+  }>>([]);
+  const [blockedProfilesLoading, setBlockedProfilesLoading] = useState<boolean>(false);
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
   const [showCreatorProfile, setShowCreatorProfile] = useState<boolean>(false);
   const [creatorProfileUid, setCreatorProfileUid] = useState<string | null>(null);
@@ -8980,7 +8998,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setVibesFeed(prev => prev.map(patchWaveCounts));
       setPublicFeed(prev => prev.map(patchWaveCounts));
       setPostFeed(prev => prev.map(patchWaveCounts));
-      setWaves(prev => prev.map(patchWaveCounts));
+      setWavesFeed(prev => prev.map(patchWaveCounts));
     } catch (error) {
       console.warn('Failed to sync wave reaction counts:', waveId, error);
     }
@@ -10039,6 +10057,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } catch {}
     if (Platform.OS === 'android' && localPath.startsWith('file://')) {
       localPath = localPath.replace('file://', '');
+    }
+    if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+      try {
+        const RNFS = require('react-native-fs');
+        const safeExt = 'jpg';
+        const copyDest = `${RNFS.CachesDirectoryPath}/profile_${Date.now()}.${safeExt}`;
+        await RNFS.copyFile(String(uri), copyDest);
+        localPath = copyDest;
+      } catch (copyError) {
+        console.warn('Profile photo content URI copy failed', copyError);
+      }
     }
     if (!localPath) {
       throw new Error('Could not resolve a local path for this photo.');
@@ -15390,7 +15419,7 @@ type CommandCentreSection =
       setVibesFeed(prev => prev.map(patchEchoCount));
       setPublicFeed(prev => prev.map(patchEchoCount));
       setPostFeed(prev => prev.map(patchEchoCount));
-      setWaves(prev => prev.map(patchEchoCount));
+      setWavesFeed(prev => prev.map(patchEchoCount));
 
       if (parentEchoId) {
         setEchoList(prev =>
@@ -16142,7 +16171,7 @@ type CommandCentreSection =
           : vibe
       ));
 
-      setWaves(prev =>
+      setWavesFeed(prev =>
         prev.map(w =>
           w.id === wave.id
             ? { ...w, counts: { ...w.counts, hugs: nextHugCount } }
@@ -17523,6 +17552,56 @@ type CommandCentreSection =
       countCancelled = true;
     };
   }, [showProfile]);
+
+  useEffect(() => {
+    if (!showProfile && !showBlockedUsersModal) return;
+    let cancelled = false;
+    const loadBlockedProfiles = async () => {
+      if (blockedUsers.size === 0) {
+        setBlockedProfiles([]);
+        return;
+      }
+      setBlockedProfilesLoading(true);
+      try {
+        const ids = Array.from(blockedUsers);
+        const docs = await Promise.all(
+          ids.map(uid => firestore().collection('users').doc(uid).get()),
+        );
+        if (cancelled) return;
+        const rows = docs.map(doc => {
+          const data = doc.data() || {};
+          return {
+            uid: doc.id,
+            name:
+              String(
+                data?.userName || data?.username || data?.displayName || data?.name || 'User',
+              ).trim() || 'User',
+            bio: String(data?.bio || '').trim(),
+            avatar:
+              data?.userPhoto ||
+              data?.photoURL ||
+              data?.avatar ||
+              data?.profilePicture ||
+              null,
+          };
+        });
+        setBlockedProfiles(rows);
+      } catch (error) {
+        if (!cancelled) {
+          console.warn('Failed to load blocked profiles', error);
+          setBlockedProfiles([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setBlockedProfilesLoading(false);
+        }
+      }
+    };
+    void loadBlockedProfiles();
+    return () => {
+      cancelled = true;
+    };
+  }, [blockedUsers, showBlockedUsersModal, showProfile]);
                     
   // Check crew status when wave options target changes
   useEffect(() => {
@@ -23624,6 +23703,48 @@ type CommandCentreSection =
                   </Text>
                 </Pressable>
               </View>
+              <Pressable
+                style={{
+                  marginTop: 12,
+                  marginHorizontal: 16,
+                  paddingVertical: 10,
+                  paddingHorizontal: 14,
+                  borderRadius: 14,
+                  backgroundColor: 'rgba(255,255,255,0.06)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(255,255,255,0.12)',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+                onPress={() => setShowBlockedUsersModal(true)}
+              >
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={{ color: '#FFFFFF', fontSize: 14, fontWeight: '800' }}>
+                    Blocked Users
+                  </Text>
+                  <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }}>
+                    Manage accounts hidden from your feed
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    minWidth: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    backgroundColor: 'rgba(220,38,38,0.16)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(248,113,113,0.35)',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingHorizontal: 8,
+                  }}
+                >
+                  <Text style={{ color: '#FECACA', fontSize: 12, fontWeight: '900' }}>
+                    {blockedUsers.size}
+                  </Text>
+                </View>
+              </Pressable>
             </View>
           </View>
           <Pressable
@@ -24009,6 +24130,126 @@ type CommandCentreSection =
             onPress={() => setShowCreatorProfile(false)}
           >
             <Text style={styles.closeText}>{t('common.back')}</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showBlockedUsersModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowBlockedUsersModal(false)}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                width: '100%',
+                maxHeight: SCREEN_HEIGHT * 0.72,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>Blocked Users</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.66)', fontSize: 12, textAlign: 'center', marginBottom: 12 }}>
+                Accounts hidden from your feed. Open a profile or unblock them here.
+              </Text>
+              <ScrollView>
+                {blockedProfilesLoading ? (
+                  <View style={styles.logbookAction}>
+                    <ActivityIndicator color="#7DD3FC" />
+                    <Text style={[styles.logbookActionText, { marginTop: 8 }]}>Loading blocked users...</Text>
+                  </View>
+                ) : blockedProfiles.length === 0 ? (
+                  <View style={styles.logbookAction}>
+                    <Text style={styles.logbookActionText}>No blocked users.</Text>
+                  </View>
+                ) : blockedProfiles.map(entry => (
+                  <View
+                    key={`blocked-${entry.uid}`}
+                    style={[
+                      styles.logbookAction,
+                      {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 12,
+                        borderRadius: 14,
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.08)',
+                        marginBottom: 8,
+                      },
+                    ]}
+                  >
+                    <Pressable
+                      onPress={() => {
+                        setShowBlockedUsersModal(false);
+                        setShowProfile(false);
+                        openCreatorProfile(entry.uid, entry.name);
+                      }}
+                      style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 12 }}
+                    >
+                      {entry.avatar ? (
+                        <Image
+                          source={{ uri: entry.avatar }}
+                          style={{ width: 46, height: 46, borderRadius: 23, backgroundColor: 'rgba(255,255,255,0.08)' }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 46,
+                            height: 46,
+                            borderRadius: 23,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: 'rgba(14,165,233,0.22)',
+                          }}
+                        >
+                          <Text style={{ color: '#FFF', fontWeight: '900' }}>
+                            {String(entry.name || 'U').replace(/^[@/]+/, '').charAt(0).toUpperCase() || 'U'}
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFF', fontSize: 14, fontWeight: '800' }}>
+                          {formatHandle(entry.name)}
+                        </Text>
+                        {!!entry.bio && (
+                          <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }} numberOfLines={2}>
+                            {entry.bio}
+                          </Text>
+                        )}
+                      </View>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.bridgeSettingButton, { minWidth: 88, backgroundColor: 'rgba(22,163,74,0.78)' }]}
+                      onPress={() => {
+                        Alert.alert(
+                          'Unblock User',
+                          `Unblock ${formatHandle(entry.name)}?`,
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Unblock',
+                              onPress: () => handleUnblockUser(entry.uid, entry.name),
+                            },
+                          ],
+                        );
+                      }}
+                    >
+                      <Text style={styles.bridgeSettingButtonText}>Unblock</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+          <Pressable style={styles.dismissBtn} onPress={() => setShowBlockedUsersModal(false)}>
+            <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
       </Modal>
@@ -25460,7 +25701,7 @@ type CommandCentreSection =
           <View style={[styles.logbookContainer, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.84, borderRadius: 12, overflow: 'hidden' }]}>
             {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
             <ScrollView style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>FLEET DECK</Text>
+              <Text style={[styles.logbookTitle, { color: '#DC2626' }]}>FLEET DECKS</Text>
               <Text style={{ color: 'rgba(255,255,255,0.72)', marginBottom: 12, textAlign: 'center' }}>
                 Start a Fleet, discover other Fleets, and keep your Crew connected.
               </Text>

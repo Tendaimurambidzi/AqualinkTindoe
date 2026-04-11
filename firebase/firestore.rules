@@ -148,6 +148,14 @@ service cloud.firestore {
         allow read, create, update, delete: if isOwner(uid);
       }
 
+      match /blocked/{targetUid} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
+
+      match /removed/{targetUid} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
+
       // Allow owner to read recentPosters list (populated by Cloud Functions)
       match /recentPosters/{posterId} {
         allow read: if isOwner(uid);
@@ -258,6 +266,20 @@ service cloud.firestore {
             'updatedAt',
             'lastWaveText',
             'lastWaveAt'
+          ])
+        ) ||
+        (
+          isFleetCaptain(fleetId) &&
+          request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'name',
+            'description',
+            'moodEmoji',
+            'allowBoarding',
+            'photoURL',
+            'coverColor',
+            'updatedAt',
+            'lastActivityText',
+            'lastActivityAt'
           ])
         )
       );

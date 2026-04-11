@@ -4,7 +4,17 @@ import { Text, Linking } from 'react-native';
 type TokenType = 'text' | 'url' | 'hashtag';
 type Token = { type: TokenType; content: string; key: string };
 
-const TOKEN_REGEX = /(https?:\/\/[^\s]+|#[A-Za-z0-9_]+)/g;
+const TOKEN_REGEX = /((?:https?:\/\/|www\.)[^\s]+|#[A-Za-z0-9_]+)/g;
+
+const stripTrailingPunctuation = (value: string) =>
+  String(value || '').replace(/[),.;!?]+$/, '');
+
+const normalizeUrl = (value: string) => {
+  const cleaned = stripTrailingPunctuation(value);
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  if (/^www\./i.test(cleaned)) return `https://${cleaned}`;
+  return cleaned;
+};
 
 const tokenize = (input: string): Token[] => {
   const text = String(input || '');
@@ -58,9 +68,10 @@ const ClickableTextWithLinks: React.FC<ClickableTextWithLinksProps> = ({
 
   const openExternal = async (url: string) => {
     try {
-      const supported = await Linking.canOpenURL(url);
+      const targetUrl = normalizeUrl(url);
+      const supported = await Linking.canOpenURL(targetUrl);
       if (supported) {
-        await Linking.openURL(url);
+        await Linking.openURL(targetUrl);
       }
     } catch (err) {
       console.log('Failed to open URL:', err);
@@ -77,7 +88,7 @@ const ClickableTextWithLinks: React.FC<ClickableTextWithLinksProps> = ({
               style={{ color: '#1976D2', textDecorationLine: 'underline' }}
               onPress={() => openExternal(token.content)}
             >
-              {token.content}
+              {stripTrailingPunctuation(token.content)}
             </Text>
           );
         }

@@ -36,6 +36,13 @@ const ui = {
   spacing: { xs: appTokens.spacing.xs, sm: appTokens.spacing.sm, md: appTokens.spacing.md, lg: appTokens.spacing.lg },
   type: { title: appTokens.type.title, body: appTokens.type.body, caption: appTokens.type.caption, meta: appTokens.type.meta },
 };
+
+const normalizeLinkTarget = (value?: string | null) => {
+  const cleaned = String(value || '').trim().replace(/[),.;!?]+$/, '');
+  if (/^https?:\/\//i.test(cleaned)) return cleaned;
+  if (/^www\./i.test(cleaned)) return `https://${cleaned}`;
+  return cleaned;
+};
 let RNVideo: any = null;
 try {
   RNVideo = require('react-native-video').default;
@@ -737,7 +744,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
   const handleLinkPress = useCallback(() => {
     if (item.link) {
-      Linking.openURL(item.link).catch(err => console.log('Failed to open link:', err));
+      Linking.openURL(normalizeLinkTarget(item.link)).catch(err => console.log('Failed to open link:', err));
     }
   }, [item.link]);
 
@@ -1132,7 +1139,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     ]}
                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   >
-                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>Fleet Deck</Text>
+                    <Text style={{ color: '#DC2626', fontWeight: 'bold', fontSize: 15 }}>FLEET DECKS</Text>
                     {fleetDeckBadgeCount > 0 ? (
                       <View
                         style={{

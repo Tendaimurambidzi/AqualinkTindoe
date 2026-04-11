@@ -205,8 +205,16 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                     clearTimeout(audioControlsTimerRef.current);
                 }
                 catch (_a) { }
-            }
-        };
+    }
+};
+var normalizeLinkTarget = function (value) {
+    var cleaned = String(value || '').trim().replace(/[),.;!?]+$/, '');
+    if (/^https?:\/\//i.test(cleaned))
+        return cleaned;
+    if (/^www\./i.test(cleaned))
+        return "https://".concat(cleaned);
+    return cleaned;
+};
     }, []);
     (0, react_1.useEffect)(function () {
         var _a, _b;
@@ -554,7 +562,7 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
     }, [currentIndex, item, navigation, setPreservedScrollPosition]);
     var handleLinkPress = (0, react_1.useCallback)(function () {
         if (item.link) {
-            react_native_1.Linking.openURL(item.link).catch(function (err) { return console.log('Failed to open link:', err); });
+            react_native_1.Linking.openURL(normalizeLinkTarget(item.link)).catch(function (err) { return console.log('Failed to open link:', err); });
         }
     }, [item.link]);
     var handleAddSplash = (0, react_1.useCallback)(function () {
@@ -931,7 +939,7 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                     pressed && { opacity: 0.7 },
                 ];
             }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                    <react_native_1.Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>Fleet Deck</react_native_1.Text>
+                    <react_native_1.Text style={{ color: '#DC2626', fontWeight: 'bold', fontSize: 15 }}>FLEET DECKS</react_native_1.Text>
                     {fleetDeckBadgeCount > 0 ? (<react_native_1.View style={{
                     position: 'absolute',
                     top: -8,

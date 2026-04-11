@@ -71,7 +71,18 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 Object.defineProperty(exports, "__esModule", { value: true });
 var react_1 = __importStar(require("react"));
 var react_native_1 = require("react-native");
-var TOKEN_REGEX = /(https?:\/\/[^\s]+|#[A-Za-z0-9_]+)/g;
+var TOKEN_REGEX = /((?:https?:\/\/|www\.)[^\s]+|#[A-Za-z0-9_]+)/g;
+var stripTrailingPunctuation = function (value) {
+    return String(value || '').replace(/[),.;!?]+$/, '');
+};
+var normalizeUrl = function (value) {
+    var cleaned = stripTrailingPunctuation(value);
+    if (/^https?:\/\//i.test(cleaned))
+        return cleaned;
+    if (/^www\./i.test(cleaned))
+        return "https://".concat(cleaned);
+    return cleaned;
+};
 var tokenize = function (input) {
     var text = String(input || '');
     if (!text)
@@ -115,6 +126,7 @@ var ClickableTextWithLinks = function (_a) {
             switch (_a.label) {
                 case 0:
                     _a.trys.push([0, 4, , 5]);
+                    url = normalizeUrl(url);
                     return [4 /*yield*/, react_native_1.Linking.canOpenURL(url)];
                 case 1:
                     supported = _a.sent();
@@ -136,7 +148,7 @@ var ClickableTextWithLinks = function (_a) {
       {tokens.map(function (token) {
             if (token.type === 'url') {
                 return (<react_native_1.Text key={token.key} style={{ color: '#1976D2', textDecorationLine: 'underline' }} onPress={function () { return openExternal(token.content); }}>
-              {token.content}
+              {stripTrailingPunctuation(token.content)}
             </react_native_1.Text>);
             }
             if (token.type === 'hashtag') {
