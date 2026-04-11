@@ -206,6 +206,7 @@ interface MainFeedItemProps {
   onOpenCreatorProfile: (userId: string, userName?: string | null) => void;
   onOpenProfilePicture: (uri: string) => void;
   onOpenFleetDeck: () => void;
+  fleetDeckBadgeCount?: number;
 }
 
 const MainFeedItem = memo<MainFeedItemProps>(({
@@ -275,6 +276,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   onOpenCreatorProfile,
   onOpenProfilePicture,
   onOpenFleetDeck,
+  fleetDeckBadgeCount = 0,
   recordTextReach,
 }) => {
   const [status, setStatus] = useState<string>('');
@@ -1105,6 +1107,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               <View style={styles.headerTopRow}>
                 {/* Profile Row: Fleet Deck button (left), Avatar (center), Crew Count (right) */}
                 {item.ownerUid === myUid ? (
+                  <View style={styles.sideButtonRail}>
                   <Pressable
                     onPress={onOpenFleetDeck}
                     style={({ pressed }) => [
@@ -1114,23 +1117,47 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       paddingHorizontal: 14,
                       paddingVertical: 8,
                       marginRight: 10,
-                      alignSelf: 'flex-start',
-                      marginTop: 4,
                       flexDirection: 'row',
                       alignItems: 'center',
+                      justifyContent: 'center',
                       minWidth: 44,
+                      position: 'relative',
                       },
                       pressed && { opacity: 0.7 },
                     ]}
                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   >
                     <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>Fleet Deck</Text>
+                    {fleetDeckBadgeCount > 0 ? (
+                      <View
+                        style={{
+                          position: 'absolute',
+                          top: -8,
+                          right: -8,
+                          minWidth: 20,
+                          height: 20,
+                          borderRadius: 10,
+                          paddingHorizontal: 5,
+                          backgroundColor: '#FFD54A',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          borderWidth: 1,
+                          borderColor: 'rgba(8, 51, 88, 0.22)',
+                        }}
+                      >
+                        <Text style={{ color: '#111827', fontWeight: '900', fontSize: 10 }}>
+                          {fleetDeckBadgeCount > 99 ? '99+' : fleetDeckBadgeCount}
+                        </Text>
+                      </View>
+                    ) : null}
                   </Pressable>
+                  </View>
                 ) : null}
                 {/* Avatar and profile info remain unchanged */}
 
                 {/* Connect/Disconnect Button */}
                 {item.ownerUid !== myUid && (
+                  <View style={styles.sideButtonRail}>
                   <Pressable
                     onPress={() => handleToggleVibe(item.ownerUid!, item.authorName || item.user?.name)}
                     style={({ pressed }) => [
@@ -1143,26 +1170,27 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     delayPressOut={0}
                     activeOpacity={0.7}
                     android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-                  >
-                    <Text style={styles.joinButtonText}>
+                    >
+                      <Text style={styles.joinButtonText}>
                       {isInUserCrew[item.ownerUid!]
                         ? translate('feed.leaveTide')
                         : translate('feed.joinTide')}
                     </Text>
                   </Pressable>
+                  </View>
                 )}
 
-                {/* Profile Header */}
-                <Pressable
-                  onPress={handleProfilePress}
-                  onLongPress={handleAvatarLongPress}
-                  delayLongPress={320}
-                  style={{ alignItems: 'center', flex: 1 }}
-                  hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
-                  delayPressIn={0}
-                  delayPressOut={0}
-                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
-                >
+                <View style={styles.profileColumn}>
+                  <Pressable
+                    onPress={handleProfilePress}
+                    onLongPress={handleAvatarLongPress}
+                    delayLongPress={320}
+                    style={styles.avatarRail}
+                    hitSlop={{ top: 24, bottom: 24, left: 24, right: 24 }}
+                    delayPressIn={0}
+                    delayPressOut={0}
+                    android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}
+                  >
                   <ProfileAvatarWithCrew
                     key={item.ownerUid}
                     userId={item.ownerUid!}
@@ -1171,6 +1199,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     showFleetCount={false}
                     optimisticCrewCount={optimisticCrewCounts[item.ownerUid!]}
                   />
+                  </Pressable>
+                  <View style={styles.profileTextWrap}>
                   <Text style={{
                     fontWeight: '700',
                     fontSize: ui.type.title,
@@ -1245,7 +1275,8 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               }}>
                 {formatDefiniteTime(waveStats[item.id]?.createdAt || item.createdAt || null)}
               </Text>
-                </Pressable>
+                  </View>
+                </View>
               </View>
             </Pressable>
           </View>
@@ -2148,10 +2179,27 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   },
   headerTopRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
     width: '100%',
     marginBottom: ui.spacing.sm,
+  },
+  sideButtonRail: {
+    minHeight: 58,
+    justifyContent: 'center',
+  },
+  profileColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  avatarRail: {
+    minHeight: 58,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  profileTextWrap: {
+    width: '100%',
+    alignItems: 'center',
   },
   joinButton: {
     paddingVertical: 6,

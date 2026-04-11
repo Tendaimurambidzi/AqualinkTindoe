@@ -156,7 +156,7 @@ var isImageAsset = function (asset) {
 };
 var MainFeedItem = (0, react_1.memo)(function (_a) {
     var _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
-    var item = _a.item, index = _a.index, myUid = _a.myUid, profileName = _a.profileName, profileBio = _a.profileBio, profileMinuteFameTitle = _a.profileMinuteFameTitle, userData = _a.userData, ensureUserData = _a.ensureUserData, waveStats = _a.waveStats, isInUserCrew = _a.isInUserCrew, optimisticCrewCounts = _a.optimisticCrewCounts, expandedPosts = _a.expandedPosts, revealedImages = _a.revealedImages, isCurrentUserOnline = _a.isCurrentUserOnline, bufferingMap = _a.bufferingMap, postEchoLists = _a.postEchoLists, expandedEchoes = _a.expandedEchoes, echoesPageSize = _a.echoesPageSize, echoExpansionInProgress = _a.echoExpansionInProgress, reachCounts = _a.reachCounts, isPaused = _a.isPaused, allowPlayback = _a.allowPlayback, showMakeWaves = _a.showMakeWaves, showAudioModal = _a.showAudioModal, capturedMedia = _a.capturedMedia, showLive = _a.showLive, activeVideoId = _a.activeVideoId, preloadedVideoIds = _a.preloadedVideoIds, overlayReadyMap = _a.overlayReadyMap, isWifi = _a.isWifi, bridge = _a.bridge, currentIndex = _a.currentIndex, displayHandle = _a.displayHandle, formatDefiniteTime = _a.formatDefiniteTime, translate = _a.translate, openWaveOptions = _a.openWaveOptions, handleToggleVibe = _a.handleToggleVibe, setExpandedPosts = _a.setExpandedPosts, setRevealedImages = _a.setRevealedImages, recordVideoReach = _a.recordVideoReach, recordImageReach = _a.recordImageReach, markBuffering = _a.markBuffering, onVideoPlaybackError = _a.onVideoPlaybackError, setPreservedScrollPosition = _a.setPreservedScrollPosition, navigation = _a.navigation, ensureSplash = _a.ensureSplash, removeSplash = _a.removeSplash, setWavesFeed = _a.setWavesFeed, setVibesFeed = _a.setVibesFeed, setPublicFeed = _a.setPublicFeed, setPostFeed = _a.setPostFeed, setEchoWaveId = _a.setEchoWaveId, setCurrentIndex = _a.setCurrentIndex, setShowEchoes = _a.setShowEchoes, setShowPearls = _a.setShowPearls, anchorWave = _a.anchorWave, onShareWave = _a.onShareWave, setEchoExpansionInProgress = _a.setEchoExpansionInProgress, setExpandedEchoes = _a.setExpandedEchoes, setEchoesPageSize = _a.setEchoesPageSize, videoStyleFor = _a.videoStyleFor, isVideoAsset = _a.isVideoAsset, onReplyToEcho = _a.onReplyToEcho, onOpenCreatorProfile = _a.onOpenCreatorProfile, onOpenProfilePicture = _a.onOpenProfilePicture, onOpenFleetDeck = _a.onOpenFleetDeck;
+    var item = _a.item, index = _a.index, myUid = _a.myUid, profileName = _a.profileName, profileBio = _a.profileBio, profileMinuteFameTitle = _a.profileMinuteFameTitle, userData = _a.userData, ensureUserData = _a.ensureUserData, waveStats = _a.waveStats, isInUserCrew = _a.isInUserCrew, optimisticCrewCounts = _a.optimisticCrewCounts, expandedPosts = _a.expandedPosts, revealedImages = _a.revealedImages, isCurrentUserOnline = _a.isCurrentUserOnline, bufferingMap = _a.bufferingMap, postEchoLists = _a.postEchoLists, expandedEchoes = _a.expandedEchoes, echoesPageSize = _a.echoesPageSize, echoExpansionInProgress = _a.echoExpansionInProgress, reachCounts = _a.reachCounts, isPaused = _a.isPaused, allowPlayback = _a.allowPlayback, showMakeWaves = _a.showMakeWaves, showAudioModal = _a.showAudioModal, capturedMedia = _a.capturedMedia, showLive = _a.showLive, activeVideoId = _a.activeVideoId, preloadedVideoIds = _a.preloadedVideoIds, overlayReadyMap = _a.overlayReadyMap, isWifi = _a.isWifi, bridge = _a.bridge, currentIndex = _a.currentIndex, displayHandle = _a.displayHandle, formatDefiniteTime = _a.formatDefiniteTime, translate = _a.translate, openWaveOptions = _a.openWaveOptions, handleToggleVibe = _a.handleToggleVibe, setExpandedPosts = _a.setExpandedPosts, setRevealedImages = _a.setRevealedImages, recordVideoReach = _a.recordVideoReach, recordImageReach = _a.recordImageReach, markBuffering = _a.markBuffering, onVideoPlaybackError = _a.onVideoPlaybackError, setPreservedScrollPosition = _a.setPreservedScrollPosition, navigation = _a.navigation, ensureSplash = _a.ensureSplash, removeSplash = _a.removeSplash, setWavesFeed = _a.setWavesFeed, setVibesFeed = _a.setVibesFeed, setPublicFeed = _a.setPublicFeed, setPostFeed = _a.setPostFeed, setEchoWaveId = _a.setEchoWaveId, setCurrentIndex = _a.setCurrentIndex, setShowEchoes = _a.setShowEchoes, setShowPearls = _a.setShowPearls, anchorWave = _a.anchorWave, onShareWave = _a.onShareWave, setEchoExpansionInProgress = _a.setEchoExpansionInProgress, setExpandedEchoes = _a.setExpandedEchoes, setEchoesPageSize = _a.setEchoesPageSize, videoStyleFor = _a.videoStyleFor, isVideoAsset = _a.isVideoAsset, onReplyToEcho = _a.onReplyToEcho, onOpenCreatorProfile = _a.onOpenCreatorProfile, onOpenProfilePicture = _a.onOpenProfilePicture, onOpenFleetDeck = _a.onOpenFleetDeck, _b0 = _a.fleetDeckBadgeCount, fleetDeckBadgeCount = _b0 === void 0 ? 0 : _b0;
     var _s = (0, react_1.useState)(''), status = _s[0], setStatus = _s[1];
     var _t = (0, react_1.useState)(false), isHereNow = _t[0], setIsHereNow = _t[1];
     var _u = (0, react_1.useState)(null), activeEchoActionId = _u[0], setActiveEchoActionId = _u[1];
@@ -909,7 +909,7 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
             {/* Centered Profile Info */}
             <react_native_1.Pressable style={styles.centeredHeader} onPress={handleProfilePress} hitSlop={{ top: 14, bottom: 14, left: 18, right: 18 }} android_ripple={{ color: 'rgba(255, 255, 255, 0.14)', borderless: false }}>
               <react_native_1.View style={styles.headerTopRow}>
-                {item.ownerUid === myUid ? (<react_native_1.Pressable onPress={onOpenFleetDeck} style={function (_a) {
+                {item.ownerUid === myUid ? (<react_native_1.View style={styles.sideButtonRail}><react_native_1.Pressable onPress={onOpenFleetDeck} style={function (_a) {
                 var pressed = _a.pressed;
                 return [
                     {
@@ -918,19 +918,37 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                         paddingHorizontal: 14,
                         paddingVertical: 8,
                         marginRight: 10,
-                        alignSelf: 'flex-start',
-                        marginTop: 4,
                         flexDirection: 'row',
                         alignItems: 'center',
+                        justifyContent: 'center',
                         minWidth: 44,
+                        position: 'relative',
                     },
                     pressed && { opacity: 0.7 },
                 ];
             }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                     <react_native_1.Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>Fleet Deck</react_native_1.Text>
-                  </react_native_1.Pressable>) : null}
+                    {fleetDeckBadgeCount > 0 ? (<react_native_1.View style={{
+                    position: 'absolute',
+                    top: -8,
+                    right: -8,
+                    minWidth: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    paddingHorizontal: 5,
+                    backgroundColor: '#FFD54A',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 1,
+                    borderColor: 'rgba(8, 51, 88, 0.22)',
+                }}>
+                        <react_native_1.Text style={{ color: '#111827', fontWeight: '900', fontSize: 10 }}>
+                          {fleetDeckBadgeCount > 99 ? '99+' : fleetDeckBadgeCount}
+                        </react_native_1.Text>
+                      </react_native_1.View>) : null}
+                  </react_native_1.Pressable></react_native_1.View>) : null}
                 {/* Connect/Disconnect Button */}
-                {item.ownerUid !== myUid && (<react_native_1.Pressable onPress={function () { var _a; return handleToggleVibe(item.ownerUid, item.authorName || ((_a = item.user) === null || _a === void 0 ? void 0 : _a.name)); }} style={function (_a) {
+                {item.ownerUid !== myUid && (<react_native_1.View style={styles.sideButtonRail}><react_native_1.Pressable onPress={function () { var _a; return handleToggleVibe(item.ownerUid, item.authorName || ((_a = item.user) === null || _a === void 0 ? void 0 : _a.name)); }} style={function (_a) {
                 var pressed = _a.pressed;
                 return [
                     styles.joinButton,
@@ -943,11 +961,13 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                 ? translate('feed.leaveTide')
                 : translate('feed.joinTide')}
                     </react_native_1.Text>
-                  </react_native_1.Pressable>)}
+                  </react_native_1.Pressable></react_native_1.View>)}
 
-                {/* Profile Header */}
-                <react_native_1.Pressable onPress={handleProfilePress} onLongPress={handleAvatarLongPress} delayLongPress={320} style={{ alignItems: 'center', flex: 1 }} hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }} delayPressIn={0} delayPressOut={0} android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
+                <react_native_1.View style={styles.profileColumn}>
+                <react_native_1.Pressable onPress={handleProfilePress} onLongPress={handleAvatarLongPress} delayLongPress={320} style={styles.avatarRail} hitSlop={{ top: 24, bottom: 24, left: 24, right: 24 }} delayPressIn={0} delayPressOut={0} android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: false }}>
                   <ProfileAvatarWithCrew_1.default key={item.ownerUid} userId={item.ownerUid} size={50} showCrewCount={true} showFleetCount={false} optimisticCrewCount={optimisticCrewCounts[item.ownerUid]}/>
+                </react_native_1.Pressable>
+                <react_native_1.View style={styles.profileTextWrap}>
                   <react_native_1.Text style={{
             fontWeight: '700',
             fontSize: ui.type.title,
@@ -1017,7 +1037,8 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
         }}>
                 {formatDefiniteTime(((_j = waveStats[item.id]) === null || _j === void 0 ? void 0 : _j.createdAt) || item.createdAt || null)}
               </react_native_1.Text>
-                </react_native_1.Pressable>
+                </react_native_1.View>
+                </react_native_1.View>
               </react_native_1.View>
             </react_native_1.Pressable>
           </react_native_1.View>
@@ -1573,10 +1594,27 @@ var styles = react_native_1.StyleSheet.create({
     },
     headerTopRow: {
         flexDirection: 'row',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         justifyContent: 'center',
         width: '100%',
         marginBottom: ui.spacing.sm,
+    },
+    sideButtonRail: {
+        minHeight: 58,
+        justifyContent: 'center',
+    },
+    profileColumn: {
+        flex: 1,
+        alignItems: 'center',
+    },
+    avatarRail: {
+        minHeight: 58,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    profileTextWrap: {
+        width: '100%',
+        alignItems: 'center',
     },
     joinButton: {
         paddingVertical: 6,

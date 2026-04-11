@@ -448,7 +448,7 @@ type Vibe = {
   playbackUrl?: string | null; // server-muxed single stream
   muxStatus?: 'pending' | 'ready' | 'failed';
   authorName?: string | null; // display handle (e.g., "/Tindoe")
-  ownerUid?: string | null; // creator uid (for self-display as /You)
+  ownerUid?: string | null; // creator uid (for self-display as @You)
   user?: {
     name: string;
     avatar: string | null;
@@ -1237,8 +1237,9 @@ const formatNotificationMessage = (notification: {
     case 'follow':
     case 'CONNECT_VIBE':
     case 'joined_tide':
-      // Ensure username has only one leading slash
-      const cleanUsername = username.startsWith('/') ? username : `/${username}`;
+      const cleanUsername = username.startsWith('@')
+        ? username
+        : `@${String(username || '').replace(/^[@/]+/, '')}`;
       return `${cleanUsername} joined your tide! Wanna say hi?`;
     case 'left_crew':
       return `${username} left your crew`;
@@ -7293,7 +7294,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, [stopCallRingback]);
                     
-  // Format a display handle: replace any leading '@' or '/' with a single '/'
+  // Format a display handle with a single leading '@'
   const formatHandle = useCallback((name?: string | null) => {
     try {
       const raw = String(name ?? '').trim();
@@ -8010,7 +8011,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [minuteFameSeconds, setMinuteFameSeconds] = useState<number>(10);
   const [minuteFameLiveSeconds, setMinuteFameLiveSeconds] = useState<number>(60);
   const [minuteFameCategory, setMinuteFameCategory] =
-    useState<'Talent' | 'Funny' | 'Hustle' | 'Real Life' | 'Sports'>('Talent');
+    useState<'Talent' | 'Funny' | 'Hustle' | 'Real Life' | 'Sports' | null>(null);
   const [minuteFameMode, setMinuteFameMode] =
     useState<'queue' | 'silent' | 'flash'>('queue');
   const [minuteFameChoices, setMinuteFameChoices] = useState<Vibe[]>([]);
@@ -8101,7 +8102,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
     }, 1800);
     return () => clearTimeout(timer);
-  }, [minuteFameMode, minuteFamePhase, showMinuteFame]);
+  }, [minuteFameMode, minuteFamePhase, minuteFameQueueSpot, showMinuteFame]);
 
   useEffect(() => {
     if (!showMinuteFame || minuteFamePhase !== 'countdown') return;
@@ -8136,8 +8137,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               waveId: selectedWaveId,
               ownerUid: myUid || '',
               ownerName: selectedWave.authorName || profileName || 'User',
-              category: minuteFameCategory,
-              mode: minuteFameMode,
+              category: minuteFameCategory || 'Talent',
+              mode: 'queue',
               startsAtMs: Date.now(),
               endsAtMs: Date.now() + durationSeconds * 1000,
               baseViews,
@@ -8234,8 +8235,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   minuteFameLastViews: views,
                   minuteFameLastHugs: hugs,
                   minuteFameLastEchoes: echoes,
-                  minuteFameLastCategory: minuteFameCategory,
-                  minuteFameLastMode: minuteFameMode,
+                  minuteFameLastCategory: minuteFameCategory || 'Talent',
+                  minuteFameLastMode: 'queue',
                   minuteFameLastEarnedAt: firestore.FieldValue.serverTimestamp(),
                   minuteFameCareerPoints: nextCareerPoints,
                   minuteFameFeatureCount: nextFeatureCount,
@@ -8293,8 +8294,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               views,
               hugs,
               echoes,
-              category: minuteFameCategory,
-              mode: minuteFameMode,
+              category: minuteFameCategory || 'Talent',
+              mode: 'queue',
               titleId: nextTier.id,
               titleLabel: `${nextTier.icon} ${nextTier.label}`,
               careerPoints: nextCareerPoints,
@@ -8313,8 +8314,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   ownerUid: myUid,
                   ownerName: selectedWave?.authorName || profileName || 'User',
                   waveId: selectedWaveId,
-                  category: minuteFameCategory,
-                  mode: minuteFameMode,
+                  category: minuteFameCategory || 'Talent',
+                  mode: 'queue',
                   score,
                   views,
                   hugs,
@@ -8354,8 +8355,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 views,
                 hugs,
                 echoes,
-                category: minuteFameCategory,
-                mode: minuteFameMode,
+                category: minuteFameCategory || 'Talent',
+                mode: 'queue',
                 titleLabel: `${nextTier.icon} ${nextTier.label}`,
                 levelLabel: nextLevel.label,
                 statusLabel,
@@ -8370,8 +8371,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 ownerUid: myUid,
                 ownerName: selectedWave?.authorName || profileName || 'User',
                 waveId: selectedWaveId,
-                category: minuteFameCategory,
-                mode: minuteFameMode,
+                category: minuteFameCategory || 'Talent',
+                mode: 'queue',
                 score,
                 views,
                 hugs,
@@ -12301,6 +12302,16 @@ type CommandCentreSection =
       return true;
     }).slice(0, 3);
   }, [displayFeed, dismissedFeedSuggestions, myUid, userData, waveStats]);
+  const fleetDeckBadgeCount = useMemo(() => {
+    const unreadFleetNotifications = notifications.filter(
+      item => !item.read && String((item as any)?.route || '').trim() === 'Fleet Deck',
+    ).length;
+    const unreadFleetThreads = fleetThreads.reduce(
+      (sum, thread) => sum + Math.max(0, Number(thread.unreadCount || 0)),
+      0,
+    );
+    return unreadFleetNotifications + unreadFleetThreads;
+  }, [fleetThreads, notifications]);
   // Deduplicate my vibes to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -14467,7 +14478,7 @@ type CommandCentreSection =
         {
           id: 'local-' + Date.now(),
           type,
-          actorName: profileName || accountCreationHandle || '/You',
+          actorName: profileName || accountCreationHandle || '@You',
           text,
           waveId,
           timestamp: new Date(),
@@ -15178,19 +15189,32 @@ type CommandCentreSection =
     }
 
     const writeEchoDirectly = async () => {
-      await firestore()
-        .collection('waves')
-        .doc(waveId)
-        .collection('echoes')
-        .add({
-          userUid: uid,
-          userName: fromName ?? null,
-          userPhoto: fromPhoto ?? null,
-          text: trimmed,
-          replyToEchoId: replyToEchoId || null,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        });
+      const waveRef = firestore().collection('waves').doc(waveId);
+      await firestore().runTransaction(async tx => {
+        tx.set(
+          waveRef.collection('echoes').doc(),
+          {
+            userUid: uid,
+            userName: fromName ?? null,
+            userPhoto: fromPhoto ?? null,
+            text: trimmed,
+            replyToEchoId: replyToEchoId || null,
+            createdAt: firestore.FieldValue.serverTimestamp(),
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        tx.set(
+          waveRef,
+          {
+            counts: {
+              echoes: firestore.FieldValue.increment(1),
+            },
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      });
     };
 
     try {
@@ -15291,6 +15315,26 @@ type CommandCentreSection =
                     
       // Use the new sendEcho transaction
       await sendEcho(targetWaveId, text, parentEchoId || undefined);
+      setWaveStats(prev => ({
+        ...prev,
+        [targetWaveId]: {
+          ...prev[targetWaveId],
+          echoes: Math.max(0, Number(prev[targetWaveId]?.echoes || 0) + 1),
+        },
+      }));
+      setSelectedFleetWaves(prev =>
+        prev.map(wave =>
+          wave.id === targetWaveId
+            ? {
+                ...wave,
+                counts: {
+                  ...(wave.counts || {}),
+                  echoes: Math.max(0, Number(wave.counts?.echoes || 0) + 1),
+                },
+              }
+            : wave,
+        ),
+      );
 
       if (parentEchoId) {
         setEchoList(prev =>
@@ -15317,6 +15361,7 @@ type CommandCentreSection =
         [targetWaveId]: refreshedEchoes.slice(0, 10),
       }));
                     
+      const targetWaveMeta = echoPostData || currentWave;
       // Send ping notification to wave owner (if not self)
       const currentUserUid = auth().currentUser?.uid;
       if (ownerUid && currentUserUid && ownerUid !== currentUserUid) {
@@ -15330,7 +15375,7 @@ type CommandCentreSection =
             type: 'echo',
             waveId: echoWaveId,
             text:
-              currentWave?.audience === 'fleet' || currentWave?.fleetId
+              targetWaveMeta?.audience === 'fleet' || targetWaveMeta?.fleetId
                 ? `${fromUsername} echoed your Fleet Wave!`
                 : `${fromUsername} echoed your vibe!`,
             fromUid: currentUserUid,
@@ -15352,7 +15397,7 @@ type CommandCentreSection =
       setMainEchoSending(false);
       // setShowEchoes(false); // Keep echo UI open for next echo
       try {
-        recordPingEvent('echo', currentWave.id, { text });
+        recordPingEvent('echo', targetWaveId, { text });
       } catch {}
     } catch (e: any) {
       // Only show error if it is not a permission-denied error and echo was not created
@@ -15964,30 +16009,46 @@ type CommandCentreSection =
         notifySuccess('you already hugged this vibe');
         return;
       }
-                    
+
       const splashType = 'octopus_hug';
-                    
-      // Update local waveStats immediately
-      const currentCount = waveStats[wave.id]?.hugs || 0;
-      const newCount = currentCount + 1;
-                    
-      // Update local waveStats
+
+      const nextHugCount = Math.max(
+        0,
+        Number(
+          waveStats[wave.id]?.hugs ??
+            wave.counts?.hugs ??
+            wave.counts?.splashes ??
+            0,
+        ) + 1,
+      );
+
       setWaveStats(prev => ({
         ...prev,
         [wave.id]: {
           ...prev[wave.id],
-          hugs: newCount,
+          hugs: nextHugCount,
         },
       }));
-                    
-      // Update feed arrays for immediate UI feedback
-      console.log('Updating hug count for wave:', wave.id, 'new count:', (wave.counts?.hugs || 0) + 1);
+      setSelectedFleetWaves(prev =>
+        prev.map(item =>
+          item.id === wave.id
+            ? {
+                ...item,
+                counts: {
+                  ...(item.counts || {}),
+                  hugs: nextHugCount,
+                },
+              }
+            : item,
+        ),
+      );
+
       setVibesFeed(prev => prev.map(vibe =>
         vibe.id === wave.id
           ? { ...vibe, counts: {
               splashes: vibe.counts?.splashes || 0,
               echoes: vibe.counts?.echoes || 0,
-              hugs: (vibe.counts?.hugs || 0) + 1
+              hugs: nextHugCount
             }}
           : vibe
       ));
@@ -15996,7 +16057,7 @@ type CommandCentreSection =
           ? { ...vibe, counts: {
               splashes: vibe.counts?.splashes || 0,
               echoes: vibe.counts?.echoes || 0,
-              hugs: (vibe.counts?.hugs || 0) + 1
+              hugs: nextHugCount
             }}
           : vibe
       ));
@@ -16005,68 +16066,58 @@ type CommandCentreSection =
           ? { ...vibe, counts: {
               splashes: vibe.counts?.splashes || 0,
               echoes: vibe.counts?.echoes || 0,
-              hugs: (vibe.counts?.hugs || 0) + 1
+              hugs: nextHugCount
             }}
           : vibe
       ));
-                    
-      // Update waves state for the main feed
-      setWaves(prev => prev.map(w => w.id === wave.id ? { ...w, counts: { ...w.counts, hugs: (w.counts?.hugs || 0) + 1 } } : w));
-                    
-      // Check if user has already hugged this wave
-      // const splashDoc = await firestore()
-      //   .collection('waves')
-      //   .doc(wave.id)
-      //   .collection('splashes')
-      //   .doc(user.uid)
-      //   .get();
-                    
-      // const hasHugged = splashDoc.exists && splashDoc.data()?.splashType === 'octopus_hug' && (wave.counts?.hugs || 0) > 0;
-                    
-      // if (hasHugged) {
-      //   // User has already hugged, show a friendly message
-      //   setTimeout(() => {
-      //     notifySuccess('You already hugged this vibe with 8 arms! 🐙');
-      //   }, 0);
-      //   return;
-      // }
-                    
-      // Add the hug
-      await firestore()
-        .collection('waves')
-        .doc(wave.id)
-        .collection('splashes')
-        .doc(user.uid)
-        .set({
-          userUid: user.uid,
-          waveId: wave.id,
-          userName: user.displayName || 'Anonymous',
-          userPhoto: user.photoURL || null,
-          splashType: splashType,
-          createdAt: firestore.FieldValue.serverTimestamp(),
-        }, { merge: true });
-                    
-      // Update user stats
-      await firestore()
-        .collection('users')
-        .doc(user.uid)
-        .set({
-          stats: {
-            hugsMade: firestore.FieldValue.increment(1),
-          },
-        }, { merge: true });
-                    
-      // Update local vibe counts immediately for real-time display
-      setVibesFeed(prev => prev.map(vibe => 
-        vibe.id === wave.id 
-          ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
-          : vibe
-      ));
-      setPublicFeed(prev => prev.map(vibe => 
-        vibe.id === wave.id 
-          ? { ...vibe, counts: { ...vibe.counts, hugs: (vibe.counts?.hugs || 0) + 1 } }
-          : vibe
-      ));
+
+      setWaves(prev =>
+        prev.map(w =>
+          w.id === wave.id
+            ? { ...w, counts: { ...w.counts, hugs: nextHugCount } }
+            : w,
+        ),
+      );
+
+      await firestore().runTransaction(async tx => {
+        const waveRef = firestore().collection('waves').doc(wave.id);
+        const splashRef = waveRef.collection('splashes').doc(user.uid);
+        const splashSnap = await tx.get(splashRef);
+        if (!splashSnap.exists) {
+          tx.set(
+            splashRef,
+            {
+              userUid: user.uid,
+              waveId: wave.id,
+              userName: user.displayName || 'Anonymous',
+              userPhoto: user.photoURL || null,
+              splashType,
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          tx.set(
+            waveRef,
+            {
+              counts: {
+                hugs: firestore.FieldValue.increment(1),
+              },
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          tx.set(
+            firestore().collection('users').doc(user.uid),
+            {
+              stats: {
+                hugsMade: firestore.FieldValue.increment(1),
+              },
+            },
+            { merge: true },
+          );
+        }
+      });
+
       if (wave.ownerUid && wave.ownerUid !== user.uid) {
         try {
           const fromUsername = await fetchUserUsername(user.uid);
@@ -16103,19 +16154,7 @@ type CommandCentreSection =
       notifySuccess('you have hugged this vibe');
     } catch (error) {
       console.error('Hug error:', error);
-      setLocalHuggedWaves(prev => {
-        if (prev.has(wave.id)) return prev;
-        const next = new Set(prev);
-        next.add(wave.id);
-        persistLocalHuggedWaves(next);
-        return next;
-      });
-      setUserStats(prev => {
-        const next = { ...prev, hugsMade: (prev.hugsMade || 0) + 1 };
-        persistLocalHugsMade(next.hugsMade);
-        return next;
-      });
-      notifySuccess('you have hugged this vibe');
+      notifyError('We could not hug this vibe right now.');
     }
   };
                     
@@ -19316,6 +19355,26 @@ type CommandCentreSection =
           },
           { merge: true },
         );
+        const crewSnapshot = await firestore()
+          .collection('fleets')
+          .doc(fleet.id)
+          .collection('crew')
+          .get();
+        if (!crewSnapshot.empty) {
+          const batch = firestore().batch();
+          crewSnapshot.docs.forEach(doc => {
+            batch.set(doc.ref, { fleetPhotoURL: photoURL }, { merge: true });
+            const memberUid = String(doc.id || '').trim();
+            if (memberUid) {
+              batch.set(
+                firestore().collection(`users/${memberUid}/fleets`).doc(fleet.id),
+                { photoURL },
+                { merge: true },
+              );
+            }
+          });
+          await batch.commit();
+        }
         setSelectedFleetMeta(current =>
           current?.id === fleet.id ? { ...current, photoURL } : current,
         );
@@ -19919,12 +19978,22 @@ type CommandCentreSection =
   }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetWaves, profileName, profilePhoto]);
 
   const handleFleetWaveHug = useCallback(async (wave: Vibe) => {
+    const currentFleetHugs = Math.max(
+      0,
+      Number(waveStats[wave.id]?.hugs ?? wave.counts?.hugs ?? wave.counts?.splashes ?? 0),
+    );
+    console.log('[FLEET_HUG] tap', {
+      waveId: wave.id,
+      currentFleetHugs,
+      alreadyHugged: localHuggedWaves.has(wave.id),
+    });
+    notifySuccess(`Fleet hug tapped: ${currentFleetHugs} -> ${currentFleetHugs + 1}`);
     if (localHuggedWaves.has(wave.id)) {
       notifySuccess('you already hugged this vibe');
       return;
     }
     await handlePostHug(wave);
-  }, [handlePostHug, localHuggedWaves, notifySuccess]);
+  }, [handlePostHug, localHuggedWaves, notifySuccess, waveStats]);
 
   const openFleetWaveEcho = useCallback((wave: Vibe) => {
     setEchoWaveId(wave.id);
@@ -20982,7 +21051,7 @@ type CommandCentreSection =
     };
   }, [clearCallDocSubscription, stopCallRingback, stopIncomingCallRingtone]);
                     
-  // Map a user identifier to display label; show "/You" for the signed-in user
+  // Map a user identifier to display label; show "You" for the signed-in user
   const displayHandle = useCallback(
     (ownerUid?: string | null, name?: string | null) => {
       try {
@@ -22618,6 +22687,7 @@ type CommandCentreSection =
                         onOpenCreatorProfile={openCreatorProfile}
                         onOpenProfilePicture={setZoomedProfilePic}
                         onOpenFleetDeck={() => setShowFleetDeck(true)}
+                        fleetDeckBadgeCount={fleetDeckBadgeCount}
                       />
                     );
                   } catch (error) {
@@ -22625,6 +22695,7 @@ type CommandCentreSection =
                     return null;
                   }
                 }}
+                contentContainerStyle={{ paddingTop: (insets.top || 0) + 84, paddingBottom: 18 }}
                 refreshControl={
                   <RefreshControl refreshing={refreshing} onRefresh={onRefresh} enabled={!isOffline} />
                 }
@@ -26199,7 +26270,7 @@ type CommandCentreSection =
                   onStartPaidDrift={cfg => {
                     setIsCharteredDrift(true);
                     setActivePremiumShowId(cfg.premiumShowId || null);
-                    console.log('Chartered Drift Started:', cfg.title);
+                    console.log('Aqua Premium Started:', cfg.title);
                     void goDrift();
                   }}
                   onJoinPremiumShow={cfg => {
@@ -26215,7 +26286,7 @@ type CommandCentreSection =
                     setShowLive(true);
                   }}
                   onEndPaidDrift={() => {
-                    console.log('Chartered Drift Ended');
+                    console.log('Aqua Premium Ended');
                     setIsCharteredDrift(false);
                     setActivePremiumShowId(null);
                   }}
@@ -27408,7 +27479,7 @@ type CommandCentreSection =
                       borderRadius: 999,
                       backgroundColor: minuteFameCategory === item ? '#8D0000' : '#133047',
                     }}
-                    onPress={() => setMinuteFameCategory(item)}
+                    onPress={() => setMinuteFameCategory(prev => (prev === item ? null : item))}
                   >
                     <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>{item}</Text>
                   </Pressable>
@@ -27575,7 +27646,9 @@ type CommandCentreSection =
                       Pick one real post. When your minute starts, that exact post is pushed to other feeds.
                     </Text>
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
-                      {getMinuteFameEncouragement(minuteFameCategory, minuteFameMode)}
+                      {minuteFameCategory
+                        ? getMinuteFameEncouragement(minuteFameCategory, 'queue')
+                        : 'Choose one category first, then pick a post to start your minute.'}
                     </Text>
                     <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                       <Pressable
@@ -27583,7 +27656,7 @@ type CommandCentreSection =
                           styles.toolButton,
                           { flex: 1, minHeight: 58, backgroundColor: '#8D0000' },
                         ]}
-                        disabled={!minuteFameSelectedWaveId}
+                        disabled={!minuteFameSelectedWaveId || !minuteFameCategory}
                         onPress={() => {
                           minuteFameSessionStartedRef.current = false;
                           setMinuteFameMode('queue');
@@ -27594,51 +27667,7 @@ type CommandCentreSection =
                         }}
                       >
                         <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Start My Minute</Text>
-                        <Text style={[styles.toolButtonHint, { color: '#FFD7D7' }]}>Full queue with a full minute of reach</Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.toolButton,
-                          { flex: 1, minHeight: 56, backgroundColor: '#133047' },
-                        ]}
-                        onPress={() => {
-                          Alert.alert(
-                            '1 Minute Fame',
-                            'More options for your creator minute.',
-                            [
-                              {
-                                text: 'Share my fame card',
-                                onPress: () => shareMinuteFameCard(),
-                              },
-                              {
-                                text: 'Silent Fame',
-                                onPress: () => {
-                                  minuteFameSessionStartedRef.current = false;
-                                  setMinuteFameMode('silent');
-                                  setMinuteFameQueueSpot(2);
-                                  setMinuteFameSeconds(5);
-                                  setMinuteFameLiveSeconds(60);
-                                  setMinuteFamePhase('queue');
-                                },
-                              },
-                              {
-                                text: 'Flash Fame',
-                                onPress: () => {
-                                  minuteFameSessionStartedRef.current = false;
-                                  setMinuteFameMode('flash');
-                                  setMinuteFameQueueSpot(2);
-                                  setMinuteFameSeconds(5);
-                                  setMinuteFameLiveSeconds(30);
-                                  setMinuteFamePhase('queue');
-                                },
-                              },
-                              { text: 'Cancel', style: 'cancel' },
-                            ],
-                          );
-                        }}
-                      >
-                        <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>More</Text>
-                        <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Share card or switch launch mode</Text>
+                        <Text style={[styles.toolButtonHint, { color: '#FFD7D7' }]}>One full minute of reach starts after the countdown.</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -27680,7 +27709,9 @@ type CommandCentreSection =
                   {minuteFameHomeView === 'spotlight' ? (
                   <View style={[styles.logbookAction, { borderRadius: 18 }]}>
                     <Text style={styles.sectionHeader}>Today's Stars</Text>
-                    <Text style={styles.sectionSubtle}>Top category: {minuteFameCategory}</Text>
+                    <Text style={styles.sectionSubtle}>
+                      Top category: {minuteFameCategory || 'Choose a category'}
+                    </Text>
                     <Text style={[styles.sectionSubtle, { marginTop: 6 }]}>
                       ✨ Fresh Face from day one
                     </Text>
@@ -27856,7 +27887,7 @@ type CommandCentreSection =
                   <View style={[styles.logbookAction, { borderRadius: 18, backgroundColor: 'rgba(141,0,0,0.18)' }]}>
                     <Text style={styles.sectionHeader}>🔥 You are LIVE now!</Text>
                     <Text style={styles.sectionSubtle}>
-                      Your {minuteFameCategory} post is now being pushed into other feeds.
+                      Your {minuteFameCategory || 'creator'} post is now being pushed into other feeds.
                     </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 36, fontWeight: '900', marginTop: 12 }}>
                       00:{String(minuteFameLiveSeconds).padStart(2, '0')}
@@ -37335,7 +37366,7 @@ const LiveStreamModal = ({
               )}
               <View style={{ marginLeft: 8 }}>
                 <Text style={{ color: 'white', fontWeight: '700' }}>
-                  /{hostName || 'you'}
+                  @{String(hostName || 'you').replace(/^[@/]+/, '')}
                 </Text>
                 <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 10 }}>
                   Stream Captain
