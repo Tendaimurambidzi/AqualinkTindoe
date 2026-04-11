@@ -1178,7 +1178,7 @@ const getUserAvatar = (userId: string | undefined, userData: Record<string, { na
   }
   
   // Generate initials from username
-  const username = userInfo?.name || 'Unknown User';
+  const username = String(userInfo?.name || 'Unknown User').replace(/^[@/]+/, '');
   const initials = username.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   
   return {
@@ -8935,6 +8935,57 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [fleetWaveDebugMessage, setFleetWaveDebugMessage] = useState<string>('');
   const [localEchoedWaves, setLocalEchoedWaves] = useState<Set<string>>(new Set());
 
+  const syncWaveReactionCounts = useCallback(async (waveId: string) => {
+    if (!waveId) return;
+    try {
+      const waveRef = firestore().collection('waves').doc(waveId);
+      const [splashesSnap, echoesSnap] = await Promise.all([
+        waveRef.collection('splashes').get(),
+        waveRef.collection('echoes').get(),
+      ]);
+      const hugs = (splashesSnap.docs || []).filter(
+        doc => String(doc.data()?.splashType || '') === 'octopus_hug',
+      ).length;
+      const echoes = (echoesSnap.docs || []).length;
+      await waveRef.set(
+        {
+          counts: {
+            hugs,
+            echoes,
+          },
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+      setWaveStats(prev => ({
+        ...prev,
+        [waveId]: {
+          ...prev[waveId],
+          hugs,
+          echoes,
+        },
+      }));
+      const patchWaveCounts = (wave: Vibe) =>
+        wave.id === waveId
+          ? {
+              ...wave,
+              counts: {
+                ...(wave.counts || {}),
+                hugs,
+                echoes,
+              },
+            }
+          : wave;
+      setSelectedFleetWaves(prev => prev.map(patchWaveCounts));
+      setVibesFeed(prev => prev.map(patchWaveCounts));
+      setPublicFeed(prev => prev.map(patchWaveCounts));
+      setPostFeed(prev => prev.map(patchWaveCounts));
+      setWaves(prev => prev.map(patchWaveCounts));
+    } catch (error) {
+      console.warn('Failed to sync wave reaction counts:', waveId, error);
+    }
+  }, []);
+
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     try {
@@ -15317,26 +15368,29 @@ type CommandCentreSection =
                     
       // Use the new sendEcho transaction
       await sendEcho(targetWaveId, text, parentEchoId || undefined);
+      const optimisticEchoCount = Math.max(0, Number(waveStats[targetWaveId]?.echoes || 0) + 1);
       setWaveStats(prev => ({
         ...prev,
         [targetWaveId]: {
           ...prev[targetWaveId],
-          echoes: Math.max(0, Number(prev[targetWaveId]?.echoes || 0) + 1),
+          echoes: optimisticEchoCount,
         },
       }));
-      setSelectedFleetWaves(prev =>
-        prev.map(wave =>
-          wave.id === targetWaveId
-            ? {
-                ...wave,
-                counts: {
-                  ...(wave.counts || {}),
-                  echoes: Math.max(0, Number(wave.counts?.echoes || 0) + 1),
-                },
-              }
-            : wave,
-        ),
-      );
+      const patchEchoCount = (wave: Vibe) =>
+        wave.id === targetWaveId
+          ? {
+              ...wave,
+              counts: {
+                ...(wave.counts || {}),
+                echoes: optimisticEchoCount,
+              },
+            }
+          : wave;
+      setSelectedFleetWaves(prev => prev.map(patchEchoCount));
+      setVibesFeed(prev => prev.map(patchEchoCount));
+      setPublicFeed(prev => prev.map(patchEchoCount));
+      setPostFeed(prev => prev.map(patchEchoCount));
+      setWaves(prev => prev.map(patchEchoCount));
 
       if (parentEchoId) {
         setEchoList(prev =>
@@ -15362,6 +15416,7 @@ type CommandCentreSection =
         ...prev,
         [targetWaveId]: refreshedEchoes.slice(0, 10),
       }));
+      await syncWaveReactionCounts(targetWaveId);
                     
       const targetWaveMeta = echoPostData || currentWave;
       // Send ping notification to wave owner (if not self)
@@ -15401,7 +15456,7 @@ type CommandCentreSection =
           return next;
         });
         setFleetWaveDebugMessage(
-          `Echo saved. Fleet echoes: ${Math.max(0, Number(waveStats[targetWaveId]?.echoes || 0) + 1)}.`,
+          `Echo saved. Fleet echoes synced.`,
         );
       }
       setReplyingToEcho(null);
@@ -17649,13 +17704,14 @@ type CommandCentreSection =
         }
       }
                     
+      const normalizedProfileHandle = normalizeUserHandle(profileName);
       await firestoreMod()
         .doc(`users/${uid}`)
         .set(
           {
-            userName: profileName,
-            displayName: profileName,
-            username_lc: profileName.replace(/^[\/]+/, '').toLowerCase(),
+            userName: formatHandle(normalizedProfileHandle),
+            displayName: normalizedProfileHandle,
+            username_lc: normalizedProfileHandle.toLowerCase(),
             userPhoto: finalPhotoUrl || null,
             photoURL: finalPhotoUrl || null,
             bio: profileBio,
@@ -17666,7 +17722,7 @@ type CommandCentreSection =
         ...prev,
         [uid]: {
           ...prev[uid],
-          name: profileName || prev[uid]?.name || 'User',
+          name: formatHandle(normalizedProfileHandle) || prev[uid]?.name || 'User',
           avatar: finalPhotoUrl || '',
           bio: profileBio || prev[uid]?.bio || '',
           lastSeen: prev[uid]?.lastSeen || null,
@@ -17677,10 +17733,11 @@ type CommandCentreSection =
       }));
       try {
         await authMod()?.currentUser?.updateProfile({
-          displayName: profileName || null,
+          displayName: normalizedProfileHandle || null,
           photoURL: finalPhotoUrl || null,
         });
       } catch {}
+      setProfileName(normalizedProfileHandle);
       setProfilePhoto(finalPhotoUrl || null);
       setShowEditShore(false);
       showOceanDialog(
@@ -19935,6 +19992,18 @@ type CommandCentreSection =
     };
   }, [selectedFleetMeta?.id, selectedFleetMeta?.name, showFleetWaves, userData]);
 
+  useEffect(() => {
+    if (!showFleetWaves || selectedFleetWaves.length === 0) return;
+    selectedFleetWaves.forEach(wave => {
+      void syncWaveReactionCounts(wave.id);
+    });
+  }, [selectedFleetWaves, showFleetWaves, syncWaveReactionCounts]);
+
+  useEffect(() => {
+    if (!currentWave?.id) return;
+    void syncWaveReactionCounts(currentWave.id);
+  }, [currentWave?.id, syncWaveReactionCounts]);
+
   const joinFleet = useCallback(async (fleet: FleetSummary) => {
     const user = auth().currentUser;
     if (!user) {
@@ -20002,23 +20071,100 @@ type CommandCentreSection =
   }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetWaves, profileName, profilePhoto]);
 
   const handleFleetWaveHug = useCallback(async (wave: Vibe) => {
+    const user = auth().currentUser;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to hug.');
+      return;
+    }
     const currentFleetHugs = Math.max(
       0,
       Number(waveStats[wave.id]?.hugs ?? wave.counts?.hugs ?? wave.counts?.splashes ?? 0),
     );
+    const splashRef = firestore()
+      .collection('waves')
+      .doc(wave.id)
+      .collection('splashes')
+      .doc(user.uid);
     console.log('[FLEET_HUG] tap', {
       waveId: wave.id,
       currentFleetHugs,
-      alreadyHugged: localHuggedWaves.has(wave.id),
+      localHugged: localHuggedWaves.has(wave.id),
     });
-    if (localHuggedWaves.has(wave.id)) {
-      setFleetWaveDebugMessage(`Already hugged. Fleet hugs stay at ${currentFleetHugs}.`);
-      return;
+    try {
+      const waveRef = firestore().collection('waves').doc(wave.id);
+      let huggedAfterToggle = false;
+      await firestore().runTransaction(async tx => {
+        const splashSnap = await tx.get(splashRef);
+        const splashData = splashSnap.data() || {};
+        const alreadyHugged =
+          splashSnap.exists &&
+          String(splashData.splashType || '') === 'octopus_hug';
+        huggedAfterToggle = !alreadyHugged;
+
+        if (alreadyHugged) {
+          tx.delete(splashRef);
+          tx.set(
+            waveRef,
+            {
+              counts: {
+                hugs: firestore.FieldValue.increment(-1),
+              },
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        } else {
+          tx.set(
+            splashRef,
+            {
+              userUid: user.uid,
+              waveId: wave.id,
+              userName: formatHandle(profileName || user.displayName || 'Crew'),
+              userPhoto: profilePhoto || user.photoURL || null,
+              splashType: 'octopus_hug',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+          tx.set(
+            waveRef,
+            {
+              counts: {
+                hugs: firestore.FieldValue.increment(1),
+              },
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        }
+      });
+      setLocalHuggedWaves(prev => {
+        const next = new Set(prev);
+        if (huggedAfterToggle) {
+          next.add(wave.id);
+        } else {
+          next.delete(wave.id);
+        }
+        persistLocalHuggedWaves(next);
+        return next;
+      });
+      setFleetWaveDebugMessage(
+        huggedAfterToggle
+          ? `Fleet hug saved. Recalculating from ${currentFleetHugs}.`
+          : `Fleet hug removed. Recalculating from ${currentFleetHugs}.`,
+      );
+      await syncWaveReactionCounts(wave.id);
+      const nextSnapshot = await firestore().collection('waves').doc(wave.id).get();
+      const nextCounts = nextSnapshot.data()?.counts || {};
+      setFleetWaveDebugMessage(
+        `Fleet hugs synced: ${Math.max(0, Number(nextCounts?.hugs || 0))}.`,
+      );
+    } catch (error) {
+      console.error('[FLEET_HUG] failed', error);
+      Alert.alert('Fleet Hug Error', 'We could not update this Fleet hug right now.');
+      setFleetWaveDebugMessage('Fleet hug failed. See on-screen error.');
     }
-    setFleetWaveDebugMessage(`Sending hug for this Fleet Wave. Current hugs: ${currentFleetHugs}.`);
-    await handlePostHug(wave);
-    setFleetWaveDebugMessage(`Hug saved. Fleet hugs: ${currentFleetHugs + 1}.`);
-  }, [handlePostHug, localHuggedWaves, waveStats]);
+  }, [formatHandle, localHuggedWaves, persistLocalHuggedWaves, profileName, profilePhoto, syncWaveReactionCounts, waveStats]);
 
   const openFleetWaveEcho = useCallback((wave: Vibe) => {
     setEchoWaveId(wave.id);
@@ -23297,7 +23443,7 @@ type CommandCentreSection =
                 {/* Username Field */}
                 <TextInput
                   value={profileName || ''}
-                  onChangeText={setProfileName}
+                  onChangeText={value => setProfileName(normalizeUserHandle(value))}
                   placeholder={t('profile.usernamePlaceholder')}
                   placeholderTextColor="rgba(255,255,255,0.5)"
                   style={[
@@ -25755,13 +25901,13 @@ type CommandCentreSection =
                         ) : (
                           <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}>
                             <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                              {String(member.name || 'C').charAt(0).toUpperCase()}
+                              {String(member.name || 'C').replace(/^[@/]+/, '').charAt(0).toUpperCase() || 'C'}
                             </Text>
                           </View>
                         )}
                         <View style={{ flex: 1 }}>
                           <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
-                            {member.name}
+                            {formatHandle(member.name)}
                           </Text>
                           <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }}>
                             {member.role.replace(/_/g, ' ')}
@@ -25802,15 +25948,22 @@ type CommandCentreSection =
                 ) : selectedFleetWaves.map(wave => (
                   (() => {
                     const liveHugs = Math.max(
+                      localHuggedWaves.has(wave.id) ? 1 : 0,
                       0,
                       Number(waveStats[wave.id]?.hugs ?? wave.counts?.hugs ?? wave.counts?.splashes ?? 0),
                     );
                     const liveEchoes = Math.max(
+                      localEchoedWaves.has(wave.id) ? 1 : 0,
                       0,
                       Number(waveStats[wave.id]?.echoes ?? wave.counts?.echoes ?? 0),
                     );
                     const isFleetHugged = localHuggedWaves.has(wave.id);
                     const isFleetEchoed = localEchoedWaves.has(wave.id);
+                    const fleetWaveAuthor = formatHandle(
+                      String(wave.authorName || wave.user?.name || 'Crew').replace(/^[@/]+/, ''),
+                    );
+                    const fleetWaveInitial =
+                      String(fleetWaveAuthor).replace(/^[@/]+/, '').charAt(0).toUpperCase() || 'C';
                     return (
                   <View
                     key={`fleet-wave-${wave.id}`}
@@ -25834,13 +25987,13 @@ type CommandCentreSection =
                           }}
                         >
                           <Text style={{ color: '#FFF', fontWeight: '900' }}>
-                            {String(wave.authorName || wave.user?.name || 'C').charAt(0).toUpperCase()}
+                            {fleetWaveInitial}
                           </Text>
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
                         <Text style={styles.logbookActionText}>
-                          {wave.authorName || wave.user?.name || 'Crew'} dropped a Fleet Wave
+                          {fleetWaveAuthor} dropped a Fleet Wave
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20, marginTop: 4 }}>
                           {wave.captionText || 'No text attached to this Fleet Wave yet.'}

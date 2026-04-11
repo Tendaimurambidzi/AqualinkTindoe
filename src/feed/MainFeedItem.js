@@ -485,6 +485,10 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
             onOpenProfilePicture(avatarUri);
         }
     }, [item.ownerUid, (_h = item.user) === null || _h === void 0 ? void 0 : _h.avatar, onOpenProfilePicture, userData]);
+    var normalizeHandleLabel = (0, react_1.useCallback)(function (raw) {
+        var cleaned = String(raw || '').trim().replace(/^[@/]+/, '');
+        return cleaned ? displayHandle(item.ownerUid, cleaned) : '@User';
+    }, [displayHandle, item.ownerUid]);
     var handleOnlineUserPress = (0, react_1.useCallback)(function (user) {
         setSelectedUserId(user.uid);
         setShowProfilePreview(true);
@@ -979,11 +983,11 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                 {(function () {
             var isCurrentUserPost = item.ownerUid === myUid;
             if (isCurrentUserPost) {
-                return profileName || 'User';
+                return normalizeHandleLabel(profileName || 'User');
             }
             var userInfo = userData[item.ownerUid];
             var displayName = (userInfo === null || userInfo === void 0 ? void 0 : userInfo.name) || item.authorName || 'User';
-            return displayName;
+            return normalizeHandleLabel(displayName);
         })()}
                   </react_native_1.Text>
               {(function () {

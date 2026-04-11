@@ -142,7 +142,9 @@ var ProfileAvatarWithCrew = function (_a) {
     // Helper to get initials from displayName or username
     var getInitials = function () {
         var _a;
-        var name = (userData === null || userData === void 0 ? void 0 : userData.displayName) || (userData === null || userData === void 0 ? void 0 : userData.name) || (userData === null || userData === void 0 ? void 0 : userData.username) || '';
+        var name = String((userData === null || userData === void 0 ? void 0 : userData.displayName) || (userData === null || userData === void 0 ? void 0 : userData.name) || (userData === null || userData === void 0 ? void 0 : userData.username) || '')
+            .replace(/^[@/]+/, '')
+            .trim();
         if (!name)
             return '?';
         var parts = name.trim().split(' ');

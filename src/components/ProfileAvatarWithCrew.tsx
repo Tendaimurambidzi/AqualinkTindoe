@@ -139,7 +139,9 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
 
   // Helper to get initials from displayName or username
   const getInitials = () => {
-    const name = userData?.displayName || userData?.name || userData?.username || '';
+    const name = String(userData?.displayName || userData?.name || userData?.username || '')
+      .replace(/^[@/]+/, '')
+      .trim();
     if (!name) return '?';
     const parts = name.trim().split(' ');
     if (parts.length === 1) return parts[0][0]?.toUpperCase() || '?';

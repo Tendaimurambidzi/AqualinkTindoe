@@ -669,6 +669,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
   }, [item.ownerUid, item.user?.avatar, onOpenProfilePicture, userData]);
 
+  const normalizeHandleLabel = useCallback((raw?: string | null) => {
+    const cleaned = String(raw || '').trim().replace(/^[@/]+/, '');
+    return cleaned ? displayHandle(item.ownerUid, cleaned) : '@User';
+  }, [displayHandle, item.ownerUid]);
+
   const handleOnlineUserPress = useCallback((user: { uid: string; name: string }) => {
     setSelectedUserId(user.uid);
     setShowProfilePreview(true);
@@ -1212,11 +1217,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 {(() => {
                   const isCurrentUserPost = item.ownerUid === myUid;
                   if (isCurrentUserPost) {
-                    return profileName || 'User';
+                    return normalizeHandleLabel(profileName || 'User');
                   }
                   const userInfo = userData[item.ownerUid!];
-                  const displayName = userInfo?.name || item.authorName || 'User';
-                  return displayName;
+                  const displayName = userInfo?.name || item.authorName || item.user?.name || 'User';
+                  return normalizeHandleLabel(displayName);
                 })()}
                   </Text>
               {(() => {
