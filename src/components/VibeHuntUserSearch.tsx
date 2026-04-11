@@ -13,25 +13,14 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import firestore from '@react-native-firebase/firestore';
 
-type VibeUser = {
+export type VibeUser = {
   uid: string;
   photoURL: string | null;
   username?: string;
   email?: string;
   bio?: string;
   minuteFameCareerPoints?: number;
-};
-
-type DiscoveryEntry = {
-  id: string;
-  type: 'user' | 'fleet' | 'topic' | 'post';
-  title: string;
-  subtitle: string;
-  searchValue: string;
-  photoURL?: string | null;
-  userUid?: string;
-  userName?: string;
-  score?: number;
+  minuteFameTitle?: string | null;
 };
 
 interface VibeHuntUserSearchProps {
@@ -57,18 +46,15 @@ const normalizePhotoUrl = (value?: string | null) => {
   return raw;
 };
 
-const formatHandle = (value?: string | null) => {
-  const core = String(value || '').trim().replace(/^[@/]+/, '');
-  return core ? `@${core}` : '@user';
-};
-
-const extractTopics = (source: string) => {
-  const matches = String(source || '')
-    .match(/#[A-Za-z0-9_]+|\b[A-Z][a-z]{3,}\b/g);
-  return (matches || [])
-    .map(item => item.replace(/^#/, '').trim())
-    .filter(item => item.length >= 4);
-};
+const sortUsers = (users: VibeUser[]) =>
+  [...users].sort((a, b) => {
+    const pointsDelta =
+      Number(b.minuteFameCareerPoints || 0) - Number(a.minuteFameCareerPoints || 0);
+    if (pointsDelta !== 0) return pointsDelta;
+    return normalizeText(a.username || a.email).localeCompare(
+      normalizeText(b.username || b.email),
+    );
+  });
 
 const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   myUid,
@@ -79,8 +65,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [directoryUsers, setDirectoryUsers] = useState<VibeUser[]>([]);
-  const [discoveryEntries, setDiscoveryEntries] = useState<DiscoveryEntry[]>([]);
-  const [results, setResults] = useState<DiscoveryEntry[]>([]);
+  const [results, setResults] = useState<VibeUser[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
@@ -112,115 +97,44 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
 
   useEffect(() => {
     let cancelled = false;
-    const loadDirectory = async () => {
+    const loadUsers = async () => {
       setLoading(true);
       setError(null);
       try {
-        const [usersSnap, fleetsSnap, wavesSnap] = await Promise.all([
-          firestore().collection('users').limit(250).get(),
-          firestore().collection('fleets').limit(120).get(),
-          firestore().collection('waves').orderBy('createdAt', 'desc').limit(120).get(),
-        ]);
-
-        const users: VibeUser[] = usersSnap.docs
-          .map(doc => {
-            const data = doc.data() || {};
-            return {
-              uid: doc.id,
-              username: String(
-                data?.userName || data?.username || data?.displayName || data?.name || 'User',
-              ).trim(),
-              email: data?.email || undefined,
-              photoURL:
-                data?.userPhoto ||
-                data?.photoURL ||
-                data?.avatar ||
-                data?.profilePicture ||
-                null,
-              bio: data?.bio || '',
-              minuteFameCareerPoints: Number(data?.minuteFameCareerPoints || 0),
-            };
-          })
-          .filter(user => !!user.uid && user.uid !== myUid);
-
-        const userEntries: DiscoveryEntry[] = users.map(user => ({
-          id: `user-${user.uid}`,
-          type: 'user',
-          title: formatHandle(user.username || user.email || 'user'),
-          subtitle: String(user.bio || user.email || 'User profile').trim() || 'User profile',
-          searchValue: `${user.username || ''} ${user.email || ''} ${user.bio || ''}`,
-          photoURL: user.photoURL,
-          userUid: user.uid,
-          userName: user.username || user.email || 'User',
-          score: Number(user.minuteFameCareerPoints || 0),
-        }));
-
-        const fleetEntries: DiscoveryEntry[] = fleetsSnap.docs.map(doc => {
-          const data = doc.data() || {};
-          const crewCount = Math.max(0, Number(data?.crewCount || 0));
-          return {
-            id: `fleet-${doc.id}`,
-            type: 'fleet',
-            title: String(data?.name || 'Fleet').trim(),
-            subtitle: `${crewCount} crew • ${data?.description || 'Open this fleet in search'}`.trim(),
-            searchValue: `${data?.name || ''} ${data?.description || ''} fleet`,
-            photoURL: data?.photoURL || null,
-            score: crewCount,
-          };
-        });
-
-        const topicMap = new Map<string, number>();
-        const postEntries: DiscoveryEntry[] = [];
-        wavesSnap.docs.forEach(doc => {
-          const data = doc.data() || {};
-          const caption = String(data?.captionText || data?.caption || data?.text || '').trim();
-          if (!caption) return;
-          const ownerUid = String(data?.ownerUid || '').trim();
-          const ownerName = String(data?.authorName || data?.userName || 'User').trim();
-          postEntries.push({
-            id: `post-${doc.id}`,
-            type: 'post',
-            title: caption.slice(0, 70),
-            subtitle: `Post by ${formatHandle(ownerName)}`,
-            searchValue: `${caption} ${ownerName}`,
-            userUid: ownerUid || undefined,
-            userName: ownerName || undefined,
-            score: Math.max(
-              0,
-              Number(data?.counts?.echoes || 0) + Number(data?.counts?.hugs || data?.counts?.splashes || 0),
-            ),
-          });
-          extractTopics(caption).forEach(topic => {
-            const key = topic.toLowerCase();
-            topicMap.set(key, (topicMap.get(key) || 0) + 1);
-          });
-        });
-
-        const topicEntries: DiscoveryEntry[] = Array.from(topicMap.entries())
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 30)
-          .map(([topic, count]) => ({
-            id: `topic-${topic}`,
-            type: 'topic',
-            title: `#${topic}`,
-            subtitle: `${count} related posts`,
-            searchValue: `${topic} topic hashtag`,
-            score: count,
-          }));
-
-        const combined = [...userEntries, ...fleetEntries, ...topicEntries, ...postEntries]
-          .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
-
+        const snap = await firestore().collection('users').limit(300).get();
+        const users = sortUsers(
+          snap.docs
+            .map(doc => {
+              const data = doc.data() || {};
+              return {
+                uid: doc.id,
+                username: String(
+                  data?.userName || data?.username || data?.displayName || data?.name || 'User',
+                ).trim(),
+                email: data?.email || undefined,
+                photoURL:
+                  data?.userPhoto ||
+                  data?.photoURL ||
+                  data?.avatar ||
+                  data?.profilePicture ||
+                  null,
+                bio: data?.bio || '',
+                minuteFameCareerPoints: Number(data?.minuteFameCareerPoints || 0),
+                minuteFameTitle:
+                  data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
+              } as VibeUser;
+            })
+            .filter(user => !!user.uid && user.uid !== myUid),
+        );
         if (!cancelled) {
           setDirectoryUsers(users);
-          setDiscoveryEntries(combined);
-          setResults(combined.slice(0, 80));
+          setResults(users.slice(0, 80));
+          setError(users.length === 0 ? 'No users found.' : null);
         }
       } catch (loadError) {
         if (!cancelled) {
-          setError('Could not load discovery right now.');
+          setError('Could not load users right now.');
           setDirectoryUsers([]);
-          setDiscoveryEntries([]);
           setResults([]);
         }
       } finally {
@@ -230,7 +144,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       }
     };
 
-    void loadDirectory();
+    void loadUsers();
     return () => {
       cancelled = true;
     };
@@ -239,69 +153,64 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   useEffect(() => {
     const term = searchQuery.trim();
     if (!term) {
-      setResults(discoveryEntries.slice(0, 80));
-      setError(discoveryEntries.length === 0 && !loading ? 'No discovery results found.' : null);
+      setResults(directoryUsers.slice(0, 80));
+      setError(directoryUsers.length === 0 && !loading ? 'No users found.' : null);
       return;
     }
 
     const queryNorm = normalizeText(term);
-    const exactMatches = discoveryEntries.filter(entry => {
-      const normalizedTitle = normalizeText(entry.title);
-      const normalizedSearch = normalizeText(entry.searchValue);
-      return normalizedTitle === queryNorm || normalizedSearch === queryNorm;
+    const exactMatches = directoryUsers.filter(user => {
+      const usernameNorm = normalizeText(user.username);
+      const emailNorm = normalizeText(user.email);
+      return usernameNorm === queryNorm || emailNorm === queryNorm;
     });
-    const prefixMatches = discoveryEntries.filter(entry => {
-      const normalizedTitle = normalizeText(entry.title);
-      const normalizedSearch = normalizeText(entry.searchValue);
+
+    const prefixMatches = directoryUsers.filter(user => {
+      const usernameNorm = normalizeText(user.username);
+      const emailNorm = normalizeText(user.email);
       return (
-        (normalizedTitle.startsWith(queryNorm) || normalizedSearch.startsWith(queryNorm)) &&
-        normalizedTitle !== queryNorm &&
-        normalizedSearch !== queryNorm
+        (usernameNorm.startsWith(queryNorm) || emailNorm.startsWith(queryNorm)) &&
+        usernameNorm !== queryNorm &&
+        emailNorm !== queryNorm
       );
     });
 
-    const containsMatches = discoveryEntries.filter(entry => {
-      const normalizedTitle = normalizeText(entry.title);
-      const normalizedSubtitle = normalizeText(entry.subtitle);
-      const normalizedSearch = normalizeText(entry.searchValue);
+    const containsMatches = directoryUsers.filter(user => {
+      const usernameNorm = normalizeText(user.username);
+      const emailNorm = normalizeText(user.email);
+      const bioNorm = normalizeText(user.bio);
       return (
-        normalizedTitle.includes(queryNorm) ||
-        normalizedSubtitle.includes(queryNorm) ||
-        normalizedSearch.includes(queryNorm)
+        usernameNorm.includes(queryNorm) ||
+        emailNorm.includes(queryNorm) ||
+        bioNorm.includes(queryNorm)
       );
     });
 
-    const fuse = new Fuse(discoveryEntries, {
-      keys: ['title', 'subtitle', 'searchValue'],
-      threshold: 0.48,
+    const fuse = new Fuse(directoryUsers, {
+      keys: ['username', 'email', 'bio'],
+      threshold: 0.45,
       ignoreLocation: true,
       minMatchCharLength: 1,
     });
     const fuzzyResults = fuse.search(term).map(entry => entry.item);
 
     const seen = new Set<string>();
-    const merged = [...exactMatches, ...prefixMatches, ...containsMatches, ...fuzzyResults].filter(entry => {
-      if (seen.has(entry.id)) return false;
-      seen.add(entry.id);
+    const merged = [...exactMatches, ...prefixMatches, ...containsMatches, ...fuzzyResults].filter(user => {
+      if (seen.has(user.uid)) return false;
+      seen.add(user.uid);
       return true;
     });
 
-    const fallbackSuggestions =
+    const fallback =
       merged.length > 0
         ? merged
-        : discoveryEntries
-            .filter(entry => normalizeText(entry.title).slice(0, 1) === queryNorm.slice(0, 1))
-            .slice(0, 12);
+        : directoryUsers
+            .filter(user => normalizeText(user.username || user.email).slice(0, 1) === queryNorm.slice(0, 1))
+            .slice(0, 20);
 
-    setResults(fallbackSuggestions);
-    setError(
-      fallbackSuggestions.length === 0
-        ? 'No direct match yet. Try a broader word.'
-        : merged.length === 0
-        ? 'Showing close results'
-        : null,
-    );
-  }, [discoveryEntries, loading, searchQuery]);
+    setResults(fallback);
+    setError(fallback.length === 0 ? 'No users found.' : null);
+  }, [directoryUsers, loading, searchQuery]);
 
   const persistRecentQuery = (value: string) => {
     const term = value.trim();
@@ -316,48 +225,30 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
     });
   };
 
-  const getInitials = (entry: DiscoveryEntry) => {
-    const raw = String(entry.title || '?').replace(/^[@/#]+/, '');
-    const parts = raw.trim().split(/\s+/);
+  const handleUserPress = (user: VibeUser) => {
+    persistRecentQuery(searchQuery || user.username || user.email || '');
+    onProfilePhotoSelect?.(user.photoURL || null);
+    onOpenUserProfile?.({
+      uid: user.uid,
+      name: String(user.username || user.email || 'User'),
+    });
+  };
+
+  const getInitials = (user: VibeUser) => {
+    const name = String(user.username || user.email || '?').replace(/^[@/]+/, '');
+    const parts = name.trim().split(/\s+/);
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
   };
 
-  const getTypeLabel = (entry: DiscoveryEntry) => {
-    if (entry.type === 'user') return 'USER';
-    if (entry.type === 'fleet') return 'FLEET';
-    if (entry.type === 'topic') return 'TOPIC';
-    return 'POST';
-  };
-
-  const handleEntryPress = (entry: DiscoveryEntry) => {
-    persistRecentQuery(searchQuery || entry.searchValue || entry.title);
-    if (entry.type === 'user' && entry.userUid) {
-      onProfilePhotoSelect?.(entry.photoURL || null);
-      onOpenUserProfile?.({
-        uid: entry.userUid,
-        name: String(entry.userName || entry.title || 'User'),
-      });
-      return;
-    }
-    if (entry.type === 'post' && entry.userUid) {
-      onOpenUserProfile?.({
-        uid: entry.userUid,
-        name: String(entry.userName || 'User'),
-      });
-      return;
-    }
-    setSearchQuery(entry.title.replace(/^#/, ''));
-  };
-
-  const renderEntry = ({ item }: { item: DiscoveryEntry }) => {
-    const isBlocked = !!item.userUid && blockedSet.has(item.userUid);
+  const renderUser = ({ item }: { item: VibeUser }) => {
+    const isBlocked = blockedSet.has(item.uid);
     const photoUrl = normalizePhotoUrl(item.photoURL);
-    const showPhoto = !!photoUrl && !brokenAvatarIds.has(item.id);
+    const showPhoto = !!photoUrl && !brokenAvatarIds.has(item.uid);
     return (
-      <Pressable style={styles.userItem} onPress={() => handleEntryPress(item)}>
+      <Pressable style={styles.userItem} onPress={() => handleUserPress(item)}>
         <Pressable
-          onPress={() => handleEntryPress(item)}
+          onPress={() => handleUserPress(item)}
           onLongPress={() => {
             if (photoUrl) {
               onProfilePhotoSelect?.(photoUrl);
@@ -376,9 +267,9 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
                 style={[styles.avatar, styles.avatarImage]}
                 onError={() => {
                   setBrokenAvatarIds(prev => {
-                    if (prev.has(item.id)) return prev;
+                    if (prev.has(item.uid)) return prev;
                     const next = new Set(prev);
-                    next.add(item.id);
+                    next.add(item.uid);
                     return next;
                   });
                 }}
@@ -389,24 +280,28 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         <View style={styles.userInfo}>
           <View style={styles.userTitleRow}>
             <Text style={styles.displayName} numberOfLines={1}>
-              {item.title}
+              {item.username || item.email || 'User'}
             </Text>
-            <View style={styles.typePill}>
-              <Text style={styles.typePillText}>{getTypeLabel(item)}</Text>
-            </View>
             {isBlocked ? (
               <View style={styles.blockedPill}>
                 <Text style={styles.blockedPillText}>Blocked</Text>
               </View>
             ) : null}
           </View>
-          <Text style={styles.statusText} numberOfLines={2}>
-            {item.subtitle}
-          </Text>
+          {!!item.username && (
+            <Text style={styles.username} numberOfLines={1}>
+              @{normalizeText(item.username)}
+            </Text>
+          )}
+          {!!item.bio && (
+            <Text style={styles.bioText} numberOfLines={2}>
+              {item.bio}
+            </Text>
+          )}
         </View>
         <View style={styles.metaCol}>
-          <Text style={styles.pointsValue}>{Number(item.score || 0)}</Text>
-          <Text style={styles.pointsLabel}>rank</Text>
+          <Text style={styles.pointsValue}>{Number(item.minuteFameCareerPoints || 0)}</Text>
+          <Text style={styles.pointsLabel}>points</Text>
         </View>
       </Pressable>
     );
@@ -418,7 +313,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         <Text style={styles.searchIcon}>🔍</Text>
         <TextInput
           style={styles.searchInput}
-          placeholder="Default search"
+          placeholder="Search"
           placeholderTextColor="rgba(255,255,255,0.5)"
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -467,7 +362,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
 
       <View style={styles.resultsContainer}>
         <Text style={styles.sectionTitle}>
-          {searchQuery.trim() ? 'Matching results' : 'Trending now'}
+          {searchQuery.trim() ? 'Search results' : 'Popular'}
         </Text>
         {loading ? (
           <ActivityIndicator size="small" color="#00C2FF" style={{ paddingVertical: 18 }} />
@@ -476,8 +371,8 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         ) : (
           <FlatList
             data={results}
-            renderItem={renderEntry}
-            keyExtractor={item => item.id}
+            renderItem={renderUser}
+            keyExtractor={item => item.uid}
             style={styles.resultsList}
             keyboardShouldPersistTaps="handled"
           />
@@ -638,7 +533,12 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     flex: 1,
   },
-  statusText: {
+  username: {
+    color: '#81D4FA',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  bioText: {
     color: 'rgba(255,255,255,0.68)',
     fontSize: 12,
     marginTop: 3,
@@ -666,19 +566,6 @@ const styles = StyleSheet.create({
   },
   blockedPillText: {
     color: '#FFD4D4',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  typePill: {
-    borderRadius: 999,
-    backgroundColor: 'rgba(14,165,233,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(125,211,252,0.45)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  typePillText: {
-    color: '#D8F4FF',
     fontSize: 10,
     fontWeight: '800',
   },

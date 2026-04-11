@@ -8952,6 +8952,106 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [fleetQuickActionsTarget, setFleetQuickActionsTarget] = useState<FleetSummary | null>(null);
   const [fleetWaveDebugMessage, setFleetWaveDebugMessage] = useState<string>('');
   const [localEchoedWaves, setLocalEchoedWaves] = useState<Set<string>>(new Set());
+  const [safeHarborHiddenCount, setSafeHarborHiddenCount] = useState(0);
+  const [safeHarborStatusMessage, setSafeHarborStatusMessage] = useState<string>('');
+
+  const normalizeSafetySettings = useCallback((raw: any) => {
+    const next = {
+      shallowWatersMode: !!raw?.shallowWatersMode,
+      restrictedContentHidden: raw?.restrictedContentHidden !== false,
+    };
+    if (next.shallowWatersMode) {
+      next.restrictedContentHidden = true;
+    }
+    return next;
+  }, []);
+
+  const persistSafetySettings = useCallback(async (next: any) => {
+    try {
+      const key = `safe_harbor_${String(myUid || 'guest').trim() || 'guest'}`;
+      await AsyncStorage.setItem(key, JSON.stringify(next));
+    } catch (error) {
+      console.warn('Safe Harbor save failed', error);
+    }
+  }, [myUid]);
+
+  useEffect(() => {
+    let active = true;
+    const loadSafeHarbor = async () => {
+      try {
+        const key = `safe_harbor_${String(myUid || 'guest').trim() || 'guest'}`;
+        const raw = await AsyncStorage.getItem(key);
+        if (!active || !raw) return;
+        const parsed = JSON.parse(raw);
+        setSafetySettings(normalizeSafetySettings(parsed));
+      } catch (error) {
+        console.warn('Safe Harbor load failed', error);
+      }
+    };
+    void loadSafeHarbor();
+    return () => {
+      active = false;
+    };
+  }, [myUid, normalizeSafetySettings]);
+
+  useEffect(() => {
+    const notes: string[] = [];
+    if (safeSettings.shallowWatersMode) notes.push('Shallow Waters active');
+    if (safeSettings.restrictedContentHidden) notes.push('Restricted content hidden');
+    setSafeHarborStatusMessage(notes.join(' • '));
+  }, [safeSettings]);
+
+  const updateSafetySettings = useCallback(
+    async (
+      patch:
+        | Partial<{
+            shallowWatersMode: boolean;
+            restrictedContentHidden: boolean;
+          }>
+        | ((prev: any) => any),
+    ) => {
+      let nextSnapshot: any = null;
+      setSafetySettings((prev: any) => {
+        const safePrev = normalizeSafetySettings(prev || {});
+        const merged =
+          typeof patch === 'function'
+            ? patch(safePrev)
+            : {
+                ...safePrev,
+                ...patch,
+              };
+        nextSnapshot = normalizeSafetySettings(merged);
+        return nextSnapshot;
+      });
+      if (nextSnapshot) {
+        await persistSafetySettings(nextSnapshot);
+      }
+    },
+    [normalizeSafetySettings, persistSafetySettings],
+  );
+
+  const contentLooksRestricted = useCallback(
+    (wave: any) => {
+      if (!wave) return false;
+      const flags = Array.isArray(wave?.contentFlags)
+        ? wave.contentFlags.map((item: any) => String(item || '').toLowerCase())
+        : [];
+      if (flags.some((flag: string) => ['mature', 'adult', 'sensitive', 'violence', '18+', 'explicit'].includes(flag))) {
+        return true;
+      }
+      const text = [
+        wave?.captionText,
+        wave?.text,
+        wave?.description,
+        wave?.authorName,
+        wave?.fileName,
+      ]
+        .map(item => String(item || '').toLowerCase())
+        .join(' ');
+      return /(nsfw|adult|explicit|violence|violent|nude|nudity|sex|sexual|gambling|betting|drug|drugs|weapon|gore)/i.test(text);
+    },
+    [],
+  );
 
   const syncWaveReactionCounts = useCallback(async (waveId: string) => {
     if (!waveId) return;
@@ -9079,13 +9179,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [tiltVibeEnabled, setTiltVibeEnabled] = useState(true);
   const [safetySettings, setSafetySettings] = useState<any>({
     shallowWatersMode: false,
-    lifeguardAlertsEnabled: true,
-    buddySystemEnabled: false,
-    noCurrentZone: false,
     ageVerified: false,
     restrictedContentHidden: true,
   });
   const [safeHarborExpanded, setSafeHarborExpanded] = useState<boolean>(true);
+  const safeSettings = useMemo(
+    () => normalizeSafetySettings(safetySettings || {}),
+    [normalizeSafetySettings, safetySettings],
+  );
   // ========== END OCEAN EFFECTS STATE ==========
                     
   // Track pending splash operation to avoid listener reverting optimistic UI
@@ -12307,6 +12408,12 @@ type CommandCentreSection =
       if (!ownerUid) return true;
       if (blockedUsers.has(ownerUid)) return false;
       if (removedUsers.has(ownerUid)) return false;
+      if (
+        (safeSettings.restrictedContentHidden || safeSettings.shallowWatersMode) &&
+        contentLooksRestricted(wave)
+      ) {
+        return false;
+      }
       return true;
     });
   }, [
@@ -12314,9 +12421,43 @@ type CommandCentreSection =
     publicFeed,
     vibesFeed,
     blockedUsers,
+    contentLooksRestricted,
     removedUsers,
     postFeed,
+    safeSettings.restrictedContentHidden,
+    safeSettings.shallowWatersMode,
   ]);
+  useEffect(() => {
+    const combined = activeMinuteFameWave
+      ? mergeWaveCollectionsById([activeMinuteFameWave], postFeed, vibesFeed, publicFeed)
+      : mergeWaveCollectionsById(postFeed, vibesFeed, publicFeed);
+    const hiddenCount = combined.filter(wave =>
+      !!wave?.id &&
+      !blockedUsers.has(wave.ownerUid || (wave as any).authorId) &&
+      !removedUsers.has(wave.ownerUid || (wave as any).authorId) &&
+      (safeSettings.restrictedContentHidden || safeSettings.shallowWatersMode) &&
+      contentLooksRestricted(wave),
+    ).length;
+    setSafeHarborHiddenCount(hiddenCount);
+  }, [
+    activeMinuteFameWave,
+    blockedUsers,
+    contentLooksRestricted,
+    postFeed,
+    publicFeed,
+    removedUsers,
+    safeSettings.restrictedContentHidden,
+    safeSettings.shallowWatersMode,
+    vibesFeed,
+  ]);
+  useEffect(() => {
+    if (safeHarborHiddenCount <= 0) return;
+    notifySuccess(
+      safeHarborHiddenCount === 1
+        ? 'Lifeguard alert: 1 restricted item was hidden from your feed.'
+        : `Lifeguard alert: ${safeHarborHiddenCount} restricted items were hidden from your feed.`,
+    );
+  }, [notifySuccess, safeHarborHiddenCount]);
   const feedSuggestions = useMemo<FeedSuggestion[]>(() => {
     const ranked = displayFeed
       .filter(wave => !!wave?.id)
@@ -14843,6 +14984,9 @@ type CommandCentreSection =
     attachmentName: string | null;
     localOnly?: boolean;
   }> => {
+    if (isOffline) {
+      throw new Error('No network right now. Reconnect and try your message again.');
+    }
     const user = auth().currentUser;
     if (!user) {
       throw new Error('User not signed in');
@@ -19500,7 +19644,8 @@ type CommandCentreSection =
           `users/${uid}/fleets/${fleet.id}/profile.jpg`,
           'upload this Fleet photo',
         );
-        await firestore().collection('fleets').doc(fleet.id).set(
+        const fleetRef = firestore().collection('fleets').doc(fleet.id);
+        await fleetRef.set(
           {
             photoURL,
             updatedAt: firestore.FieldValue.serverTimestamp(),
@@ -19522,17 +19667,15 @@ type CommandCentreSection =
           const batch = firestore().batch();
           crewSnapshot.docs.forEach(doc => {
             batch.set(doc.ref, { fleetPhotoURL: photoURL }, { merge: true });
-            const memberUid = String(doc.id || '').trim();
-            if (memberUid) {
-              batch.set(
-                firestore().collection(`users/${memberUid}/fleets`).doc(fleet.id),
-                { photoURL },
-                { merge: true },
-              );
-            }
           });
           await batch.commit();
         }
+        setMyFleets(current =>
+          current.map(item => (item.id === fleet.id ? { ...item, photoURL } : item)),
+        );
+        setFleetDirectory(current =>
+          current.map(item => (item.id === fleet.id ? { ...item, photoURL } : item)),
+        );
         setSelectedFleetMeta(current =>
           current?.id === fleet.id ? { ...current, photoURL } : current,
         );
@@ -19540,7 +19683,14 @@ type CommandCentreSection =
         notifySuccess('Fleet photo updated.');
       } catch (error) {
         console.error('Update fleet photo error:', error);
-        Alert.alert('Fleet Deck', 'We could not update this Fleet photo right now.');
+        const detail =
+          typeof (error as any)?.message === 'string' && (error as any).message.trim()
+            ? `\n\n${String((error as any).message).trim()}`
+            : '';
+        Alert.alert(
+          'Fleet Deck',
+          `We could not update this Fleet photo right now.${detail}`,
+        );
       } finally {
         setFleetActionLoadingId(current => (current === fleet.id ? null : current));
       }
@@ -20693,6 +20843,10 @@ type CommandCentreSection =
       const targetUid = String(
         targetUser?.uid || (selectedThread?.kind === 'direct' ? selectedThread?.senderUid : '') || '',
       ).trim();
+      if (isOffline) {
+        Alert.alert('No network', 'No network right now. Please reconnect before starting a call.');
+        return;
+      }
       if (!myUid || !targetUid) {
         Alert.alert('Call unavailable', 'Open a chat thread or pick a user.');
         return;
@@ -20721,6 +20875,12 @@ type CommandCentreSection =
 
       const calleeUid = targetUid;
       if (!calleeUid) return;
+      if (!isWifi) {
+        Alert.alert(
+          'Poor network',
+          'Your connection may be too weak for a stable call right now. The app will still try, but audio or video quality may drop.',
+        );
+      }
       const callerName =
         profileName ||
         accountCreationHandle ||
@@ -20892,6 +21052,8 @@ type CommandCentreSection =
       myUid,
       outgoingDirectCall,
       profileName,
+      isOffline,
+      isWifi,
       selectedThread,
       fetchDirectCallAgoraToken,
       startCallRingback,
@@ -22812,10 +22974,10 @@ type CommandCentreSection =
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
                 removeClippedSubviews={Platform.OS === 'android'}
-                maxToRenderPerBatch={2}
-                windowSize={5}
+                maxToRenderPerBatch={1}
+                windowSize={4}
                 initialNumToRender={1}
-                updateCellsBatchingPeriod={80}
+                updateCellsBatchingPeriod={120}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -23012,7 +23174,7 @@ type CommandCentreSection =
                                     })
                                   }
                                 >
-                                  <Text style={{ color: '#0F4C81', fontWeight: '800', fontSize: 12 }}>Ignore</Text>
+                                  <Text style={{ color: '#0F4C81', fontWeight: '800', fontSize: 12 }}>Pass</Text>
                                 </Pressable>
                               </View>
                             </View>
@@ -26109,7 +26271,15 @@ type CommandCentreSection =
                   </View>
                   <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 }}>
                     <Pressable
-                      style={styles.dismissBtn}
+                      style={[
+                        styles.dismissBtn,
+                        {
+                          marginTop: 0,
+                          backgroundColor: '#38BDF8',
+                          borderColor: '#38BDF8',
+                          marginBottom: 4,
+                        },
+                      ]}
                       onPress={() => setFleetManagerExpandedId(null)}
                     >
                       <Text style={styles.dismissText}>Back</Text>
@@ -28960,77 +29130,17 @@ type CommandCentreSection =
                         <Pressable
                           onPress={() => {
                             try {
-                              setSafetySettings((prev: any) => ({ ...prev, shallowWatersMode: !prev.shallowWatersMode }));
+                              void updateSafetySettings((prev: any) => ({
+                                ...prev,
+                                shallowWatersMode: !prev.shallowWatersMode,
+                              }));
                             } catch (e) {
                               console.log('Shallow waters error:', e);
                             }
                           }}
                         >
                           <Text style={styles.logbookActionText}>
-                            {safetySettings.shallowWatersMode ? 'ON' : 'OFF'}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    
-                      <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🚨 Lifeguard Alerts</Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>AI monitors content for safety</Text>
-                        </View>
-                        <Pressable
-                          onPress={() => {
-                            try {
-                              setSafetySettings((prev: any) => ({ ...prev, lifeguardAlertsEnabled: !prev.lifeguardAlertsEnabled }));
-                            } catch (e) {
-                              console.log('Lifeguard alerts error:', e);
-                            }
-                          }}
-                        >
-                          <Text style={styles.logbookActionText}>
-                            {safetySettings.lifeguardAlertsEnabled ? 'ON' : 'OFF'}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    
-                      <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🤝 Buddy System</Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Parent/guardian can monitor activity</Text>
-                        </View>
-                        <Pressable
-                          onPress={() => {
-                            try {
-                              setSafetySettings((prev: any) => ({ ...prev, buddySystemEnabled: !prev.buddySystemEnabled }));
-                            } catch (e) {
-                              console.log('Buddy system error:', e);
-                            }
-                          }}
-                        >
-                          <Text style={styles.logbookActionText}>
-                            {safetySettings.buddySystemEnabled ? 'ON' : 'OFF'}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    
-                      <View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}
-                      >
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.logbookActionText}>🚫 No Current Zone</Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Disable all direct messages</Text>
-                        </View>
-                        <Pressable
-                          onPress={() => {
-                            try {
-                              setSafetySettings((prev: any) => ({ ...prev, noCurrentZone: !prev.noCurrentZone }));
-                            } catch (e) {
-                              console.log('No current zone error:', e);
-                            }
-                          }}
-                        >
-                          <Text style={styles.logbookActionText}>
-                            {safetySettings.noCurrentZone ? 'ON' : 'OFF'}
+                            {safeSettings.shallowWatersMode ? 'ON' : 'OFF'}
                           </Text>
                         </Pressable>
                       </View>
@@ -29044,16 +29154,31 @@ type CommandCentreSection =
                         <Pressable
                           onPress={() => {
                             try {
-                              setSafetySettings((prev: any) => ({ ...prev, restrictedContentHidden: !prev.restrictedContentHidden }));
+                              void updateSafetySettings((prev: any) => ({
+                                ...prev,
+                                restrictedContentHidden: !prev.restrictedContentHidden,
+                              }));
                             } catch (e) {
                               console.log('Restricted content error:', e);
                             }
                           }}
                         >
                           <Text style={styles.logbookActionText}>
-                            {safetySettings.restrictedContentHidden ? 'ON' : 'OFF'}
+                            {safeSettings.restrictedContentHidden ? 'ON' : 'OFF'}
                           </Text>
                         </Pressable>
+                      </View>
+                      <View style={[styles.logbookAction, { alignItems: 'flex-start' }]}>
+                        <Text style={[styles.logbookActionText, { fontSize: 13 }]}>
+                          {safeHarborHiddenCount > 0
+                            ? `${safeHarborHiddenCount} feed items hidden by Safe Harbor right now`
+                            : 'No restricted feed items are visible right now.'}
+                        </Text>
+                        {!!safeHarborStatusMessage && (
+                          <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 4 }}>
+                            {safeHarborStatusMessage}
+                          </Text>
+                        )}
                       </View>
                     </View>
                   ) : (
@@ -32225,6 +32350,7 @@ const DirectCallModal = ({
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [showVideoJoinWatchdog, setShowVideoJoinWatchdog] = useState(false);
   const [showJoinRecovery, setShowJoinRecovery] = useState(false);
+  const [callNetworkWarning, setCallNetworkWarning] = useState<string | null>(null);
   const [joinAttemptNonce, setJoinAttemptNonce] = useState(0);
   const autoRetryJoinTimerRef = useRef<any>(null);
   const autoRetryJoinCountRef = useRef(0);
@@ -32294,6 +32420,42 @@ const DirectCallModal = ({
     performancePolicy.liveFrameRate,
     performancePolicy.liveVideoBitrate,
   ]);
+
+  useEffect(() => {
+    let unsub: any = null;
+    try {
+      const NetInfo = require('@react-native-community/netinfo').default;
+      NetInfo.fetch().then((state: any) => {
+        if (state?.isConnected === false || state?.isInternetReachable === false) {
+          setCallNetworkWarning('No network. This call cannot stay stable until your internet returns.');
+          return;
+        }
+        const cellular = state?.type === 'cellular';
+        setCallNetworkWarning(
+          cellular
+            ? 'Poor network risk: mobile data may reduce call quality.'
+            : null,
+        );
+      }).catch(() => {});
+      unsub = NetInfo.addEventListener((state: any) => {
+        if (state?.isConnected === false || state?.isInternetReachable === false) {
+          setCallNetworkWarning('No network. This call cannot stay stable until your internet returns.');
+          return;
+        }
+        const cellular = state?.type === 'cellular';
+        setCallNetworkWarning(
+          cellular
+            ? 'Poor network risk: mobile data may reduce call quality.'
+            : null,
+        );
+      });
+    } catch {}
+    return () => {
+      try {
+        unsub && unsub();
+      } catch {}
+    };
+  }, []);
 
   useEffect(() => {
     if (!visible || !call?.id || !Agora || !appId) return;
@@ -32984,6 +33146,24 @@ const DirectCallModal = ({
                 ? `${callerRingingConfirmed ? 'Ringing' : 'Calling'} ${counterpart}...`
                 : 'Connecting...'}
             </Text>
+            {callNetworkWarning ? (
+              <View
+                style={{
+                  marginTop: 8,
+                  borderRadius: 10,
+                  backgroundColor: 'rgba(56, 189, 248, 0.2)',
+                  borderWidth: 1,
+                  borderColor: 'rgba(125, 211, 252, 0.75)',
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  maxWidth: 300,
+                }}
+              >
+                <Text style={{ color: '#E0F2FE', fontSize: 12, fontWeight: '700' }}>
+                  {callNetworkWarning}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -38577,6 +38757,14 @@ function SignInScreen({ navigation }: any) {
       Alert.alert(t('alert.invalidInputTitle'), t('alert.invalidInputBody'));
       return;
     }
+    try {
+      const NetInfo = require('@react-native-community/netinfo').default;
+      const state = await NetInfo.fetch();
+      if (state?.isConnected === false || state?.isInternetReachable === false) {
+        Alert.alert('No network', t('alert.noInternetBody'));
+        return;
+      }
+    } catch {}
     
     try {
       let userCredential;

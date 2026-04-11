@@ -8063,9 +8063,6 @@ var InnerApp = function (_a) {
     var _203 = (0, react_1.useState)(true), tiltVibeEnabled = _203[0], setTiltVibeEnabled = _203[1];
     var _204 = (0, react_1.useState)({
         shallowWatersMode: false,
-        lifeguardAlertsEnabled: true,
-        buddySystemEnabled: false,
-        noCurrentZone: false,
         ageVerified: false,
         restrictedContentHidden: true,
     }), safetySettings = _204[0], setSafetySettings = _204[1];
@@ -26939,71 +26936,14 @@ var InnerApp = function (_a) {
                         </react_native_1.View>
                         <react_native_1.Pressable onPress={function () {
                     try {
-                        setSafetySettings(function (prev) { return (__assign(__assign({}, prev), { shallowWatersMode: !prev.shallowWatersMode })); });
+                        setSafetySettings(function (prev) { return (__assign(__assign({}, (prev || {})), { shallowWatersMode: !((prev === null || prev === void 0 ? void 0 : prev.shallowWatersMode) || false) })); });
                     }
                     catch (e) {
                         console.log('Shallow waters error:', e);
                     }
                 }}>
                           <react_native_1.Text style={styles.logbookActionText}>
-                            {safetySettings.shallowWatersMode ? 'ON' : 'OFF'}
-                          </react_native_1.Text>
-                        </react_native_1.Pressable>
-                      </react_native_1.View>
-                    
-                      <react_native_1.View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}>
-                        <react_native_1.View style={{ flex: 1 }}>
-                          <react_native_1.Text style={styles.logbookActionText}>🚨 Lifeguard Alerts</react_native_1.Text>
-                          <react_native_1.Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>AI monitors content for safety</react_native_1.Text>
-                        </react_native_1.View>
-                        <react_native_1.Pressable onPress={function () {
-                    try {
-                        setSafetySettings(function (prev) { return (__assign(__assign({}, prev), { lifeguardAlertsEnabled: !prev.lifeguardAlertsEnabled })); });
-                    }
-                    catch (e) {
-                        console.log('Lifeguard alerts error:', e);
-                    }
-                }}>
-                          <react_native_1.Text style={styles.logbookActionText}>
-                            {safetySettings.lifeguardAlertsEnabled ? 'ON' : 'OFF'}
-                          </react_native_1.Text>
-                        </react_native_1.Pressable>
-                      </react_native_1.View>
-                    
-                      <react_native_1.View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}>
-                        <react_native_1.View style={{ flex: 1 }}>
-                          <react_native_1.Text style={styles.logbookActionText}>🤝 Buddy System</react_native_1.Text>
-                          <react_native_1.Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Parent/guardian can monitor activity</react_native_1.Text>
-                        </react_native_1.View>
-                        <react_native_1.Pressable onPress={function () {
-                    try {
-                        setSafetySettings(function (prev) { return (__assign(__assign({}, prev), { buddySystemEnabled: !prev.buddySystemEnabled })); });
-                    }
-                    catch (e) {
-                        console.log('Buddy system error:', e);
-                    }
-                }}>
-                          <react_native_1.Text style={styles.logbookActionText}>
-                            {safetySettings.buddySystemEnabled ? 'ON' : 'OFF'}
-                          </react_native_1.Text>
-                        </react_native_1.Pressable>
-                      </react_native_1.View>
-                    
-                      <react_native_1.View style={[styles.logbookAction, { flexDirection: 'row', justifyContent: 'space-between' }]}>
-                        <react_native_1.View style={{ flex: 1 }}>
-                          <react_native_1.Text style={styles.logbookActionText}>🚫 No Current Zone</react_native_1.Text>
-                          <react_native_1.Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11 }}>Disable all direct messages</react_native_1.Text>
-                        </react_native_1.View>
-                        <react_native_1.Pressable onPress={function () {
-                    try {
-                        setSafetySettings(function (prev) { return (__assign(__assign({}, prev), { noCurrentZone: !prev.noCurrentZone })); });
-                    }
-                    catch (e) {
-                        console.log('No current zone error:', e);
-                    }
-                }}>
-                          <react_native_1.Text style={styles.logbookActionText}>
-                            {safetySettings.noCurrentZone ? 'ON' : 'OFF'}
+                            {(safetySettings === null || safetySettings === void 0 ? void 0 : safetySettings.shallowWatersMode) ? 'ON' : 'OFF'}
                           </react_native_1.Text>
                         </react_native_1.Pressable>
                       </react_native_1.View>
@@ -27015,14 +26955,14 @@ var InnerApp = function (_a) {
                         </react_native_1.View>
                         <react_native_1.Pressable onPress={function () {
                     try {
-                        setSafetySettings(function (prev) { return (__assign(__assign({}, prev), { restrictedContentHidden: !prev.restrictedContentHidden })); });
+                        setSafetySettings(function (prev) { return (__assign(__assign({}, (prev || {})), { restrictedContentHidden: !(((prev === null || prev === void 0 ? void 0 : prev.restrictedContentHidden) !== false)) })); });
                     }
                     catch (e) {
                         console.log('Restricted content error:', e);
                     }
                 }}>
                           <react_native_1.Text style={styles.logbookActionText}>
-                            {safetySettings.restrictedContentHidden ? 'ON' : 'OFF'}
+                            {((safetySettings === null || safetySettings === void 0 ? void 0 : safetySettings.restrictedContentHidden) !== false) ? 'ON' : 'OFF'}
                           </react_native_1.Text>
                         </react_native_1.Pressable>
                       </react_native_1.View>

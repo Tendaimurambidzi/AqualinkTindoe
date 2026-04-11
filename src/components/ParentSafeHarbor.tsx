@@ -10,9 +10,6 @@ interface ParentSafeHarborProps {
 
 export interface SafetySettings {
   shallowWatersMode: boolean; // Kids under 13 mode
-  lifeguardAlertsEnabled: boolean; // AI content moderation
-  buddySystemEnabled: boolean; // Parent monitoring
-  noCurrentZone: boolean; // Disable DMs
   ageVerified: boolean;
   restrictedContentHidden: boolean;
 }
@@ -20,9 +17,6 @@ export interface SafetySettings {
 const ParentSafeHarbor: React.FC<ParentSafeHarborProps> = ({ userId, userAge, onSettingsChange }) => {
   const [settings, setSettings] = useState<SafetySettings>({
     shallowWatersMode: userAge ? userAge < 13 : false,
-    lifeguardAlertsEnabled: true,
-    buddySystemEnabled: userAge ? userAge < 18 : false,
-    noCurrentZone: userAge ? userAge < 13 : false,
     ageVerified: false,
     restrictedContentHidden: true,
   });
@@ -118,54 +112,6 @@ const ParentSafeHarbor: React.FC<ParentSafeHarborProps> = ({ userId, userAge, on
             />
           </View>
 
-          {/* Lifeguard Alerts */}
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>👁️ Lifeguard Alerts</Text>
-              <Text style={styles.settingDesc}>
-                AI monitors content for safety
-              </Text>
-            </View>
-            <Switch
-              value={settings.lifeguardAlertsEnabled}
-              onValueChange={(v) => updateSetting('lifeguardAlertsEnabled', v)}
-              trackColor={{ false: '#444', true: '#00C2FF' }}
-              thumbColor={settings.lifeguardAlertsEnabled ? '#00FFD1' : '#888'}
-            />
-          </View>
-
-          {/* Buddy System */}
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>👨‍👩‍👧 Buddy System</Text>
-              <Text style={styles.settingDesc}>
-                Parent/guardian can monitor activity
-              </Text>
-            </View>
-            <Switch
-              value={settings.buddySystemEnabled}
-              onValueChange={(v) => updateSetting('buddySystemEnabled', v)}
-              trackColor={{ false: '#444', true: '#00C2FF' }}
-              thumbColor={settings.buddySystemEnabled ? '#00FFD1' : '#888'}
-            />
-          </View>
-
-          {/* No Current Zone */}
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>🚫 No Current Zone</Text>
-              <Text style={styles.settingDesc}>
-                Disable all direct messages
-              </Text>
-            </View>
-            <Switch
-              value={settings.noCurrentZone}
-              onValueChange={(v) => updateSetting('noCurrentZone', v)}
-              trackColor={{ false: '#444', true: '#00C2FF' }}
-              thumbColor={settings.noCurrentZone ? '#00FFD1' : '#888'}
-            />
-          </View>
-
           {/* Hide Restricted Content */}
           <View style={styles.settingItem}>
             <View style={styles.settingInfo}>
@@ -199,7 +145,7 @@ const ParentSafeHarbor: React.FC<ParentSafeHarborProps> = ({ userId, userAge, on
 };
 
 export const shouldFilterContent = (settings: SafetySettings, contentFlags?: string[]): boolean => {
-  if (!settings.restrictedContentHidden) return false;
+  if (!settings?.restrictedContentHidden) return false;
   if (!contentFlags || contentFlags.length === 0) return false;
   
   const restrictedFlags = ['mature', 'sensitive', 'violence', 'adult'];
@@ -207,7 +153,7 @@ export const shouldFilterContent = (settings: SafetySettings, contentFlags?: str
 };
 
 export const canSendDirectMessage = (settings: SafetySettings): boolean => {
-  return !settings.noCurrentZone;
+  return true;
 };
 
 const styles = StyleSheet.create({
