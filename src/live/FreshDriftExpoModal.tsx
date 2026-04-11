@@ -350,7 +350,7 @@ const FreshDriftExpoModal = ({
     }
   }, []);
   const appId = String(cfg?.AGORA_APP_ID || '').trim();
-  const defaultChannel = String(cfg?.AGORA_CHANNEL_NAME || 'MoMoDrift').trim();
+  const defaultChannel = String(cfg?.AGORA_CHANNEL_NAME || 'DriftChannel').trim();
   const engineRef = useRef<any>(null);
   const joinedChannelRef = useRef<string | null>(null);
   const joiningChannelRef = useRef<string | null>(null);
@@ -1397,8 +1397,8 @@ const FreshDriftExpoModal = ({
       Alert.alert(
         'Screen share failed',
         reason === 22
-          ? 'MoMo could not start screen sharing after permission was granted. Please try again.'
-          : 'MoMo could not start screen sharing on this device. Please try again.',
+          ? 'Could not start screen sharing after permission was granted. Please try again.'
+          : 'Could not start screen sharing on this device. Please try again.',
       );
     },
     [localScreenShareActive, syncScreenShareRoomState],
@@ -4720,7 +4720,7 @@ const FreshDriftExpoModal = ({
                 </View>
               </View>
               <View style={[styles.stageBrandChip, { left: insets.left + 12, top: insets.top + 54 }]}>
-                <Text style={styles.stageBrandChipText}>MoMo</Text>
+                {/* MoMo branding removed */}
               </View>
               {networkWarning ? (
                 <View
@@ -5407,7 +5407,7 @@ const FreshDriftExpoModal = ({
                 }}
                 >
                   <View style={styles.pdfBrandChip}>
-                    <Text style={styles.pdfBrandChipText}>MoMo</Text>
+                    {/* MoMo branding removed */}
                   </View>
                   {docBusy ? <ActivityIndicator color="#8D0000" size="large" /> : null}
                 {!docBusy && (pdfPreviewUri || String(activeDoc?.sourceKind || '').toLowerCase() === 'blank') ? (

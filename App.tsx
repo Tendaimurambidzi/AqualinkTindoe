@@ -62,7 +62,6 @@ import OceanAmbienceToggle from './src/components/OceanAmbienceToggle';
 import InteractiveWavePhysics from './InteractiveWavePhysics';
 import PosterActionBar from './src/components/PosterActionBar';
 import ShakeForStorms from './ShakeForStorms';
-import OctopusHug from './OctopusHug';
 import FloatingWaterAnimation from './FloatingWaterAnimation';
 import CharteredSeaDriftButton from './CharteredSeaDriftButton';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -510,6 +509,17 @@ type FleetThread = {
   lastMessageTime: any;
   unreadCount: number;
   messages: Array<any>;
+};
+
+type FeedSuggestion = {
+  id: string;
+  title: string;
+  subtitle: string;
+  actionLabel: string;
+  kind: 'watch_wave' | 'open_profile' | 'open_fleet';
+  waveId?: string;
+  ownerUid?: string | null;
+  ownerName?: string | null;
 };
 
 type SelectedInboxThread = {
@@ -3719,11 +3729,7 @@ const getWaveOptionMenu = (
           label: t('feed.optionShare'),
           description: t('feed.optionShareDesc'),
         },
-        {
-          key: 'fleet_deck',
-          label: 'Fleet Deck',
-          description: 'Open your Fleet Deck from this post.',
-        },
+        // Fleet Deck option removed
       ]
     : [
         {
@@ -5051,7 +5057,7 @@ const styles = StyleSheet.create({
   },
                     
   dismissBtn: {
-    alignSelf: 'center',
+    alignSelf: 'flex-end',
     marginTop: 6,
     minHeight: 44,
     paddingHorizontal: 16,
@@ -6383,8 +6389,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     null,
   );
   const [splashBusy, setSplashBusy] = useState<boolean>(false);
-  const [showOctopusHug, setShowOctopusHug] = useState<boolean>(false);
-  const octopusHugOpacity = useRef(new Animated.Value(0)).current;
   const [showEditShore, setShowEditShore] = useState<boolean>(false);
   const [showTreasure, setShowTreasure] = useState<boolean>(false);
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
@@ -8861,6 +8865,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   );
   const [toastMessage, setToastMessage] = useState('');
   const [toastAvatar, setToastAvatar] = useState<any>(null);
+  const [dismissedFeedSuggestions, setDismissedFeedSuggestions] = useState<Set<string>>(new Set());
   const toastTimerRef = useRef<any>(null);
   const hibernationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -12229,6 +12234,73 @@ type CommandCentreSection =
     removedUsers,
     postFeed,
   ]);
+  const feedSuggestions = useMemo<FeedSuggestion[]>(() => {
+    const ranked = displayFeed
+      .filter(wave => !!wave?.id)
+      .map(wave => {
+        const stats = waveStats[wave.id] || {};
+        const score =
+          Number(stats.echoes || wave.counts?.echoes || 0) * 4 +
+          Number(stats.hugs || wave.counts?.hugs || wave.counts?.splashes || 0) * 3 +
+          Number(stats.views || 0);
+        return { wave, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const suggestions: FeedSuggestion[] = [];
+    const topWave = ranked.find(entry => entry.wave?.id)?.wave || null;
+    if (topWave?.id) {
+      suggestions.push({
+        id: `watch-${topWave.id}`,
+        kind: 'watch_wave',
+        waveId: topWave.id,
+        ownerUid: topWave.ownerUid || null,
+        ownerName: topWave.authorName || topWave.user?.name || 'Creator',
+        title: `Watch ${topWave.authorName || topWave.user?.name || 'this creator'} next`,
+        subtitle: topWave.captionText
+          ? String(topWave.captionText).trim().slice(0, 88)
+          : 'This vibe is getting traction in the feed right now.',
+        actionLabel: 'Watch now',
+      });
+    }
+
+    const creatorWave = ranked.find(
+      entry => entry.wave?.ownerUid && entry.wave.ownerUid !== myUid,
+    )?.wave;
+    if (creatorWave?.ownerUid) {
+      const creatorName =
+        creatorWave.authorName ||
+        creatorWave.user?.name ||
+        userData[creatorWave.ownerUid]?.name ||
+        'Creator';
+      suggestions.push({
+        id: `profile-${creatorWave.ownerUid}`,
+        kind: 'open_profile',
+        ownerUid: creatorWave.ownerUid,
+        ownerName: creatorName,
+        title: `See more from ${creatorName}`,
+        subtitle: 'Open this profile to view past posts, bio, and active vibes.',
+        actionLabel: 'Open profile',
+      });
+    }
+
+    if (myUid) {
+      suggestions.push({
+        id: 'fleet-deck-entry',
+        kind: 'open_fleet',
+        title: 'Open your Fleet Deck',
+        subtitle: 'Launch a Fleet, board one, or post straight to your crew.',
+        actionLabel: 'Open Fleet Deck',
+      });
+    }
+
+    const seen = new Set<string>();
+    return suggestions.filter(item => {
+      if (!item.id || dismissedFeedSuggestions.has(item.id) || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    }).slice(0, 3);
+  }, [displayFeed, dismissedFeedSuggestions, myUid, userData, waveStats]);
   // Deduplicate my vibes to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -12912,8 +12984,7 @@ type CommandCentreSection =
       }
 
       if (entry?.key === 'fleet_deck') {
-        setShowFleetDeck(true);
-        return;
+        // Fleet Deck option removed
       }
       
       if (selectedOption.label === 'Gem') {
@@ -19688,6 +19759,21 @@ type CommandCentreSection =
         const bTime = (b as any)?.createdAt?.toDate?.() || new Date((b as any)?.createdAt || 0);
         return bTime.getTime() - aTime.getTime();
       });
+      setWaveStats(prev => ({
+        ...prev,
+        ...Object.fromEntries(
+          rows.map(row => [
+            row.id,
+            {
+              ...(prev[row.id] || {}),
+              splashes: Math.max(0, Number(row.counts?.splashes || 0)),
+              hugs: Math.max(0, Number(row.counts?.hugs || row.counts?.splashes || 0)),
+              echoes: Math.max(0, Number(row.counts?.echoes || 0)),
+              views: Math.max(0, Number((prev[row.id] as any)?.views || 0)),
+            },
+          ]),
+        ),
+      }));
       setSelectedFleetMeta(fleet);
       setSelectedFleetWaves(rows);
       setShowFleetWaves(true);
@@ -19738,6 +19824,21 @@ type CommandCentreSection =
               const bTime = (b as any)?.createdAt?.toDate?.() || new Date((b as any)?.createdAt || 0);
               return bTime.getTime() - aTime.getTime();
             });
+          setWaveStats(prev => ({
+            ...prev,
+            ...Object.fromEntries(
+              rows.map(row => [
+                row.id,
+                {
+                  ...(prev[row.id] || {}),
+                  splashes: Math.max(0, Number(row.counts?.splashes || 0)),
+                  hugs: Math.max(0, Number(row.counts?.hugs || row.counts?.splashes || 0)),
+                  echoes: Math.max(0, Number(row.counts?.echoes || 0)),
+                  views: Math.max(0, Number((prev[row.id] as any)?.views || 0)),
+                },
+              ]),
+            ),
+          }));
           setSelectedFleetWaves(rows);
         },
         error => {
@@ -19823,20 +19924,6 @@ type CommandCentreSection =
       return;
     }
     await handlePostHug(wave);
-    setSelectedFleetWaves(prev =>
-      prev.map(item =>
-        item.id === wave.id
-          ? {
-              ...item,
-              counts: {
-                ...(item.counts || {}),
-                hugs: Number(item.counts?.hugs || 0) + 1,
-                splashes: Number(item.counts?.splashes || 0) + 1,
-              },
-            }
-          : item,
-      ),
-    );
   }, [handlePostHug, localHuggedWaves, notifySuccess]);
 
   const openFleetWaveEcho = useCallback((wave: Vibe) => {
@@ -22505,6 +22592,7 @@ type CommandCentreSection =
                         setRevealedImages={setRevealedImages}
                         recordVideoReach={recordVideoReach}
                         recordImageReach={recordImageReach}
+                        recordTextReach={recordTextReach}
                         markBuffering={markBuffering}
                         onVideoPlaybackError={handleVideoPlaybackError}
                         setPreservedScrollPosition={setPreservedScrollPosition}
@@ -22529,6 +22617,7 @@ type CommandCentreSection =
                         onReplyToEcho={openReplyToPostEcho}
                         onOpenCreatorProfile={openCreatorProfile}
                         onOpenProfilePicture={setZoomedProfilePic}
+                        onOpenFleetDeck={() => setShowFleetDeck(true)}
                       />
                     );
                   } catch (error) {
@@ -22538,6 +22627,79 @@ type CommandCentreSection =
                 }}
                 refreshControl={
                   <RefreshControl refreshing={refreshing} onRefresh={onRefresh} enabled={!isOffline} />
+                }
+                ListHeaderComponent={
+                  feedSuggestions.length > 0 ? (
+                    <View style={{ paddingHorizontal: 12, paddingTop: 10, paddingBottom: 2, gap: 8 }}>
+                      {feedSuggestions.map(suggestion => (
+                        <View
+                          key={suggestion.id}
+                          style={{
+                            borderRadius: 16,
+                            padding: 12,
+                            backgroundColor: '#FFFFFF',
+                            borderWidth: 1,
+                            borderColor: 'rgba(15,76,129,0.12)',
+                          }}
+                        >
+                          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                            <View style={{ flex: 1 }}>
+                              <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '900' }}>
+                                {suggestion.title}
+                              </Text>
+                              <Text style={{ color: '#4B5563', fontSize: 12, lineHeight: 18, marginTop: 4 }}>
+                                {suggestion.subtitle}
+                              </Text>
+                              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                                <Pressable
+                                  style={{
+                                    borderRadius: 999,
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 8,
+                                    backgroundColor: '#0F4C81',
+                                  }}
+                                  onPress={() => {
+                                    if (suggestion.kind === 'watch_wave' && suggestion.waveId) {
+                                      void focusWaveInFeed(suggestion.waveId);
+                                      return;
+                                    }
+                                    if (suggestion.kind === 'open_profile' && suggestion.ownerUid) {
+                                      openCreatorProfile(suggestion.ownerUid, suggestion.ownerName || null);
+                                      return;
+                                    }
+                                    if (suggestion.kind === 'open_fleet') {
+                                      setShowFleetDeck(true);
+                                    }
+                                  }}
+                                >
+                                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 12 }}>
+                                    {suggestion.actionLabel}
+                                  </Text>
+                                </Pressable>
+                                <Pressable
+                                  style={{
+                                    borderRadius: 999,
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 8,
+                                    backgroundColor: 'rgba(15,76,129,0.08)',
+                                  }}
+                                  onPress={() =>
+                                    setDismissedFeedSuggestions(prev => {
+                                      const next = new Set(prev);
+                                      next.add(suggestion.id);
+                                      return next;
+                                    })
+                                  }
+                                >
+                                  <Text style={{ color: '#0F4C81', fontWeight: '800', fontSize: 12 }}>Ignore</Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null
                 }
             />
               </ErrorBoundary>
@@ -25462,6 +25624,14 @@ type CommandCentreSection =
                       </Text>
                     </Pressable>
                   </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 10 }}>
+                    <Pressable
+                      style={styles.dismissBtn}
+                      onPress={() => setFleetManagerExpandedId(null)}
+                    >
+                      <Text style={styles.dismissText}>Back</Text>
+                    </Pressable>
+                  </View>
                   <Text style={{ color: '#FECACA', fontSize: 12, fontWeight: '800', marginTop: 14, marginBottom: 8 }}>
                     Crew roster
                   </Text>
@@ -25517,6 +25687,16 @@ type CommandCentreSection =
                     No Fleet Waves yet.
                   </Text>
                 ) : selectedFleetWaves.map(wave => (
+                  (() => {
+                    const liveHugs = Math.max(
+                      0,
+                      Number(waveStats[wave.id]?.hugs ?? wave.counts?.hugs ?? wave.counts?.splashes ?? 0),
+                    );
+                    const liveEchoes = Math.max(
+                      0,
+                      Number(waveStats[wave.id]?.echoes ?? wave.counts?.echoes ?? 0),
+                    );
+                    return (
                   <View
                     key={`fleet-wave-${wave.id}`}
                     style={[styles.logbookAction, { marginBottom: 10, gap: 10 }]}
@@ -25564,7 +25744,7 @@ type CommandCentreSection =
                         onPress={() => void handleFleetWaveHug(wave)}
                       >
                         <Text style={{ color: localHuggedWaves.has(wave.id) ? '#083358' : '#FFF', fontWeight: '800' }}>
-                          {`Hug (${Number(wave.counts?.hugs || wave.counts?.splashes || 0)})`}
+                          {`Hug (${liveHugs})`}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -25572,11 +25752,13 @@ type CommandCentreSection =
                         onPress={() => openFleetWaveEcho(wave)}
                       >
                         <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                          {`Echo (${Number(wave.counts?.echoes || 0)})`}
+                          {`Echo (${liveEchoes})`}
                         </Text>
                       </Pressable>
                     </View>
                   </View>
+                    );
+                  })()
                 ))}
               </ScrollView>
             </View>
@@ -25604,13 +25786,7 @@ type CommandCentreSection =
             {paperTexture && <Image source={paperTexture} style={styles.logbookBg} />}
             <View style={[styles.logbookPage, { paddingBottom: 18 }]}>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                <Pressable
-                  onPress={() => setFleetQuickActionsTarget(null)}
-                  style={{ borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.1)' }}
-                >
-                  <Text style={{ color: '#FFF', fontWeight: '800' }}>Back</Text>
-                </Pressable>
-                <View style={{ flex: 1, paddingHorizontal: 12 }}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
                   <Text style={styles.logbookTitle}>{fleetQuickActionsTarget?.name || 'Fleet'}</Text>
                   <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 2 }}>
                     {fleetQuickActionsTarget
@@ -25700,6 +25876,12 @@ type CommandCentreSection =
                     }}
                   >
                     <Text style={{ color: '#FFF', fontWeight: '800' }}>Leave Fleet</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.dismissBtn, { marginTop: 12 }]}
+                    onPress={() => setFleetQuickActionsTarget(null)}
+                  >
+                    <Text style={styles.dismissText}>Back</Text>
                   </Pressable>
                 </View>
               ) : null}
@@ -27200,9 +27382,7 @@ type CommandCentreSection =
                   borderColor: 'rgba(14,165,233,0.26)',
                 }}
               >
-                <Text style={{ color: '#8DD8FF', fontSize: 12, fontWeight: '900', letterSpacing: 1.1 }}>
-                  MOMO
-                </Text>
+                {/* MoMo branding removed */}
                 <View style={{ marginTop: 8, alignSelf: 'flex-start' }}>
                   <MinuteFameWordmark
                     language={resolvedLanguage}
@@ -27419,12 +27599,46 @@ type CommandCentreSection =
                       <Pressable
                         style={[
                           styles.toolButton,
-                          { flex: 1, minHeight: 56, backgroundColor: '#0EA5D9' },
+                          { flex: 1, minHeight: 56, backgroundColor: '#133047' },
                         ]}
-                        onPress={() => shareMinuteFameCard()}
+                        onPress={() => {
+                          Alert.alert(
+                            '1 Minute Fame',
+                            'More options for your creator minute.',
+                            [
+                              {
+                                text: 'Share my fame card',
+                                onPress: () => shareMinuteFameCard(),
+                              },
+                              {
+                                text: 'Silent Fame',
+                                onPress: () => {
+                                  minuteFameSessionStartedRef.current = false;
+                                  setMinuteFameMode('silent');
+                                  setMinuteFameQueueSpot(2);
+                                  setMinuteFameSeconds(5);
+                                  setMinuteFameLiveSeconds(60);
+                                  setMinuteFamePhase('queue');
+                                },
+                              },
+                              {
+                                text: 'Flash Fame',
+                                onPress: () => {
+                                  minuteFameSessionStartedRef.current = false;
+                                  setMinuteFameMode('flash');
+                                  setMinuteFameQueueSpot(2);
+                                  setMinuteFameSeconds(5);
+                                  setMinuteFameLiveSeconds(30);
+                                  setMinuteFamePhase('queue');
+                                },
+                              },
+                              { text: 'Cancel', style: 'cancel' },
+                            ],
+                          );
+                        }}
                       >
-                        <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>Share My Fame Card</Text>
-                        <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Show your creator lane publicly</Text>
+                        <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>More</Text>
+                        <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Share card or switch launch mode</Text>
                       </Pressable>
                     </View>
                   </View>
@@ -27460,45 +27674,6 @@ type CommandCentreSection =
                         </Pressable>
                       ))
                     )}
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <Pressable
-                      style={[styles.toolButton, { flex: 1, backgroundColor: '#133047' }]}
-                      onPress={() => {
-                        Alert.alert(
-                          'More modes',
-                          'Choose a faster launch style for this post.',
-                          [
-                            {
-                              text: 'Silent Fame',
-                              onPress: () => {
-                                minuteFameSessionStartedRef.current = false;
-                                setMinuteFameMode('silent');
-                                setMinuteFameQueueSpot(2);
-                                setMinuteFameSeconds(5);
-                                setMinuteFameLiveSeconds(60);
-                                setMinuteFamePhase('queue');
-                              },
-                            },
-                            {
-                              text: 'Flash Fame',
-                              onPress: () => {
-                                minuteFameSessionStartedRef.current = false;
-                                setMinuteFameMode('flash');
-                                setMinuteFameQueueSpot(2);
-                                setMinuteFameSeconds(5);
-                                setMinuteFameLiveSeconds(30);
-                                setMinuteFamePhase('queue');
-                              },
-                            },
-                            { text: 'Cancel', style: 'cancel' },
-                          ],
-                        );
-                      }}
-                    >
-                      <Text style={[styles.toolButtonTitle, { color: '#FFFFFF' }]}>More Modes</Text>
-                      <Text style={[styles.toolButtonHint, { color: '#D8F5FF' }]}>Silent Fame and Flash Fame live here</Text>
-                    </Pressable>
                   </View>
                   </>
                   ) : null}
