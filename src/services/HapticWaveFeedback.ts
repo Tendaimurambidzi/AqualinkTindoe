@@ -1,108 +1,152 @@
-import React from 'react';
-import { Vibration } from 'react-native';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { AppState, Vibration } from 'react-native';
+
+let appIsActive = true;
+let lastVibrateTime = 0;
+const VIBRATE_DEBOUNCE_MS = 200;
+
+const safeCancelVibration = () => {
+  try {
+    Vibration.cancel();
+  } catch (error) {
+    console.warn('Vibration cancel failed:', error);
+  }
+};
+
+// AppState listener for background handling
+const setupAppStateListener = () => {
+  const subscription = AppState.addEventListener('change', nextAppState => {
+    appIsActive = nextAppState === 'active';
+    if (!appIsActive) {
+      safeCancelVibration();
+    }
+  });
+  return () => subscription?.remove();
+};
 
 export type HapticPattern = 'wave' | 'splash' | 'fish' | 'storm' | 'dolphin' | 'gentle' | 'strong';
 
 class HapticWaveFeedback {
+  private static safeVibrate(pattern: number | number[]) {
+    if (!appIsActive) return;
+    const now = Date.now();
+    if (now - lastVibrateTime < VIBRATE_DEBOUNCE_MS) return;
+    lastVibrateTime = now;
+    Vibration.vibrate(pattern, appIsActive);
+  }
+
   static wave() {
-    // Gentle rolling wave pattern
-    Vibration.vibrate([0, 30, 50, 30, 50, 30]);
+    this.safeVibrate([0, 30, 50, 30, 50, 30]);
   }
 
   static splash() {
-    // Quick burst for splash interaction
-    Vibration.vibrate([0, 20, 10, 40]);
+    this.safeVibrate([0, 20, 10, 40]);
   }
 
   static fish() {
-    // Rapid taps like fish swimming
-    Vibration.vibrate([0, 15, 15, 15, 15, 15, 15, 15]);
+    this.safeVibrate([0, 15, 15, 15, 15, 15, 15, 15]);
   }
 
   static storm() {
-    // Intense rumbling pattern
-    Vibration.vibrate([0, 100, 50, 150, 50, 100, 50, 200]);
+    this.safeVibrate([0, 100, 50, 150, 50, 100, 50, 200]);
   }
 
   static dolphin() {
-    // Playful bouncing pattern
-    Vibration.vibrate([0, 40, 40, 40, 40, 80, 40, 40]);
+    this.safeVibrate([0, 40, 40, 40, 40, 80, 40, 40]);
   }
 
   static gentle() {
-    // Soft single pulse
-    Vibration.vibrate(20);
+    this.safeVibrate(20);
   }
 
   static strong() {
-    // Strong single pulse
-    Vibration.vibrate(50);
+    this.safeVibrate(50);
   }
 
   static custom(pattern: number[]) {
-    Vibration.vibrate(pattern);
+    this.safeVibrate(pattern);
   }
 
   static success() {
-    // Positive feedback pattern
-    Vibration.vibrate([0, 30, 20, 30, 20, 60]);
+    this.safeVibrate([0, 30, 20, 30, 20, 60]);
   }
 
   static error() {
-    // Negative feedback pattern
-    Vibration.vibrate([0, 100, 50, 100]);
+    this.safeVibrate([0, 100, 50, 100]);
   }
 
   static notification() {
-    // Attention-getting pattern
-    Vibration.vibrate([0, 40, 40, 40, 40, 40]);
+    this.safeVibrate([0, 40, 40, 40, 40, 40]);
   }
 
   static levelUp() {
-    // Celebration pattern
-    Vibration.vibrate([0, 50, 30, 50, 30, 50, 30, 100]);
+    this.safeVibrate([0, 50, 30, 50, 30, 50, 30, 100]);
   }
 
   static crewJoin() {
-    // Welcome pattern
-    Vibration.vibrate([0, 30, 20, 30, 20, 30, 20, 80]);
+    this.safeVibrate([0, 30, 20, 30, 20, 30, 20, 80]);
   }
 
   static scroll() {
-    // Subtle feedback for scrolling through vibes
-    Vibration.vibrate(10);
+    this.safeVibrate(10);
   }
 
   static longPress() {
-    // Feedback for long press actions
-    Vibration.vibrate([0, 50]);
+    this.safeVibrate([0, 50]);
   }
 
   static cancel() {
-    Vibration.cancel();
+    safeCancelVibration();
   }
 }
 
-export default HapticWaveFeedback;
+// Global setup (call once in App.tsx)
+export const initHapticSafety = () => {
+  setupAppStateListener();
+};
 
-// React Hook for easy usage
+// Safe hook
 export const useHapticFeedback = () => {
+  const [isActive, setIsActive] = useState(true);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      setIsActive(nextAppState === 'active');
+      if (nextAppState !== 'active') {
+        safeCancelVibration();
+      }
+    });
+
+    return () => subscription?.remove();
+  }, []);
+
+  const safeVibrate = useCallback((pattern: number | number[]) => {
+    if (!isActive) return;
+    const now = Date.now();
+    if (now - lastVibrateTime < VIBRATE_DEBOUNCE_MS) return;
+    lastVibrateTime = now;
+    Vibration.vibrate(pattern, false);
+  }, [isActive]);
+
   return {
-    wave: () => HapticWaveFeedback.wave(),
-    splash: () => HapticWaveFeedback.splash(),
-    fish: () => HapticWaveFeedback.fish(),
-    storm: () => HapticWaveFeedback.storm(),
-    dolphin: () => HapticWaveFeedback.dolphin(),
-    gentle: () => HapticWaveFeedback.gentle(),
-    strong: () => HapticWaveFeedback.strong(),
-    success: () => HapticWaveFeedback.success(),
-    error: () => HapticWaveFeedback.error(),
-    notification: () => HapticWaveFeedback.notification(),
-    levelUp: () => HapticWaveFeedback.levelUp(),
-    crewJoin: () => HapticWaveFeedback.crewJoin(),
-    scroll: () => HapticWaveFeedback.scroll(),
-    longPress: () => HapticWaveFeedback.longPress(),
-    custom: (pattern: number[]) => HapticWaveFeedback.custom(pattern),
-    cancel: () => HapticWaveFeedback.cancel(),
+    wave: () => safeVibrate([0, 30, 50, 30, 50, 30]),
+    splash: () => safeVibrate([0, 20, 10, 40]),
+    fish: () => safeVibrate([0, 15, 15, 15, 15, 15, 15, 15]),
+    storm: () => safeVibrate([0, 100, 50, 150, 50, 100, 50, 200]),
+    dolphin: () => safeVibrate([0, 40, 40, 40, 40, 80, 40, 40]),
+    gentle: () => safeVibrate(20),
+    strong: () => safeVibrate(50),
+    success: () => safeVibrate([0, 30, 20, 30, 20, 60]),
+    error: () => safeVibrate([0, 100, 50, 100]),
+    notification: () => safeVibrate([0, 40, 40, 40, 40, 40]),
+    levelUp: () => safeVibrate([0, 50, 30, 50, 30, 50, 30, 100]),
+    crewJoin: () => safeVibrate([0, 30, 20, 30, 20, 30, 20, 80]),
+    scroll: () => safeVibrate(10),
+    longPress: () => safeVibrate([0, 50]),
+    custom: (pattern: number[]) => safeVibrate(pattern),
+    cancel: () => safeCancelVibration(),
   };
 };
+
+export default HapticWaveFeedback;
+

@@ -16,33 +16,6 @@ AppRegistry.registerComponent(appName, () => App);
 
 // TrackPlayer service removed (library uninstalled)
 
-// Ensure an anonymous Firebase Auth session exists on startup (no UI)
-// Run asynchronously without blocking app registration
-setTimeout(() => {
-  ensureAnon().catch(e => console.warn('Firebase init failed:', e));
-}, 0);
-
-async function ensureAnon() {
-  try {
-    // Lazy-load Firebase Auth so the app doesn't crash
-    // if RNFB isn't installed/linked yet.
-    let auth = null;
-    try {
-      auth = require('@react-native-firebase/auth').default;
-    } catch (_) {
-      auth = null;
-    }
-    if (auth) {
-      const current = auth().currentUser;
-      if (!current) {
-        await auth().signInAnonymously();
-      }
-    }
-  } catch (e) {
-    console.warn('Firebase anonymous sign-in failed', e);
-  }
-}
-
 // Background FCM handler (Android): receives data messages when app is killed/backgrounded
 try {
   const messaging = require('@react-native-firebase/messaging').default;
@@ -96,7 +69,7 @@ try {
   if (global.ErrorUtils && typeof global.ErrorUtils.setGlobalHandler === 'function') {
     global.ErrorUtils.setGlobalHandler((err, isFatal) => {
       try { console.warn('GlobalError', err?.message || err); } catch {}
-      if (typeof prev === 'function') {
+      if (__DEV__ && typeof prev === 'function') {
         try { prev(err, isFatal); } catch {}
       }
     });

@@ -2,6 +2,14 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.useHapticFeedback = void 0;
 var react_native_1 = require("react-native");
+var safeCancelVibration = function () {
+    try {
+        react_native_1.Vibration.cancel();
+    }
+    catch (error) {
+        console.warn('Vibration cancel failed:', error);
+    }
+};
 var HapticWaveFeedback = /** @class */ (function () {
     function HapticWaveFeedback() {
     }
@@ -65,7 +73,7 @@ var HapticWaveFeedback = /** @class */ (function () {
         react_native_1.Vibration.vibrate([0, 50]);
     };
     HapticWaveFeedback.cancel = function () {
-        react_native_1.Vibration.cancel();
+        safeCancelVibration();
     };
     return HapticWaveFeedback;
 }());

@@ -1,56 +1,90 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+} from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
-type ErrorBoundaryProps = {
-  children: React.ReactNode;
-};
-
-type ErrorBoundaryState = {
+interface ErrorBoundaryState {
   hasError: boolean;
-  error: Error | null;
-};
+  error?: Error | null;
+}
 
-export default class ErrorBoundary extends React.Component<
-  ErrorBoundaryProps,
-  ErrorBoundaryState
-> {
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(error: Error) {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, info: any) {
-    console.error('ErrorBoundary caught error:', error);
-    console.error('Error info:', info);
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    
+    // Optional: Send to crash reporting service
+    // crashlytics().recordError(error);
   }
 
-  handleReload = () => {
+  private resetError = () => {
     this.setState({ hasError: false, error: null });
   };
 
   render() {
     if (this.state.hasError) {
       return (
-        <View style={styles.container}>
-          <View style={styles.card}>
-            <Text style={styles.title}>Something went wrong</Text>
-            <Text style={styles.message}>
-              We hit a problem opening this screen. Please try again.
+        <View style={styles.errorContainer}>
+          <ScrollView contentContainerStyle={styles.errorScroll}>
+            <Text style={styles.errorTitle}>Oops! Something went wrong.</Text>
+            <Text style={styles.errorMessage}>
+              We've caught an error in the app. You can try restarting or reporting it.
             </Text>
-            <Pressable
-              onPress={this.handleReload}
-              style={({ pressed }) => [
-                styles.button,
-                pressed ? styles.buttonPressed : null,
-              ]}
+            
+            {this.state.error && (
+              <>
+                <Text style={styles.errorDetailsTitle}>Error Details:</Text>
+                <Text style={styles.errorDetails} selectable>
+                  {this.state.error.toString()}
+                </Text>
+              </>
+            )}
+            
+            <TouchableOpacity style={styles.retryButton} onPress={this.resetError}>
+              <Text style={styles.retryButtonText}>Restart App</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.reportButton}
+              onPress={() => {
+                Alert.alert(
+                  'Report Error',
+                  'Copy error details and share via email or support?',
+                  [
+                    { text: 'Copy Details', onPress: () => {
+                      const message = this.state.error 
+                        ? `App Error: ${this.state.error.toString()}\n\nStack: ${this.state.error.stack}`
+                        : 'Unknown error occurred.';
+                      // Use clipboard here if available
+                      Alert.alert('Details Copied', 'Error details copied to clipboard.');
+                    }},
+                    { text: 'Cancel', style: 'cancel' },
+                  ]
+                );
+              }}
             >
-              <Text style={styles.buttonText}>Try Again</Text>
-            </Pressable>
-          </View>
+              <Text style={styles.reportButtonText}>Report Issue</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
       );
     }
@@ -60,53 +94,78 @@ export default class ErrorBoundary extends React.Component<
 }
 
 const styles = StyleSheet.create({
-  container: {
+  errorContainer: {
     flex: 1,
+    backgroundColor: '#1a1a1a',
     justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#08131f',
+  },
+  errorScroll: {
     padding: 24,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 380,
-    borderRadius: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 28,
-    backgroundColor: 'rgba(11, 25, 39, 0.96)',
-    borderWidth: 1,
-    borderColor: 'rgba(123, 216, 255, 0.22)',
     alignItems: 'center',
   },
-  title: {
-    color: '#F5FBFF',
-    fontSize: 22,
-    fontWeight: '800',
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#ff6b6b',
+    marginBottom: 12,
     textAlign: 'center',
   },
-  message: {
-    marginTop: 10,
-    color: '#B8D4E6',
-    fontSize: 14,
-    lineHeight: 20,
+  errorMessage: {
+    fontSize: 16,
+    color: '#ffffff',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 24,
+  },
+  errorDetailsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffd93d',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  errorDetails: {
+    fontSize: 12,
+    color: '#cccccc',
+    backgroundColor: '#2a2a2a',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 24,
+    fontFamily: 'monospace',
+    lineHeight: 18,
+    maxHeight: 200,
+  },
+  retryButton: {
+    backgroundColor: '#4ecdc4',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    minWidth: 200,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
     textAlign: 'center',
   },
-  button: {
-    marginTop: 22,
-    minWidth: 140,
-    borderRadius: 999,
-    paddingHorizontal: 20,
-    paddingVertical: 11,
-    backgroundColor: '#0F5F8F',
-    alignItems: 'center',
-    justifyContent: 'center',
+  reportButton: {
+    backgroundColor: '#ffe66d',
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    borderRadius: 12,
+    minWidth: 200,
   },
-  buttonPressed: {
-    opacity: 0.86,
-  },
-  buttonText: {
-    color: '#F8FDFF',
-    fontSize: 14,
-    fontWeight: '800',
+  reportButtonText: {
+    color: '#333',
+    fontSize: 18,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
+
+export default ErrorBoundary;
+</xai:function_call > 
+
+<xai:function_call name="read_file">
+<parameter name="path">c:/Users/user/AqualinkTindoe/src/screens/CreatePostScreen.tsx

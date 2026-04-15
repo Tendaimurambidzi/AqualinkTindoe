@@ -1,3 +1,5 @@
 {
-    "codium.codeCompletion.enable": false
+    "codium.codeCompletion.enable": false,
+    "git.ignoreLimitWarning": true,
+    "CodeGPT.apiKey": "OpenAI"
 }

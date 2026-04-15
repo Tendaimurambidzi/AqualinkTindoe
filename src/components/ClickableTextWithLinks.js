@@ -120,6 +120,22 @@ var tokenize = function (input) {
 var ClickableTextWithLinks = function (_a) {
     var text = _a.text, style = _a.style, numberOfLines = _a.numberOfLines;
     var tokens = (0, react_1.useMemo)(function () { return tokenize(text); }, [text]);
+    var copyText = function (value) {
+        var trimmed = String(value || '').trim();
+        if (!trimmed)
+            return;
+        try {
+            var clipboardModule = require('@react-native-clipboard/clipboard');
+            var setString = (clipboardModule === null || clipboardModule === void 0 ? void 0 : clipboardModule.default) && clipboardModule.default.setString
+                ? clipboardModule.default.setString
+                : clipboardModule === null || clipboardModule === void 0 ? void 0 : clipboardModule.setString;
+            if (typeof setString === 'function') {
+                setString(trimmed);
+            }
+        }
+        catch (_b) { }
+        react_native_1.Alert.alert('Copied', trimmed);
+    };
     var openExternal = function (url) { return __awaiter(void 0, void 0, void 0, function () {
         var supported, err_1;
         return __generator(this, function (_a) {
@@ -147,18 +163,29 @@ var ClickableTextWithLinks = function (_a) {
     return (<react_native_1.Text style={style} numberOfLines={numberOfLines}>
       {tokens.map(function (token) {
             if (token.type === 'url') {
-                return (<react_native_1.Text key={token.key} style={{ color: '#1976D2', textDecorationLine: 'underline' }} onPress={function () { return openExternal(token.content); }}>
+                return (<react_native_1.Text key={token.key} style={{ color: '#1976D2', textDecorationLine: 'underline' }} onPress={function () { return openExternal(token.content); }} onLongPress={function () {
+                        var targetUrl = normalizeUrl(token.content);
+                        react_native_1.Alert.alert('Link options', targetUrl, [
+                            { text: 'Open', onPress: function () { return void openExternal(targetUrl); } },
+                            { text: 'Copy', onPress: function () { return copyText(targetUrl); } },
+                            { text: 'Cancel', style: 'cancel' },
+                        ]);
+                    }}>
               {stripTrailingPunctuation(token.content)}
             </react_native_1.Text>);
             }
             if (token.type === 'hashtag') {
                 var hash = token.content.replace(/^#/, '');
                 var searchUrl_1 = "https://www.google.com/search?q=".concat(encodeURIComponent("#".concat(hash)));
-                return (<react_native_1.Text key={token.key} style={{ color: '#1976D2', textDecorationLine: 'underline' }} onPress={function () { return openExternal(searchUrl_1); }}>
+                return (<react_native_1.Text key={token.key} style={{ color: '#1976D2', textDecorationLine: 'underline' }} onPress={function () { return openExternal(searchUrl_1); }} onLongPress={function () { return copyText(token.content); }}>
               {token.content}
             </react_native_1.Text>);
             }
-            return <react_native_1.Text key={token.key}>{token.content}</react_native_1.Text>;
+            return (<react_native_1.Text key={token.key} onLongPress={function () {
+                    if (String(token.content || '').trim()) {
+                        copyText(token.content);
+                    }
+                }}>{token.content}</react_native_1.Text>);
         })}
     </react_native_1.Text>);
 };

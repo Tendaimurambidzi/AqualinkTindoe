@@ -5181,32 +5181,81 @@ var InnerApp = function (_a) {
         return sub;
     }, []);
     // Set up notifications listener
-    (0, react_1.useEffect)(function () {
-        if (!(user === null || user === void 0 ? void 0 : user.uid))
-            return;
-        seenNotificationIdsRef.current = new Set();
-        notificationListenerStartedAtRef.current = Date.now();
-        handledIncomingInviteCallIdsRef.current = new Set();
-        var unsubscribe = (0, firestore_1.default)()
+(0, react_1.useEffect)(function () {
+    if (!(user === null || user === void 0 ? void 0 : user.uid)) {
+        return;
+    }
+
+    seenNotificationIdsRef.current = new Set();
+    notificationListenerStartedAtRef.current = Date.now();
+    handledIncomingInviteCallIdsRef.current = new Set();
+
+    var isMounted = true;
+    var unsubscribe = function () { };
+
+    try {
+        unsubscribe = (0, firestore_1.default)()
             .collection("users/".concat(user.uid, "/pings"))
             .orderBy('createdAt', 'desc')
             .onSnapshot(function (snapshot) {
-            var _a, _b, _c;
-            if (!snapshot) {
-                console.warn('Pings snapshot is null');
-                return;
-            }
-            var notificationsData = snapshot.docs.map(function (doc) {
-                var data = doc.data();
-                var type = String(data.type || 'notification');
-                var fromName = data.fromName || data.userName || '';
-                var rawText = String(data.text || '').trim();
-                var specificFallback = fromName
-                    ? "".concat(fromName, " sent you an alert")
-                    : 'You have a new alert';
-                return {
-                    id: doc.id,
-                    type: type,
+                var _a, _b, _c;
+
+                if (!isMounted) {
+                    return;
+                }
+
+                if (!snapshot) {
+                    console.warn('Pings snapshot is null');
+                    return;
+                }
+
+                var notificationsData = snapshot.docs.map(function (doc) {
+                    var data = doc.data();
+                    var type = String(data.type || 'notification');
+                    var fromName = data.fromName || data.userName || '';
+                    var rawText = String(data.text || '').trim();
+                    var specificFallback = fromName
+                        ? "".concat(fromName, " sent you an alert")
+                        : 'You have a new alert';
+
+                    return {
+                        id: doc.id,
+                        type: type,
+                        text: rawText || specificFallback,
+                        fromName: fromName,
+                        createdAt: data.createdAt || null,
+                        read: !!data.read,
+                        raw: data,
+                    };
+                });
+
+                try {
+                    if (isMounted) {
+                        setPings(notificationsData);
+                        setUnreadPingsCount(notificationsData.filter(function (item) { return !item.read; }).length);
+                    }
+                }
+                catch (err) {
+                    console.warn('Failed to process pings snapshot state update:', err);
+                }
+            }, function (error) {
+                console.warn('Pings onSnapshot error:', error);
+            });
+    }
+    catch (error) {
+        console.warn('Failed to start pings listener:', error);
+    }
+
+    return function () {
+        isMounted = false;
+        try {
+            unsubscribe();
+        }
+        catch (error) {
+            console.warn('Failed to unsubscribe pings listener:', error);
+        }
+    };
+}, [user === null || user === void 0 ? void 0 : user.uid]);                type: type,
                     message: rawText || specificFallback,
                     fromUid: data.fromUid,
                     fromName: fromName, // Store the stored name, but we'll compute the display name dynamically
@@ -5559,48 +5608,97 @@ var InnerApp = function (_a) {
             setAccountCreationHandle('');
         }
         else {
-            // User switched to a different account - clear profile data to prevent showing old user's info
-            console.log('Clearing profile data for user switch');
-            setProfileName('');
-            setProfileBio('');
-            setProfilePhoto(null);
-            setAccountCreationHandle('');
+         // Maintain single-source presence state in Firestore users/{uid}
+(0, react_1.useEffect)(function () {
+    if (!(user === null || user === void 0 ? void 0 : user.uid)) {
+        return;
+    }
+
+    var isMounted = true;
+    var lastPresenceUpdateAt = 0;
+
+    var updatePresenceForState = function (nextAppState) { return __awaiter(void 0, void 0, void 0, function () {
+        var now, isBackgroundState, firestoreMod, error_6, error_7;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (!isMounted || !(user === null || user === void 0 ? void 0 : user.uid)) {
+                        return [2 /*return*/];
+                    }
+                    now = Date.now();
+                    if (now - lastPresenceUpdateAt < 1500) {
+                        return [2 /*return*/];
+                    }
+                    lastPresenceUpdateAt = now;
+                    isBackgroundState = nextAppState === 'inactive' || nextAppState === 'background';
+                    setIsCurrentUserOnline(!isBackgroundState);
+                    _a.label = 1;
+                case 1:
+                    _a.trys.push([1, 3, , 4]);
+                    return [4 /*yield*/, (0, database_1.default)()
+                            .ref("/presence/".concat(user === null || user === void 0 ? void 0 : user.uid))
+                            .update(isBackgroundState
+                            ? {
+                                online: false,
+                                lastSeen: database_1.default.ServerValue.TIMESTAMP,
+                                lastActiveAt: database_1.default.ServerValue.TIMESTAMP,
+                                lastHeartbeat: database_1.default.ServerValue.TIMESTAMP,
+                            }
+                            : {
+                                online: true,
+                                lastHeartbeat: database_1.default.ServerValue.TIMESTAMP,
+                            })];
+                case 2:
+                    _a.sent();
+                    return [3 /*break*/, 4];
+                case 3:
+                    error_6 = _a.sent();
+                    console.warn('Failed to update RTDB presence on app state change:', error_6);
+                    return [3 /*break*/, 4];
+                case 4:
+                    _a.trys.push([4, 8, , 9]);
+                    firestoreMod = null;
+                    try {
+                        firestoreMod = require('@react-native-firebase/firestore').default;
+                    }
+                    catch (_b) { }
+                    if (!firestoreMod) return [3 /*break*/, 8];
+                    return [4 /*yield*/, firestoreMod()
+                            .doc("users/".concat(user === null || user === void 0 ? void 0 : user.uid))
+                            .set(isBackgroundState
+                            ? {
+                                online: false,
+                                lastSeen: firestore_1.default.FieldValue.serverTimestamp(),
+                                lastActiveAt: firestore_1.default.FieldValue.serverTimestamp(),
+                            }
+                            : {
+                                online: true,
+                                lastHeartbeat: firestore_1.default.FieldValue.serverTimestamp(),
+                            }, { merge: true })];
+                case 5:
+                    _a.sent();
+                    return [3 /*break*/, 9];
+                case 6: return [3 /*break*/, 9];
+                case 7: return [3 /*break*/, 9];
+                case 8:
+                    return [3 /*break*/, 9];
+                case 9: return [2 /*return*/];
+            }
+        });
+    }); };
+
+    var subscription = react_native_1.AppState.addEventListener('change', function (nextAppState) {
+        void updatePresenceForState(nextAppState);
+    });
+
+    return function () {
+        isMounted = false;
+        try {
+            subscription === null || subscription === void 0 ? void 0 : subscription.remove();
         }
-    }, [user === null || user === void 0 ? void 0 : user.uid]);
-    // Maintain single-source presence state in Firestore users/{uid}
-    (0, react_1.useEffect)(function () {
-        var subscription = react_native_1.AppState.addEventListener('change', function (nextAppState) {
-            if (user === null || user === void 0 ? void 0 : user.uid) {
-                if (nextAppState === 'inactive' || nextAppState === 'background') {
-                    setIsCurrentUserOnline(false);
-                    var updateLastSeen = function () { return __awaiter(void 0, void 0, void 0, function () {
-                        var error_6, firestoreMod, error_7;
-                        return __generator(this, function (_a) {
-                            switch (_a.label) {
-                                case 0:
-                                    _a.trys.push([0, 2, , 3]);
-                                    return [4 /*yield*/, (0, database_1.default)()
-                                            .ref("/presence/".concat(user === null || user === void 0 ? void 0 : user.uid))
-                                            .update({
-                                            online: false,
-                                            lastSeen: database_1.default.ServerValue.TIMESTAMP,
-                                            lastActiveAt: database_1.default.ServerValue.TIMESTAMP,
-                                            lastHeartbeat: database_1.default.ServerValue.TIMESTAMP,
-                                        })];
-                                case 1:
-                                    _a.sent();
-                                    return [3 /*break*/, 3];
-                                case 2:
-                                    error_6 = _a.sent();
-                                    console.warn('Failed to update RTDB presence on background:', error_6);
-                                    return [3 /*break*/, 3];
-                                case 3:
-                                    _a.trys.push([3, 6, , 7]);
-                                    firestoreMod = null;
-                                    try {
-                                        firestoreMod = require('@react-native-firebase/firestore').default;
-                                    }
-                                    catch (_b) { }
+        catch (_a) { }
+    };
+}, [user === null || user === void 0 ? void 0 : user.uid]);                           catch (_b) { }
                                     if (!firestoreMod) return [3 /*break*/, 5];
                                     return [4 /*yield*/, firestoreMod()
                                             .doc("users/".concat(user === null || user === void 0 ? void 0 : user.uid))
@@ -5771,17 +5869,17 @@ var InnerApp = function (_a) {
         if (!appVibrationSettings[action])
             return;
         try {
-            react_native_1.Vibration.cancel();
-        }
-        catch (_a) { }
+                  // Avoid cancel() on Android here because it can throw on some devices/ROMs
+        // even when wrapped, and it is not necessary before starting a new vibration.
         try {
             react_native_1.Vibration.vibrate(getVibrationPatternForAction(action), !!(opts === null || opts === void 0 ? void 0 : opts.loop));
         }
-        catch (_b) { }
+        catch (_a) { }
     }, [appVibrationSettings, getVibrationPatternForAction]);
     var stopToneVibration = (0, react_1.useCallback)(function () {
         try {
-            react_native_1.Vibration.cancel();
+            // Disabled for stability:
+            // react_native_1.Vibration.cancel();
         }
         catch (_a) { }
     }, []);
@@ -5799,8 +5897,7 @@ var InnerApp = function (_a) {
             var tone = null;
             var candidate = candidates[idx];
             try {
-                var onLoaded = function (error) {
-                    if (error || !tone) {
+                var onLoaded = function (error) {          if (error || !tone) {
                         try {
                             tone === null || tone === void 0 ? void 0 : tone.release();
                         }
@@ -6764,53 +6861,83 @@ var InnerApp = function (_a) {
             });
         }); };
         fetchUsers();
-    }, [wavesFeed]); // Removed userData from dependencies to prevent infinite loops
-    // Load waves feed from Firestore
-    (0, react_1.useEffect)(function () {
-        var firestoreMod = null;
-        try {
-            firestoreMod = require('@react-native-firebase/firestore').default;
-        }
-        catch (_a) { }
-        if (!firestoreMod)
-            return;
-        var unsub = firestoreMod()
-            .collection('waves')
-            .orderBy('createdAt', 'desc')
-            .limit(50)
-            .onSnapshot(function (snapshot) {
-            var waves = [];
-            snapshot === null || snapshot === void 0 ? void 0 : snapshot.forEach(function (doc) {
-                var data = doc.data();
-                if ((data === null || data === void 0 ? void 0 : data.audience) === 'fleet' || (data === null || data === void 0 ? void 0 : data.isPublic) === false || (data === null || data === void 0 ? void 0 : data.fleetId)) {
+   // Load waves feed from Firestore
+(0, react_1.useEffect)(function () {
+    var firestoreMod = null;
+    try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+    }
+    catch (_a) { }
+
+    if (!firestoreMod)
+        return;
+
+    var unsub = firestoreMod()
+        .collection('waves')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .onSnapshot(function (snapshot) {
+            try {
+                if (!snapshot) {
                     return;
                 }
-                var mediaUri = data.playbackUrl || data.mediaUrl || null;
-                var mediaType = data.mediaType || null;
-                var isAudioPost = data.postType === 'audio' || /^audio\//i.test(String(mediaType || ''));
-                waves.push({
-                    id: doc.id,
-                    media: !isAudioPost && mediaUri
-                        ? { uri: mediaUri, type: mediaType || undefined }
-                        : null,
-                    mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
-                    audio: data.audioUrl
-                        ? { uri: data.audioUrl }
-                        : isAudioPost && mediaUri
-                            ? { uri: mediaUri }
-                            : null,
-                    captionText: data.captionText || data.caption || data.text || '',
-                    postType: data.postType || null,
-                    link: data.link || null,
-                    playbackUrl: data.playbackUrl,
-                    mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
-                    muxStatus: data.muxStatus,
-                    authorName: data.authorName,
-                    ownerUid: data.ownerUid,
-                    createdAt: data.createdAt,
-                    counts: data.counts || {},
+
+                var waves = [];
+                snapshot.forEach(function (doc) {
+                    try {
+                        var data = doc.data();
+                        if ((data === null || data === void 0 ? void 0 : data.audience) === 'fleet' || (data === null || data === void 0 ? void 0 : data.isPublic) === false || (data === null || data === void 0 ? void 0 : data.fleetId)) {
+                            return;
+                        }
+
+                        var mediaUri = data.playbackUrl || data.mediaUrl || null;
+                        var mediaType = data.mediaType || null;
+                        var isAudioPost = data.postType === 'audio' || /^audio\//i.test(String(mediaType || ''));
+
+                        waves.push({
+                            id: doc.id,
+                            media: !isAudioPost && mediaUri
+                                ? { uri: mediaUri, type: mediaType || undefined }
+                                : null,
+                            mediaItems: !isAudioPost ? buildWaveMediaItems(data) : null,
+                            audio: data.audioUrl
+                                ? { uri: data.audioUrl }
+                                : isAudioPost && mediaUri
+                                    ? { uri: mediaUri }
+                                    : null,
+                            captionText: data.captionText || data.caption || data.text || '',
+                            postType: data.postType || null,
+                            link: data.link || null,
+                            playbackUrl: data.playbackUrl || null,
+                            mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
+                            muxStatus: data.muxStatus || null,
+                            authorName: data.authorName || '',
+                            ownerUid: data.ownerUid || '',
+                            createdAt: data.createdAt || null,
+                            counts: data.counts || {},
+                        });
+                    }
+                    catch (docErr) {
+                        console.warn('Failed to parse wave doc:', docErr);
+                    }
                 });
-            });
+
+                setWavesFeed(function (prev) { return preserveExistingGridCollection(prev, waves); });
+            }
+            catch (snapshotErr) {
+                console.warn('Waves snapshot processing failed:', snapshotErr);
+            }
+        }, function (error) {
+            console.warn('Waves onSnapshot error:', error);
+        });
+
+    return function () {
+        try {
+            unsub();
+        }
+        catch (_a) { }
+    };
+}, []);
             setWavesFeed(function (prev) { return preserveExistingGridCollection(prev, waves); });
         });
         return function () { return unsub(); };
@@ -6935,12 +7062,16 @@ var InnerApp = function (_a) {
         }
         var currentlyViewableIds = new Set(safeViewableItems.map(function (item) { var _a; return (_a = item === null || item === void 0 ? void 0 : item.item) === null || _a === void 0 ? void 0 : _a.id; }).filter(Boolean));
         var timers = viewTimersRef.current;
-        Object.keys(timers).forEach(function (postId) {
+               Object.keys(timers).forEach(function (postId) {
+            var timerRef = timers[postId];
             if (!currentlyViewableIds.has(postId)) {
-                clearTimeout(timers[postId]);
+                if (timerRef) {
+                    clearTimeout(timerRef);
+                }
                 delete timers[postId];
             }
         });
+    });
         safeViewableItems.forEach(function (viewableItem) {
             var _a;
             var postId = (_a = viewableItem === null || viewableItem === void 0 ? void 0 : viewableItem.item) === null || _a === void 0 ? void 0 : _a.id;
@@ -8793,1150 +8924,169 @@ var InnerApp = function (_a) {
                 case 7:
                     _d.trys.push([7, 9, , 10]);
                     return [4 /*yield*/, async_storage_1.default.getItem(NOTICE_REG_LOCAL_KEY)];
-                case 8:
-                    localRegRaw = _d.sent();
-                    localReg = localRegRaw ? JSON.parse(localRegRaw) : null;
-                    if (localReg && (!currentUid || localReg.uid === currentUid)) {
-                        setNoticeRegistered(true);
-                        setNoticeRegistrationId(localReg.registrationId || '');
-                        setNoticeOrgName(localReg.orgName || noticeOrgName);
-                        setNoticeOrgType(localReg.orgType || noticeOrgType);
-                        setNoticeEmail(localReg.email || noticeEmail);
-                        setNoticePhone(localReg.phone || noticePhone);
-                        setNoticeBio(localReg.bio || noticeBio);
-                    }
-                    return [3 /*break*/, 10];
-                case 9:
-                    _a = _d.sent();
-                    return [3 /*break*/, 10];
-                case 10:
-                    _d.trys.push([10, 12, , 13]);
-                    return [4 /*yield*/, async_storage_1.default.getItem(NOTICE_ADS_LOCAL_KEY)];
-                case 11:
-                    localAdsRaw = _d.sent();
-                    localAds = localAdsRaw ? JSON.parse(localAdsRaw) : [];
-                    if (Array.isArray(localAds)) {
-                        setNoticeAds(localAds);
-                    }
-                    return [3 /*break*/, 13];
-                case 12:
-                    _b = _d.sent();
-                    return [3 /*break*/, 13];
-                case 13: return [3 /*break*/, 15];
-                case 14:
-                    setNoticeLoading(false);
-                    return [7 /*endfinally*/];
-                case 15: return [2 /*return*/];
-            }
-        });
-    }); }, [noticeBio, noticeEmail, noticeOrgName, noticeOrgType, noticePhone]);
-    (0, react_1.useEffect)(function () {
-        if (!showNotice)
-            return;
-        loadNoticeBoardData();
-    }, [showNotice, loadNoticeBoardData]);
-    var handleNoticeBoardRegister = (0, react_1.useCallback)(function () { return __awaiter(void 0, void 0, void 0, function () {
-        var currentUser, payload, remoteResult, e_6, registrationId, registrationDoc, firestoreSaved, firestoreErr_1, e_7, registrationId;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    currentUser = (0, auth_1.default)().currentUser;
-                    if (!(currentUser === null || currentUser === void 0 ? void 0 : currentUser.uid)) {
-                        react_native_1.Alert.alert('Sign in required', 'Please sign in to register for Bulletin Board.');
-                        return [2 /*return*/];
-                    }
-                    payload = {
-                        orgName: noticeOrgName.trim(),
-                        orgType: noticeOrgType.trim(),
-                        email: noticeEmail.trim(),
-                        phone: noticePhone.trim(),
-                        bio: noticeBio.trim(),
-                        uid: currentUser.uid,
-                    };
-                    if (!payload.orgName || !payload.orgType || !payload.email) {
-                        react_native_1.Alert.alert('Missing details', 'Organization name, type, and email are required.');
-                        return [2 /*return*/];
-                    }
-                    _a.label = 1;
-                case 1:
-                    _a.trys.push([1, 11, , 13]);
-                    remoteResult = null;
-                    _a.label = 2;
-                case 2:
-                    _a.trys.push([2, 4, , 5]);
-                    return [4 /*yield*/, (0, schoolService_1.registerNoticeBoard)(payload)];
-                case 3:
-                    remoteResult = _a.sent();
-                    return [3 /*break*/, 5];
-                case 4:
-                    e_6 = _a.sent();
-                    console.warn('Notice register backend call failed, continuing with local activation:', e_6);
-                    return [3 /*break*/, 5];
-                case 5:
-                    registrationId = (remoteResult === null || remoteResult === void 0 ? void 0 : remoteResult.registrationId) || "".concat(currentUser.uid, "-").concat(Date.now());
-                    registrationDoc = __assign(__assign({}, payload), { registrationId: registrationId, enabled: true, localOnly: !(remoteResult === null || remoteResult === void 0 ? void 0 : remoteResult.ok), updatedAt: firestore_1.default.FieldValue.serverTimestamp() });
-                    firestoreSaved = false;
-                    _a.label = 6;
-                case 6:
-                    _a.trys.push([6, 8, , 9]);
-                    return [4 /*yield*/, (0, firestore_1.default)()
-                            .collection('notice_board_registrations')
-                            .doc(currentUser.uid)
-                            .set(registrationDoc, { merge: true })];
-                case 7:
-                    _a.sent();
-                    firestoreSaved = true;
-                    return [3 /*break*/, 9];
-                case 8:
-                    firestoreErr_1 = _a.sent();
-                    console.warn('Notice register Firestore write failed, using AsyncStorage fallback:', firestoreErr_1);
-                    return [3 /*break*/, 9];
-                case 9: return [4 /*yield*/, async_storage_1.default.setItem(NOTICE_REG_LOCAL_KEY, JSON.stringify(__assign(__assign({}, payload), { uid: currentUser.uid, registrationId: registrationId, enabled: true, localOnly: !firestoreSaved, updatedAt: Date.now() })))];
-                case 10:
-                    _a.sent();
-                    setNoticeRegistered(true);
-                    setNoticeRegistrationId(registrationId);
-                    notifySuccess('Registration complete. You can post adverts now.');
-                    return [3 /*break*/, 13];
-                case 11:
-                    e_7 = _a.sent();
-                    console.error('Notice registration failed', e_7);
-                    registrationId = "".concat(currentUser.uid, "-").concat(Date.now());
-                    return [4 /*yield*/, async_storage_1.default.setItem(NOTICE_REG_LOCAL_KEY, JSON.stringify(__assign(__assign({}, payload), { uid: currentUser.uid, registrationId: registrationId, enabled: true, localOnly: true, updatedAt: Date.now() })))];
-                case 12:
-                    _a.sent();
-                    setNoticeRegistered(true);
-                    setNoticeRegistrationId(registrationId);
-                    notifySuccess('Registration completed locally. You can post adverts now.');
-                    return [3 /*break*/, 13];
-                case 13: return [2 /*return*/];
-            }
-        });
-    }); }, [
-        noticeBio,
-        noticeEmail,
-        noticeOrgName,
-        noticeOrgType,
-        noticePhone,
-        notifyError,
-        notifySuccess,
-    ]);
-    var pickNoticeAdMedia = (0, react_1.useCallback)(function () { return __awaiter(void 0, void 0, void 0, function () {
-        var result, asset, e_8;
-        var _a;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
-                case 0:
-                    _b.trys.push([0, 2, , 3]);
-                    return [4 /*yield*/, (0, react_native_image_picker_1.launchImageLibrary)({
-                            mediaType: 'mixed',
-                            selectionLimit: 1,
-                            includeExtra: true,
-                        })];
-                case 1:
-                    result = _b.sent();
-                    if (result.didCancel)
-                        return [2 /*return*/];
-                    asset = ((_a = result.assets) === null || _a === void 0 ? void 0 : _a[0]) || null;
-                    if (asset === null || asset === void 0 ? void 0 : asset.uri) {
-                        setNoticeAdMedia(asset);
-                    }
-                    return [3 /*break*/, 3];
-                case 2:
-                    e_8 = _b.sent();
-                    console.warn('Pick notice media failed', e_8);
-                    notifyError('Could not select media.');
-                    return [3 /*break*/, 3];
-                case 3: return [2 /*return*/];
-            }
-        });
-    }); }, [notifyError]);
-    var handlePublishNoticeAd = (0, react_1.useCallback)(function () { return __awaiter(void 0, void 0, void 0, function () {
-        var currentUser, text, mediaUrl, mediaType, mediaName, mediaPath, localPath, safeName, uploadErr_1, advertPayload, cloudSaved, writeErr_1, localRaw, localAds, next, e_9;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    currentUser = (0, auth_1.default)().currentUser;
-                    if (!(currentUser === null || currentUser === void 0 ? void 0 : currentUser.uid)) {
-                        react_native_1.Alert.alert('Sign in required', 'Please sign in to publish adverts.');
-                        return [2 /*return*/];
-                    }
-                    if (!noticeRegistered) {
-                        react_native_1.Alert.alert('Registration required', 'Register first to publish on Bulletin Board.');
-                        return [2 /*return*/];
-                    }
-                    text = noticeAdText.trim();
-                    if (!text && !(noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.uri)) {
-                        react_native_1.Alert.alert('Missing advert', 'Add text or media for your advert.');
-                        return [2 /*return*/];
-                    }
-                    setNoticePosting(true);
-                    _a.label = 1;
-                case 1:
-                    _a.trys.push([1, 16, 17, 18]);
-                    mediaUrl = null;
-                    mediaType = (noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.type) || null;
-                    mediaName = (noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.fileName) || null;
-                    mediaPath = null;
-                    if (!(noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.uri)) return [3 /*break*/, 8];
-                    return [4 /*yield*/, ensureNetworkActionAllowed('upload', {
-                            label: 'upload this advert',
-                            kind: inferTransferKind({
-                                mimeType: noticeAdMedia.type,
-                                fileName: noticeAdMedia.fileName,
-                                url: noticeAdMedia.uri,
-                            }),
-                            localPath: noticeAdMedia.uri,
-                        })];
-                case 2:
-                    if (!(_a.sent())) {
-                        return [2 /*return*/];
-                    }
-                    localPath = String(noticeAdMedia.uri);
-                    if (react_native_1.Platform.OS === 'android' && localPath.startsWith('file://')) {
-                        localPath = localPath.replace('file://', '');
-                    }
-                    return [4 /*yield*/, maybeCompressVideoForUpload(localPath, mediaType || null, shouldUseLightVideoUpload)];
-                case 3:
-                    localPath = _a.sent();
-                    safeName = String(noticeAdMedia.fileName || "advert_".concat(Date.now()))
-                        .replace(/[^A-Za-z0-9._-]/g, '_');
-                    mediaPath = "notice-board/".concat(currentUser.uid, "/").concat(Date.now(), "_").concat(safeName);
-                    _a.label = 4;
-                case 4:
-                    _a.trys.push([4, 7, , 8]);
-                    return [4 /*yield*/, (0, storage_1.default)().ref(mediaPath).putFile(localPath, {
-                            contentType: mediaType || undefined,
-                        })];
-                case 5:
-                    _a.sent();
-                    return [4 /*yield*/, (0, storage_1.default)().ref(mediaPath).getDownloadURL()];
-                case 6:
-                    mediaUrl = _a.sent();
-                    return [3 /*break*/, 8];
-                case 7:
-                    uploadErr_1 = _a.sent();
-                    console.warn('Notice media upload failed, using local URI fallback:', uploadErr_1);
-                    mediaUrl = noticeAdMedia.uri || null;
-                    mediaPath = null;
-                    return [3 /*break*/, 8];
-                case 8:
-                    advertPayload = {
-                        uid: currentUser.uid,
-                        text: text,
-                        mediaUrl: mediaUrl,
-                        mediaPath: mediaPath,
-                        mediaType: mediaType,
-                        mediaName: mediaName,
-                        orgName: noticeOrgName || null,
-                        registrationId: noticeRegistrationId || null,
-                        paidPlan: false, // free for now
-                        createdAt: firestore_1.default.FieldValue.serverTimestamp(),
-                    };
-                    cloudSaved = false;
-                    _a.label = 9;
-                case 9:
-                    _a.trys.push([9, 11, , 12]);
-                    return [4 /*yield*/, (0, firestore_1.default)().collection('notice_board_ads').add(advertPayload)];
-                case 10:
-                    _a.sent();
-                    cloudSaved = true;
-                    return [3 /*break*/, 12];
-                case 11:
-                    writeErr_1 = _a.sent();
-                    console.warn('Notice advert Firestore write failed, using local store fallback:', writeErr_1);
-                    return [3 /*break*/, 12];
-                case 12:
-                    if (!!cloudSaved) return [3 /*break*/, 15];
-                    return [4 /*yield*/, async_storage_1.default.getItem(NOTICE_ADS_LOCAL_KEY)];
-                case 13:
-                    localRaw = _a.sent();
-                    localAds = localRaw ? JSON.parse(localRaw) : [];
-                    next = Array.isArray(localAds) ? localAds : [];
-                    next.unshift({
-                        id: "local-".concat(Date.now()),
-                        uid: currentUser.uid,
-                        text: text,
-                        mediaUrl: mediaUrl,
-                        mediaPath: mediaPath,
-                        mediaType: mediaType,
-                        mediaName: mediaName,
-                        orgName: noticeOrgName || null,
-                        registrationId: noticeRegistrationId || null,
-                        paidPlan: false,
-                        createdAt: Date.now(),
-                        localOnly: true,
-                    });
-                    return [4 /*yield*/, async_storage_1.default.setItem(NOTICE_ADS_LOCAL_KEY, JSON.stringify(next.slice(0, 30)))];
-                case 14:
-                    _a.sent();
-                    _a.label = 15;
-                case 15:
-                    setNoticeAdText('');
-                    setNoticeAdMedia(null);
-                    notifySuccess('Advert posted to Bulletin Board.');
-                    loadNoticeBoardData();
-                    return [3 /*break*/, 18];
-                case 16:
-                    e_9 = _a.sent();
-                    console.error('Publish notice advert failed', e_9);
-                    notifyError('We could not post that right now. Please try again.');
-                    return [3 /*break*/, 18];
-                case 17:
-                    setNoticePosting(false);
-                    return [7 /*endfinally*/];
-                case 18: return [2 /*return*/];
-            }
-        });
-    }); }, [
-        ensureNetworkActionAllowed,
-        loadNoticeBoardData,
-        noticeAdMedia,
-        noticeAdText,
-        noticeOrgName,
-        noticeRegistered,
-        noticeRegistrationId,
-        notifyError,
-        notifySuccess,
-    ]);
-    // Advanced AI Handlers
-    var handleAIPersonalizedAdvice = (0, react_1.useCallback)(function (userContext, requestType) { return __awaiter(void 0, void 0, void 0, function () {
-        var advice, error_26;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    setIsAILoading(true);
-                    _a.label = 1;
-                case 1:
-                    _a.trys.push([1, 3, 4, 5]);
-                    return [4 /*yield*/, (0, aiService_1.generatePersonalizedAdvice)(userContext, requestType)];
-                case 2:
-                    advice = _a.sent();
-                    setAiResponse(advice);
-                    return [2 /*return*/, advice];
-                case 3:
-                    error_26 = _a.sent();
-                    console.error('AI personalized advice failed', error_26);
-                    setAiResponse('AI advice unavailable. Please try again later.');
-                    notifyError('AI advice unavailable.');
-                    return [2 /*return*/, 'Unable to generate advice at this time.'];
-                case 4:
-                    setIsAILoading(false);
-                    return [7 /*endfinally*/];
-                case 5: return [2 /*return*/];
-            }
-        });
-    }); }, [notifyError]);
-    var handleAICreativePrompt = (0, react_1.useCallback)(function (medium) { return __awaiter(void 0, void 0, void 0, function () {
-        var prompt_1, error_27;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
-                case 0:
-                    setIsAILoading(true);
-                    _a.label = 1;
-                case 1:
-                    _a.trys.push([1, 3, 4, 5]);
-                    return [4 /*yield*/, (0, aiService_1.generateCreativePrompt)(medium)];
-                case 2:
-                    prompt_1 = _a.sent();
-                    setAiResponse(prompt_1);
-                    return [2 /*return*/, prompt_1];
-                case 3:
-                    error_27 = _a.sent();
-                    console.error('AI creative prompt failed', error_27);
-                    setAiResponse('AI creative prompt unavailable. Please try again later.');
-                    notifyError('AI creative prompt unavailable.');
-                    return [2 /*return*/, 'Unable to generate creative prompt at this time.'];
-                case 4:
-                    setIsAILoading(false);
-                    return [7 /*endfinally*/];
-                case 5: return [2 /*return*/];
-            }
-        });
-    }); }, [notifyError]);
-    var handleAIAnalyzeAndSuggest = (0, react_1.useCallback)(function (content_1) {
-        var args_1 = [];
-        for (var _i = 1; _i < arguments.length; _i++) {
-            args_1[_i - 1] = arguments[_i];
-        }
-        return __awaiter(void 0, __spreadArray([content_1], args_1, true), void 0, function (content, analysisType) {
-            var analysis, error_28;
-            if (analysisType === void 0) { analysisType = 'improvement'; }
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        setIsAILoading(true);
-                        _a.label = 1;
-                    case 1:
-                        _a.trys.push([1, 3, 4, 5]);
-                        return [4 /*yield*/, (0, aiService_1.analyzeAndSuggest)(content, analysisType)];
-                    case 2:
-                        analysis = _a.sent();
-                        setAiResponse(analysis);
-                        return [2 /*return*/, analysis];
-                    case 3:
-                        error_28 = _a.sent();
-                        console.error('AI analysis failed', error_28);
-                        setAiResponse('AI analysis unavailable. Please try again later.');
-                        notifyError('AI analysis unavailable.');
-                        return [2 /*return*/, 'Unable to analyze content at this time.'];
-                    case 4:
-                        setIsAILoading(false);
-                        return [7 /*endfinally*/];
-                    case 5: return [2 /*return*/];
+var handlePublishNoticeAd = (0, react_1.useCallback)(function () { return __awaiter(void 0, void 0, void 0, function () {
+    var currentUser, text, mediaUrl, mediaType, mediaName, mediaPath, localPath, safeName, uploadErr_1, advertPayload, cloudSaved, writeErr_1, localRaw, localAds, next, e_9;
+    return __generator(this, function (_a) {
+        switch (_a.label) {
+            case 0:
+                currentUser = (0, auth_1.default)().currentUser;
+                if (!(currentUser === null || currentUser === void 0 ? void 0 : currentUser.uid)) {
+                    react_native_1.Alert.alert('Sign in required', 'Please sign in to publish adverts.');
+                    return [2 /*return*/];
                 }
-            });
-        });
-    }, [notifyError]);
-    // Ocean Dialog helper
-    var showOceanDialog = (0, react_1.useCallback)(function (title, message, buttons) {
-        setOceanDialog({ visible: true, title: title, message: message, buttons: buttons });
-    }, []);
-    // Do not render the feed while this screen is not focused (e.g., while Welcome is visible)
-    var isFocused = (0, native_1.useIsFocused)();
-    // Back handler logic - TikTok-style: first back toggles feed view, second back exits
-    var lastBackPressTime = (0, react_1.useRef)(0);
-    (0, react_1.useEffect)(function () {
-        var onBackPress = function () {
-            var _a;
-            if (showInbox) {
-                if (selectedThread) {
-                    resetInboxView();
+                if (!noticeRegistered) {
+                    react_native_1.Alert.alert('Registration required', 'Register first to publish on Bulletin Board.');
+                    return [2 /*return*/];
                 }
-                else {
-                    closeInboxModal();
+                text = noticeAdText.trim();
+                if (!text && !(noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.uri)) {
+                    react_native_1.Alert.alert('Missing advert', 'Add text or media for your advert.');
+                    return [2 /*return*/];
                 }
-                return true;
-            }
-            if (showCreatorProfile) {
-                setShowCreatorProfile(false);
-                return true;
-            }
-            if (showMyWaves) {
-                setShowMyWaves(false);
-                return true;
-            }
-            if (showEchoes) {
-                setShowEchoes(false);
-                return true;
-            }
-            if (isFocused) {
-                var now = Date.now();
-                var timeSinceLastPress = now - lastBackPressTime.current;
-                // If less than 2 seconds since last back press, allow app exit
-                if (timeSinceLastPress < 2000) {
-                    return false; // Exit app
+                setNoticePosting(true);
+                _a.label = 1;
+            case 1:
+                _a.trys.push([1, 16, 17, 18]);
+                mediaUrl = null;
+                mediaType = (noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.type) || null;
+                mediaName = (noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.fileName) || null;
+                mediaPath = null;
+                if (!(noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.uri)) return [3 /*break*/, 8];
+                return [4 /*yield*/, ensureNetworkActionAllowed('upload', {
+                        label: 'upload this advert',
+                        kind: inferTransferKind({
+                            mimeType: noticeAdMedia.type,
+                            fileName: noticeAdMedia.fileName,
+                            url: noticeAdMedia.uri,
+                        }),
+                        localPath: noticeAdMedia.uri,
+                    })];
+            case 2:
+                if (!(_a.sent())) {
+                    return [2 /*return*/];
                 }
-                // First back press: go to top of feed
-                lastBackPressTime.current = now;
-                setCurrentIndex(0);
-                try {
-                    (_a = feedRef.current) === null || _a === void 0 ? void 0 : _a.scrollToOffset({ offset: 0, animated: false });
+                localPath = String(noticeAdMedia.uri);
+                if (react_native_1.Platform.OS === 'android' && localPath.startsWith('file://')) {
+                    localPath = localPath.replace('file://', '');
                 }
-                catch (_b) { }
-                return true; // We've handled the back press
-            }
-            // If not focused, let default handler run
-            return false;
-        };
-        var subscription = react_native_1.BackHandler.addEventListener('hardwareBackPress', onBackPress);
-        return function () { return subscription.remove(); };
-    }, [
-        closeInboxModal,
-        isFocused,
-        resetInboxView,
-        selectedThread,
-        showCreatorProfile,
-        showEchoes,
-        showInbox,
-        showMyWaves,
-    ]);
-    // ----- Profile photo handlers -----
-    var uploadAndSave = function (uri) { return __awaiter(void 0, void 0, void 0, function () {
-        var uid, storageRef, downloadURL, error_29;
-        var _a;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
-                case 0:
-                    _b.trys.push([0, 5, , 6]);
-                    uid = (_a = (0, auth_1.default)().currentUser) === null || _a === void 0 ? void 0 : _a.uid;
-                    if (!uid) {
-                        throw new Error('Please sign in to upload a profile photo.');
-                    }
-                    return [4 /*yield*/, ensureNetworkActionAllowed('upload', {
-                            label: 'upload your profile photo',
-                            kind: 'photos',
-                            localPath: uri,
-                        })];
-                case 1:
-                    if (!(_b.sent())) {
-                        throw new Error('Please use Wi-Fi to upload your profile photo.');
-                    }
-                    storageRef = (0, storage_1.default)().ref("users/".concat(uid, "/profile.jpg"));
-                    return [4 /*yield*/, storageRef.putFile(uri)];
-                case 2:
-                    _b.sent();
-                    return [4 /*yield*/, storageRef.getDownloadURL()];
-                case 3:
-                    downloadURL = _b.sent();
-                    // Update Firestore
-                    return [4 /*yield*/, (0, firestore_1.default)()
-                            .doc("users/".concat(uid))
-                            .set({ userPhoto: downloadURL }, { merge: true })];
-                case 4:
-                    // Update Firestore
-                    _b.sent();
-                    // Update local state
-                    setProfilePhoto(downloadURL);
-                    return [3 /*break*/, 6];
-                case 5:
-                    error_29 = _b.sent();
-                    console.error('Error uploading profile photo:', error_29);
-                    throw error_29;
-                case 6: return [2 /*return*/];
-            }
-        });
-    }); };
-    var onEditAvatar = function () { return __awaiter(void 0, void 0, void 0, function () {
-        var actions;
-        return __generator(this, function (_a) {
-            try {
-                actions = [];
-                actions.push({
-                    text: 'Choose Photo',
-                    onPress: function () { return __awaiter(void 0, void 0, void 0, function () {
-                        var res, a, error_30;
-                        var _a;
-                        return __generator(this, function (_b) {
-                            switch (_b.label) {
-                                case 0:
-                                    _b.trys.push([0, 3, , 4]);
-                                    console.log('Launching image library...');
-                                    return [4 /*yield*/, (0, react_native_image_picker_1.launchImageLibrary)({
-                                            mediaType: 'photo',
-                                            selectionLimit: 1,
-                                            includeBase64: false,
-                                            presentationStyle: 'fullScreen',
-                                        })];
-                                case 1:
-                                    res = _b.sent();
-                                    console.log('Image library response:', res);
-                                    a = (_a = res === null || res === void 0 ? void 0 : res.assets) === null || _a === void 0 ? void 0 : _a[0];
-                                    if (!(a === null || a === void 0 ? void 0 : a.uri)) {
-                                        console.log('No asset selected');
-                                        return [2 /*return*/];
-                                    }
-                                    console.log('Selected asset:', a);
-                                    return [4 /*yield*/, uploadAndSave(String(a.uri))];
-                                case 2:
-                                    _b.sent();
-                                    return [3 /*break*/, 4];
-                                case 3:
-                                    error_30 = _b.sent();
-                                    console.error('Error in launchImageLibrary:', error_30);
-                                    showOceanDialog('Photo Selection Error', 'Failed to select photo. Please try again.');
-                                    return [3 /*break*/, 4];
-                                case 4: return [2 /*return*/];
-                            }
-                        });
-                    }); },
+                return [4 /*yield*/, maybeCompressVideoForUpload(localPath, mediaType || null, shouldUseLightVideoUpload)];
+            case 3:
+                localPath = _a.sent();
+                safeName = String(noticeAdMedia.fileName || "advert_".concat(Date.now()))
+                    .replace(/[^A-Za-z0-9._-]/g, '_');
+                mediaPath = "notice-board/".concat(currentUser.uid, "/").concat(Date.now(), "_").concat(safeName);
+                _a.label = 4;
+            case 4:
+                _a.trys.push([4, 7, , 8]);
+                if (!currentUser || !currentUser.uid) {
+                    throw new Error('User not authenticated');
+                }
+                if (!noticeAdMedia || !noticeAdMedia.uri) {
+                    throw new Error('No media selected');
+                }
+                if (!localPath) {
+                    throw new Error('Invalid local file path');
+                }
+                return [4 /*yield*/, (0, storage_1.default)().ref(mediaPath).putFile(localPath, {
+                        contentType: mediaType || undefined,
+                    })];
+            case 5:
+                _a.sent();
+                return [4 /*yield*/, (0, storage_1.default)().ref(mediaPath).getDownloadURL()];
+            case 6:
+                mediaUrl = _a.sent();
+                return [3 /*break*/, 8];
+            case 7:
+                uploadErr_1 = _a.sent();
+                console.warn('Notice media upload failed, using local URI fallback:', uploadErr_1);
+                mediaUrl = (noticeAdMedia === null || noticeAdMedia === void 0 ? void 0 : noticeAdMedia.uri) || null;
+                mediaPath = null;
+                return [3 /*break*/, 8];
+            case 8:
+                if (!currentUser || !currentUser.uid) {
+                    throw new Error('User not authenticated');
+                }
+                advertPayload = {
+                    uid: currentUser.uid,
+                    text: text || '',
+                    mediaUrl: mediaUrl || null,
+                    mediaPath: mediaPath || null,
+                    mediaType: mediaType || null,
+                    mediaName: mediaName || null,
+                    orgName: noticeOrgName || null,
+                    registrationId: noticeRegistrationId || null,
+                    paidPlan: false,
+                    createdAt: firestore_1.default.FieldValue.serverTimestamp(),
+                };
+                cloudSaved = false;
+                _a.label = 9;
+            case 9:
+                _a.trys.push([9, 11, , 12]);
+                if (!advertPayload.mediaUrl && !advertPayload.text) {
+                    throw new Error('Post must contain text or media');
+                }
+                return [4 /*yield*/, (0, firestore_1.default)().collection('notice_board_ads').add(advertPayload)];
+            case 10:
+                _a.sent();
+                cloudSaved = true;
+                return [3 /*break*/, 12];
+            case 11:
+                writeErr_1 = _a.sent();
+                console.warn('Notice advert Firestore write failed, using local store fallback:', writeErr_1);
+                return [3 /*break*/, 12];
+            case 12:
+                if (!!cloudSaved) return [3 /*break*/, 15];
+                return [4 /*yield*/, async_storage_1.default.getItem(NOTICE_ADS_LOCAL_KEY)];
+            case 13:
+                localRaw = _a.sent();
+                localAds = localRaw ? JSON.parse(localRaw) : [];
+                next = Array.isArray(localAds) ? localAds : [];
+                next.unshift({
+                    id: "local-".concat(Date.now()),
+                    uid: currentUser.uid,
+                    text: text,
+                    mediaUrl: mediaUrl,
+                    mediaPath: mediaPath,
+                    mediaType: mediaType,
+                    mediaName: mediaName,
+                    orgName: noticeOrgName || null,
+                    registrationId: noticeRegistrationId || null,
+                    paidPlan: false,
+                    createdAt: Date.now(),
+                    localOnly: true,
                 });
-                // Optional removal
-                if (profilePhoto) {
-                    actions.push({
-                        text: 'Remove Photo',
-                        style: 'destructive',
-                        onPress: function () { return __awaiter(void 0, void 0, void 0, function () {
-                            var firestoreMod, authMod, uid, _a;
-                            var _b;
-                            return __generator(this, function (_c) {
-                                switch (_c.label) {
-                                    case 0:
-                                        setProfilePhoto(null);
-                                        _c.label = 1;
-                                    case 1:
-                                        _c.trys.push([1, 4, , 5]);
-                                        firestoreMod = null;
-                                        authMod = null;
-                                        try {
-                                            firestoreMod =
-                                                require('@react-native-firebase/firestore').default;
-                                        }
-                                        catch (_d) { }
-                                        try {
-                                            authMod = require('@react-native-firebase/auth').default;
-                                        }
-                                        catch (_e) { }
-                                        uid = (_b = authMod === null || authMod === void 0 ? void 0 : authMod().currentUser) === null || _b === void 0 ? void 0 : _b.uid;
-                                        if (!(firestoreMod && uid)) return [3 /*break*/, 3];
-                                        return [4 /*yield*/, firestoreMod()
-                                                .doc("users/".concat(uid))
-                                                .set({ userPhoto: null }, { merge: true })];
-                                    case 2:
-                                        _c.sent();
-                                        _c.label = 3;
-                                    case 3: return [3 /*break*/, 5];
-                                    case 4:
-                                        _a = _c.sent();
-                                        return [3 /*break*/, 5];
-                                    case 5: return [2 /*return*/];
-                                }
-                            });
-                        }); },
-                    });
-                }
-                actions.push({ text: 'Cancel', style: 'cancel' });
-                if (actions.length > 1)
-                    showOceanDialog('Profile Photo', 'Update your avatar', actions);
-            }
-            catch (_b) { }
-            return [2 /*return*/];
-        });
-    }); };
-    var _206 = (0, react_1.useState)({
-        dataSaverDefaultOnCell: true,
-        wifiOnlyHD: true,
-        autoplayCellular: 'preview',
-        prefetchNext: 1,
-        thumbQuality: 'lite',
-        cellularMaxBitrateH264: 1000000,
-        cellularMaxBitrateHEVC: 700000,
-        cellularResolutionCap: 480,
-        liveCellularMaxBitrate: 700000,
-        liveLowLatencyWifi: false,
-        liveJoinPreview: true,
-        liveChatLite: true,
-        animatedThumbsCell: false,
-        audioOnlyFallback: true,
-        cacheMaxMB: 200,
-        cacheTtlHours: 48,
-        backgroundDataCell: false,
-        rainEffectsEnabled: false,
-    }), bridge = _206[0], setBridge = _206[1];
-    (0, react_1.useEffect)(function () {
-        if (typeof bridge.rainEffectsEnabled === 'boolean') {
-            setStormEffectsEnabled(bridge.rainEffectsEnabled);
+                return [4 /*yield*/, async_storage_1.default.setItem(NOTICE_ADS_LOCAL_KEY, JSON.stringify(next.slice(0, 30)))];
+            case 14:
+                _a.sent();
+                _a.label = 15;
+            case 15:
+                setNoticeAdText('');
+                setNoticeAdMedia(null);
+                notifySuccess('Advert posted to Bulletin Board.');
+                loadNoticeBoardData();
+                return [3 /*break*/, 18];
+            case 16:
+                e_9 = _a.sent();
+                console.error('Publish notice advert failed', e_9);
+                notifyError('We could not post that right now. Please try again.');
+                return [3 /*break*/, 18];
+            case 17:
+                setNoticePosting(false);
+                return [7 /*endfinally*/];
+            case 18: return [2 /*return*/];
         }
-    }, [bridge.rainEffectsEnabled]);
-    var performancePolicy = (0, react_1.useMemo)(function () {
-        var cellularMode = !isWifi || dataSaver.cellular;
-        var mappedResolution = bridge.thumbQuality === 'high'
-            ? 'high'
-            : bridge.thumbQuality === 'standard'
-                ? 'med'
-                : 'low';
-        var effectiveDataSaver = dataSaver.enabled || (cellularMode && bridge.dataSaverDefaultOnCell);
-        return {
-            cellularMode: cellularMode,
-            effectiveDataSaver: effectiveDataSaver,
-            wifiOnlyDownloads: dataSaver.wifiOnlyDownloads || bridge.wifiOnlyHD,
-            autoplayOnWifiOnly: dataSaver.autoplayOnWifiOnly || bridge.autoplayCellular !== 'full',
-            thumbnailsOnlyInFeed: dataSaver.thumbnailsOnlyInFeed || bridge.autoplayCellular === 'off',
-            maxResolution: dataSaver.maxResolution || mappedResolution,
-            restrictHeavyTransfers: effectiveDataSaver && cellularMode && !bridge.backgroundDataCell,
-            liveVideoBitrate: cellularMode
-                ? Math.min(bridge.liveCellularMaxBitrate || 700000, effectiveDataSaver ? 420000 : 700000)
-                : 1400000,
-            liveDimensions: cellularMode && effectiveDataSaver
-                ? { width: 640, height: 360 }
-                : { width: 960, height: 540 },
-            liveFrameRate: cellularMode && effectiveDataSaver ? 15 : 24,
-            audioOnlyFallback: !!(bridge.audioOnlyFallback && cellularMode && effectiveDataSaver),
-        };
-    }, [bridge, dataSaver, isWifi]);
-    var shouldUseLightVideoUpload = (0, react_1.useMemo)(function () { return !!(performancePolicy.cellularMode && performancePolicy.effectiveDataSaver); }, [performancePolicy.cellularMode, performancePolicy.effectiveDataSaver]);
-    var buildMediaPickerOptions = (0, react_1.useCallback)(function (mediaType, extra) {
-        if (extra === void 0) { extra = {}; }
-        return (__assign({ mediaType: mediaType, quality: mediaType === 'photo' ? 0.8 : 1, presentationStyle: 'fullScreen', videoQuality: mediaType === 'video' || mediaType === 'mixed'
-                ? shouldUseLightVideoUpload
-                    ? 'low'
-                    : 'high'
-                : undefined, formatAsMp4: shouldUseLightVideoUpload, assetRepresentationMode: shouldUseLightVideoUpload ? 'compatible' : 'auto' }, extra));
-    }, [shouldUseLightVideoUpload]);
-    (0, react_1.useEffect)(function () {
-        dataSaver.setState({
-            enabled: bridge.dataSaverDefaultOnCell,
-            wifiOnlyDownloads: bridge.wifiOnlyHD,
-            autoplayOnWifiOnly: bridge.autoplayCellular !== 'full',
-            thumbnailsOnlyInFeed: bridge.autoplayCellular === 'off',
-            downloadOnWifi: dataSaver.downloadOnWifi || {
-                photos: true,
-                videos: true,
-                audio: true,
-                documents: true,
-            },
-            downloadOnCellular: dataSaver.downloadOnCellular || {
-                photos: true,
-                videos: false,
-                audio: true,
-                documents: false,
-            },
-            maxResolution: bridge.thumbQuality === 'high'
-                ? 'high'
-                : bridge.thumbQuality === 'standard'
-                    ? 'med'
-                    : 'low',
-        });
-    }, [
-        bridge.dataSaverDefaultOnCell,
-        bridge.wifiOnlyHD,
-        bridge.autoplayCellular,
-        bridge.thumbQuality,
-    ]);
-    var _207 = (0, react_1.useState)(false), showPearls = _207[0], setShowPearls = _207[1];
-    var _208 = (0, react_1.useState)(false), showEchoes = _208[0], setShowEchoes = _208[1];
-    var _209 = (0, react_1.useState)(null), echoWaveId = _209[0], setEchoWaveId = _209[1];
-    var _210 = (0, react_1.useState)(null), echoPostData = _210[0], setEchoPostData = _210[1];
-    var _211 = (0, react_1.useState)([]), postTypingUsers = _211[0], setPostTypingUsers = _211[1];
-    var _212 = (0, react_1.useState)(false), mainEchoSending = _212[0], setMainEchoSending = _212[1];
-    var _213 = (0, react_1.useState)({}), postEchoTexts = _213[0], setPostEchoTexts = _213[1];
-    var _214 = (0, react_1.useState)({}), postEchoLists = _214[0], setPostEchoLists = _214[1];
-    var _215 = (0, react_1.useState)(null), selectedCountry = _215[0], setSelectedCountry = _215[1];
-    var _216 = (0, react_1.useState)(0), unreadPingsCount = _216[0], setUnreadPingsCount = _216[1];
-    var _217 = (0, react_1.useState)([]), pings = _217[0], setPings = _217[1];
-    var notificationInitRef = (0, react_1.useRef)(null);
-    var postTypingWriteTimeoutRef = (0, react_1.useRef)(null);
-    // Load pings from AsyncStorage on mount
-    (0, react_1.useEffect)(function () {
-        (function () { return __awaiter(void 0, void 0, void 0, function () {
-            var stored, parsed, restored, e_10;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        _a.trys.push([0, 2, , 3]);
-                        return [4 /*yield*/, async_storage_1.default.getItem('vibe_pings')];
-                    case 1:
-                        stored = _a.sent();
-                        if (stored) {
-                            parsed = JSON.parse(stored);
-                            restored = parsed.map(function (p) { return (__assign(__assign({}, p), { timestamp: p.timestamp ? new Date(p.timestamp) : new Date() })); });
-                            setPings(restored);
-                        }
-                        return [3 /*break*/, 3];
-                    case 2:
-                        e_10 = _a.sent();
-                        console.warn('Failed to load pings:', e_10);
-                        return [3 /*break*/, 3];
-                    case 3: return [2 /*return*/];
-                }
-            });
-        }); })();
-    }, []);
-    // Persist pings to AsyncStorage whenever they change
-    (0, react_1.useEffect)(function () {
-        if (pings.length === 0)
-            return;
-        (function () { return __awaiter(void 0, void 0, void 0, function () {
-            var e_11;
-            return __generator(this, function (_a) {
-                switch (_a.label) {
-                    case 0:
-                        _a.trys.push([0, 2, , 3]);
-                        return [4 /*yield*/, async_storage_1.default.setItem('vibe_pings', JSON.stringify(pings))];
-                    case 1:
-                        _a.sent();
-                        return [3 /*break*/, 3];
-                    case 2:
-                        e_11 = _a.sent();
-                        console.warn('Failed to save pings:', e_11);
-                        return [3 /*break*/, 3];
-                    case 3: return [2 /*return*/];
-                }
-            });
-        }); })();
-    }, [pings]);
-    var _218 = (0, react_1.useState)(false), showDeepSearch = _218[0], setShowDeepSearch = _218[1];
-    var _219 = (0, react_1.useState)(''), deepQuery = _219[0], setDeepQuery = _219[1];
-    var _220 = (0, react_1.useState)(false), isAISearchSuggesting = _220[0], setIsAISearchSuggesting = _220[1];
-    var _221 = (0, react_1.useState)(false), isAISchoolFeedback = _221[0], setIsAISchoolFeedback = _221[1];
-    var _222 = (0, react_1.useState)(false), isAIExploreContent = _222[0], setIsAIExploreContent = _222[1];
-    var _223 = (0, react_1.useState)([]), deepResults = _223[0], setDeepResults = _223[1];
-    var _224 = (0, react_1.useState)(false), deepSearchLoading = _224[0], setDeepSearchLoading = _224[1];
-    var _225 = (0, react_1.useState)(null), deepSearchError = _225[0], setDeepSearchError = _225[1];
-    var backendSearchBase = (0, react_1.useMemo)(function () {
-        try {
-            var cfgModule = require('./liveConfig');
-            var cfg = (cfgModule === null || cfgModule === void 0 ? void 0 : cfgModule.cfg) || (cfgModule === null || cfgModule === void 0 ? void 0 : cfgModule.default) || cfgModule || {};
-            return ((cfg === null || cfg === void 0 ? void 0 : cfg.BACKEND_BASE_URL) ||
-                (cfg === null || cfg === void 0 ? void 0 : cfg.USER_MGMT_ENDPOINT_BASE) ||
-                (cfg === null || cfg === void 0 ? void 0 : cfg.USER_MANAGEMENT_BASE_URL) ||
-                '');
-        }
-        catch (_a) {
-            return '';
-        }
-    }, []);
-    var searchViaFirestore = (0, react_1.useCallback)(function (term) { return __awaiter(void 0, void 0, void 0, function () {
-        var normalized, firestoreMod, lowerTerm, usersRef, results, seenUsers, addUserDoc, userSnap, lcSnap, err_2, seenWaves, waveSnap, _a;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
-                case 0:
-                    normalized = term.trim().replace(/^[@\/]/, '');
-                    if (!normalized)
-                        return [2 /*return*/, []];
-                    console.log('searchViaFirestore called with:', normalized);
-                    firestoreMod = null;
-                    try {
-                        firestoreMod = require('@react-native-firebase/firestore').default;
-                    }
-                    catch (err) {
-                        console.log('Firestore module not available:', err);
-                    }
-                    if (!firestoreMod) {
-                        console.log('Firestore not available, returning empty');
-                        return [2 /*return*/, []];
-                    }
-                    lowerTerm = normalized.toLowerCase();
-                    usersRef = firestoreMod().collection('users');
-                    results = [];
-                    seenUsers = new Set();
-                    addUserDoc = function (doc) {
-                        var uid = doc.id;
-                        if (!uid || seenUsers.has(uid))
-                            return;
-                        seenUsers.add(uid);
-                        var data = doc.data() || {};
-                        console.log('Adding user doc:', uid, 'data:', { displayName: data.displayName, userName: data.userName, username: data.username });
-                        results.push({
-                            kind: 'user',
-                            id: uid,
-                            label: String(data.displayName || data.userName || data.username || '@momo'),
-                            extra: {
-                                bio: typeof data.bio === 'string' ? data.bio : '',
-                                photoURL: data.userPhoto || data.photoURL || null,
-                                liveId: data.liveId || null,
-                            },
-                        });
-                    };
-                    _b.label = 1;
-                case 1:
-                    _b.trys.push([1, 4, , 5]);
-                    console.log('Searching Firestore users by displayName...');
-                    return [4 /*yield*/, usersRef
-                            .where('displayName', '>=', normalized)
-                            .where('displayName', '<=', normalized + '\uf8ff')
-                            .limit(20)
-                            .get()];
-                case 2:
-                    userSnap = _b.sent();
-                    console.log('DisplayName search results:', userSnap.size);
-                    userSnap.forEach(addUserDoc);
-                    console.log('Searching Firestore users by username_lc...');
-                    return [4 /*yield*/, usersRef
-                            .where('username_lc', '>=', lowerTerm)
-                            .where('username_lc', '<=', lowerTerm + '\uf8ff')
-                            .limit(20)
-                            .get()];
-                case 3:
-                    lcSnap = _b.sent();
-                    console.log('Username_lc search results:', lcSnap.size);
-                    lcSnap.forEach(addUserDoc);
-                    console.log('Total Firestore results:', results.length);
-                    return [3 /*break*/, 5];
-                case 4:
-                    err_2 = _b.sent();
-                    console.log('Firestore search error:', err_2);
-                    return [3 /*break*/, 5];
-                case 5:
-                    seenWaves = new Set();
-                    _b.label = 6;
-                case 6:
-                    _b.trys.push([6, 8, , 9]);
-                    return [4 /*yield*/, firestoreMod()
-                            .collection('waves')
-                            .orderBy('createdAt', 'desc')
-                            .limit(80)
-                            .get()];
-                case 7:
-                    waveSnap = _b.sent();
-                    ((waveSnap === null || waveSnap === void 0 ? void 0 : waveSnap.docs) || []).forEach(function (doc) {
-                        var id = doc.id;
-                        if (!id || seenWaves.has(id))
-                            return;
-                        var data = doc.data() || {};
-                        if ((data === null || data === void 0 ? void 0 : data.isPublic) === false)
-                            return;
-                        var textValues = [
-                            data.captionText,
-                            data.caption,
-                            data.authorName,
-                            data.ownerName,
-                            data.description,
-                        ]
-                            .filter(Boolean)
-                            .join(' ')
-                            .toLowerCase();
-                        if (!textValues.includes(lowerTerm))
-                            return;
-                        seenWaves.add(id);
-                        results.push({
-                            kind: 'vibe',
-                            id: id,
-                            label: String(data.captionText || data.caption || data.authorName || 'CMEE'),
-                            extra: {
-                                caption: data.captionText || data.caption || '',
-                                authorName: data.authorName || data.ownerName || '',
-                                ownerUid: data.ownerUid || null,
-                                playbackUrl: data.playbackUrl || data.mediaUrl || null,
-                                mediaUri: data.mediaUrl || null,
-                                muxStatus: data.muxStatus || null,
-                                audioUrl: data.audioUrl || null,
-                                mediaEdits: data.mediaEdits || data.editorState || data.edits || null,
-                            },
-                        });
-                    });
-                    return [3 /*break*/, 9];
-                case 8:
-                    _a = _b.sent();
-                    return [3 /*break*/, 9];
-                case 9: return [2 /*return*/, results];
-            }
-        });
-    }); }, []);
-    var searchOceanEntities = (0, react_1.useCallback)(function (term) { return __awaiter(void 0, void 0, void 0, function () {
-        var normalized, backendError, encoded, _a, usersResp, wavesResp, usersData, wavesData, payload, payload, results_1, seen_2, err_3, normalizedErr, firestoreResults;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
-                case 0:
-                    normalized = term.trim();
-                    if (!normalized)
-                        return [2 /*return*/, []];
-                    console.log('searchOceanEntities called with:', normalized);
-                    backendError = null;
-                    if (!backendSearchBase) return [3 /*break*/, 10];
-                    console.log('Trying backend search at:', backendSearchBase);
-                    encoded = encodeURIComponent(normalized);
-                    _b.label = 1;
-                case 1:
-                    _b.trys.push([1, 9, , 10]);
-                    return [4 /*yield*/, Promise.all([
-                            fetch("".concat(backendSearchBase, "/search/users?term=").concat(encoded)),
-                            fetch("".concat(backendSearchBase, "/search/waves?term=").concat(encoded)),
-                        ])];
-                case 2:
-                    _a = _b.sent(), usersResp = _a[0], wavesResp = _a[1];
-                    console.log('Backend search responses:', usersResp.status, wavesResp.status);
-                    usersData = [];
-                    wavesData = [];
-                    if (!usersResp.ok) return [3 /*break*/, 4];
-                    return [4 /*yield*/, usersResp.json()];
-                case 3:
-                    payload = _b.sent();
-                    usersData = Array.isArray(payload === null || payload === void 0 ? void 0 : payload.users) ? payload.users : [];
-                    return [3 /*break*/, 5];
-                case 4:
-                    backendError =
-                        backendError ||
-                            new Error("Backend user search failed (".concat(usersResp.status, " ").concat(usersResp.statusText, ")"));
-                    _b.label = 5;
-                case 5:
-                    if (!wavesResp.ok) return [3 /*break*/, 7];
-                    return [4 /*yield*/, wavesResp.json()];
-                case 6:
-                    payload = _b.sent();
-                    wavesData = Array.isArray(payload === null || payload === void 0 ? void 0 : payload.waves) ? payload.waves : [];
-                    return [3 /*break*/, 8];
-                case 7:
-                    backendError =
-                        backendError ||
-                            new Error("Backend wave search failed (".concat(wavesResp.status, " ").concat(wavesResp.statusText, ")"));
-                    _b.label = 8;
-                case 8:
-                    console.log('Backend data:', usersData.length, 'users,', wavesData.length, 'waves');
-                    results_1 = [];
-                    seen_2 = new Set();
-                    usersData.forEach(function (user) {
-                        var uid = user.uid || user.id;
-                        if (!uid || seen_2.has("user:".concat(uid)))
-                            return;
-                        seen_2.add("user:".concat(uid));
-                        results_1.push({
-                            kind: 'user',
-                            id: uid,
-                            label: String(user.displayName || user.name || user.userName || user.username || '@momo'),
-                            extra: __assign({}, user),
-                        });
-                    });
-                    wavesData.forEach(function (wave) {
-                        var id = wave.id;
-                        if (!id || seen_2.has("wave:".concat(id)))
-                            return;
-                        seen_2.add("wave:".concat(id));
-                        results_1.push({
-                            kind: 'vibe',
-                            id: id,
-                            label: String(wave.caption || wave.title || wave.authorName || 'Vibe'),
-                            extra: __assign({}, wave),
-                        });
-                    });
-                    if (results_1.length > 0) {
-                        return [2 /*return*/, results_1];
-                    }
-                    return [3 /*break*/, 10];
-                case 9:
-                    err_3 = _b.sent();
-                    normalizedErr = err_3 instanceof Error ? err_3 : new Error(String(err_3 || 'Unknown backend error'));
-                    backendError = backendError || normalizedErr;
-                    console.warn('Backend search failed', normalizedErr);
-                    return [3 /*break*/, 10];
-                case 10:
-                    console.log('Falling back to Firestore search...');
-                    return [4 /*yield*/, searchViaFirestore(normalized)];
-                case 11:
-                    firestoreResults = _b.sent();
-                    console.log('Firestore returned:', firestoreResults.length, 'results');
-                    if (firestoreResults.length > 0) {
-                        return [2 /*return*/, firestoreResults];
-                    }
-                    if (backendError) {
-                        throw backendError;
-                    }
-                    return [2 /*return*/, []];
-            }
-        });
-    }); }, [backendSearchBase, searchViaFirestore]);
-    var buildWaveFromSearchResult = (0, react_1.useCallback)(function (result) {
-        var _a;
-        if (result.kind !== 'vibe')
-            return null;
-        var extra = result.extra || {};
-        var uri = extra.mediaUri || extra.playbackUrl || '';
-        var isAudioPost = extra.postType === 'audio' ||
-            /^audio\//i.test(String(extra.mediaType || ''));
-        if (!uri && !extra.audioUrl)
-            return null;
-        return {
-            id: result.id,
-            media: !isAudioPost && uri
-                ? { uri: uri, type: extra.mediaType || ((_a = extra.media) === null || _a === void 0 ? void 0 : _a.type) || 'video/mp4' }
-                : null,
-            audio: extra.audioUrl
-                ? {
-                    uri: extra.audioUrl,
-                    name: extra.audioName || 'Audio',
-                }
-                : isAudioPost && uri
-                    ? { uri: uri, name: extra.audioName || 'Audio' }
-                    : null,
-            captionText: extra.caption || '',
-            postType: extra.postType || null,
-            mediaEdits: extra.mediaEdits || extra.editorState || extra.edits || null,
-            playbackUrl: extra.playbackUrl || null,
-            muxStatus: extra.muxStatus || null,
-            authorName: extra.authorName || null,
-            ownerUid: extra.ownerUid || null,
-        };
-    }, []);
-    var handleDeepWaveSelect = (0, react_1.useCallback)(function (result) {
-        if (result.kind !== 'vibe')
-            return;
-        var existingIdx = vibesFeed.findIndex(function (w) { return w.id === result.id; });
-        if (existingIdx >= 0) {
-            setCurrentIndex(existingIdx);
-            setWaveKey(Date.now());
-            setShowDeepSearch(false);
-            return;
-        }
-        var newWave = buildWaveFromSearchResult(result);
-        if (!newWave) {
-            react_native_1.Alert.alert('Wave unavailable', 'This wave cannot be previewed right now.');
-            return;
-        }
-        setVibesFeed(function (prev) { return __spreadArray([newWave], prev, true); });
-        setCurrentIndex(0);
-        setWaveKey(Date.now());
-        setShowDeepSearch(false);
-    }, [buildWaveFromSearchResult, setCurrentIndex, setShowDeepSearch, setWaveKey, setVibesFeed, vibesFeed]);
-    var runDeepSearch = (0, react_1.useCallback)(function () { return __awaiter(void 0, void 0, void 0, function () {
-        var term, createVariants, variants, aggregatedResults, searchException, _i, variants_1, candidate, candidateResults, err_4, noResultsMsg, currentUser, crewService, followingList, crewStatus_1, _a, aggregatedResults_1, result, error_31, crewStatus_2, _b, aggregatedResults_2, result, err_5, errorMsg, fullError;
-        var _c;
-        return __generator(this, function (_d) {
-            switch (_d.label) {
-                case 0:
-                    term = deepQuery.trim();
-                    if (!term) {
-                        react_native_1.Alert.alert('Search', 'Please enter a username.');
-                        return [2 /*return*/];
-                    }
-                    createVariants = function (value) {
-                        var trimmed = value.trim();
-                        if (!trimmed)
-                            return [];
-                        var sanitized = trimmed.replace(/^[@\/]+/, '');
-                        var withSlash = sanitized ? "/".concat(sanitized) : trimmed;
-                        return Array.from(new Set([trimmed, sanitized, withSlash]
-                            .filter(Boolean)
-                            .map(function (v) { return v.trim(); })
-                            .filter(Boolean)));
-                    };
-                    setDeepSearchError(null);
-                    setDeepResults([]);
-                    setDeepSearchLoading(true);
-                    console.log('Deep dive search started for:', term);
-                    _d.label = 1;
-                case 1:
-                    _d.trys.push([1, 14, 15, 16]);
-                    variants = createVariants(term);
-                    aggregatedResults = [];
-                    searchException = null;
-                    _i = 0, variants_1 = variants;
-                    _d.label = 2;
-                case 2:
-                    if (!(_i < variants_1.length)) return [3 /*break*/, 7];
-                    candidate = variants_1[_i];
-                    _d.label = 3;
-                case 3:
-                    _d.trys.push([3, 5, , 6]);
-                    console.log('Deep dive backend search candidate:', candidate);
-                    return [4 /*yield*/, searchOceanEntities(candidate)];
-                case 4:
-                    candidateResults = _d.sent();
-                    aggregatedResults = candidateResults;
-                    if (candidateResults.length > 0) {
-                        console.log('Deep dive candidate succeeded with', candidateResults.length, 'results');
-                        return [3 /*break*/, 7];
-                    }
-                    return [3 /*break*/, 6];
-                case 5:
-                    err_4 = _d.sent();
-                    searchException = err_4;
-                    console.error('Deep dive candidate failed:', candidate, err_4);
-                    return [3 /*break*/, 6];
-                case 6:
-                    _i++;
-                    return [3 /*break*/, 2];
-                case 7:
-                    if (aggregatedResults.length === 0 && searchException) {
-                        throw searchException;
-                    }
-                    setDeepResults(aggregatedResults);
-                    if (!(aggregatedResults.length === 0)) return [3 /*break*/, 8];
-                    noResultsMsg = "No users found matching \"".concat(term, "\"");
-                    console.log('Deep dive no results:', term);
-                    setDeepSearchError(noResultsMsg);
-                    return [3 /*break*/, 13];
-                case 8:
-                    setDeepSearchError(null);
-                    currentUser = (_c = auth_1.default === null || auth_1.default === void 0 ? void 0 : (0, auth_1.default)()) === null || _c === void 0 ? void 0 : _c.currentUser;
-                    if (!currentUser) return [3 /*break*/, 13];
-                    _d.label = 9;
-                case 9:
-                    _d.trys.push([9, 12, , 13]);
-                    return [4 /*yield*/, Promise.resolve().then(function () { return __importStar(require('./src/services/crewService')); })];
-                case 10:
-                    crewService = _d.sent();
-                    return [4 /*yield*/, crewService.getBoarding(1000)];
-                case 11:
-                    followingList = _d.sent();
-                    crewStatus_1 = {};
-                    for (_a = 0, aggregatedResults_1 = aggregatedResults; _a < aggregatedResults_1.length; _a++) {
-                        result = aggregatedResults_1[_a];
-                        crewStatus_1[result.id] = followingList.includes(result.id);
-                    }
-                    setIsInUserCrew(function (prev) { return (__assign(__assign({}, prev), crewStatus_1)); });
-                    console.log("[DEBUG] Loaded crew status for ".concat(aggregatedResults.length, " search results"));
-                    return [3 /*break*/, 13];
-                case 12:
+    });
+}); }, [
+    ensureNetworkActionAllowed,
+    loadNoticeBoardData,
+    noticeAdMedia,
+    noticeAdText,
+    noticeOrgName,
+    noticeRegistered,
+    noticeRegistrationId,
+    notifyError,
+    notifySuccess,
+]);
                     error_31 = _d.sent();
                     console.error('Error loading crew status for search:', error_31);
                     crewStatus_2 = {};

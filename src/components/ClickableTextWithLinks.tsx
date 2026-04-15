@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Text, Linking } from 'react-native';
+import { Text, Linking, Alert } from 'react-native';
 
 type TokenType = 'text' | 'url' | 'hashtag';
 type Token = { type: TokenType; content: string; key: string };
@@ -57,14 +57,31 @@ interface ClickableTextWithLinksProps {
   text: string;
   style?: any;
   numberOfLines?: number;
+  /** When set, hashtags open in-app (e.g. Hunt) instead of a web search. */
+  onHashtagPress?: (tagWithoutHash: string) => void;
 }
 
 const ClickableTextWithLinks: React.FC<ClickableTextWithLinksProps> = ({
   text,
   style,
   numberOfLines,
+  onHashtagPress,
 }) => {
   const tokens = useMemo(() => tokenize(text), [text]);
+
+  const copyText = (value: string) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return;
+    try {
+      const clipboardModule = require('@react-native-clipboard/clipboard');
+      const setString =
+        clipboardModule?.default?.setString || clipboardModule?.setString;
+      if (typeof setString === 'function') {
+        setString(trimmed);
+      }
+    } catch {}
+    Alert.alert('Copied', trimmed);
+  };
 
   const openExternal = async (url: string) => {
     try {
@@ -87,6 +104,14 @@ const ClickableTextWithLinks: React.FC<ClickableTextWithLinksProps> = ({
               key={token.key}
               style={{ color: '#1976D2', textDecorationLine: 'underline' }}
               onPress={() => openExternal(token.content)}
+              onLongPress={() => {
+                const targetUrl = normalizeUrl(token.content);
+                Alert.alert('Link options', targetUrl, [
+                  { text: 'Open', onPress: () => void openExternal(targetUrl) },
+                  { text: 'Copy', onPress: () => copyText(targetUrl) },
+                  { text: 'Cancel', style: 'cancel' },
+                ]);
+              }}
             >
               {stripTrailingPunctuation(token.content)}
             </Text>
@@ -94,18 +119,36 @@ const ClickableTextWithLinks: React.FC<ClickableTextWithLinksProps> = ({
         }
         if (token.type === 'hashtag') {
           const hash = token.content.replace(/^#/, '');
-          const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`#${hash}`)}`;
           return (
             <Text
               key={token.key}
               style={{ color: '#1976D2', textDecorationLine: 'underline' }}
-              onPress={() => openExternal(searchUrl)}
+              onPress={() => {
+                if (onHashtagPress) {
+                  onHashtagPress(hash);
+                  return;
+                }
+                const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`#${hash}`)}`;
+                void openExternal(searchUrl);
+              }}
+              onLongPress={() => copyText(token.content)}
             >
               {token.content}
             </Text>
           );
         }
-        return <Text key={token.key}>{token.content}</Text>;
+        return (
+          <Text
+            key={token.key}
+            onLongPress={() => {
+              if (String(token.content || '').trim()) {
+                copyText(token.content);
+              }
+            }}
+          >
+            {token.content}
+          </Text>
+        );
       })}
     </Text>
   );

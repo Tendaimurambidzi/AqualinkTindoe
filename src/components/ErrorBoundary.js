@@ -39,12 +39,14 @@ var ErrorBoundary = /** @class */ (function (_super) {
     };
     ErrorBoundary.prototype.render = function () {
         if (this.state.hasError) {
+            var errorMessage = (this.state.error && (this.state.error.message || String(this.state.error))) || 'Unknown error';
             return (<react_native_1.View style={styles.container}>
           <react_native_1.View style={styles.card}>
             <react_native_1.Text style={styles.title}>Something went wrong</react_native_1.Text>
             <react_native_1.Text style={styles.message}>
               We hit a problem opening this screen. Please try again.
             </react_native_1.Text>
+            <react_native_1.Text style={styles.details}>{errorMessage}</react_native_1.Text>
             <react_native_1.Pressable onPress={this.handleReload} style={function (_a) {
                     var pressed = _a.pressed;
                     return [
@@ -92,6 +94,13 @@ var styles = react_native_1.StyleSheet.create({
         color: '#B8D4E6',
         fontSize: 14,
         lineHeight: 20,
+        textAlign: 'center',
+    },
+    details: {
+        marginTop: 14,
+        color: '#FDE68A',
+        fontSize: 12,
+        lineHeight: 18,
         textAlign: 'center',
     },
     button: {

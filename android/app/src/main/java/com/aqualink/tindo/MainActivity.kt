@@ -21,11 +21,13 @@ class MainActivity : ReactActivity() {
    */
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(null)
+    ShareIntentModule.handleIntent(intent)
   }
 
   override fun onNewIntent(intent: Intent) {
     super.onNewIntent(intent)
     setIntent(intent)
+    ShareIntentModule.handleIntent(intent)
   }
 
   /**

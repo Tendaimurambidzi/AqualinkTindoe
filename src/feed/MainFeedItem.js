@@ -156,7 +156,12 @@ var isImageAsset = function (asset) {
 };
 var MainFeedItem = (0, react_1.memo)(function (_a) {
     var _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
-    var item = _a.item, index = _a.index, myUid = _a.myUid, profileName = _a.profileName, profileBio = _a.profileBio, profileMinuteFameTitle = _a.profileMinuteFameTitle, userData = _a.userData, ensureUserData = _a.ensureUserData, waveStats = _a.waveStats, isInUserCrew = _a.isInUserCrew, optimisticCrewCounts = _a.optimisticCrewCounts, expandedPosts = _a.expandedPosts, revealedImages = _a.revealedImages, isCurrentUserOnline = _a.isCurrentUserOnline, bufferingMap = _a.bufferingMap, postEchoLists = _a.postEchoLists, expandedEchoes = _a.expandedEchoes, echoesPageSize = _a.echoesPageSize, echoExpansionInProgress = _a.echoExpansionInProgress, reachCounts = _a.reachCounts, isPaused = _a.isPaused, allowPlayback = _a.allowPlayback, showMakeWaves = _a.showMakeWaves, showAudioModal = _a.showAudioModal, capturedMedia = _a.capturedMedia, showLive = _a.showLive, activeVideoId = _a.activeVideoId, preloadedVideoIds = _a.preloadedVideoIds, overlayReadyMap = _a.overlayReadyMap, isWifi = _a.isWifi, bridge = _a.bridge, currentIndex = _a.currentIndex, displayHandle = _a.displayHandle, formatDefiniteTime = _a.formatDefiniteTime, translate = _a.translate, openWaveOptions = _a.openWaveOptions, handleToggleVibe = _a.handleToggleVibe, setExpandedPosts = _a.setExpandedPosts, setRevealedImages = _a.setRevealedImages, recordVideoReach = _a.recordVideoReach, recordImageReach = _a.recordImageReach, markBuffering = _a.markBuffering, onVideoPlaybackError = _a.onVideoPlaybackError, setPreservedScrollPosition = _a.setPreservedScrollPosition, navigation = _a.navigation, ensureSplash = _a.ensureSplash, removeSplash = _a.removeSplash, setWavesFeed = _a.setWavesFeed, setVibesFeed = _a.setVibesFeed, setPublicFeed = _a.setPublicFeed, setPostFeed = _a.setPostFeed, setEchoWaveId = _a.setEchoWaveId, setCurrentIndex = _a.setCurrentIndex, setShowEchoes = _a.setShowEchoes, setShowPearls = _a.setShowPearls, anchorWave = _a.anchorWave, onShareWave = _a.onShareWave, setEchoExpansionInProgress = _a.setEchoExpansionInProgress, setExpandedEchoes = _a.setExpandedEchoes, setEchoesPageSize = _a.setEchoesPageSize, videoStyleFor = _a.videoStyleFor, isVideoAsset = _a.isVideoAsset, onReplyToEcho = _a.onReplyToEcho, onOpenCreatorProfile = _a.onOpenCreatorProfile, onOpenProfilePicture = _a.onOpenProfilePicture, onOpenFleetDeck = _a.onOpenFleetDeck, _b0 = _a.fleetDeckBadgeCount, fleetDeckBadgeCount = _b0 === void 0 ? 0 : _b0;
+    var item = _a.item, index = _a.index, myUid = _a.myUid, profileName = _a.profileName, profileBio = _a.profileBio, profileMinuteFameTitle = _a.profileMinuteFameTitle, userData = _a.userData, ensureUserData = _a.ensureUserData, waveStats = _a.waveStats, isInUserCrew = _a.isInUserCrew, optimisticCrewCounts = _a.optimisticCrewCounts, expandedPosts = _a.expandedPosts, revealedImages = _a.revealedImages, isCurrentUserOnline = _a.isCurrentUserOnline, bufferingMap = _a.bufferingMap, postEchoLists = _a.postEchoLists, expandedEchoes = _a.expandedEchoes, echoesPageSize = _a.echoesPageSize, echoExpansionInProgress = _a.echoExpansionInProgress, reachCounts = _a.reachCounts, isPaused = _a.isPaused, allowPlayback = _a.allowPlayback, showMakeWaves = _a.showMakeWaves, showAudioModal = _a.showAudioModal, capturedMedia = _a.capturedMedia, showLive = _a.showLive, activeVideoId = _a.activeVideoId, preloadedVideoIds = _a.preloadedVideoIds, overlayReadyMap = _a.overlayReadyMap, isWifi = _a.isWifi, bridge = _a.bridge, currentIndex = _a.currentIndex, displayHandle = _a.displayHandle, formatDefiniteTime = _a.formatDefiniteTime, translate = _a.translate, openWaveOptions = _a.openWaveOptions, handleToggleVibe = _a.handleToggleVibe, setExpandedPosts = _a.setExpandedPosts, setRevealedImages = _a.setRevealedImages, recordVideoReach = _a.recordVideoReach, recordImageReach = _a.recordImageReach, markBuffering = _a.markBuffering, onVideoPlaybackError = _a.onVideoPlaybackError, setPreservedScrollPosition = _a.setPreservedScrollPosition, navigation = _a.navigation, ensureSplash = _a.ensureSplash, removeSplash = _a.removeSplash, setWavesFeed = _a.setWavesFeed, setVibesFeed = _a.setVibesFeed, setPublicFeed = _a.setPublicFeed, setPostFeed = _a.setPostFeed, setEchoWaveId = _a.setEchoWaveId, setCurrentIndex = _a.setCurrentIndex, setShowEchoes = _a.setShowEchoes, setShowPearls = _a.setShowPearls, anchorWave = _a.anchorWave, onShareWave = _a.onShareWave, pinnedWaveIds = _a.pinnedWaveIds, castedWaveIds = _a.castedWaveIds, setEchoExpansionInProgress = _a.setEchoExpansionInProgress, setExpandedEchoes = _a.setExpandedEchoes, setEchoesPageSize = _a.setEchoesPageSize, videoStyleFor = _a.videoStyleFor, isVideoAsset = _a.isVideoAsset, onReplyToEcho = _a.onReplyToEcho, onEchoHugPersist = _a.onEchoHugPersist, onHashtagPress = _a.onHashtagPress, onOpenCreatorProfile = _a.onOpenCreatorProfile, onOpenProfilePicture = _a.onOpenProfilePicture, onOpenFleetDeck = _a.onOpenFleetDeck, _b0 = _a.fleetDeckBadgeCount, fleetDeckBadgeCount = _b0 === void 0 ? 0 : _b0;
+    var safePinnedWaveIds = pinnedWaveIds instanceof Set ? pinnedWaveIds : new Set();
+    var safeCastedWaveIds = castedWaveIds instanceof Set ? castedWaveIds : new Set();
+    var safeOpenCreatorProfile = typeof onOpenCreatorProfile === 'function' ? onOpenCreatorProfile : function () { };
+    var safeOpenProfilePicture = typeof onOpenProfilePicture === 'function' ? onOpenProfilePicture : function () { };
+    var safeOnHashtagPress = typeof onHashtagPress === 'function' ? onHashtagPress : function () { };
     var _s = (0, react_1.useState)(''), status = _s[0], setStatus = _s[1];
     var _t = (0, react_1.useState)(false), isHereNow = _t[0], setIsHereNow = _t[1];
     var _u = (0, react_1.useState)(null), activeEchoActionId = _u[0], setActiveEchoActionId = _u[1];
@@ -205,17 +210,18 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                     clearTimeout(audioControlsTimerRef.current);
                 }
                 catch (_a) { }
-    }
-};
-var normalizeLinkTarget = function (value) {
-    var cleaned = String(value || '').trim().replace(/[),.;!?]+$/, '');
-    if (/^https?:\/\//i.test(cleaned))
-        return cleaned;
-    if (/^www\./i.test(cleaned))
-        return "https://".concat(cleaned);
-    return cleaned;
-};
+                audioControlsTimerRef.current = null;
+            }
+        };
     }, []);
+    var normalizeLinkTarget = function (value) {
+        var cleaned = String(value || '').trim().replace(/[),.;!?]+$/, '');
+        if (/^https?:\/\//i.test(cleaned))
+            return cleaned;
+        if (/^www\./i.test(cleaned))
+            return "https://".concat(cleaned);
+        return cleaned;
+    };
     (0, react_1.useEffect)(function () {
         var _a, _b;
         var ownerUid = item.ownerUid;
@@ -478,9 +484,9 @@ var normalizeLinkTarget = function (value) {
             navigation.navigate('Profile');
         }
         else {
-            onOpenCreatorProfile(item.ownerUid, item.authorName || ((_a = item.user) === null || _a === void 0 ? void 0 : _a.name) || null);
+            safeOpenCreatorProfile(item.ownerUid, item.authorName || ((_a = item.user) === null || _a === void 0 ? void 0 : _a.name) || null);
         }
-    }, [item.authorName, item.ownerUid, (_g = item.user) === null || _g === void 0 ? void 0 : _g.name, myUid, navigation, onOpenCreatorProfile]);
+    }, [item.authorName, item.ownerUid, (_g = item.user) === null || _g === void 0 ? void 0 : _g.name, myUid, navigation, safeOpenCreatorProfile]);
     var handleAvatarPress = (0, react_1.useCallback)(function () {
         handleProfilePress();
     }, [handleProfilePress]);
@@ -490,9 +496,9 @@ var normalizeLinkTarget = function (value) {
             ((_b = item.user) === null || _b === void 0 ? void 0 : _b.avatar) ||
             null;
         if (avatarUri) {
-            onOpenProfilePicture(avatarUri);
+            safeOpenProfilePicture(avatarUri);
         }
-    }, [item.ownerUid, (_h = item.user) === null || _h === void 0 ? void 0 : _h.avatar, onOpenProfilePicture, userData]);
+    }, [item.ownerUid, (_h = item.user) === null || _h === void 0 ? void 0 : _h.avatar, safeOpenProfilePicture, userData]);
     var normalizeHandleLabel = (0, react_1.useCallback)(function (raw) {
         var cleaned = String(raw || '').trim().replace(/^[@/]+/, '');
         return cleaned ? displayHandle(item.ownerUid, cleaned) : '@User';
@@ -645,6 +651,8 @@ var normalizeLinkTarget = function (value) {
     var handleCast = (0, react_1.useCallback)(function () {
         onShareWave(item);
     }, [item, onShareWave]);
+    var isAnchored = (0, react_1.useMemo)(function () { return safePinnedWaveIds.has(item.id); }, [item.id, safePinnedWaveIds]);
+    var isCasted = (0, react_1.useMemo)(function () { return safeCastedWaveIds.has(item.id); }, [item.id, safeCastedWaveIds]);
     var handleReachPress = (0, react_1.useCallback)(function () {
         recordVideoReach(item.id).catch(function (error) {
             console.log('Reach recording failed:', error.message);
@@ -725,15 +733,22 @@ var normalizeLinkTarget = function (value) {
                 case 2:
                     _d.sent();
                     return [3 /*break*/, 5];
-                case 3: return [4 /*yield*/, ref.set({
-                        hugs: FieldValue.increment(1),
-                        huggedBy: (_c = {}, _c[myUid] = true, _c),
-                    }, { merge: true })];
+                case 3: return [4 /*yield*/, ref.update((_c = {
+                        hugs: FieldValue.increment(1)
+                    },
+                    _c["huggedBy.".concat(myUid)] = true,
+                    _c))];
                 case 4:
                     _d.sent();
                     _d.label = 5;
                 case 5:
                     console.log('Hug state persisted successfully');
+                    if (onEchoHugPersist) {
+                        try {
+                            onEchoHugPersist(item.id, echo.id, nextHugs, !hugged);
+                        }
+                        catch (_persistErr) { }
+                    }
                     return [3 /*break*/, 7];
                 case 6:
                     e_1 = _d.sent();
@@ -747,7 +762,7 @@ var normalizeLinkTarget = function (value) {
                 case 7: return [2 /*return*/];
             }
         });
-    }); }, [getEchoHugState, item.id, myUid]);
+    }); }, [getEchoHugState, item.id, myUid, onEchoHugPersist]);
     var handleEchoReply = (0, react_1.useCallback)(function (echo) {
         onReplyToEcho(item.id, echo);
     }, [item.id, onReplyToEcho]);
@@ -903,6 +918,12 @@ var normalizeLinkTarget = function (value) {
         {/* Profile Preview Modal */}
         <ProfilePreviewModal_1.default visible={showProfilePreview} userId={selectedUserId} onClose={function () { return setShowProfilePreview(false); }} onChat={handleChatWithUser}/>
         <react_native_1.View style={styles.postBody}>
+          {isCasted && item.ownerUid && item.ownerUid !== myUid ? (<react_native_1.View style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(37,99,235,0.1)', borderBottomWidth: 1, borderColor: 'rgba(37,99,235,0.2)' }}>
+              <react_native_1.Text style={{ color: '#1e3a8a', fontSize: 12, fontWeight: '800', textAlign: 'center' }}>
+                {translate('feed.recastBanner')} · {translate('feed.originalBy')}{' '}
+                {displayHandle(item.ownerUid, (userData[item.ownerUid] && userData[item.ownerUid].name) || item.authorName || '')}
+              </react_native_1.Text>
+            </react_native_1.View>) : null}
           {/* Post Header */}
           <react_native_1.View style={styles.postHeader}>
             {/* Menu button positioned absolutely in top-right */}
@@ -1060,10 +1081,10 @@ var normalizeLinkTarget = function (value) {
               {/* Post Text (if any) */}
               {item.captionText && (<react_native_1.View style={styles.captionWrap}>
                   <ClickableTextWithLinks_1.default text={expandedPosts[item.id]
-                    ? item.captionText
-                    : item.captionText.length > 500
-                        ? item.captionText.substring(0, 500) + '...'
-                        : item.captionText} style={styles.captionText}/>
+                  ? item.captionText
+                  : item.captionText.length > 500
+                      ? item.captionText.substring(0, 500) + '...'
+                      : item.captionText} style={styles.captionText} onHashtagPress={safeOnHashtagPress}/>
                 </react_native_1.View>)}
 
               {/* Post Link (if any) */}
@@ -1108,7 +1129,9 @@ var normalizeLinkTarget = function (value) {
                             {renderMoMoBadge()}
                             {isImage ? (<react_native_1.Pressable onPress={function () { return openMediaViewer(mediaIndex); }} style={{ width: '100%', height: '100%' }}>
                                 <react_native_1.Image source={{ uri: String(mediaItem.uri) }} style={{ width: '100%', height: '100%' }} resizeMode="cover"/>
-                              </react_native_1.Pressable>) : isVideo ? (<VideoWithTapControls_1.default source={{ uri: String(mediaItem.uri) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" paused={!(isGridPostInFocus && activeGridVideoIndex === mediaIndex)} isActive={isGridPostInFocus && activeGridVideoIndex === mediaIndex} shouldPreload={near || mediaIndex === latestGridVideoIndex} hideTimeout={4000} muted={activeGridVideoIndex !== mediaIndex} onTap={function () { return setActiveGridVideoIndex(mediaIndex); }}/>) : (<react_native_1.Pressable onPress={function () { return openMediaViewer(mediaIndex); }} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
+                              </react_native_1.Pressable>) : isVideo ? (isGridPostInFocus ? (<VideoWithTapControls_1.default source={{ uri: String(mediaItem.uri) }} style={{ width: '100%', height: '100%' }} resizeMode="cover" paused={!(isGridPostInFocus && activeGridVideoIndex === mediaIndex)} isActive={isGridPostInFocus && activeGridVideoIndex === mediaIndex} shouldPreload={mediaIndex === activeGridVideoIndex || mediaIndex === latestGridVideoIndex} hideTimeout={4000} muted={activeGridVideoIndex !== mediaIndex} onTap={function () { return setActiveGridVideoIndex(mediaIndex); }}/>) : (<react_native_1.Pressable onPress={function () { return openMediaViewer(mediaIndex); }} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', backgroundColor: '#111' }}>
+                                <react_native_1.Text style={{ color: '#e2e8f0', fontSize: 26 }}>▶</react_native_1.Text>
+                              </react_native_1.Pressable>)) : (<react_native_1.Pressable onPress={function () { return openMediaViewer(mediaIndex); }} style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', padding: 10 }}>
                                 <react_native_1.Text style={{ fontSize: 28, color: '#fff' }}>File</react_native_1.Text>
                                 <react_native_1.Text style={{ color: '#fff', fontSize: 11, marginTop: 6, textAlign: 'center' }} numberOfLines={2}>
                                   {mediaItem.fileName || "Item ".concat(mediaIndex + 1)}
@@ -1174,7 +1197,7 @@ var normalizeLinkTarget = function (value) {
                       {item.image ? (<react_native_1.Image source={{ uri: String(item.image) }} style={[react_native_1.StyleSheet.absoluteFillObject, { opacity: 0.35 }]} resizeMode="cover"/>) : null}
                       <react_native_1.Text style={{ color: '#fff', fontSize: 28, marginBottom: 8 }}>📴</react_native_1.Text>
                       <react_native_1.Text style={{ color: '#fff', fontWeight: '800' }}>Video unavailable offline</react_native_1.Text>
-                    </react_native_1.View>) : videoSourceUri ? (<VideoWithTapControls_1.default source={{ uri: videoSourceUri }} style={[
+                    </react_native_1.View>) : videoSourceUri && near ? (<VideoWithTapControls_1.default source={{ uri: videoSourceUri }} style={[
                         videoStyleFor(item.id),
                         { maxHeight: SCREEN_HEIGHT * 0.68 },
                         {
@@ -1209,7 +1232,12 @@ var normalizeLinkTarget = function (value) {
                         recordVideoReach(item.id).catch(function (error) {
                             console.log('Video reach recording failed:', error.message);
                         });
-                    }}/>) : (<react_native_1.View style={[
+                    }}/>) : videoSourceUri ? (<react_native_1.View style={[
+                        videoStyleFor(item.id),
+                        { maxHeight: SCREEN_HEIGHT * 0.68, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+                    ]}>
+                      {item.image ? (<react_native_1.Image source={{ uri: String(item.image) }} style={__assign({}, react_native_1.StyleSheet.absoluteFillObject)} resizeMode="cover"/>) : (<react_native_1.Text style={{ color: 'rgba(255,255,255,0.45)', fontSize: 36 }}>▶</react_native_1.Text>)}
+                    </react_native_1.View>) : (<react_native_1.View style={[
                         videoStyleFor(item.id),
                         { maxHeight: SCREEN_HEIGHT * 0.68 },
                         {
@@ -1250,7 +1278,7 @@ var normalizeLinkTarget = function (value) {
                         </react_native_1.Text>
                       </react_native_1.View>);
                 })()}
-                  {hasOverlayAudio && RNVideo ? (<RNVideo source={{ uri: String(((_k = item.audio) === null || _k === void 0 ? void 0 : _k.uri) || '') }} audioOnly paused={!audioPlaySynced} rate={Math.max(0.5, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.playbackRate) || 1)))} volume={Math.max(0, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.volumeBoost) || 1)))} style={{ width: 1, height: 1, opacity: 0 }} playInBackground={false} playWhenInactive={false} ignoreSilentSwitch="ignore" onLoad={function () { return setOverlayAudioLoaded(true); }} onError={function () { return setOverlayAudioLoaded(true); }} onProgress={function (e) {
+                  {hasOverlayAudio && RNVideo && item.id === activeVideoId ? (<RNVideo source={{ uri: String(((_k = item.audio) === null || _k === void 0 ? void 0 : _k.uri) || '') }} audioOnly paused={!audioPlaySynced} rate={Math.max(0.5, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.playbackRate) || 1)))} volume={Math.max(0, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.volumeBoost) || 1)))} style={{ width: 1, height: 1, opacity: 0 }} playInBackground={false} playWhenInactive={false} ignoreSilentSwitch="ignore" onLoad={function () { return setOverlayAudioLoaded(true); }} onError={function () { return setOverlayAudioLoaded(true); }} onProgress={function (e) {
                         if (!overlayAudioStarted && Number((e === null || e === void 0 ? void 0 : e.currentTime) || 0) > 0) {
                             setOverlayAudioStarted(true);
                         }
@@ -1267,7 +1295,7 @@ var normalizeLinkTarget = function (value) {
                 }}>
                   <react_native_1.Text style={{ fontSize: 40, marginBottom: 10 }}>🎵</react_native_1.Text>
                   {renderMoMoBadge()}
-                  {RNVideo ? (<RNVideo source={{ uri: String(((_l = item.audio) === null || _l === void 0 ? void 0 : _l.uri) || (primaryMedia === null || primaryMedia === void 0 ? void 0 : primaryMedia.uri) || '') }} audioOnly controls={audioControlsVisible} paused={!audioPlaySynced} rate={Math.max(0.5, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.playbackRate) || 1)))} volume={Math.max(0, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.volumeBoost) || 1)))} style={{ width: SCREEN_WIDTH - 28, height: 64 }} playInBackground={false} playWhenInactive={false} ignoreSilentSwitch="ignore"/>) : (<react_native_1.Text style={{ color: '#9ab4cf' }}>Audio player unavailable</react_native_1.Text>)}
+                  {RNVideo && near ? (<RNVideo source={{ uri: String(((_l = item.audio) === null || _l === void 0 ? void 0 : _l.uri) || (primaryMedia === null || primaryMedia === void 0 ? void 0 : primaryMedia.uri) || '') }} audioOnly controls={audioControlsVisible} paused={!audioPlaySynced} rate={Math.max(0.5, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.playbackRate) || 1)))} volume={Math.max(0, Math.min(2, Number((mediaEdits === null || mediaEdits === void 0 ? void 0 : mediaEdits.volumeBoost) || 1)))} style={{ width: SCREEN_WIDTH - 28, height: 64 }} playInBackground={false} playWhenInactive={false} ignoreSilentSwitch="ignore"/>) : (near ? (<react_native_1.Text style={{ color: '#9ab4cf' }}>Audio player unavailable</react_native_1.Text>) : null)}
                 </react_native_1.Pressable>) : hasUnknownMediaFile ? (<react_native_1.View style={{
                     marginHorizontal: 0,
                     width: SCREEN_WIDTH,
@@ -1330,7 +1358,7 @@ var normalizeLinkTarget = function (value) {
                         </react_native_1.View>);
                 })()}
                   </react_native_1.View>
-                  {hasOverlayAudio && RNVideo ? (<RNVideo source={{ uri: String(((_m = item.audio) === null || _m === void 0 ? void 0 : _m.uri) || '') }} audioOnly paused={!audioPlaySynced} style={{ width: 1, height: 1, opacity: 0 }} playInBackground={false} playWhenInactive={false} ignoreSilentSwitch="ignore" onLoad={function () { return setOverlayAudioLoaded(true); }} onError={function () { return setOverlayAudioLoaded(true); }} onProgress={function (e) {
+                  {hasOverlayAudio && RNVideo && item.id === activeVideoId ? (<RNVideo source={{ uri: String(((_m = item.audio) === null || _m === void 0 ? void 0 : _m.uri) || '') }} audioOnly paused={!audioPlaySynced} style={{ width: 1, height: 1, opacity: 0 }} playInBackground={false} playWhenInactive={false} ignoreSilentSwitch="ignore" onLoad={function () { return setOverlayAudioLoaded(true); }} onError={function () { return setOverlayAudioLoaded(true); }} onProgress={function (e) {
                         if (!overlayAudioStarted && Number((e === null || e === void 0 ? void 0 : e.currentTime) || 0) > 0) {
                             setOverlayAudioStarted(true);
                         }
@@ -1348,7 +1376,7 @@ var normalizeLinkTarget = function (value) {
                 ? item.captionText
                 : item.captionText.length > 500
                     ? item.captionText.substring(0, 500) + '...'
-                    : item.captionText} style={styles.textStoryBody}/>
+                    : item.captionText} style={styles.textStoryBody} onHashtagPress={safeOnHashtagPress}/>
                 {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] ? (<react_native_1.Pressable onPress={handleReadMore}>
                     <react_native_1.Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>Read More</react_native_1.Text>
                   </react_native_1.Pressable>) : null}
@@ -1374,7 +1402,7 @@ var normalizeLinkTarget = function (value) {
         </react_native_1.View>
 
         <react_native_1.View style={styles.posterActionWrap}>
-          <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={((_o = item.counts) === null || _o === void 0 ? void 0 : _o.splashes) || 0} echoesCount={((_p = item.counts) === null || _p === void 0 ? void 0 : _p.echoes) || 0} pearlsCount={0} isAnchored={false} isCasted={false} creatorUserId={item.ownerUid} onAdd={handleAddSplash} onRemove={handleRemoveSplash} onEcho={handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
+          <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={((_o = item.counts) === null || _o === void 0 ? void 0 : _o.splashes) || 0} echoesCount={((_p = item.counts) === null || _p === void 0 ? void 0 : _p.echoes) || 0} pearlsCount={0} isAnchored={isAnchored} isCasted={isCasted} creatorUserId={item.ownerUid} onAdd={handleAddSplash} onRemove={handleRemoveSplash} onEcho={handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
         </react_native_1.View>
 
         <react_native_1.Modal visible={viewerVisible} transparent animationType="fade" onRequestClose={function () {
@@ -1463,7 +1491,7 @@ var normalizeLinkTarget = function (value) {
                   </react_native_1.Pressable>); })}
               </react_native_1.ScrollView>) : null}
             <react_native_1.View style={{ position: 'absolute', left: 0, right: 0, bottom: 18 }}>
-              <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={((_q = item.counts) === null || _q === void 0 ? void 0 : _q.splashes) || 0} echoesCount={((_r = item.counts) === null || _r === void 0 ? void 0 : _r.echoes) || 0} pearlsCount={0} isAnchored={false} isCasted={false} creatorUserId={item.ownerUid} onAdd={handleAddSplash} onRemove={handleRemoveSplash} onEcho={handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
+              <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={((_q = item.counts) === null || _q === void 0 ? void 0 : _q.splashes) || 0} echoesCount={((_r = item.counts) === null || _r === void 0 ? void 0 : _r.echoes) || 0} pearlsCount={0} isAnchored={isAnchored} isCasted={isCasted} creatorUserId={item.ownerUid} onAdd={handleAddSplash} onRemove={handleRemoveSplash} onEcho={handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
             </react_native_1.View>
           </react_native_1.View>
         </react_native_1.Modal>

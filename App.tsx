@@ -7,20 +7,27 @@ import React, {
   useCallback,
   createContext,
   useContext,
+  Suspense,
+  lazy,
 } from 'react';
 import Fuse from 'fuse.js';
+import HapticWaveFeedback, { initHapticSafety, useHapticFeedback } from './src/services/HapticWaveFeedback';
 import ErrorBoundary from './src/components/ErrorBoundary';
-import { NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
+
+import { NavigationContainer, useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import { createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { GestureHandlerRootView, PanGestureHandler } from 'react-native-gesture-handler';
-import { Suspense, lazy } from 'react';
+
 const BioluminescentTapEffect = lazy(() => import('./src/components/BioluminescentTapEffect'));
 const NotificationToast = lazy(() => import('./src/components/NotificationToast'));
 const WaveRippleEffect = lazy(() => import('./src/components/WaveRippleEffect'));
 const SwimmingFishLoader = lazy(() => import('./src/components/SwimmingFishLoader'));
 const UserSearch = lazy(() => import('./src/components/UserSearch'));
 const VibeHuntUserSearch = lazy(() => import('./src/components/VibeHuntUserSearch'));
+
+const PENDING_PROFILE_DEEP_LINK_STORAGE_KEY = 'aqualink_pending_profile_deep_link_v1';
+
 import {
   Alert,
   Animated,
@@ -31,9 +38,11 @@ import {
   Easing,
   FlatList,
   Image,
+  InteractionManager,
   KeyboardAvoidingView,
   Linking,
   Modal,
+  NativeEventEmitter,
   NativeModules,
   PanResponder,
   PermissionsAndroid,
@@ -54,7 +63,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from './src/components/ProfileAvatarWithCrew';
 import EditableProfileAvatar from './EditableProfileAvatar';
 import ImageCropPicker from 'react-native-image-crop-picker';
-const { AudioPicker } = NativeModules;
+const { AudioPicker, ShareIntentModule } = NativeModules;
 import BridgeDataSaverPanel from './src/dataSaver/BridgeDataSaverPanel';
 import CrabWalkBadge from './src/components/CrabWalkBadge';
 import { DataSaverProvider, useDataSaver } from './src/dataSaver/DataSaverProvider';
@@ -87,7 +96,23 @@ import {
 import { uploadPost } from './src/services/uploadPost';
 import { removeSplash, ensureSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
-import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest, generateMediaCaptionSuggestion, generateSearchBackedExploreResponse, generateStudyHubResponse } from './src/services/aiService';
+import {
+  generateVibeSuggestion,
+  generateSearchSuggestion,
+  generateEchoSuggestion,
+  generateSchoolFeedback,
+  generateStudyTip,
+  generateQuizQuestion,
+  generateExploreContent,
+  generateCuriosityQuestion,
+  generateExplorationPath,
+  generatePersonalizedAdvice,
+  generateCreativePrompt,
+  analyzeAndSuggest,
+  generateMediaCaptionSuggestion,
+  generateSearchBackedExploreResponse,
+  generateStudyHubResponse,
+} from './src/services/aiService';
 import { registerNoticeBoard } from './src/services/schoolService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
 import MainFeedItem from './src/feed/MainFeedItem';
@@ -103,7 +128,6 @@ import MediaEditor, {
   TextOverlay,
 } from './src/components/MediaEditor';
 import { Video as MediaVideoCompressor } from 'react-native-compressor';
-                    
 
 // Navigation stack shared across auth/app flows
 const Stack = createNativeStackNavigator();
@@ -467,6 +491,9 @@ type Vibe = {
   audience?: 'public' | 'fleet' | null;
 };
 
+type FleetVisibility = 'open' | 'private' | 'shadow';
+type FleetMemberListVisibility = 'full' | 'leaders_only' | 'count_only';
+
 type FleetRole = 'captain' | 'co_captain' | 'crew';
 
 type FleetSummary = {
@@ -476,9 +503,11 @@ type FleetSummary = {
   moodEmoji: string;
   coverColor: string;
   photoURL?: string | null;
-  visibility: 'open' | 'private';
+  visibility: FleetVisibility;
   allowBoarding: boolean;
   inviteCode: string;
+  aliasEnabled: boolean;
+  memberListVisibility: FleetMemberListVisibility;
   captainUid: string;
   captainName: string;
   coCaptainUids?: string[];
@@ -556,7 +585,8 @@ type MinuteFameTier = {
     | 'crowd_favorite'
     | 'wave_king'
     | 'trend_storm'
-    | 'ocean_legend';
+    | 'ocean_legend'
+    | 'blue_butterfly';
   label: string;
   icon: string;
   minScore: number;
@@ -571,7 +601,8 @@ type MinuteFameCreatorLevel = {
     | 'crowd_favorite'
     | 'wave_king'
     | 'trend_storm'
-    | 'ocean_legend';
+    | 'ocean_legend'
+    | 'blue_butterfly';
   label: string;
   icon: string;
   minPoints: number;
@@ -673,6 +704,14 @@ const MINUTE_FAME_TIERS: MinuteFameTier[] = [
     subtitle: 'Whale shark status',
     encouragement: 'You have become one of the rarest names on the water. This is elite creator territory.',
   },
+  {
+    id: 'blue_butterfly',
+    label: 'Blue Butterfly',
+    icon: '🦋',
+    minScore: 10000,
+    subtitle: 'Metamorphosis complete',
+    encouragement: 'You crossed into rare air. Your creator identity now carries prestige before the post even lands.',
+  },
 ];
 
 const MINUTE_FAME_LEVELS: MinuteFameCreatorLevel[] = [
@@ -724,6 +763,14 @@ const MINUTE_FAME_LEVELS: MinuteFameCreatorLevel[] = [
     frameLabel: 'Whale Shark Frame',
     accent: '#A855F7',
   },
+  {
+    id: 'blue_butterfly',
+    label: 'Blue Butterfly',
+    icon: '🦋',
+    minPoints: 10000,
+    frameLabel: 'Blue Butterfly Frame',
+    accent: '#38BDF8',
+  },
 ];
 
 const getMinuteFameTierForPoints = (points: number): MinuteFameTier => {
@@ -770,6 +817,38 @@ const getMinuteFameBadgeFromLabel = (value?: string | null): string => {
   if (labelMatch) return labelMatch.icon;
   const firstToken = text.split(/\s+/)[0] || '';
   return firstToken.length <= 3 ? firstToken : MINUTE_FAME_TIERS[0].icon;
+};
+
+const normalizeFleetVisibility = (value?: string | null): FleetVisibility =>
+  value === 'shadow' ? 'shadow' : value === 'private' ? 'private' : 'open';
+
+const getDefaultFleetMemberListVisibility = (
+  visibility: FleetVisibility,
+): FleetMemberListVisibility => (visibility === 'shadow' ? 'leaders_only' : 'full');
+
+const getFleetAllowBoardingForVisibility = (
+  visibility: FleetVisibility,
+  requestedAllowBoarding: boolean,
+): boolean => (visibility === 'open' ? requestedAllowBoarding !== false : false);
+
+const getFleetVisibilityLabel = (visibility?: FleetVisibility | null): string => {
+  const normalized = normalizeFleetVisibility(visibility);
+  if (normalized === 'shadow') return 'Shadow Fleet';
+  if (normalized === 'private') return 'Private Fleet';
+  return 'Open Fleet';
+};
+
+const getFleetBoardingLabel = (fleet: Pick<FleetSummary, 'visibility' | 'allowBoarding'>): string => {
+  if (normalizeFleetVisibility(fleet.visibility) === 'shadow') return 'shadow invite only';
+  return fleet.allowBoarding ? 'boarding open' : 'invite only';
+};
+
+const getFleetMemberListVisibilityLabel = (
+  visibility?: FleetMemberListVisibility | null,
+): string => {
+  if (visibility === 'count_only') return 'count only';
+  if (visibility === 'leaders_only') return 'leaders only';
+  return 'full roster';
 };
 
 const getMinuteFameScoreFromEngagement = (params: {
@@ -1131,6 +1210,19 @@ const normalizeDetectedUrl = (value: string) => {
 
 const ClickableTextWithLinks = ({ text, style, numberOfLines }: { text: string; style?: any; numberOfLines?: number }) => {
   const parts = parseUrls(text);
+  const copyInlineText = (value: string) => {
+    const trimmed = String(value || '').trim();
+    if (!trimmed) return;
+    try {
+      const clipboardModule = require('@react-native-clipboard/clipboard');
+      const setString =
+        clipboardModule?.default?.setString || clipboardModule?.setString;
+      if (typeof setString === 'function') {
+        setString(trimmed);
+      }
+    } catch {}
+    Alert.alert('Copied', trimmed);
+  };
   
   return (
     <Text style={style} numberOfLines={numberOfLines}>
@@ -1145,13 +1237,38 @@ const ClickableTextWithLinks = ({ text, style, numberOfLines }: { text: string; 
                   console.log('Failed to open link:', err)
                 );
               }}
+              onLongPress={() => {
+                const safeUrl = normalizeDetectedUrl(part.content);
+                Alert.alert('Link options', safeUrl, [
+                  {
+                    text: 'Open',
+                    onPress: () => {
+                      Linking.openURL(safeUrl).catch(err =>
+                        console.log('Failed to open link:', err),
+                      );
+                    },
+                  },
+                  {
+                    text: 'Copy',
+                    onPress: () => copyInlineText(safeUrl),
+                  },
+                  { text: 'Cancel', style: 'cancel' },
+                ]);
+              }}
             >
               {cleanDetectedUrl(part.content)}
             </Text>
           );
         }
         return (
-          <Text key={part.key}>
+          <Text
+            key={part.key}
+            onLongPress={() => {
+              if (String(part.content || '').trim()) {
+                copyInlineText(part.content);
+              }
+            }}
+          >
             {part.content}
           </Text>
         );
@@ -1638,6 +1755,8 @@ type TranslationKey =
   | 'feed.loadHuggersFailedBody'
   | 'feed.loadingMoreWaves'
   | 'feed.endOfOcean'
+  | 'feed.recastBanner'
+  | 'feed.originalBy'
   | 'top.dropWave'
   | 'top.minuteFame'
   | 'top.alerts'
@@ -2015,6 +2134,54 @@ const normalizeStoredGridItems = (items: any[] | null | undefined): Array<{ uri:
     .filter(item => !!item.uri);
 };
 
+type ExternalSharedFile = {
+  uri: string;
+  mimeType?: string | null;
+  fileName?: string | null;
+};
+
+type ExternalSharePayload = {
+  action?: string | null;
+  text?: string | null;
+  subject?: string | null;
+  mimeType?: string | null;
+  files: ExternalSharedFile[];
+};
+
+const normalizeExternalSharePayload = (payload: any): ExternalSharePayload | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  const files = Array.isArray(payload.files)
+    ? payload.files
+        .map((entry: any) => ({
+          uri: String(entry?.uri || '').trim(),
+          mimeType: entry?.mimeType ? String(entry.mimeType) : null,
+          fileName: entry?.fileName ? String(entry.fileName) : null,
+        }))
+        .filter(entry => !!entry.uri)
+    : [];
+  const text = String(payload.text || '').trim();
+  const subject = String(payload.subject || '').trim();
+  if (!files.length && !text && !subject) return null;
+  return {
+    action: payload.action ? String(payload.action) : null,
+    text: text || null,
+    subject: subject || null,
+    mimeType: payload.mimeType ? String(payload.mimeType) : null,
+    files,
+  };
+};
+
+const assetLooksLikeVideo = (
+  asset: Asset | { type?: string | null; uri?: string | null } | null | undefined,
+) => {
+  const type = String(asset?.type || '').toLowerCase();
+  const uri = String(asset?.uri || '').toLowerCase();
+  return (
+    type.startsWith('video/') ||
+    /\.(mp4|mov|m4v|mkv|avi|webm|3gp)(\?|$)/i.test(uri)
+  );
+};
+
 const pickLatestLiveInvite = (
   invites: Array<LiveInviteNotice | null | undefined>,
 ): LiveInviteNotice | null => {
@@ -2147,7 +2314,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.languageValue': 'Language: {{language}}',
     'settings.selectLanguageTitle': 'Select language',
     'settings.selectLanguageBody': 'Choose app language preference.',
-    'command.homeTitle': 'COMMAND CENTRE',
+    'command.homeTitle': 'DARE RANGU',
     'command.profileTitle': 'PROFILE',
     'command.privacyTitle': 'PRIVACY & SAFETY',
     'command.notificationsTitle': 'NOTIFICATIONS',
@@ -2281,7 +2448,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.updatedTitle': 'Success',
     'profile.updatedBody': 'Profile updated!',
     'profile.saveProfile': 'Save Profile',
-    'profile.myVibes': 'My Vibes',
+    'profile.myVibes': 'My Waves',
     'profile.myTreasure': 'My Treasure',
     'profile.myRewardsHint': 'Track referral rewards',
     'compose.editPost': 'Edit Post',
@@ -2332,7 +2499,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.unknown': 'Unknown',
     'myVibes.deleting': 'Deleting...',
     'myVibes.delete': 'Delete',
-    'myVibes.share': 'Share',
+    'myVibes.share': 'Recast',
     'myVibes.anchor': 'Anchor',
     'feed.optionEdit': 'Edit post',
     'feed.optionEditDesc': 'Open this post in the right composer and update it.',
@@ -2391,12 +2558,14 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.loadHuggersFailedBody': 'Failed to load huggers list',
     'feed.loadingMoreWaves': 'Loading more waves...',
     'feed.endOfOcean': "You've reached the end of the ocean",
+    'feed.recastBanner': 'You recast',
+    'feed.originalBy': 'Original:',
     'top.dropWave': 'DROP A WAVE',
     'top.minuteFame': '1 MINUTE FAME',
     'top.alerts': 'ALERTS',
     'top.hunt': 'HUNT',
     'top.myAura': 'MY SPACE',
-    'top.commandCentre': 'COMMAND CENTRE',
+    'top.commandCentre': 'COMMAND CENTER',
     'creator.postsTitle': 'Posts',
     'creator.noPosts': 'No posts from this creator yet.',
     'creator.tapToOpen': 'Tap a post to open it in the main feed.',
@@ -2633,7 +2802,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.updatedTitle': 'Zvabudirira',
     'profile.updatedBody': 'Profayiri yagadziridzwa!',
     'profile.saveProfile': 'Chengeta Profayiri',
-    'profile.myVibes': 'MaVibes Angu',
+    'profile.myVibes': 'My Waves',
     'profile.myTreasure': 'Pfuma Yangu',
     'profile.myRewardsHint': 'Tevera mibayiro yerefero',
     'compose.editPost': 'Gadzirisa Post',
@@ -2684,7 +2853,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.unknown': 'Hazvizivikanwi',
     'myVibes.deleting': 'Kuri kubviswa...',
     'myVibes.delete': 'Bvisa',
-    'myVibes.share': 'Govera',
+    'myVibes.share': 'Recast',
     'myVibes.anchor': 'Namira',
     'feed.optionEdit': 'Gadzirisa post',
     'feed.optionEditDesc': 'Vhura post iyi mucomposer chaiyo wobva wagadzirisa.',
@@ -2743,12 +2912,14 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.loadHuggersFailedBody': 'Zvaramba kurodha runyorwa rwevarikuhug',
     'feed.loadingMoreWaves': 'Kurodha mamwe mawaves...',
     'feed.endOfOcean': 'Wasvika kumagumo egungwa',
+    'feed.recastBanner': 'Wakaita recast',
+    'feed.originalBy': 'Akabva kuna',
     'top.dropWave': 'KANDA WAVE',
     'top.minuteFame': 'IMBOBVIRA',
     'top.alerts': 'MAALERT',
     'top.hunt': 'TSVAGA',
-    'top.myAura': 'MY SPACE',
-    'top.commandCentre': 'COMMAND CENTRE',
+    'top.myAura': 'PANOTI ININI',
+    'top.commandCentre': 'DARE RANGU',
     'creator.postsTitle': 'Mapost',
     'creator.noPosts': 'Hakusati kwava nemapost kubva kumugadziri uyu.',
     'creator.tapToOpen': 'Tinya post kuti uvhure mufeed guru.',
@@ -2985,7 +3156,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.updatedTitle': 'Kuphumelele',
     'profile.updatedBody': 'Iphrofayili ivuselelwe!',
     'profile.saveProfile': 'Gcina Iphrofayili',
-    'profile.myVibes': 'AmaVibes Ami',
+    'profile.myVibes': 'My Waves',
     'profile.myTreasure': 'Ingcebo Yami',
     'profile.myRewardsHint': 'Landela imivuzo yereferensi',
     'compose.editPost': 'Lungisa iPost',
@@ -3036,7 +3207,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.unknown': 'Akukwaziwa',
     'myVibes.deleting': 'Kuyasuswa...',
     'myVibes.delete': 'Susa',
-    'myVibes.share': 'Yabelana',
+    'myVibes.share': 'Recast',
     'myVibes.anchor': 'Namathisela',
     'feed.optionEdit': 'Lungisa ipost',
     'feed.optionEditDesc': 'Vula ipost le kucomposer ofaneleyo uyivuselele.',
@@ -3095,6 +3266,8 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.loadHuggersFailedBody': 'Kwehlulekile ukulayisha uhlu lwabahuggayo',
     'feed.loadingMoreWaves': 'Kulayishwa amanye ama-wave...',
     'feed.endOfOcean': 'Usufike ekucineni kolwandle',
+    'feed.recastBanner': 'You recast',
+    'feed.originalBy': 'Original:',
     'top.dropWave': 'PHOSA I-WAVE',
     'top.minuteFame': 'UMZUZWANA 1 WODUMO',
     'top.alerts': 'AMA-ALERT',
@@ -3338,7 +3511,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.updatedTitle': 'Imefanikiwa',
     'profile.updatedBody': 'Profaili imesasishwa!',
     'profile.saveProfile': 'Hifadhi Profaili',
-    'profile.myVibes': 'Vibes Zangu',
+    'profile.myVibes': 'My Waves',
     'profile.myTreasure': 'Hazina Yangu',
     'profile.myRewardsHint': 'Fuatilia zawadi za rufaa',
     'compose.editPost': 'Hariri Post',
@@ -3389,7 +3562,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'myVibes.unknown': 'Haijulikani',
     'myVibes.deleting': 'Inafuta...',
     'myVibes.delete': 'Futa',
-    'myVibes.share': 'Shiriki',
+    'myVibes.share': 'Recast',
     'myVibes.anchor': 'Anika',
     'feed.optionEdit': 'Hariri post',
     'feed.optionEditDesc': 'Fungua post hii kwenye composer sahihi na uisasishe.',
@@ -3448,6 +3621,8 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.loadHuggersFailedBody': 'Imeshindikana kupakia orodha ya wanaohug',
     'feed.loadingMoreWaves': 'Inapakia wave zaidi...',
     'feed.endOfOcean': 'Umefika mwisho wa bahari',
+    'feed.recastBanner': 'You recast',
+    'feed.originalBy': 'Original:',
     'top.dropWave': 'DONDOSHA WAVE',
     'top.minuteFame': 'DAKIKA 1 YA UMAARUFU',
     'top.alerts': 'ARIFA',
@@ -4670,6 +4845,35 @@ const styles = StyleSheet.create({
     fontSize: 13,
     textAlign: 'center',
   },
+  creatorProfileIconButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: 'rgba(125, 211, 252, 0.4)',
+    backgroundColor: 'rgba(14, 116, 144, 0.78)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  creatorProfileIconButtonBusy: {
+    transform: [{ scale: 0.96 }],
+  },
+  creatorProfileIconButtonDisabled: {
+    opacity: 0.6,
+  },
+  creatorProfileIconGlyph: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  creatorProfileActionsHint: {
+    color: 'rgba(255,255,255,0.62)',
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 2,
+    lineHeight: 16,
+  },
   bridgeSettingHint: {
     color: 'rgba(255,255,255,0.82)',
     fontSize: 10,
@@ -5542,42 +5746,43 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(20, 80, 150, 0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.8)',
-    marginTop: -12,
-  },
-  avatarStackMoreText: {
-    color: 'white',
-    fontWeight: 'bold',
-    fontSize: 18,
-  },
-                    
-  bouncingIcon: {
-    transform: [{ scale: 1 }],
-  },
-  deepResultActions: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-    flexWrap: 'wrap',
-  },
-  deepResultActionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#00C2FF',
-    backgroundColor: 'rgba(0, 194, 255, 0.1)',
-  },
-  deepResultActionText: {
-    color: '#00C2FF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
+backgroundColor: 'rgba(20, 80, 150, 0.7)',
+alignItems: 'center',
+justifyContent: 'center',
+borderWidth: 2,
+borderColor: 'rgba(255, 255, 255, 0.8)',
+marginTop: -12,
+},
+avatarStackMoreText: {
+  color: 'white',
+  fontWeight: 'bold',
+  fontSize: 18,
+},
+
+bouncingIcon: {
+  transform: [{ scale: 1 }],
+},
+deepResultActions: {
+  flexDirection: 'row',
+  gap: 8,
+  marginTop: 8,
+  flexWrap: 'wrap',
+},
+deepResultActionButton: {
+  paddingHorizontal: 12,
+  paddingVertical: 6,
+  borderRadius: 8,
+  borderWidth: 1,
+  borderColor: '#00C2FF',
+  backgroundColor: 'rgba(0, 194, 255, 0.1)',
+},
+deepResultActionText: {
+  color: '#00C2FF',
+  fontSize: 12,
+  fontWeight: '600',
+},
 });
+
 const editorStyles = StyleSheet.create({
   editorRoot: { flex: 1, backgroundColor: '#000' },
   stage: {
@@ -5641,8 +5846,8 @@ const editorStyles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.6)',
     textShadowRadius: 2,
   },
-                    
-  // Live bottom media editor bar (TikTok-style)
+
+  // Live bottom media editor bar
   liveBottomBar: {
     position: 'absolute',
     left: 0,
@@ -6007,6 +6212,7 @@ function AuthBackground() {
 type InnerAppProps = { allowPlayback?: boolean };
 const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const navigation = useNavigation();
+  const route = useRoute<any>();
   const dataSaver = useDataSaver();
   const { t, setLanguagePreference, resolvedLanguage } = useAppLanguage();
   // Get current user for ocean features
@@ -6485,6 +6691,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [withdrawals, setWithdrawals] = useState<
     Array<{ id: string; amount: number; status?: string; createdAt?: any }>
   >([]);
+  const [pinnedWaveIds, setPinnedWaveIds] = useState<Set<string>>(new Set());
+  const [castedWaveIds, setCastedWaveIds] = useState<Set<string>>(new Set());
   const [profileName, setProfileName] = useState<string>('');
   const [profileBio, setProfileBio] = useState<string>('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
@@ -6746,66 +6954,67 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
 
   const vibrateForAction = useCallback(
-    (action: AppToneAction, opts?: { loop?: boolean }) => {
-      if (!appVibrationSettings[action]) return;
-      try {
-        Vibration.cancel();
-      } catch {}
-      try {
-        Vibration.vibrate(getVibrationPatternForAction(action), !!opts?.loop);
-      } catch {}
-    },
-    [appVibrationSettings, getVibrationPatternForAction],
-  );
+   (action: AppToneAction, opts?: { loop?: boolean }) => {
+  if (!appVibrationSettings[action]) return;
 
-  const stopToneVibration = useCallback(() => {
-    try {
-      Vibration.cancel();
-    } catch {}
-  }, []);
+  try {
+    Vibration.vibrate(getVibrationPatternForAction(action), !!opts?.loop);
+  } catch (e) {
+    console.warn('Vibration failed:', e);
+  }
+},
+[appVibrationSettings, getVibrationPatternForAction],
+);
 
-  const playToneCandidates = useCallback(
-    (
-      candidates: Array<string | number>,
-      opts?: { loop?: boolean; volume?: number; storeAsPreview?: boolean },
-    ) => {
-      const loop = !!opts?.loop;
-      const volume = typeof opts?.volume === 'number' ? opts.volume : 0.9;
-      if (opts?.storeAsPreview) {
-        stopTonePreview();
-      }
-      if (!candidates.length) return;
-      const tryLoad = (idx: number) => {
-        if (idx >= candidates.length) return;
-        let tone: Sound | null = null;
-        const candidate = candidates[idx];
-        try {
-          const onLoaded = (error: any) => {
-            if (error || !tone) {
-              try {
-                tone?.release();
-              } catch {}
-              tryLoad(idx + 1);
-              return;
-            }
-            if (opts?.storeAsPreview) {
-              tonePreviewRef.current = tone;
+const stopToneVibration = useCallback(() => {
+  try {
+    // Intentionally left blank until Android VIBRATE permission is confirmed
+    // Vibration.cancel();
+  } catch {}
+}, []);
+
+const playToneCandidates = useCallback(
+  (
+    candidates: Array<string | number>,
+    opts?: { loop?: boolean; volume?: number; storeAsPreview?: boolean },
+  ) => {
+    const loop = !!opts?.loop;
+    const volume = typeof opts?.volume === 'number' ? opts.volume : 0.9;
+    if (opts?.storeAsPreview) {
+      stopTonePreview();
+    }
+    if (!candidates.length) return;
+    const tryLoad = (idx: number) => {
+      if (idx >= candidates.length) return;
+      let tone: Sound | null = null;
+      const candidate = candidates[idx];
+      try {
+        const onLoaded = (error: any) => {
+          if (error || !tone) {
+            try {
+              tone?.release();
+            } catch {}
+            tryLoad(idx + 1);
+            return;
+          }
+          if (opts?.storeAsPreview) {
+            tonePreviewRef.current = tone;
+          }
+          try {
+            if (loop) tone.setNumberOfLoops(-1);
+          } catch {}
+          try {
+            tone.setVolume(volume);
+          } catch {}
+          tone.play(success => {
+            if (loop && success) return;
+            if (opts?.storeAsPreview && tonePreviewRef.current === tone) {
+              tonePreviewRef.current = null;
             }
             try {
-              if (loop) tone.setNumberOfLoops(-1);
+              tone.release();
             } catch {}
-            try {
-              tone.setVolume(volume);
-            } catch {}
-            tone.play(success => {
-              if (loop && success) return;
-              if (opts?.storeAsPreview && tonePreviewRef.current === tone) {
-                tonePreviewRef.current = null;
-              }
-              try {
-                tone.release();
-              } catch {}
-            });
+          });
           };
           tone =
             typeof candidate === 'number'
@@ -7545,6 +7754,65 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     void ensureUserData(creatorProfileUid);
   }, [creatorProfileUid, ensureUserData, showCreatorProfile]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const consumePendingProfileDeepLink = async () => {
+      const routeProfileUid = String(route?.params?.pendingProfileUid || '').trim();
+      const routeProfileName =
+        route?.params?.pendingProfileName != null
+          ? String(route.params.pendingProfileName)
+          : null;
+
+      if (routeProfileUid) {
+        openCreatorProfile(routeProfileUid, routeProfileName);
+        try {
+          navigation.setParams?.({
+            pendingProfileUid: undefined,
+            pendingProfileName: undefined,
+            pendingProfileAt: undefined,
+          });
+        } catch {}
+        return;
+      }
+
+      try {
+        const pendingRaw = await AsyncStorage.getItem(
+          PENDING_PROFILE_DEEP_LINK_STORAGE_KEY,
+        );
+        if (!pendingRaw || cancelled) return;
+
+        let pendingUid = '';
+        try {
+          const parsed = JSON.parse(pendingRaw);
+          pendingUid = String(parsed?.uid || '').trim();
+        } catch {
+          pendingUid = String(pendingRaw || '').trim();
+        }
+
+        await AsyncStorage.removeItem(PENDING_PROFILE_DEEP_LINK_STORAGE_KEY);
+
+        if (!cancelled && pendingUid) {
+          openCreatorProfile(pendingUid, null);
+        }
+      } catch (error) {
+        console.warn('Failed to consume pending profile deep link:', error);
+      }
+    };
+
+    void consumePendingProfileDeepLink();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    navigation,
+    openCreatorProfile,
+    route?.params?.pendingProfileAt,
+    route?.params?.pendingProfileName,
+    route?.params?.pendingProfileUid,
+  ]);
+
   // Load userData from AsyncStorage on app start
   useEffect(() => {
     const loadUserData = async () => {
@@ -7753,7 +8021,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const feedRef = useRef<any>(null); // Horizontal feed ref for programmatic scroll (typed as any to avoid Animated value/type mismatch)
   const [currentIndex, setCurrentIndex] = useState<number>(-1);
   const [preservedScrollPosition, setPreservedScrollPosition] = useState<number | null>(null); // Preserve scroll position when navigating to PostDetail
-  const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For feed video playback
   const [preloadedVideoIds, setPreloadedVideoIds] = useState<Set<string>>(new Set()); // Videos to preload (adjacent to active)
   const activeVideoIdRef = useRef<string | null>(null);
   const displayFeedRef = useRef<Vibe[]>([]);
@@ -7813,15 +8081,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         }
         activeVideoSwitchTimerRef.current = setTimeout(() => {
           setActiveVideoId(newActiveId);
-        }, 120);
+        }, 280);
       }
 
       const activeIndex = displayFeedRef.current.findIndex(item => item.id === newActiveId);
       if (activeIndex !== -1) {
+        setCurrentIndex(activeIndex);
         const preloadIds = new Set<string>();
+        const preloadRadius = isSwipingRef.current ? 0 : 1;
         for (
-          let i = Math.max(0, activeIndex - 2);
-          i <= Math.min(displayFeedRef.current.length - 1, activeIndex + 2);
+          let i = Math.max(0, activeIndex - preloadRadius);
+          i <= Math.min(displayFeedRef.current.length - 1, activeIndex + preloadRadius);
           i++
         ) {
           const candidate = displayFeedRef.current[i];
@@ -7931,12 +8201,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         // Small delay to ensure the FlatList has rendered
         setTimeout(() => {
           if (feedRef.current && preservedScrollPosition >= 0 && displayFeed && displayFeed.length > preservedScrollPosition) {
-            // Scroll to the preserved index position
-            feedRef.current.scrollToIndex({ 
-              index: preservedScrollPosition, 
-              animated: false,
-              viewPosition: 0.5 // Center the item in the screen
-            });
+            safeScrollFeedToIndex(preservedScrollPosition);
             setCurrentIndex(preservedScrollPosition);
           }
           // Clear the preserved position
@@ -7946,7 +8211,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     });
 
     return unsubscribe;
-  }, [navigation, preservedScrollPosition, displayFeed?.length]);
+  }, [navigation, preservedScrollPosition, displayFeed?.length, safeScrollFeedToIndex]);
                     
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
@@ -7974,6 +8239,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [creatorProfileName, setCreatorProfileName] = useState<string>('');
   const [creatorProfileLoadedPosts, setCreatorProfileLoadedPosts] = useState<Vibe[]>([]);
   const [creatorProfileLoading, setCreatorProfileLoading] = useState<boolean>(false);
+  const [creatorProfileActionBusy, setCreatorProfileActionBusy] = useState<string | null>(null);
   const creatorProfileScrollRef = useRef<ScrollView | null>(null);
   const [creatorProfilePostsAnchorY, setCreatorProfilePostsAnchorY] = useState<number>(0);
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
@@ -8928,7 +9194,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [showFleetDeck, setShowFleetDeck] = useState(false);
   const [fleetDeckName, setFleetDeckName] = useState('');
   const [fleetDeckDescription, setFleetDeckDescription] = useState('');
+  const [fleetDeckVisibility, setFleetDeckVisibility] = useState<FleetVisibility>('open');
   const [fleetDeckAllowBoarding, setFleetDeckAllowBoarding] = useState(true);
+  const [fleetInviteCodeInput, setFleetInviteCodeInput] = useState('');
   const [fleetDeckMood, setFleetDeckMood] = useState('🦈');
   const [fleetDeckLoading, setFleetDeckLoading] = useState(false);
   const [fleetManagerExpandedId, setFleetManagerExpandedId] = useState<string | null>(null);
@@ -8937,7 +9205,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     name: string;
     description: string;
     moodEmoji: string;
+    visibility: FleetVisibility;
     allowBoarding: boolean;
+    memberListVisibility: FleetMemberListVisibility;
   }>>({});
   const [fleetMemberLoadingId, setFleetMemberLoadingId] = useState<string | null>(null);
   const [fleetActionLoadingId, setFleetActionLoadingId] = useState<string | null>(null);
@@ -10070,7 +10340,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Do not render the feed while this screen is not focused (e.g., while Welcome is visible)
   const isFocused = useIsFocused();
                     
-  // Back handler logic - TikTok-style: first back toggles feed view, second back exits
+  // Back handler logic: first back toggles feed view, second back exits
   const lastBackPressTime = useRef<number>(0);
   useEffect(() => {
     const onBackPress = () => {
@@ -10474,6 +10744,7 @@ type CommandCentreSection =
   }, [pings]);
                     
   const [showDeepSearch, setShowDeepSearch] = useState(false);
+  const [huntInitialQuery, setHuntInitialQuery] = useState('');
   const [deepQuery, setDeepQuery] = useState('');
   const [isAISearchSuggesting, setIsAISearchSuggesting] = useState(false);
   const [isAISchoolFeedback, setIsAISchoolFeedback] = useState(false);
@@ -10984,12 +11255,67 @@ type CommandCentreSection =
     uri: string;
     name?: string;
   } | null>(null);
+  const [incomingSharePayload, setIncomingSharePayload] =
+    useState<ExternalSharePayload | null>(null);
+  const [showShareDestinationModal, setShowShareDestinationModal] =
+    useState<boolean>(false);
+  const [showShareFleetPicker, setShowShareFleetPicker] = useState<boolean>(false);
+  const [showShareDirectPicker, setShowShareDirectPicker] = useState<boolean>(false);
   const [isUnifiedPosting, setIsUnifiedPosting] = useState<boolean>(false);
   const [unifiedPostProgress, setUnifiedPostProgress] = useState<number | null>(null);
   const [unifiedPostError, setUnifiedPostError] = useState<string | null>(null);
   const unifiedPostMedia = unifiedPostMediaItems[0] || null;
   const [editingWave, setEditingWave] = useState<Vibe | null>(null);
   const [deletingWaveIds, setDeletingWaveIds] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!myUid) {
+      setPinnedWaveIds(new Set());
+      setCastedWaveIds(new Set());
+      return;
+    }
+
+    const pinnedUnsubscribe = firestore()
+      .collection(`users/${myUid}/pinned`)
+      .onSnapshot(
+        snapshot => {
+          const next = new Set<string>();
+          snapshot.docs.forEach(doc => {
+            const waveId = String(doc.data()?.waveId || doc.id || '').trim();
+            if (waveId) next.add(waveId);
+          });
+          setPinnedWaveIds(next);
+        },
+        error => {
+          console.warn('Pinned waves subscription failed:', error);
+        },
+      );
+
+    const castedUnsubscribe = firestore()
+      .collection(`users/${myUid}/casts`)
+      .onSnapshot(
+        snapshot => {
+          const next = new Set<string>();
+          snapshot.docs.forEach(doc => {
+            const waveId = String(doc.data()?.waveId || doc.id || '').trim();
+            if (waveId) next.add(waveId);
+          });
+          setCastedWaveIds(next);
+        },
+        error => {
+          console.warn('Casted waves subscription failed:', error);
+        },
+      );
+
+    return () => {
+      try {
+        pinnedUnsubscribe();
+      } catch {}
+      try {
+        castedUnsubscribe();
+      } catch {}
+    };
+  }, [myUid]);
   const [returnToMakeWaves, setReturnToMakeWaves] = useState<boolean>(false);
                     
   // DM subscription - adds messages to pings automatically
@@ -12066,28 +12392,20 @@ type CommandCentreSection =
     };
   }, []);
 
-  const fetchTopLevelEchoesForWave = useCallback(async (waveId: string) => {
-    const echoesSnap = await firestore()
-      .collection('waves')
-      .doc(waveId)
-      .collection('echoes')
-      .orderBy('createdAt', 'desc')
-      .limit(50)
-      .get();
-
-    const allRows = echoesSnap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data(),
-      uid: doc.data().userUid,
-      text: doc.data().text,
-      userName: doc.data().userName || null,
-      userPhoto: doc.data().userPhoto || null,
-      createdAt: doc.data().createdAt,
-      updatedAt: doc.data().updatedAt || doc.data().createdAt,
-      hugs: Number(doc.data().hugs || 0),
-      huggedBy: doc.data().huggedBy || {},
-      replyCount: Number(doc.data().replyCount || 0),
-      replyToEchoId: doc.data().replyToEchoId || null,
+  const buildEchoTreeFromRows = useCallback((rows: any[]) => {
+    const allRows = rows.map(row => ({
+      ...row,
+      id: String(row?.id || ''),
+      uid: row?.uid || row?.userUid,
+      text: row?.text,
+      userName: row?.userName || null,
+      userPhoto: row?.userPhoto || null,
+      createdAt: row?.createdAt,
+      updatedAt: row?.updatedAt || row?.createdAt,
+      hugs: Number(row?.hugs || 0),
+      huggedBy: row?.huggedBy || {},
+      replyCount: Number(row?.replyCount || 0),
+      replyToEchoId: row?.replyToEchoId || null,
       replies: [],
     }));
     const byId = new Map(allRows.map(echo => [echo.id, echo]));
@@ -12118,26 +12436,64 @@ type CommandCentreSection =
         }));
     return sortThread(roots);
   }, []);
+
+  const fetchTopLevelEchoesForWave = useCallback(async (waveId: string) => {
+    const echoesSnap = await firestore()
+      .collection('waves')
+      .doc(waveId)
+      .collection('echoes')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    return buildEchoTreeFromRows(
+      echoesSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+      })),
+    );
+  }, [buildEchoTreeFromRows]);
                     
-  // Load echoes when echo modal opens
   useEffect(() => {
     if (!showEchoes || !echoWaveId) {
       setEchoList([]);
       return;
     }
-                    
-    const loadEchoes = async () => {
+
+    const unsubscribe = firestore()
+      .collection('waves')
+      .doc(echoWaveId)
+      .collection('echoes')
+      .orderBy('createdAt', 'desc')
+      .limit(80)
+      .onSnapshot(
+        snapshot => {
+          try {
+            setEchoList(
+              buildEchoTreeFromRows(
+                snapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data(),
+                })),
+              ),
+            );
+          } catch (error) {
+            console.error('Error mapping live echoes:', error);
+            setEchoList([]);
+          }
+        },
+        error => {
+          console.error('Error loading echoes:', error);
+          setEchoList([]);
+        },
+      );
+
+    return () => {
       try {
-        const echoes = await fetchTopLevelEchoesForWave(echoWaveId);
-        setEchoList(echoes);
-      } catch (error) {
-        console.error('Error loading echoes:', error);
-        setEchoList([]);
-      }
+        unsubscribe();
+      } catch {}
     };
-                    
-    loadEchoes();
-  }, [fetchTopLevelEchoesForWave, showEchoes, echoWaveId]);
+  }, [buildEchoTreeFromRows, showEchoes, echoWaveId]);
                     
   // Load post data when echo modal opens
   useEffect(() => {
@@ -12359,6 +12715,19 @@ type CommandCentreSection =
           }, delay);
         } else {
           setVideoErrorMap(m => ({ ...m, [waveId]: true }));
+          setOverlayReadyMap(prev => {
+            if (!prev[waveId]) return prev;
+            const next = { ...prev };
+            delete next[waveId];
+            return next;
+          });
+          setPreloadedVideoIds(prev => {
+            if (!prev.has(waveId)) return prev;
+            const next = new Set(prev);
+            next.delete(waveId);
+            return next;
+          });
+          setActiveVideoId(current => (current === waveId ? null : current));
           // If this wave is active, advance to the next and drop it from cache so cold start won't crash
           setCurrentIndex(idx => {
             const waveIdx = displayFeed.findIndex(w => w.id === waveId);
@@ -12545,6 +12914,26 @@ type CommandCentreSection =
       return true;
     });
   }, [vibesFeed]);
+  const mySpaceWaves = useMemo(() => {
+    const getWaveTime = (wave: Vibe) => {
+      const raw =
+        waveStats[wave.id]?.createdAt ||
+        (wave as any)?.createdAt ||
+        (wave as any)?.timestamp ||
+        null;
+      if (typeof raw?.toDate === 'function') return raw.toDate().getTime();
+      const date = raw ? new Date(raw) : null;
+      return date && !Number.isNaN(date.getTime()) ? date.getTime() : 0;
+    };
+    return uniqueMyWaves
+      .filter(w => w.ownerUid === myUid)
+      .sort((a, b) => {
+        const pinnedDiff =
+          Number(pinnedWaveIds.has(b.id)) - Number(pinnedWaveIds.has(a.id));
+        if (pinnedDiff !== 0) return pinnedDiff;
+        return getWaveTime(b) - getWaveTime(a);
+      });
+  }, [myUid, pinnedWaveIds, uniqueMyWaves, waveStats]);
                     
   const currentWave =
     displayFeed.length > 0 && currentIndex >= 0
@@ -12618,10 +13007,15 @@ type CommandCentreSection =
   }, [creatorProfileLoadedPosts, creatorProfileUid, displayFeed]);
 
   const buildWaveFromDoc = useCallback(
-    async (docOrId: any): Promise<Vibe | null> => {
+    async (
+      docOrId: any,
+      options?: { resolveStorage?: boolean; includeUserLookup?: boolean },
+    ): Promise<Vibe | null> => {
       try {
         const firestoreMod = require('@react-native-firebase/firestore').default;
         const storageMod = require('@react-native-firebase/storage').default;
+        const resolveStorage = options?.resolveStorage !== false;
+        const includeUserLookup = options?.includeUserLookup !== false;
         const doc =
           typeof docOrId === 'string'
             ? await firestoreMod().collection('waves').doc(docOrId).get()
@@ -12635,13 +13029,17 @@ type CommandCentreSection =
         let playbackUrl: string | null = resolveWaveStoredUrl(data);
         let mediaUri: string | null = null;
         if (
+          resolveStorage &&
           !playbackUrl &&
           storageMod &&
           data?.mediaPath &&
           !/^https?:\/\//i.test(String(data.mediaPath || ''))
         ) {
           try {
-            mediaUri = await storageMod().ref(String(data.mediaPath)).getDownloadURL();
+            mediaUri = await Promise.race([
+              storageMod().ref(String(data.mediaPath)).getDownloadURL(),
+              new Promise<string | null>(resolve => setTimeout(() => resolve(null), 2200)),
+            ]);
           } catch {}
         }
         const mediaItems = !isAudioPost ? buildWaveMediaItems(data) : null;
@@ -12654,7 +13052,7 @@ type CommandCentreSection =
           null;
         const ownerUid = (data?.ownerUid || data?.authorId || null) as any;
         let userInfo: { name: string; avatar: string | null; bio?: string | null } | null = null;
-        if (ownerUid) {
+        if (ownerUid && includeUserLookup) {
           try {
             const userDoc = await firestoreMod().collection('users').doc(ownerUid).get();
             const userData = userDoc?.data?.() || {};
@@ -12702,6 +13100,9 @@ type CommandCentreSection =
             echoes: Number(data?.counts?.echoes || 0),
             hugs: Number(data?.counts?.hugs || 0),
           },
+          fleetId: data?.fleetId || null,
+          fleetName: data?.fleetName || null,
+          audience: data?.audience || null,
         };
       } catch {
         return null;
@@ -12728,6 +13129,39 @@ type CommandCentreSection =
     resetInboxView();
     setShowInbox(false);
   }, [resetInboxView]);
+
+  const safeScrollFeedToIndex = useCallback(
+    (index: number, attempt = 0) => {
+      const nextIndex = Math.max(0, Math.min(displayFeedRef.current.length - 1, index));
+      const estimatedItemHeight = Math.max(260, Math.round(SCREEN_HEIGHT * 0.78));
+      const run = () => {
+        try {
+          if (!feedRef.current) return;
+          if (nextIndex <= 0) {
+            feedRef.current.scrollToOffset?.({ offset: 0, animated: false });
+            return;
+          }
+          feedRef.current.scrollToIndex?.({
+            index: nextIndex,
+            animated: false,
+            viewPosition: 0.15,
+          });
+        } catch {
+          try {
+            feedRef.current?.scrollToOffset?.({
+              offset: nextIndex * estimatedItemHeight,
+              animated: false,
+            });
+          } catch {}
+          if (attempt < 4) {
+            setTimeout(() => safeScrollFeedToIndex(nextIndex, attempt + 1), 120 * (attempt + 1));
+          }
+        }
+      };
+      InteractionManager.runAfterInteractions(run);
+    },
+    [],
+  );
 
   const focusWaveInFeed = useCallback(
     async (
@@ -12774,21 +13208,7 @@ type CommandCentreSection =
         if (actualIndex >= 0) {
           setCurrentIndex(actualIndex);
           setWaveKey(Date.now());
-          requestAnimationFrame(() => {
-            try {
-              if (actualIndex <= 0) {
-                feedRef.current?.scrollToOffset?.({
-                  offset: 0,
-                  animated: false,
-                });
-              } else {
-                feedRef.current?.scrollToIndex?.({
-                  index: actualIndex,
-                  animated: false,
-                });
-              }
-            } catch {}
-          });
+          safeScrollFeedToIndex(actualIndex);
           showUiTemporarily();
           if (options?.openEchoes) {
             setEchoWaveId(targetWaveId);
@@ -12806,11 +13226,7 @@ type CommandCentreSection =
 
         setCurrentIndex(0);
         setWaveKey(Date.now());
-        requestAnimationFrame(() => {
-          try {
-            feedRef.current?.scrollToOffset?.({ offset: 0, animated: false });
-          } catch {}
-        });
+        safeScrollFeedToIndex(0);
         showUiTemporarily();
       };
 
@@ -12827,6 +13243,7 @@ type CommandCentreSection =
       setShowMyWaves,
       setShowCreatorProfile,
       showUiTemporarily,
+      safeScrollFeedToIndex,
     ],
   );
 
@@ -12835,6 +13252,7 @@ type CommandCentreSection =
     if (!showCreatorProfile || !creatorProfileUid) {
       setCreatorProfileLoadedPosts([]);
       setCreatorProfileLoading(false);
+      setCreatorProfileActionBusy(null);
       return;
     }
 
@@ -12857,7 +13275,14 @@ type CommandCentreSection =
           );
 
         const docs = snap?.docs || [];
-        const built = await Promise.all(docs.map((doc: any) => buildWaveFromDoc(doc)));
+        const built = await Promise.all(
+          docs.map((doc: any) =>
+            buildWaveFromDoc(doc, {
+              resolveStorage: false,
+              includeUserLookup: false,
+            }),
+          ),
+        );
         const nextPosts = built.filter(Boolean) as Vibe[];
         if (!cancelled) {
           setCreatorProfileLoadedPosts(nextPosts);
@@ -13243,6 +13668,10 @@ type CommandCentreSection =
   );
   const [isBottomBarExpanded, setIsBottomBarExpanded] = useState(false);
   const [isSwiping, setIsSwiping] = useState(false);
+  const isSwipingRef = useRef(false);
+  useEffect(() => {
+    isSwipingRef.current = isSwiping;
+  }, [isSwiping]);
   const [isTopBarVisible, setIsTopBarVisible] = useState(true);
   const dragStartYRef = useRef(0);
   const dragStartTimeRef = useRef(0);
@@ -13298,6 +13727,7 @@ type CommandCentreSection =
 
   const handleVibeHunt = useCallback(() => {
     showTopBar();
+    setHuntInitialQuery('');
     setShowDeepSearch(true);
   }, [showTopBar]);
                     
@@ -13445,9 +13875,21 @@ type CommandCentreSection =
         await deleteCollectionInChunks(`waves/${waveId}/splashes`);
         // Delete the wave doc
         await firestoreMod().collection('waves').doc(waveId).delete();
+        await firestoreMod().doc(`users/${user.uid}/pinned/${waveId}`).delete().catch(() => {});
+        await firestoreMod().doc(`users/${user.uid}/casts/${waveId}`).delete().catch(() => {});
         setVibesFeed(prev => prev.filter(w => w.id !== waveId));
         setPublicFeed(prev => prev.filter(w => w.id !== waveId));
         setPostFeed(prev => prev.filter(w => w.id !== waveId));
+        setPinnedWaveIds(prev => {
+          const next = new Set(prev);
+          next.delete(waveId);
+          return next;
+        });
+        setCastedWaveIds(prev => {
+          const next = new Set(prev);
+          next.delete(waveId);
+          return next;
+        });
         setDeletingWaveIds(prev => {
           const next = { ...prev };
           delete next[waveId];
@@ -14936,6 +15378,136 @@ type CommandCentreSection =
     }
   };
 
+  const uploadConversationAttachment = useCallback(async (
+    attachment?: Asset | null,
+    ownerUid?: string | null,
+  ): Promise<{
+    attachmentUrl: string | null;
+    attachmentType: string | null;
+    attachmentName: string | null;
+  }> => {
+    const normalizedAttachment = normalizeAttachment(attachment);
+    if (!normalizedAttachment?.uri) {
+      return {
+        attachmentUrl: null,
+        attachmentType: null,
+        attachmentName: null,
+      };
+    }
+
+    let storageMod: any = null;
+    try {
+      storageMod = require('@react-native-firebase/storage').default;
+    } catch {}
+
+    if (!storageMod) {
+      throw new Error('Storage module not available');
+    }
+
+    const cleanOwnerUid = String(ownerUid || auth().currentUser?.uid || '').trim();
+    if (!cleanOwnerUid) {
+      throw new Error('User not signed in');
+    }
+
+    if (
+      !(await ensureNetworkActionAllowed('upload', {
+        label: 'upload this file',
+        kind: inferTransferKind({
+          mimeType: normalizedAttachment.type,
+          fileName: normalizedAttachment.fileName,
+          url: normalizedAttachment.uri,
+        }),
+        localPath: normalizedAttachment.uri,
+      }))
+    ) {
+      throw new Error('Please use Wi-Fi to upload this file.');
+    }
+
+    const nameGuessRaw = normalizedAttachment.fileName || 'attachment';
+    const type = String(normalizedAttachment.type || '').toLowerCase();
+    const sanitizedBase = nameGuessRaw
+      .replace(/[^A-Za-z0-9._-]/g, '_')
+      .replace(/_{2,}/g, '_');
+    const baseNoExt = sanitizedBase.includes('.')
+      ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
+      : sanitizedBase;
+    const ext = sanitizedBase.includes('.')
+      ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
+      : type.startsWith('video/')
+      ? 'mp4'
+      : type.startsWith('image/')
+      ? 'jpg'
+      : type.startsWith('audio/')
+      ? 'm4a'
+      : 'dat';
+    const originalUri = String(normalizedAttachment.uri || '');
+    const uploadContentType =
+      (type && (type.startsWith('video/') || type.startsWith('image/') || type.startsWith('audio/'))
+        ? type
+        : inferMimeFromName(String(normalizedAttachment.fileName || '')) ||
+          inferMimeFromName(originalUri));
+
+    try {
+      let localPath = originalUri;
+      try {
+        localPath = decodeURI(localPath);
+      } catch {}
+      if (Platform.OS === 'android' && localPath.startsWith('file://')) {
+        localPath = localPath.replace('file://', '');
+      }
+      if (Platform.OS === 'android' && /^content:/.test(localPath)) {
+        try {
+          const fsMod = RNFS || require('react-native-fs');
+          const safeExt = (ext || 'dat').replace(/[^A-Za-z0-9]/g, '');
+          const copyDest = `${fsMod.CachesDirectoryPath}/msg_${Date.now()}.${safeExt}`;
+          await fsMod.copyFile(String(originalUri), copyDest);
+          localPath = copyDest;
+        } catch (copyErr) {
+          console.warn('Attachment content copy before upload failed', copyErr);
+        }
+      }
+      localPath = await maybeCompressVideoForUpload(
+        localPath,
+        uploadContentType || type || null,
+        shouldUseLightVideoUpload,
+      );
+
+      const storagePathCandidates = [
+        `posts/${cleanOwnerUid}/messages/${Date.now()}_${baseNoExt}.${ext}`,
+        `users/${cleanOwnerUid}/messages/${Date.now()}_${baseNoExt}.${ext}`,
+      ];
+      let uploadedPath: string | null = null;
+      let lastUploadErr: any = null;
+      for (const storagePath of storagePathCandidates) {
+        try {
+          const uploadRef = storageMod().ref(storagePath);
+          await uploadRef.putFile(localPath, { contentType: uploadContentType });
+          uploadedPath = storagePath;
+          break;
+        } catch (uploadErr: any) {
+          lastUploadErr = uploadErr;
+        }
+      }
+      if (!uploadedPath) {
+        throw lastUploadErr || new Error('Attachment upload failed');
+      }
+
+      return {
+        attachmentUrl: await storageMod().ref(uploadedPath).getDownloadURL(),
+        attachmentType: type || uploadContentType,
+        attachmentName: normalizedAttachment.fileName || null,
+      };
+    } catch (uploadErr) {
+      console.warn('Message attachment upload failed', uploadErr);
+      throw new Error('We could not upload that file. Please try again.');
+    }
+  }, [
+    ensureNetworkActionAllowed,
+    inferTransferKind,
+    maybeCompressVideoForUpload,
+    shouldUseLightVideoUpload,
+  ]);
+
   const onSendMessage = async () => {
     if (!messageText.trim() && !messageAttachment) return;
     if (!messageRecipient?.uid) return;
@@ -14996,114 +15568,17 @@ type CommandCentreSection =
 
     let firestoreMod: any = null;
     let functionsMod: any = null;
-    let storageMod: any = null;
 
     try {
       firestoreMod = require('@react-native-firebase/firestore').default;
       functionsMod = require('@react-native-firebase/functions').default;
-      storageMod = require('@react-native-firebase/storage').default;
     } catch {}
 
     if (!firestoreMod || !functionsMod) {
       throw new Error('Firebase modules not available');
     }
-
-    const normalizedAttachment = normalizeAttachment(attachment);
-
-    let attachmentUrl: string | null = null;
-    let attachmentType: string | null = null;
-    let attachmentName: string | null = null;
-
-    if (normalizedAttachment?.uri && storageMod) {
-      if (
-        !(await ensureNetworkActionAllowed('upload', {
-          label: 'upload this file',
-          kind: inferTransferKind({
-            mimeType: normalizedAttachment.type,
-            fileName: normalizedAttachment.fileName,
-            url: normalizedAttachment.uri,
-          }),
-          localPath: normalizedAttachment.uri,
-        }))
-      ) {
-        throw new Error('Please use Wi-Fi to upload this file.');
-      }
-      const nameGuessRaw = normalizedAttachment.fileName || 'attachment';
-      const type = String(normalizedAttachment.type || '').toLowerCase();
-      const sanitizedBase = nameGuessRaw
-        .replace(/[^A-Za-z0-9._-]/g, '_')
-        .replace(/_{2,}/g, '_');
-      const baseNoExt = sanitizedBase.includes('.')
-        ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
-        : sanitizedBase;
-      const ext = sanitizedBase.includes('.')
-        ? sanitizedBase.substring(sanitizedBase.lastIndexOf('.') + 1)
-        : type.startsWith('video/')
-        ? 'mp4'
-        : type.startsWith('image/')
-        ? 'jpg'
-        : type.startsWith('audio/')
-        ? 'm4a'
-        : 'dat';
-      const originalUri = String(normalizedAttachment.uri || '');
-      const uploadContentType =
-        (type && (type.startsWith('video/') || type.startsWith('image/') || type.startsWith('audio/'))
-          ? type
-          : inferMimeFromName(String(normalizedAttachment.fileName || '')) ||
-            inferMimeFromName(originalUri));
-      try {
-        // Match post-upload path normalization flow used elsewhere in the app.
-        let localPath = originalUri;
-        try {
-          localPath = decodeURI(localPath);
-        } catch {}
-        if (Platform.OS === 'android' && localPath.startsWith('file://')) {
-          localPath = localPath.replace('file://', '');
-        }
-        if (Platform.OS === 'android' && /^content:/.test(localPath)) {
-          try {
-            const fsMod = RNFS || require('react-native-fs');
-            const safeExt = (ext || 'dat').replace(/[^A-Za-z0-9]/g, '');
-            const copyDest = `${fsMod.CachesDirectoryPath}/msg_${Date.now()}.${safeExt}`;
-            await fsMod.copyFile(String(originalUri), copyDest);
-            localPath = copyDest;
-          } catch (copyErr) {
-            console.warn('Attachment content copy before upload failed', copyErr);
-          }
-        }
-        localPath = await maybeCompressVideoForUpload(
-          localPath,
-          uploadContentType || type || null,
-          shouldUseLightVideoUpload,
-        );
-
-        const storagePathCandidates = [
-          `posts/${user.uid}/messages/${Date.now()}_${baseNoExt}.${ext}`,
-          `users/${user.uid}/messages/${Date.now()}_${baseNoExt}.${ext}`,
-        ];
-        let uploadedPath: string | null = null;
-        let lastUploadErr: any = null;
-        for (const storagePath of storagePathCandidates) {
-          try {
-            const uploadRef = storageMod().ref(storagePath);
-            await uploadRef.putFile(localPath, { contentType: uploadContentType });
-            uploadedPath = storagePath;
-            break;
-          } catch (uploadErr: any) {
-            lastUploadErr = uploadErr;
-          }
-        }
-        if (!uploadedPath) {
-          throw lastUploadErr || new Error('Attachment upload failed');
-        }
-        attachmentUrl = await storageMod().ref(uploadedPath).getDownloadURL();
-        attachmentType = type || uploadContentType;
-        attachmentName = normalizedAttachment.fileName || null;
-      } catch (uploadErr) {
-        console.warn('Message attachment upload failed', uploadErr);
-        throw new Error('We could not upload that file. Please try again.');
-      }
-    }
+    const { attachmentUrl, attachmentType, attachmentName } =
+      await uploadConversationAttachment(attachment, user.uid);
 
     const payloadText = (messageText || '').trim() || (attachmentName ? '[Attachment]' : '');
 
@@ -16189,57 +16664,82 @@ type CommandCentreSection =
       Alert.alert('Share failed', 'Unable to cast the net right now.');
     }
   };
-  const onShareWave = async (wave: Vibe) => {
+  const onShareWave = useCallback(async (wave: Vibe) => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) {
+      Alert.alert('Sign in required', 'Please sign in to recast this wave.');
+      return;
+    }
     try {
       const caption = wave.captionText ? `"${wave.captionText}"` : 'my CMEE post';
       const msg = `Check out ${caption} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
-      await Share.share({ title: 'Share CMEE', message: msg });
+      await Share.share({ title: 'Cast CMEE', message: msg });
+      await firestore()
+        .collection(`users/${uid}/casts`)
+        .doc(wave.id)
+        .set(
+          {
+            waveId: wave.id,
+            ownerUid: wave.ownerUid || null,
+            captionText: wave.captionText || '',
+            createdAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+      setCastedWaveIds(prev => {
+        const next = new Set(prev);
+        next.add(wave.id);
+        return next;
+      });
+      notifySuccess('Wave recast.');
     } catch {
       showOceanDialog(
         'Share Failed',
         'Unable to cast the net. Try again later.',
       );
     }
-  };
-  const anchorWave = async (wave: Vibe) => {
+  }, [notifySuccess]);
+  const anchorWave = useCallback(async (wave: Vibe) => {
+    const uid = auth().currentUser?.uid;
+    if (!uid) {
+      Alert.alert('Sign in required', 'Please sign in to anchor this wave.');
+      return;
+    }
+    const pinRef = firestore().doc(`users/${uid}/pinned/${wave.id}`);
+    const isPinned = pinnedWaveIds.has(wave.id);
     try {
-      let firestoreMod: any = null;
-      let authMod: any = null;
-      try {
-        firestoreMod = require('@react-native-firebase/firestore').default;
-      } catch {}
-      try {
-        authMod = require('@react-native-firebase/auth').default;
-      } catch {}
-      const uid = authMod?.().currentUser?.uid;
-      if (!firestoreMod || !uid) {
-        showOceanDialog('Pin Vibe', 'Navigation tools are not installed.');
-        return;
-      }
-      await firestoreMod()
-        .doc(`users/${uid}/pinned/${wave.id}`)
-        .set(
+      if (isPinned) {
+        await pinRef.delete();
+        setPinnedWaveIds(prev => {
+          const next = new Set(prev);
+          next.delete(wave.id);
+          return next;
+        });
+        notifySuccess('Anchor removed.');
+      } else {
+        await pinRef.set(
           {
             waveId: wave.id,
-            createdAt: firestoreMod.FieldValue?.serverTimestamp
-              ? firestoreMod.FieldValue.serverTimestamp()
-              : new Date(),
+            ownerUid: wave.ownerUid || null,
+            captionText: wave.captionText || '',
+            createdAt: firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
-      try {
-        require('react-native').ToastAndroid.show(
-          'Wave anchored',
-          require('react-native').ToastAndroid.SHORT,
-        );
-      } catch {}
+        setPinnedWaveIds(prev => {
+          const next = new Set(prev);
+          next.add(wave.id);
+          return next;
+        });
+        notifySuccess('Wave anchored.');
+      }
     } catch (e) {
       showOceanDialog(
         'Anchor Failed',
         'Could not drop anchor on this wave. The seafloor is unreachable.',
       );
     }
-  };
+  }, [notifySuccess, pinnedWaveIds]);
                     
   // Post interaction handlers for feed
   const handlePostHug = async (wave: Vibe) => {
@@ -16484,6 +16984,36 @@ type CommandCentreSection =
       console.warn('Load post echoes failed', e);
     }
   };
+
+  const handleEchoHugPersist = useCallback(
+    (waveId: string, echoId: string, hugs: number, huggedByMe: boolean) => {
+      if (!myUid) return;
+      setPostEchoLists(prev => {
+        const list = prev[waveId];
+        if (!list || !Array.isArray(list)) return prev;
+        const nextList = list.map((e: any) => {
+          if (String(e?.id) !== String(echoId)) return e;
+          const hub = { ...(e.huggedBy || {}) };
+          if (huggedByMe) hub[myUid] = true;
+          else delete hub[myUid];
+          return { ...e, hugs, huggedBy: hub };
+        });
+        return { ...prev, [waveId]: nextList };
+      });
+    },
+    [myUid],
+  );
+
+  const handleFeedHashtagPress = useCallback(
+    (tagWithoutHash: string) => {
+      const tag = String(tagWithoutHash || '').trim();
+      if (!tag) return;
+      showTopBar();
+      setHuntInitialQuery(`#${tag}`);
+      setShowDeepSearch(true);
+    },
+    [showTopBar],
+  );
 
   const mapEchoTree = useCallback((items: any[], transform: (item: any) => any) => {
     return items.map(item => {
@@ -17540,12 +18070,58 @@ type CommandCentreSection =
       showNetworkOverridePrompt,
     ],
   );
-                    
+
+  const buildProfileDeepLink = useCallback((targetUid?: string | null) => {
+    const cleanUid = String(targetUid || '').trim();
+    if (!cleanUid) return PLAY_STORE_URL;
+    return `aqualink://profile/${encodeURIComponent(cleanUid)}`;
+  }, []);
+
+  const shareUserProfileLink = useCallback(
+    async (targetUid?: string | null, fallbackName?: string | null) => {
+      const cleanUid = String(targetUid || '').trim();
+      if (!cleanUid) {
+        Alert.alert('Share failed', 'This profile is missing a link right now.');
+        return;
+      }
+      const cleanName = String(
+        fallbackName || userData?.[cleanUid]?.name || userData?.[cleanUid]?.handle || 'this profile',
+      ).trim();
+      const deepLink = buildProfileDeepLink(cleanUid);
+      const webLink = `https://aqualink.app/profile/${encodeURIComponent(cleanUid)}`;
+      await Share.share({
+        title: 'Share Profile',
+        message:
+          `Open ${cleanName} on CMEE.\n\n` +
+          `App link:\n${deepLink}\n\n` +
+          `Web link:\n${webLink}\n\n` +
+          `If CMEE is not installed yet, download it here:\n${PLAY_STORE_URL}`,
+      });
+    },
+    [buildProfileDeepLink, userData],
+  );
+
+  const runCreatorProfileAction = useCallback(
+    async (actionKey: string, task: () => void | Promise<void>) => {
+      if (creatorProfileActionBusy) return;
+      setCreatorProfileActionBusy(actionKey);
+      try {
+        await Promise.resolve(task());
+      } finally {
+        setTimeout(() => {
+          setCreatorProfileActionBusy(current => (current === actionKey ? null : current));
+        }, 220);
+      }
+    },
+    [creatorProfileActionBusy],
+  );
+
   const shareProfile = async () => {
     try {
-      const name = profileName || accountCreationHandle || '@your_handle';
-      const msg = `Check out my Space ${name} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
-      await Share.share({ title: 'Cast Vibe', message: msg });
+      await shareUserProfileLink(
+        myUid,
+        profileName || accountCreationHandle || auth().currentUser?.displayName || 'My profile',
+      );
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
     }
@@ -17597,10 +18173,10 @@ type CommandCentreSection =
                     
   const shareProfileLink = async () => {
     try {
-      await Share.share({
-        title: 'Share Profile Link',
-        message: `Download CMEE on Google Play:\n${PLAY_STORE_URL}`,
-      });
+      await shareUserProfileLink(
+        myUid,
+        profileName || accountCreationHandle || auth().currentUser?.displayName || 'My profile',
+      );
     } catch {
       Alert.alert('Share failed', 'Unable to share the link right now.');
     }
@@ -18035,7 +18611,7 @@ type CommandCentreSection =
     }
   };
                     
-  // Start in-app Live with editor overlays (TikTok-style)
+  // Start in-app Live with editor overlays
   const goLiveEditor = async () => {
     setShowMakeWaves(false);
     if (Platform.OS === 'android') {
@@ -18210,6 +18786,13 @@ type CommandCentreSection =
         seen.add(key);
         merged.push(asset);
       });
+      if (merged.length > 1 && merged.some(item => assetLooksLikeVideo(item))) {
+        Alert.alert(
+          'One video per post',
+          'Grid posts now allow only images and documents. Post videos one at a time to keep the feed stable.',
+        );
+        return prev;
+      }
       return merged;
     });
   }, []);
@@ -18725,6 +19308,14 @@ type CommandCentreSection =
 
       if (unifiedPostMediaItems.length > 0) {
         if (unifiedPostMediaItems.length > 1) {
+          if (unifiedPostMediaItems.some(item => assetLooksLikeVideo(item))) {
+            Alert.alert(
+              'One video per post',
+              'Grid posts now allow only images and documents. Remove the video and post it separately.',
+            );
+            setIsUnifiedPosting(false);
+            return;
+          }
           const preparedItems = await Promise.all(
             unifiedPostMediaItems.map(item => normalizeAssetForEditor(item)),
           );
@@ -19311,6 +19902,7 @@ type CommandCentreSection =
           const membership = membershipDocs.find(
             item => String(item.fleetId || item.id || '').trim() === doc.id,
           );
+          const visibility = normalizeFleetVisibility(doc.visibility);
           return {
             id: doc.id,
             name: String(doc.name || 'Fleet').trim(),
@@ -19318,9 +19910,14 @@ type CommandCentreSection =
             moodEmoji: String(doc.moodEmoji || '🦈'),
             coverColor: String(doc.coverColor || '#0F4C81'),
             photoURL: doc.photoURL || null,
-            visibility: doc.visibility === 'private' ? 'private' : 'open',
-            allowBoarding: doc.allowBoarding !== false,
+            visibility,
+            allowBoarding: getFleetAllowBoardingForVisibility(visibility, doc.allowBoarding !== false),
             inviteCode: String(doc.inviteCode || '').trim(),
+            aliasEnabled: doc.aliasEnabled === true || visibility === 'shadow',
+            memberListVisibility:
+              doc.memberListVisibility === 'count_only' || doc.memberListVisibility === 'leaders_only'
+                ? doc.memberListVisibility
+                : getDefaultFleetMemberListVisibility(visibility),
             captainUid: String(doc.captainUid || ''),
             captainName: String(doc.captainName || 'Captain'),
             coCaptainUids: Array.isArray(doc.coCaptainUids) ? doc.coCaptainUids : [],
@@ -19360,6 +19957,7 @@ type CommandCentreSection =
       const directory = directorySnapshot.docs
         .map(doc => {
           const data = doc.data() || {};
+          const visibility = normalizeFleetVisibility(String(data.visibility || 'open'));
           return {
             id: doc.id,
             name: String(data.name || 'Fleet').trim(),
@@ -19367,9 +19965,14 @@ type CommandCentreSection =
             moodEmoji: String(data.moodEmoji || '🦈'),
             coverColor: String(data.coverColor || '#0F4C81'),
             photoURL: data.photoURL || null,
-            visibility: data.visibility === 'private' ? 'private' : 'open',
-            allowBoarding: data.allowBoarding !== false,
+            visibility,
+            allowBoarding: getFleetAllowBoardingForVisibility(visibility, data.allowBoarding !== false),
             inviteCode: String(data.inviteCode || '').trim(),
+            aliasEnabled: data.aliasEnabled === true || visibility === 'shadow',
+            memberListVisibility:
+              data.memberListVisibility === 'count_only' || data.memberListVisibility === 'leaders_only'
+                ? data.memberListVisibility
+                : getDefaultFleetMemberListVisibility(visibility),
             captainUid: String(data.captainUid || ''),
             captainName: String(data.captainName || 'Captain'),
             coCaptainUids: Array.isArray(data.coCaptainUids) ? data.coCaptainUids : [],
@@ -19381,7 +19984,10 @@ type CommandCentreSection =
             lastWaveAt: data.lastWaveAt || null,
           };
         })
-        .filter(item => !fleets.some(fleet => fleet.id === item.id));
+        .filter(item =>
+          !fleets.some(fleet => fleet.id === item.id) &&
+          item.visibility !== 'shadow',
+        );
       setFleetDirectory(directory);
     } catch (error) {
       console.error('Load fleets error:', error);
@@ -19552,7 +20158,10 @@ type CommandCentreSection =
           name: fleet.name,
           description: fleet.description || '',
           moodEmoji: fleet.moodEmoji || '🦈',
+          visibility: normalizeFleetVisibility(fleet.visibility),
           allowBoarding: fleet.allowBoarding !== false,
+          memberListVisibility:
+            fleet.memberListVisibility || getDefaultFleetMemberListVisibility(normalizeFleetVisibility(fleet.visibility)),
         },
       }));
       await loadFleetMembers(fleet);
@@ -19572,16 +20181,25 @@ type CommandCentreSection =
       }
       const moodMeta =
         FLEET_MOODS.find(item => item.emoji === draft.moodEmoji) || FLEET_MOODS[0];
+      const nextVisibility = normalizeFleetVisibility(draft.visibility);
+      const nextAllowBoarding = getFleetAllowBoardingForVisibility(
+        nextVisibility,
+        draft.allowBoarding !== false,
+      );
+      const nextMemberListVisibility =
+        draft.memberListVisibility || getDefaultFleetMemberListVisibility(nextVisibility);
       try {
         setFleetActionLoadingId(fleet.id);
         await firestore().collection('fleets').doc(fleet.id).set(
           {
             name: nextName,
             description: draft.description.trim(),
-            visibility: 'open',
+            visibility: nextVisibility,
             moodEmoji: moodMeta.emoji,
             coverColor: moodMeta.color,
-            allowBoarding: draft.allowBoarding !== false,
+            allowBoarding: nextAllowBoarding,
+            aliasEnabled: nextVisibility === 'shadow',
+            memberListVisibility: nextMemberListVisibility,
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
@@ -19591,8 +20209,10 @@ type CommandCentreSection =
             fleetName: nextName,
             moodEmoji: moodMeta.emoji,
             coverColor: moodMeta.color,
-            visibility: 'open',
-            allowBoarding: draft.allowBoarding !== false,
+            visibility: nextVisibility,
+            allowBoarding: nextAllowBoarding,
+            aliasEnabled: nextVisibility === 'shadow',
+            memberListVisibility: nextMemberListVisibility,
           },
           { merge: true },
         );
@@ -19604,8 +20224,10 @@ type CommandCentreSection =
                 description: draft.description.trim(),
                 moodEmoji: moodMeta.emoji,
                 coverColor: moodMeta.color,
-                allowBoarding: draft.allowBoarding !== false,
-                visibility: 'open',
+                allowBoarding: nextAllowBoarding,
+                visibility: nextVisibility,
+                aliasEnabled: nextVisibility === 'shadow',
+                memberListVisibility: nextMemberListVisibility,
               }
             : current,
         );
@@ -19714,6 +20336,120 @@ type CommandCentreSection =
     Alert.alert(title, text);
   }, [notifySuccess]);
 
+  const buildSharedAssets = useCallback(
+    (payload: ExternalSharePayload | null): Asset[] =>
+      (payload?.files || [])
+        .map(file => ({
+          uri: String(file.uri || '').trim(),
+          type: file.mimeType || payload?.mimeType || 'application/octet-stream',
+          fileName:
+            file.fileName ||
+            String(file.uri || '').split('/').pop() ||
+            `shared_${Date.now()}`,
+        } as Asset))
+        .filter(item => !!item.uri),
+    [],
+  );
+
+  const clearIncomingShareFlow = useCallback(() => {
+    setShowShareDestinationModal(false);
+    setShowShareFleetPicker(false);
+    setShowShareDirectPicker(false);
+    setIncomingSharePayload(null);
+    try {
+      (NativeModules as any)?.ShareIntentModule?.clearPendingSharePayload?.();
+    } catch {}
+  }, []);
+
+  const routeIncomingShareToFleet = useCallback(
+    (fleet: FleetSummary | FleetThread | null, payload: ExternalSharePayload | null) => {
+      if (!fleet || !payload) return;
+      const fleetId = 'fleetId' in fleet ? fleet.fleetId : fleet.id;
+      const fleetName = 'fleetName' in fleet ? fleet.fleetName : fleet.name;
+      const moodEmoji = 'moodEmoji' in fleet ? fleet.moodEmoji : fleet.moodEmoji;
+      const crewCount = 'crewCount' in fleet ? fleet.crewCount : fleet.crewCount;
+      const role = 'role' in fleet ? fleet.role : fleet.role;
+      setActiveFleetPostContext({
+        fleetId,
+        fleetName,
+        moodEmoji,
+        crewCount,
+        role,
+      });
+      setUnifiedPostText(String(payload.text || payload.subject || ''));
+      setUnifiedPostMediaItems(buildSharedAssets(payload));
+      setUnifiedPostAudio(null);
+      setUnifiedPostError(null);
+      setReturnToMakeWaves(false);
+      setShowMakeWaves(false);
+      setShowFleetDeck(false);
+      setShowUnifiedPostModal(true);
+      clearIncomingShareFlow();
+    },
+    [buildSharedAssets, clearIncomingShareFlow],
+  );
+
+  useEffect(() => {
+    const shareIntentModule = (NativeModules as any)?.ShareIntentModule;
+    if (!shareIntentModule) return;
+    let subscription: { remove?: () => void } | null = null;
+    const applySharePayload = (rawPayload: any) => {
+      const normalized = normalizeExternalSharePayload(rawPayload);
+      if (!normalized) return;
+      setIncomingSharePayload(normalized);
+      setShowShareDestinationModal(true);
+      setShowShareFleetPicker(false);
+      setShowShareDirectPicker(false);
+    };
+    try {
+      Promise.resolve(shareIntentModule.getPendingSharePayload?.())
+        .then((payload: any) => {
+          applySharePayload(payload);
+        })
+        .catch(() => {});
+    } catch {}
+    try {
+      const emitter = new NativeEventEmitter(shareIntentModule);
+      subscription = emitter.addListener('ShareIntentReceived', applySharePayload);
+    } catch {}
+    return () => {
+      subscription?.remove?.();
+    };
+  }, []);
+
+  const routeIncomingShareToFeed = useCallback(
+    (payload: ExternalSharePayload | null) => {
+      if (!payload) return;
+      setActiveFleetPostContext(null);
+      setUnifiedPostText(String(payload.text || payload.subject || ''));
+      setUnifiedPostMediaItems(buildSharedAssets(payload));
+      setUnifiedPostAudio(null);
+      setUnifiedPostError(null);
+      setReturnToMakeWaves(false);
+      setShowMakeWaves(false);
+      setShowUnifiedPostModal(true);
+      clearIncomingShareFlow();
+    },
+    [buildSharedAssets, clearIncomingShareFlow],
+  );
+
+  const routeIncomingShareToDirectThread = useCallback(
+    (thread: any, payload: ExternalSharePayload | null) => {
+      if (!thread?.senderUid || !payload) return;
+      const sharedAssets = buildSharedAssets(payload);
+      setMessageRecipient({
+        uid: String(thread.senderUid),
+        name: String(thread.senderName || 'User'),
+      });
+      setMessageText(String(payload.text || payload.subject || ''));
+      setMessageAttachment(sharedAssets[0] || null);
+      setShowSendMessage(true);
+      setShowInbox(false);
+      clearIncomingShareFlow();
+    },
+    [buildSharedAssets, clearIncomingShareFlow],
+  );
+
   const shareFleetInvite = useCallback(async (fleet: FleetSummary) => {
     try {
       await Share.share({
@@ -19731,21 +20467,25 @@ type CommandCentreSection =
   const setFleetBoarding = useCallback(
     async (fleet: FleetSummary, allowBoarding: boolean) => {
       if (fleet.role === 'crew') return;
+      const nextVisibility = normalizeFleetVisibility(fleet.visibility);
+      const nextAllowBoarding = getFleetAllowBoardingForVisibility(nextVisibility, allowBoarding);
       try {
         setFleetActionLoadingId(fleet.id);
         await firestore().collection('fleets').doc(fleet.id).set(
           {
-            allowBoarding,
-            visibility: 'open',
+            allowBoarding: nextAllowBoarding,
+            visibility: nextVisibility,
             updatedAt: firestore.FieldValue.serverTimestamp(),
           },
           { merge: true },
         );
         await loadFleetThreads();
         setSelectedFleetMeta(current =>
-          current?.id === fleet.id ? { ...current, allowBoarding, visibility: 'open' } : current,
+          current?.id === fleet.id
+            ? { ...current, allowBoarding: nextAllowBoarding, visibility: nextVisibility }
+            : current,
         );
-        notifySuccess(allowBoarding ? 'Boarding opened.' : 'Boarding now needs an invite.');
+        notifySuccess(nextAllowBoarding ? 'Boarding opened.' : 'Boarding now needs an invite.');
       } catch (error) {
         console.error('Set fleet boarding error:', error);
         Alert.alert('Fleet Deck', 'We could not update boarding right now.');
@@ -19959,6 +20699,12 @@ type CommandCentreSection =
       const codeSeed = `${fleetName}_${Date.now()}`.toUpperCase().replace(/[^A-Z0-9]/g, '');
       const inviteCode = `FLEET-${codeSeed.slice(0, 6)}`;
       const moodMeta = FLEET_MOODS.find(item => item.emoji === fleetDeckMood) || FLEET_MOODS[0];
+      const nextVisibility = normalizeFleetVisibility(fleetDeckVisibility);
+      const nextAllowBoarding = getFleetAllowBoardingForVisibility(
+        nextVisibility,
+        fleetDeckAllowBoarding,
+      );
+      const nextMemberListVisibility = getDefaultFleetMemberListVisibility(nextVisibility);
       const captainName =
         profileName ||
         accountCreationHandle ||
@@ -19971,9 +20717,11 @@ type CommandCentreSection =
         moodEmoji: moodMeta.emoji,
         coverColor: moodMeta.color,
         photoURL: null,
-        visibility: 'open',
-        allowBoarding: fleetDeckAllowBoarding,
+        visibility: nextVisibility,
+        allowBoarding: nextAllowBoarding,
         inviteCode,
+        aliasEnabled: nextVisibility === 'shadow',
+        memberListVisibility: nextMemberListVisibility,
         captainUid: user.uid,
         captainName,
         coCaptainUids: [],
@@ -20000,9 +20748,11 @@ type CommandCentreSection =
         moodEmoji: moodMeta.emoji,
         coverColor: moodMeta.color,
         role: 'captain',
-        visibility: 'open',
-        allowBoarding: fleetDeckAllowBoarding,
+        visibility: nextVisibility,
+        allowBoarding: nextAllowBoarding,
         inviteCode,
+        aliasEnabled: nextVisibility === 'shadow',
+        memberListVisibility: nextMemberListVisibility,
         joinedAt: firestore.FieldValue.serverTimestamp(),
         lastReadAt: firestore.FieldValue.serverTimestamp(),
       });
@@ -20017,7 +20767,9 @@ type CommandCentreSection =
       await loadFleetThreads();
       setFleetDeckName('');
       setFleetDeckDescription('');
+      setFleetDeckVisibility('open');
       setFleetDeckAllowBoarding(true);
+      setFleetInviteCodeInput('');
       setFleetDeckMood('🦈');
       notifySuccess('Fleet launched.');
     } catch (error: any) {
@@ -20031,6 +20783,7 @@ type CommandCentreSection =
     fleetDeckDescription,
     fleetDeckMood,
     fleetDeckName,
+    fleetDeckVisibility,
     fleetDeckAllowBoarding,
     loadFleetThreads,
     notifySuccess,
@@ -20061,16 +20814,25 @@ type CommandCentreSection =
     }
   }, [accountCreationHandle, loadFleetThreads, notifySuccess, profileName, selectedThread]);
 
-  const sendFleetMessage = useCallback(async (fleetId: string, text: string) => {
+  const sendFleetMessage = useCallback(async (fleetId: string, text: string, attachment?: Asset | null) => {
     const user = auth().currentUser;
     if (!user) throw new Error('User not signed in');
     const cleanText = text.trim();
-    if (!cleanText) throw new Error('Message cannot be empty');
+    const { attachmentUrl, attachmentType, attachmentName } =
+      await uploadConversationAttachment(attachment, user.uid);
+    if (!cleanText && !attachmentUrl) throw new Error('Message cannot be empty');
     const senderName =
       profileName ||
       accountCreationHandle ||
       auth().currentUser?.displayName ||
       'Crew';
+    const previewText =
+      getMessagePreviewText({
+        text: cleanText,
+        attachmentUrl,
+        attachmentType,
+        attachmentName,
+      }) || 'Fleet update';
     await firestore().collection('fleets').doc(fleetId).collection('messages').add({
       text: cleanText,
       fromUid: user.uid,
@@ -20078,13 +20840,17 @@ type CommandCentreSection =
       createdAt: firestore.FieldValue.serverTimestamp(),
       type: 'fleet_message',
       route: 'Fleet Deck',
+      attachmentUrl,
+      attachmentType,
+      attachmentName,
     });
     await firestore().collection('fleets').doc(fleetId).set({
-      lastActivityText: cleanText,
+      lastActivityText: previewText,
       lastActivityAt: firestore.FieldValue.serverTimestamp(),
       updatedAt: firestore.FieldValue.serverTimestamp(),
     }, { merge: true });
-  }, [accountCreationHandle, profileName]);
+    return { attachmentUrl, attachmentType, attachmentName };
+  }, [accountCreationHandle, getMessagePreviewText, profileName, uploadConversationAttachment]);
 
   const openFleetWaves = useCallback(async (fleet: FleetSummary | null) => {
     if (!fleet) return;
@@ -20233,6 +20999,59 @@ type CommandCentreSection =
     void syncWaveReactionCounts(currentWave.id);
   }, [currentWave?.id, syncWaveReactionCounts]);
 
+  const boardFleet = useCallback(async (fleet: FleetSummary) => {
+    const user = auth().currentUser;
+    if (!user) {
+      throw new Error('User not signed in');
+    }
+    const normalizedVisibility = normalizeFleetVisibility(fleet.visibility);
+    await firestore()
+      .collection('fleets')
+      .doc(fleet.id)
+      .collection('crew')
+      .doc(user.uid)
+      .set({
+        uid: user.uid,
+        role: 'crew',
+        name: profileName || accountCreationHandle || auth().currentUser?.displayName || 'Crew',
+        photo: profilePhoto || auth().currentUser?.photoURL || null,
+        joinedAt: firestore.FieldValue.serverTimestamp(),
+        status: 'active',
+      });
+    await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).set({
+      fleetId: fleet.id,
+      fleetName: fleet.name,
+      moodEmoji: fleet.moodEmoji,
+      coverColor: fleet.coverColor,
+      role: 'crew',
+      visibility: normalizedVisibility,
+      allowBoarding: getFleetAllowBoardingForVisibility(
+        normalizedVisibility,
+        fleet.allowBoarding !== false,
+      ),
+      inviteCode: fleet.inviteCode,
+      aliasEnabled: fleet.aliasEnabled === true || normalizedVisibility === 'shadow',
+      memberListVisibility:
+        fleet.memberListVisibility || getDefaultFleetMemberListVisibility(normalizedVisibility),
+      joinedAt: firestore.FieldValue.serverTimestamp(),
+      lastReadAt: firestore.FieldValue.serverTimestamp(),
+    });
+    await firestore().collection('fleets').doc(fleet.id).set({
+      crewCount: firestore.FieldValue.increment(1),
+      lastActivityText: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet`,
+      lastActivityAt: firestore.FieldValue.serverTimestamp(),
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    await firestore().collection('fleets').doc(fleet.id).collection('messages').add({
+      text: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet.`,
+      fromUid: user.uid,
+      fromName: profileName || accountCreationHandle || 'Crew',
+      createdAt: firestore.FieldValue.serverTimestamp(),
+      type: 'system',
+      route: 'Fleet Deck',
+    });
+  }, [accountCreationHandle, profileName, profilePhoto]);
+
   const joinFleet = useCallback(async (fleet: FleetSummary) => {
     const user = auth().currentUser;
     if (!user) {
@@ -20245,6 +21064,13 @@ type CommandCentreSection =
         await openFleetWaves(fleet);
         return;
       }
+      if (normalizeFleetVisibility(fleet.visibility) === 'shadow') {
+        Alert.alert(
+          'Invite code needed',
+          `${fleet.name} is a Shadow Fleet. Use its invite code to board quietly.`,
+        );
+        return;
+      }
       if (fleet.allowBoarding === false) {
         Alert.alert(
           'Invite needed',
@@ -20252,41 +21078,7 @@ type CommandCentreSection =
         );
         return;
       }
-      const crewRef = firestore().collection('fleets').doc(fleet.id).collection('crew').doc(user.uid);
-      await crewRef.set({
-        uid: user.uid,
-        role: 'crew',
-        name: profileName || accountCreationHandle || auth().currentUser?.displayName || 'Crew',
-        photo: profilePhoto || auth().currentUser?.photoURL || null,
-        joinedAt: firestore.FieldValue.serverTimestamp(),
-        status: 'active',
-      });
-      await firestore().collection(`users/${user.uid}/fleets`).doc(fleet.id).set({
-        fleetId: fleet.id,
-        fleetName: fleet.name,
-        moodEmoji: fleet.moodEmoji,
-        coverColor: fleet.coverColor,
-        role: 'crew',
-        visibility: fleet.visibility,
-        allowBoarding: fleet.allowBoarding !== false,
-        inviteCode: fleet.inviteCode,
-        joinedAt: firestore.FieldValue.serverTimestamp(),
-        lastReadAt: firestore.FieldValue.serverTimestamp(),
-      });
-      await firestore().collection('fleets').doc(fleet.id).set({
-        crewCount: firestore.FieldValue.increment(1),
-        lastActivityText: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet`,
-        lastActivityAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-      await firestore().collection('fleets').doc(fleet.id).collection('messages').add({
-        text: `${profileName || accountCreationHandle || 'A new crew member'} boarded the Fleet.`,
-        fromUid: user.uid,
-        fromName: profileName || accountCreationHandle || 'Crew',
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        type: 'system',
-        route: 'Fleet Deck',
-      });
+      await boardFleet(fleet);
       await loadFleetThreads();
       notifySuccess('You boarded the Fleet.');
       await openFleetWaves({
@@ -20297,7 +21089,72 @@ type CommandCentreSection =
       console.error('Join fleet error:', error);
       Alert.alert('Boarding failed', 'We could not join this Fleet right now.');
     }
-  }, [accountCreationHandle, loadFleetThreads, myFleets, notifySuccess, openFleetWaves, profileName, profilePhoto]);
+  }, [boardFleet, loadFleetThreads, myFleets, notifySuccess, openFleetWaves]);
+
+  const joinFleetByInviteCode = useCallback(async () => {
+    const user = auth().currentUser;
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to board with an invite code.');
+      return;
+    }
+    const inviteCode = fleetInviteCodeInput.trim().toUpperCase();
+    if (!inviteCode) {
+      Alert.alert('Invite code needed', 'Enter a Fleet invite code first.');
+      return;
+    }
+    try {
+      const snapshot = await firestore()
+        .collection('fleets')
+        .where('inviteCode', '==', inviteCode)
+        .limit(1)
+        .get();
+      if (snapshot.empty) {
+        Alert.alert('Invite code not found', 'That Fleet code does not match any active Fleet.');
+        return;
+      }
+      const doc = snapshot.docs[0];
+      const data = doc.data() || {};
+      const visibility = normalizeFleetVisibility(String(data.visibility || 'open'));
+      const fleet: FleetSummary = {
+        id: doc.id,
+        name: String(data.name || 'Fleet').trim(),
+        description: String(data.description || '').trim(),
+        moodEmoji: String(data.moodEmoji || '🦈'),
+        coverColor: String(data.coverColor || '#0F4C81'),
+        photoURL: data.photoURL || null,
+        visibility,
+        allowBoarding: getFleetAllowBoardingForVisibility(visibility, data.allowBoarding !== false),
+        inviteCode: String(data.inviteCode || inviteCode).trim(),
+        aliasEnabled: data.aliasEnabled === true || visibility === 'shadow',
+        memberListVisibility:
+          data.memberListVisibility === 'count_only' || data.memberListVisibility === 'leaders_only'
+            ? data.memberListVisibility
+            : getDefaultFleetMemberListVisibility(visibility),
+        captainUid: String(data.captainUid || ''),
+        captainName: String(data.captainName || 'Captain'),
+        coCaptainUids: Array.isArray(data.coCaptainUids) ? data.coCaptainUids : [],
+        crewCount: Math.max(1, Number(data.crewCount || 1)),
+        role: 'crew',
+        lastActivityText: String(data.lastActivityText || 'Fleet ready'),
+        lastActivityAt: data.lastActivityAt || data.createdAt || null,
+        lastWaveText: data.lastWaveText || null,
+        lastWaveAt: data.lastWaveAt || null,
+      };
+      const alreadyInFleet = myFleets.some(item => item.id === fleet.id);
+      if (!alreadyInFleet) {
+        await boardFleet(fleet);
+        notifySuccess(
+          visibility === 'shadow' ? 'Shadow Fleet boarded quietly.' : 'You boarded the Fleet.',
+        );
+      }
+      setFleetInviteCodeInput('');
+      await loadFleetThreads();
+      await openFleetWaves(fleet);
+    } catch (error) {
+      console.error('Join fleet by invite code error:', error);
+      Alert.alert('Boarding failed', 'We could not use that Fleet invite code right now.');
+    }
+  }, [boardFleet, fleetInviteCodeInput, loadFleetThreads, myFleets, notifySuccess, openFleetWaves]);
 
   const handleFleetWaveHug = useCallback(async (wave: Vibe) => {
     const user = auth().currentUser;
@@ -20477,7 +21334,7 @@ type CommandCentreSection =
         unsubscribe();
       } catch {}
     };
-  }, [showInbox, selectedThread?.kind, selectedThread?.senderUid, myUid, userData]);
+  }, [getMessagePreviewText, myUid, selectedThread?.kind, selectedThread?.senderUid, showInbox, userData]);
 
   useEffect(() => {
     if (!showInbox || !selectedThread || !myUid) return;
@@ -20537,7 +21394,9 @@ type CommandCentreSection =
                     ...thread,
                     messages: liveMessages,
                     lastMessage:
-                      String((liveMessages[liveMessages.length - 1] as any)?.text || thread.lastMessage || 'Fleet ready'),
+                      getMessagePreviewText(liveMessages[liveMessages.length - 1]) ||
+                      thread.lastMessage ||
+                      'Fleet ready',
                     lastMessageTime:
                       (liveMessages[liveMessages.length - 1] as any)?.createdAt || thread.lastMessageTime || null,
                   }
@@ -20554,7 +21413,7 @@ type CommandCentreSection =
         unsubscribe();
       } catch {}
     };
-  }, [showInbox, selectedThread?.kind, selectedThread?.fleetId, myUid]);
+  }, [getMessagePreviewText, myUid, selectedThread?.fleetId, selectedThread?.kind, showInbox]);
 
   useEffect(() => {
     if (!showInbox || !selectedThread || selectedThread.kind !== 'fleet' || !selectedThread.fleetId || !myUid) {
@@ -22048,6 +22907,13 @@ type CommandCentreSection =
       Alert.alert('No media', 'Please select or capture media first.');
       return;
     }
+    if (capturedMediaGrid.length > 1 && capturedMediaGrid.some(item => assetLooksLikeVideo(item))) {
+      Alert.alert(
+        'One video per post',
+        'Grid posts now allow only images and documents. Remove the video and post it separately.',
+      );
+      return;
+    }
     const finalCaption = (waveCaption || textComposerText || '').trim();
     const sanitizedMediaEdits = sanitizeFirestoreValue(capturedMediaEdits);
     setReleasing(true);
@@ -22929,9 +23795,9 @@ type CommandCentreSection =
           </View>
         </Modal>
       )}
-      {/* Facebook-like Header */}
-      <View style={{ height: 50, backgroundColor: '#4267B2', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
-        <Text style={{ color: 'white', fontSize: 20, fontWeight: 'bold' }}>facebook</Text>
+              {/* Feed Header */}
+      <View style={{ height: 50, backgroundColor: '#0E7490', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10 }}>
+        <Text style={{ color: 'white', fontSize: 20, fontWeight: 'bold' }}>CMEE</Text>
         <View style={{ flex: 1 }} />
         <TouchableOpacity style={{ marginLeft: 10 }}>
           <Text style={{ color: 'white', fontSize: 18 }}>🔍</Text>
@@ -22973,11 +23839,11 @@ type CommandCentreSection =
                 style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
-                removeClippedSubviews={Platform.OS === 'android'}
+                removeClippedSubviews={false}
                 maxToRenderPerBatch={1}
-                windowSize={4}
+                windowSize={3}
                 initialNumToRender={1}
-                updateCellsBatchingPeriod={120}
+                updateCellsBatchingPeriod={80}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -23001,38 +23867,97 @@ type CommandCentreSection =
                 }}
                 // Ultra-aggressive instant playback - videos start playing when 50% visible
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 60, // stable activation without frequent pause/resume gaps
+                  itemVisiblePercentThreshold: 55,
+                  minimumViewTime: 200,
+                  waitForInteraction: false,
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
                   const now = Date.now();
-                  if (now - lastEndReachedTsRef.current < 1000) return;
+                  if (now - lastEndReachedTsRef.current < 1800) return;
                   lastEndReachedTsRef.current = now;
-                  if (paginationInFlightRef.current || isLoadingMore || !hasMoreItems) return;
+                  if (
+                    refreshing ||
+                    paginationInFlightRef.current ||
+                    isLoadingMore ||
+                    !hasMoreItems
+                  ) {
+                    return;
+                  }
                   try {
                     loadMoreFeedItems();
                   } catch (error) {
                     console.warn('Error in onEndReached:', error);
                   }
                 }}
-                onEndReachedThreshold={0.25}
+                onEndReachedThreshold={0.35}
                 onScrollToIndexFailed={(info) => {
-                  // Fallback when scrollToIndex fails - try to scroll to a nearby index
-                  const { index, highestMeasuredFrameIndex } = info;
-                  if (highestMeasuredFrameIndex >= 0 && feedRef.current) {
-                    // Try scrolling to the highest measured index instead
-                    feedRef.current.scrollToIndex({
-                      index: Math.min(index, highestMeasuredFrameIndex),
-                      animated: false,
-                      viewPosition: 0
-                    });
-                  }
+                  const fallbackIndex =
+                    info.highestMeasuredFrameIndex >= 0
+                      ? Math.min(info.index, info.highestMeasuredFrameIndex)
+                      : info.index;
+                  safeScrollFeedToIndex(fallbackIndex);
                 }}
                 renderItem={({ item, index }) => {
                   try {
+                    const shouldBlockVideoPlayback = !!videoErrorMap[item.id];
+                    const rawMediaItems = Array.isArray(item.mediaItems)
+                      ? item.mediaItems.filter(entry => !!entry?.uri)
+                      : Array.isArray(item.galleryItems)
+                      ? item.galleryItems.filter(entry => !!entry?.uri)
+                      : [];
+                    const nonVideoGridItems = rawMediaItems.filter(entry => !isVideoAsset(entry));
+                    const firstGridVideo = rawMediaItems.find(entry => isVideoAsset(entry)) || null;
+                    const gridSanitizedItem =
+                      rawMediaItems.length > 1 && firstGridVideo
+                        ? nonVideoGridItems.length > 1
+                          ? {
+                              ...item,
+                              mediaItems: nonVideoGridItems,
+                              galleryItems: nonVideoGridItems,
+                              gridItemCount: nonVideoGridItems.length,
+                              postType: 'gallery' as any,
+                            }
+                          : nonVideoGridItems.length === 1
+                          ? {
+                              ...item,
+                              media: nonVideoGridItems[0],
+                              mediaItems: nonVideoGridItems,
+                              galleryItems: nonVideoGridItems,
+                              gridItemCount: 1,
+                              playbackUrl: null,
+                              postType: String(nonVideoGridItems[0]?.type || '').startsWith('image/')
+                                ? ('image' as any)
+                                : ('document' as any),
+                            }
+                          : {
+                              ...item,
+                              media: firstGridVideo,
+                              mediaItems: [firstGridVideo],
+                              galleryItems: [firstGridVideo],
+                              gridItemCount: 1,
+                              playbackUrl: item.playbackUrl || firstGridVideo.uri || null,
+                              postType: 'video' as any,
+                            }
+                        : item;
+                    const safeItem =
+                      shouldBlockVideoPlayback
+                        ? {
+                            ...gridSanitizedItem,
+                            playbackUrl: null,
+                            muxStatus: 'failed' as any,
+                            media:
+                              gridSanitizedItem.media && isVideoAsset(gridSanitizedItem.media)
+                                ? null
+                                : gridSanitizedItem.media,
+                            mediaItems: Array.isArray(gridSanitizedItem.mediaItems)
+                              ? gridSanitizedItem.mediaItems.filter(entry => !isVideoAsset(entry))
+                              : gridSanitizedItem.mediaItems,
+                          }
+                        : gridSanitizedItem;
                     return (
                       <MainFeedItem
-                        item={item}
+                        item={safeItem}
                         index={index}
                         myUid={myUid}
                         profileName={profileName}
@@ -23053,7 +23978,7 @@ type CommandCentreSection =
                         echoExpansionInProgress={echoExpansionInProgress}
                         reachCounts={reachCounts}
                         isPaused={isPaused}
-                        allowPlayback={allowPlayback && !isOffline}
+                        allowPlayback={allowPlayback && !isOffline && !shouldBlockVideoPlayback}
                         showMakeWaves={showMakeWaves}
                         showAudioModal={showAudioModal}
                         capturedMedia={capturedMedia}
@@ -23090,12 +24015,16 @@ type CommandCentreSection =
                         setShowPearls={setShowPearls}
                         anchorWave={anchorWave}
                         onShareWave={onShareWave}
+                        pinnedWaveIds={pinnedWaveIds}
+                        castedWaveIds={castedWaveIds}
                         setEchoExpansionInProgress={setEchoExpansionInProgress}
                         setExpandedEchoes={setExpandedEchoes}
                         setEchoesPageSize={setEchoesPageSize}
                         videoStyleFor={videoStyleFor}
                         isVideoAsset={isVideoAsset}
                         onReplyToEcho={openReplyToPostEcho}
+                        onEchoHugPersist={handleEchoHugPersist}
+                        onHashtagPress={handleFeedHashtagPress}
                         onOpenCreatorProfile={openCreatorProfile}
                         onOpenProfilePicture={setZoomedProfilePic}
                         onOpenFleetDeck={() => setShowFleetDeck(true)}
@@ -23184,23 +24113,39 @@ type CommandCentreSection =
                     </View>
                   ) : null
                 }
+                ListFooterComponent={
+                  <>
+                    {isLoadingMore ? (
+                      <View
+                        style={{
+                          paddingVertical: 14,
+                          alignItems: 'center',
+                          backgroundColor: '#f0f2f5',
+                        }}
+                      >
+                        <ActivityIndicator size="small" color="#00C2FF" />
+                        <Text style={{ marginTop: 8, color: '#666', fontSize: 13 }}>
+                          {t('feed.loadingMoreWaves')}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {!isLoadingMore && !hasMoreItems && displayFeed.length > 0 ? (
+                      <View
+                        style={{
+                          paddingVertical: 16,
+                          alignItems: 'center',
+                          backgroundColor: '#f0f2f5',
+                        }}
+                      >
+                        <Text style={{ color: '#666', fontSize: 14, fontStyle: 'italic' }}>
+                          {t('feed.endOfOcean')} 🌊
+                        </Text>
+                      </View>
+                    ) : null}
+                  </>
+                }
             />
               </ErrorBoundary>
-            
-            {/* Loading indicator for pagination */}
-            {isLoadingMore && (
-              <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f0f2f5' }}>
-                <ActivityIndicator size="large" color="#00C2FF" />
-                <Text style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{t('feed.loadingMoreWaves')}</Text>
-              </View>
-            )}
-            
-            {/* End of feed message */}
-            {!isLoadingMore && !hasMoreItems && displayFeed.length > 0 && (
-              <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f0f2f5' }}>
-                <Text style={{ color: '#666', fontSize: 14, fontStyle: 'italic' }}>{t('feed.endOfOcean')} 🌊</Text>
-              </View>
-            )}
             </>
           )}
         </View>
@@ -24042,107 +24987,167 @@ type CommandCentreSection =
                       style={{
                         width: '100%',
                         marginTop: 14,
-                        gap: 10,
+                        gap: 12,
                       }}
                     >
                       <View
                         style={{
                           flexDirection: 'row',
-                          gap: 8,
+                          flexWrap: 'wrap',
+                          gap: 10,
                           justifyContent: 'center',
                         }}
                       >
                         <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            openMessageThread(
-                              creatorProfileUid,
-                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
-                            );
-                          }}
+                          style={[
+                            styles.creatorProfileIconButton,
+                            creatorProfileActionBusy && styles.creatorProfileIconButtonDisabled,
+                            creatorProfileActionBusy === 'message' && styles.creatorProfileIconButtonBusy,
+                          ]}
+                          disabled={!!creatorProfileActionBusy}
+                          accessibilityRole="button"
+                          accessibilityLabel="Message user"
+                          onPress={() =>
+                            void runCreatorProfileAction('message', () => {
+                              setShowCreatorProfile(false);
+                              openMessageThread(
+                                creatorProfileUid,
+                                userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                              );
+                            })
+                          }
                         >
-                          <Text style={styles.bridgeSettingButtonText}>Message</Text>
-                        </Pressable>
-                        <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            startDirectCall('audio', {
-                              uid: creatorProfileUid,
-                              name:
-                                userData[creatorProfileUid]?.name ||
-                                creatorProfileName ||
-                                'User',
-                            });
-                          }}
-                        >
-                          <Text style={styles.bridgeSettingButtonText}>Audio Call</Text>
-                        </Pressable>
-                      </View>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          gap: 8,
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            startDirectCall('video', {
-                              uid: creatorProfileUid,
-                              name:
-                                userData[creatorProfileUid]?.name ||
-                                creatorProfileName ||
-                                'User',
-                            });
-                          }}
-                        >
-                          <Text style={styles.bridgeSettingButtonText}>Video Call</Text>
+                          {creatorProfileActionBusy === 'message' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.creatorProfileIconGlyph}>✉</Text>
+                          )}
                         </Pressable>
                         <Pressable
                           style={[
-                            styles.bridgeSettingButton,
+                            styles.creatorProfileIconButton,
+                            creatorProfileActionBusy && styles.creatorProfileIconButtonDisabled,
+                            creatorProfileActionBusy === 'audio' && styles.creatorProfileIconButtonBusy,
+                          ]}
+                          disabled={!!creatorProfileActionBusy}
+                          accessibilityRole="button"
+                          accessibilityLabel="Audio call user"
+                          onPress={() =>
+                            void runCreatorProfileAction('audio', () => {
+                              setShowCreatorProfile(false);
+                              startDirectCall('audio', {
+                                uid: creatorProfileUid,
+                                name:
+                                  userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              });
+                            })
+                          }
+                        >
+                          {creatorProfileActionBusy === 'audio' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.creatorProfileIconGlyph}>☎</Text>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.creatorProfileIconButton,
+                            creatorProfileActionBusy && styles.creatorProfileIconButtonDisabled,
+                            creatorProfileActionBusy === 'video' && styles.creatorProfileIconButtonBusy,
+                          ]}
+                          disabled={!!creatorProfileActionBusy}
+                          accessibilityRole="button"
+                          accessibilityLabel="Video call user"
+                          onPress={() =>
+                            void runCreatorProfileAction('video', () => {
+                              setShowCreatorProfile(false);
+                              startDirectCall('video', {
+                                uid: creatorProfileUid,
+                                name:
+                                  userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              });
+                            })
+                          }
+                        >
+                          {creatorProfileActionBusy === 'video' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.creatorProfileIconGlyph}>🎥</Text>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.creatorProfileIconButton,
+                            creatorProfileActionBusy && styles.creatorProfileIconButtonDisabled,
+                            creatorProfileActionBusy === 'tide' && styles.creatorProfileIconButtonBusy,
                             {
-                              flex: 1,
-                              minHeight: 40,
                               backgroundColor: isInUserCrew[creatorProfileUid]
                                 ? 'rgba(13, 148, 136, 0.75)'
                                 : 'rgba(14, 116, 144, 0.78)',
                             },
                           ]}
+                          disabled={!!creatorProfileActionBusy}
+                          accessibilityRole="button"
+                          accessibilityLabel={isInUserCrew[creatorProfileUid] ? 'Leave tide' : 'Join tide'}
                           onPress={() =>
-                            handleToggleVibe(
-                              creatorProfileUid,
-                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                            void runCreatorProfileAction('tide', () =>
+                              handleToggleVibe(
+                                creatorProfileUid,
+                                userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                              ),
                             )
                           }
                         >
-                          <Text style={styles.bridgeSettingButtonText}>
-                            {isInUserCrew[creatorProfileUid] ? 'Leave Tide' : 'Join Tide'}
-                          </Text>
+                          {creatorProfileActionBusy === 'tide' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.creatorProfileIconGlyph}>
+                              {isInUserCrew[creatorProfileUid] ? '↺' : '🌊'}
+                            </Text>
+                          )}
                         </Pressable>
-                      </View>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          gap: 8,
-                          justifyContent: 'center',
-                        }}
-                      >
                         <Pressable
                           style={[
-                            styles.bridgeSettingButton,
+                            styles.creatorProfileIconButton,
+                            creatorProfileActionBusy && styles.creatorProfileIconButtonDisabled,
+                            creatorProfileActionBusy === 'link' && styles.creatorProfileIconButtonBusy,
+                          ]}
+                          disabled={!!creatorProfileActionBusy}
+                          accessibilityRole="button"
+                          accessibilityLabel="Share profile link"
+                          onPress={() =>
+                            void runCreatorProfileAction('link', async () => {
+                              await shareUserProfileLink(
+                                creatorProfileUid,
+                                userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                              );
+                            })
+                          }
+                        >
+                          {creatorProfileActionBusy === 'link' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.creatorProfileIconGlyph}>🔗</Text>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          style={[
+                            styles.creatorProfileIconButton,
+                            creatorProfileActionBusy && styles.creatorProfileIconButtonDisabled,
+                            creatorProfileActionBusy === 'block' && styles.creatorProfileIconButtonBusy,
                             {
-                              flex: 1,
-                              minHeight: 40,
                               backgroundColor: blockedUsers.has(creatorProfileUid)
                                 ? 'rgba(22, 163, 74, 0.78)'
                                 : 'rgba(141, 0, 0, 0.78)',
                             },
                           ]}
+                          disabled={!!creatorProfileActionBusy}
+                          accessibilityRole="button"
+                          accessibilityLabel={blockedUsers.has(creatorProfileUid) ? 'Unblock user' : 'Block user'}
                           onPress={() => {
                             const targetName =
                               userData[creatorProfileUid]?.name || creatorProfileName || 'this user';
@@ -24155,7 +25160,9 @@ type CommandCentreSection =
                                   {
                                     text: 'Unblock',
                                     onPress: () =>
-                                      handleUnblockUser(creatorProfileUid, targetName),
+                                      void runCreatorProfileAction('block', () =>
+                                        handleUnblockUser(creatorProfileUid, targetName),
+                                      ),
                                   },
                                 ],
                               );
@@ -24170,17 +25177,26 @@ type CommandCentreSection =
                                   text: 'Block',
                                   style: 'destructive',
                                   onPress: () =>
-                                    handleBlockUser(creatorProfileUid, targetName),
+                                    void runCreatorProfileAction('block', () =>
+                                      handleBlockUser(creatorProfileUid, targetName),
+                                    ),
                                 },
                               ],
                             );
                           }}
                         >
-                          <Text style={styles.bridgeSettingButtonText}>
-                            {blockedUsers.has(creatorProfileUid) ? 'Unblock User' : 'Block User'}
-                          </Text>
+                          {creatorProfileActionBusy === 'block' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={styles.creatorProfileIconGlyph}>
+                              {blockedUsers.has(creatorProfileUid) ? '✓' : '🚫'}
+                            </Text>
+                          )}
                         </Pressable>
                       </View>
+                      <Text style={styles.creatorProfileActionsHint}>
+                        Tap an icon to message, call, share, manage tide, or block this profile.
+                      </Text>
                     </View>
                   </View>
                 ) : null}
@@ -25407,13 +26423,14 @@ type CommandCentreSection =
                               'Unknown time'}
                           </Text>
                         </View>
-                        <Text style={{
-                          color: 'white',
-                          fontSize: 13,
-                          lineHeight: 18,
-                        }}>
-                          {getMessagePreviewText(message)}
-                        </Text>
+                        <ClickableTextWithLinks
+                          text={getMessagePreviewText(message)}
+                          style={{
+                            color: 'white',
+                            fontSize: 13,
+                            lineHeight: 18,
+                          }}
+                        />
                         {message.attachmentUrl && (
                           <View style={styles.messageAttachmentActions}>
                             <Pressable
@@ -25531,12 +26548,11 @@ type CommandCentreSection =
                             alignItems: 'center',
                           }}
                           onPress={() => {
-                            const selectedMessages = selectedThread.messages.filter((_, index) => 
-                              selectedThreadMessages.has(`msg_${index}`)
+                            const selectedMessages = selectedThread.messages.filter((msg, index) => 
+                              selectedThreadMessages.has(msg.id || `msg_${index}`)
                             );
                             const textToCopy = selectedMessages.map(msg => msg.text).join('\n\n');
-                            // Note: Clipboard.setString would be used in a real implementation
-                            Alert.alert(t('common.copied'), t('thread.copyBody'));
+                            copyTextToClipboard(textToCopy, t('thread.copy'));
                             setIsThreadSelectionMode(false);
                             setSelectedThreadMessages(new Set());
                           }}
@@ -25668,15 +26684,11 @@ type CommandCentreSection =
                             const outgoingText = quickReplyText.trim();
                             const sendResult =
                               selectedThread.kind === 'fleet'
-                                ? (await sendFleetMessage(
+                                ? await sendFleetMessage(
                                     String(selectedThread.fleetId || ''),
                                     outgoingText,
-                                  ),
-                                  {
-                                    attachmentUrl: null,
-                                    attachmentType: null,
-                                    attachmentName: null,
-                                  })
+                                    threadMessageAttachment,
+                                  )
                                 : await sendMessage(
                                     selectedThread.senderUid || '',
                                     outgoingText,
@@ -25698,6 +26710,10 @@ type CommandCentreSection =
                               attachmentType: sendResult?.attachmentType || null,
                               attachmentName: sendResult?.attachmentName || null,
                             };
+                            const outgoingPreview =
+                              getMessagePreviewText(messageData) ||
+                              outgoingText ||
+                              'Attachment';
 
                             const updatedThread = {
                               ...selectedThread,
@@ -25716,7 +26732,7 @@ type CommandCentreSection =
                                 const next = [...prev];
                                 next[idx] = {
                                   ...next[idx],
-                                  lastMessage: outgoingText,
+                                  lastMessage: outgoingPreview,
                                   lastMessageTime: { toDate: () => new Date() },
                                   messages: updatedThread.messages,
                                 };
@@ -25727,7 +26743,7 @@ type CommandCentreSection =
                                   senderUid: selectedThread.senderUid,
                                   senderName: selectedThread.senderName,
                                   senderAvatar: selectedThread.senderAvatar,
-                                  lastMessage: outgoingText,
+                                  lastMessage: outgoingPreview,
                                   lastMessageTime: { toDate: () => new Date() },
                                   unreadCount: 0,
                                   messages: updatedThread.messages,
@@ -25745,7 +26761,7 @@ type CommandCentreSection =
                                   const next = [...prev];
                                   next[idx] = {
                                     ...next[idx],
-                                    lastMessage: outgoingText,
+                                    lastMessage: outgoingPreview,
                                     lastMessageTime: { toDate: () => new Date() },
                                     messages: updatedThread.messages,
                                   };
@@ -25784,7 +26800,7 @@ type CommandCentreSection =
                         </Text>
                       </Pressable>
                     </View>
-                    {threadMessageAttachment && selectedThread.kind !== 'fleet' ? (
+                    {threadMessageAttachment ? (
                       <View style={{ marginTop: 10, padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' }}>
                         <Text style={{ color: 'white', fontSize: 12 }}>
                           📎 {threadMessageAttachment.fileName || threadMessageAttachment.uri}
@@ -25794,10 +26810,10 @@ type CommandCentreSection =
                         </Pressable>
                       </View>
                     ) : null}
-                    {selectedThread.kind !== 'fleet' ? (
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
                       <Pressable
                         style={[styles.attachActionBtn, { flex: 1 }]}
+                        disabled={isThreadSending}
                         onPress={async () => {
                           try {
                             const result = await launchImageLibrary({
@@ -25817,6 +26833,7 @@ type CommandCentreSection =
                       </Pressable>
                       <Pressable
                         style={[styles.attachActionBtn, { flex: 1 }]}
+                        disabled={isThreadSending}
                         onPress={async () => {
                           const picked = await pickAttachmentFromSDCard();
                           if (picked) setThreadMessageAttachment(picked);
@@ -25825,11 +26842,6 @@ type CommandCentreSection =
                         <Text style={styles.attachActionBtnText}>Attach SD Card</Text>
                       </Pressable>
                     </View>
-                    ) : (
-                      <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 10 }}>
-                        Fleet chat is live for text right now. Use Fleet Waves to drop media to your crew.
-                      </Text>
-                    )}
                   </View>
                 </ScrollView>
                 </>
@@ -25905,24 +26917,116 @@ type CommandCentreSection =
                     </Pressable>
                   ))}
                 </ScrollView>
+                <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                  {([
+                    { id: 'open', label: 'Open Fleet' },
+                    { id: 'private', label: 'Private Fleet' },
+                    { id: 'shadow', label: 'Shadow Fleet' },
+                  ] as Array<{ id: FleetVisibility; label: string }>).map(option => (
+                    <Pressable
+                      key={`fleet-visibility-${option.id}`}
+                      onPress={() => setFleetDeckVisibility(option.id)}
+                      style={{
+                        borderRadius: 999,
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        backgroundColor:
+                          fleetDeckVisibility === option.id
+                            ? option.id === 'shadow'
+                              ? 'rgba(15,23,42,0.92)'
+                              : 'rgba(14,165,233,0.18)'
+                            : 'rgba(255,255,255,0.08)',
+                        borderWidth: 1,
+                        borderColor:
+                          fleetDeckVisibility === option.id
+                            ? option.id === 'shadow'
+                              ? 'rgba(125,211,252,0.6)'
+                              : 'rgba(125,211,252,0.55)'
+                            : 'rgba(255,255,255,0.14)',
+                      }}
+                    >
+                      <Text style={{ color: '#FFF', fontWeight: '800' }}>{option.label}</Text>
+                    </Pressable>
+                  ))}
+                </View>
                 <Pressable
+                  disabled={fleetDeckVisibility !== 'open'}
                   onPress={() => setFleetDeckAllowBoarding(prev => !prev)}
                   style={{
                     borderRadius: 12,
                     paddingHorizontal: 12,
                     paddingVertical: 12,
-                    backgroundColor: fleetDeckAllowBoarding ? 'rgba(14,165,233,0.18)' : 'rgba(255,255,255,0.08)',
+                    backgroundColor:
+                      fleetDeckVisibility !== 'open'
+                        ? 'rgba(15,23,42,0.55)'
+                        : fleetDeckAllowBoarding
+                        ? 'rgba(14,165,233,0.18)'
+                        : 'rgba(255,255,255,0.08)',
                     borderWidth: 1,
-                    borderColor: fleetDeckAllowBoarding ? 'rgba(125,211,252,0.6)' : 'rgba(255,255,255,0.14)',
+                    borderColor:
+                      fleetDeckVisibility !== 'open'
+                        ? 'rgba(125,211,252,0.22)'
+                        : fleetDeckAllowBoarding
+                        ? 'rgba(125,211,252,0.6)'
+                        : 'rgba(255,255,255,0.14)',
                   }}
                 >
                   <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                    {fleetDeckAllowBoarding ? 'Anyone can board this Fleet' : 'This Fleet needs an invite to board'}
+                    {fleetDeckVisibility === 'shadow'
+                      ? 'Shadow Fleets always board by invite code'
+                      : fleetDeckVisibility === 'private'
+                      ? 'Private Fleets always need an invite code'
+                      : fleetDeckAllowBoarding
+                      ? 'Anyone can board this Fleet'
+                      : 'This Fleet needs an invite to board'}
                   </Text>
                   <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
-                    All Fleets stay discoverable. This only controls whether someone can board immediately.
+                    {fleetDeckVisibility === 'shadow'
+                      ? 'Shadow Fleets stay out of discovery, keep aliases on, and default to a concealed roster.'
+                      : fleetDeckVisibility === 'private'
+                      ? 'Private Fleets stay discoverable, but boarding always happens through a code.'
+                      : 'Open Fleets stay discoverable. This controls whether someone can board immediately.'}
                   </Text>
                 </Pressable>
+                <View
+                  style={{
+                    borderRadius: 12,
+                    padding: 12,
+                    backgroundColor: 'rgba(255,255,255,0.04)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '800' }}>Board with invite code</Text>
+                  <TextInput
+                    value={fleetInviteCodeInput}
+                    onChangeText={value => setFleetInviteCodeInput(value.toUpperCase())}
+                    placeholder="FLEET-XXXXXX"
+                    placeholderTextColor="rgba(255,255,255,0.45)"
+                    autoCapitalize="characters"
+                    style={{
+                      color: '#FFF',
+                      borderWidth: 1,
+                      borderColor: 'rgba(255,255,255,0.2)',
+                      borderRadius: 8,
+                      paddingHorizontal: 12,
+                      paddingVertical: 10,
+                      marginTop: 8,
+                    }}
+                  />
+                  <Pressable
+                    onPress={() => void joinFleetByInviteCode()}
+                    style={{
+                      marginTop: 10,
+                      borderRadius: 999,
+                      paddingVertical: 10,
+                      alignItems: 'center',
+                      backgroundColor: '#123A52',
+                    }}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: '800' }}>Board by code</Text>
+                  </Pressable>
+                </View>
                 <Pressable
                   onPress={() => void createFleet()}
                   disabled={fleetDeckLoading}
@@ -25972,7 +27076,7 @@ type CommandCentreSection =
                           {fleet.name}
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
-                          {fleet.crewCount} crew • {fleet.role.replace(/_/g, ' ')} • {fleet.allowBoarding ? 'boarding open' : 'invite only'}
+                          {fleet.crewCount} crew • {fleet.role.replace(/_/g, ' ')} • {getFleetVisibilityLabel(fleet.visibility)} • {getFleetBoardingLabel(fleet)}
                         </Text>
                       </View>
                       <Text style={{ color: 'rgba(255,255,255,0.44)', fontSize: 18, fontWeight: '900' }}>›</Text>
@@ -26012,11 +27116,11 @@ type CommandCentreSection =
                           {fleet.name}
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 4 }}>
-                          Captained by {fleet.captainName} • {fleet.crewCount} crew • {fleet.allowBoarding ? 'board now' : 'invite only'}
+                          Captained by {fleet.captainName} • {fleet.crewCount} crew • {getFleetVisibilityLabel(fleet.visibility)} • {getFleetBoardingLabel(fleet)}
                         </Text>
                       </View>
                       <Text style={{ color: '#8DD8FF', fontSize: 12, fontWeight: '900' }}>
-                        {fleet.allowBoarding ? 'BOARD' : 'INVITE'}
+                        {fleet.visibility === 'shadow' ? 'CODE' : fleet.allowBoarding ? 'BOARD' : 'INVITE'}
                       </Text>
                     </View>
                     {!!fleet.description && (
@@ -26081,7 +27185,7 @@ type CommandCentreSection =
                     </Text>
                     <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 2 }}>
                       {selectedFleetMeta
-                        ? `${selectedFleetMeta.crewCount} crew • ${selectedFleetMeta.allowBoarding ? 'boarding open' : 'invite only'} • code ${selectedFleetMeta.inviteCode}`
+                        ? `${selectedFleetMeta.crewCount} crew • ${getFleetVisibilityLabel(selectedFleetMeta.visibility)} • ${getFleetBoardingLabel(selectedFleetMeta)} • code ${selectedFleetMeta.inviteCode}`
                         : 'Fleet posts'}
                     </Text>
                   </View>
@@ -26142,7 +27246,9 @@ type CommandCentreSection =
                             name: selectedFleetMeta.name,
                             description: selectedFleetMeta.description,
                             moodEmoji: selectedFleetMeta.moodEmoji,
+                            visibility: selectedFleetMeta.visibility,
                             allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                            memberListVisibility: selectedFleetMeta.memberListVisibility,
                           }),
                           name: value,
                         },
@@ -26163,7 +27269,9 @@ type CommandCentreSection =
                             name: selectedFleetMeta.name,
                             description: selectedFleetMeta.description,
                             moodEmoji: selectedFleetMeta.moodEmoji,
+                            visibility: selectedFleetMeta.visibility,
                             allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                            memberListVisibility: selectedFleetMeta.memberListVisibility,
                           }),
                           description: value,
                         },
@@ -26187,7 +27295,9 @@ type CommandCentreSection =
                                 name: selectedFleetMeta.name,
                                 description: selectedFleetMeta.description,
                                 moodEmoji: selectedFleetMeta.moodEmoji,
+                                visibility: selectedFleetMeta.visibility,
                                 allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                                memberListVisibility: selectedFleetMeta.memberListVisibility,
                               }),
                               moodEmoji: item.emoji,
                             },
@@ -26214,6 +27324,62 @@ type CommandCentreSection =
                       </Pressable>
                     ))}
                   </ScrollView>
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                    {([
+                      { id: 'open', label: 'Open' },
+                      { id: 'private', label: 'Private' },
+                      { id: 'shadow', label: 'Shadow' },
+                    ] as Array<{ id: FleetVisibility; label: string }>).map(option => (
+                      <Pressable
+                        key={`manage-visibility-${selectedFleetMeta.id}-${option.id}`}
+                        onPress={() =>
+                          setFleetManageDrafts(prev => ({
+                            ...prev,
+                            [selectedFleetMeta.id]: {
+                              ...(prev[selectedFleetMeta.id] || {
+                                name: selectedFleetMeta.name,
+                                description: selectedFleetMeta.description,
+                                moodEmoji: selectedFleetMeta.moodEmoji,
+                                visibility: selectedFleetMeta.visibility,
+                                allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                                memberListVisibility: selectedFleetMeta.memberListVisibility,
+                              }),
+                              visibility: option.id,
+                              allowBoarding:
+                                option.id === 'open'
+                                  ? prev[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding
+                                  : false,
+                              memberListVisibility:
+                                option.id === 'shadow'
+                                  ? prev[selectedFleetMeta.id]?.memberListVisibility || 'leaders_only'
+                                  : prev[selectedFleetMeta.id]?.memberListVisibility === 'count_only' ||
+                                    prev[selectedFleetMeta.id]?.memberListVisibility === 'leaders_only'
+                                  ? prev[selectedFleetMeta.id]!.memberListVisibility
+                                  : 'full',
+                            },
+                          }))
+                        }
+                        style={{
+                          borderRadius: 999,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                          backgroundColor:
+                            (fleetManageDrafts[selectedFleetMeta.id]?.visibility || selectedFleetMeta.visibility) === option.id
+                              ? option.id === 'shadow'
+                                ? 'rgba(15,23,42,0.92)'
+                                : 'rgba(14,165,233,0.18)'
+                              : 'rgba(255,255,255,0.08)',
+                          borderWidth: 1,
+                          borderColor:
+                            (fleetManageDrafts[selectedFleetMeta.id]?.visibility || selectedFleetMeta.visibility) === option.id
+                              ? 'rgba(125,211,252,0.6)'
+                              : 'rgba(255,255,255,0.14)',
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800' }}>{option.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
                   <Pressable
                     onPress={() =>
                       setFleetManageDrafts(prev => ({
@@ -26223,7 +27389,9 @@ type CommandCentreSection =
                             name: selectedFleetMeta.name,
                             description: selectedFleetMeta.description,
                             moodEmoji: selectedFleetMeta.moodEmoji,
+                            visibility: selectedFleetMeta.visibility,
                             allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                            memberListVisibility: selectedFleetMeta.memberListVisibility,
                           }),
                           allowBoarding: !(prev[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding),
                         },
@@ -26235,22 +27403,75 @@ type CommandCentreSection =
                       paddingHorizontal: 12,
                       paddingVertical: 12,
                       backgroundColor:
+                        (fleetManageDrafts[selectedFleetMeta.id]?.visibility || selectedFleetMeta.visibility) !== 'open'
+                          ? 'rgba(15,23,42,0.55)'
+                          :
                         (fleetManageDrafts[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding)
                           ? 'rgba(14,165,233,0.18)'
                           : 'rgba(255,255,255,0.08)',
                       borderWidth: 1,
                       borderColor:
+                        (fleetManageDrafts[selectedFleetMeta.id]?.visibility || selectedFleetMeta.visibility) !== 'open'
+                          ? 'rgba(125,211,252,0.22)'
+                          :
                         (fleetManageDrafts[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding)
                           ? 'rgba(125,211,252,0.6)'
                           : 'rgba(255,255,255,0.12)',
                     }}
                   >
                     <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                      {(fleetManageDrafts[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding)
+                      {(fleetManageDrafts[selectedFleetMeta.id]?.visibility || selectedFleetMeta.visibility) === 'shadow'
+                        ? 'Shadow Fleets always board by invite code'
+                        : (fleetManageDrafts[selectedFleetMeta.id]?.visibility || selectedFleetMeta.visibility) === 'private'
+                        ? 'Private Fleets always need an invite code'
+                        : (fleetManageDrafts[selectedFleetMeta.id]?.allowBoarding ?? selectedFleetMeta.allowBoarding)
                         ? 'Anyone can board this Fleet'
                         : 'This Fleet needs an invite to board'}
                     </Text>
                   </Pressable>
+                  <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+                    {([
+                      { id: 'full', label: 'Full roster' },
+                      { id: 'leaders_only', label: 'Leaders only' },
+                      { id: 'count_only', label: 'Count only' },
+                    ] as Array<{ id: FleetMemberListVisibility; label: string }>).map(option => (
+                      <Pressable
+                        key={`member-visibility-${selectedFleetMeta.id}-${option.id}`}
+                        onPress={() =>
+                          setFleetManageDrafts(prev => ({
+                            ...prev,
+                            [selectedFleetMeta.id]: {
+                              ...(prev[selectedFleetMeta.id] || {
+                                name: selectedFleetMeta.name,
+                                description: selectedFleetMeta.description,
+                                moodEmoji: selectedFleetMeta.moodEmoji,
+                                visibility: selectedFleetMeta.visibility,
+                                allowBoarding: selectedFleetMeta.allowBoarding !== false,
+                                memberListVisibility: selectedFleetMeta.memberListVisibility,
+                              }),
+                              memberListVisibility: option.id,
+                            },
+                          }))
+                        }
+                        style={{
+                          borderRadius: 999,
+                          paddingHorizontal: 12,
+                          paddingVertical: 9,
+                          backgroundColor:
+                            (fleetManageDrafts[selectedFleetMeta.id]?.memberListVisibility || selectedFleetMeta.memberListVisibility) === option.id
+                              ? 'rgba(15,118,110,0.32)'
+                              : 'rgba(255,255,255,0.08)',
+                          borderWidth: 1,
+                          borderColor:
+                            (fleetManageDrafts[selectedFleetMeta.id]?.memberListVisibility || selectedFleetMeta.memberListVisibility) === option.id
+                              ? 'rgba(94,234,212,0.5)'
+                              : 'rgba(255,255,255,0.14)',
+                        }}
+                      >
+                        <Text style={{ color: '#FFF', fontWeight: '800', fontSize: 12 }}>{option.label}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                     <Pressable
                       style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#7C2D12' }}
@@ -26293,44 +27514,89 @@ type CommandCentreSection =
                   ) : (fleetMembersByFleetId[selectedFleetMeta.id] || []).length === 0 ? (
                     <Text style={{ color: 'rgba(255,255,255,0.65)' }}>No crew members found yet.</Text>
                   ) : (
-                    (fleetMembersByFleetId[selectedFleetMeta.id] || []).map(member => (
-                      <Pressable
-                        key={`fleet-member-${selectedFleetMeta.id}-${member.uid}`}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 10,
-                          paddingVertical: 8,
-                          borderTopWidth: 1,
-                          borderTopColor: 'rgba(255,255,255,0.08)',
-                        }}
-                        onPress={() => openFleetMemberActions(selectedFleetMeta, member)}
-                        disabled={fleetActionLoadingId === selectedFleetMeta.id}
-                      >
-                        {member.photo ? (
-                          <Image source={{ uri: member.photo }} style={{ width: 34, height: 34, borderRadius: 17 }} />
-                        ) : (
-                          <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}>
-                            <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                              {String(member.name || 'C').replace(/^[@/]+/, '').charAt(0).toUpperCase() || 'C'}
+                    (() => {
+                      const allMembers = fleetMembersByFleetId[selectedFleetMeta.id] || [];
+                      const memberVisibility =
+                        fleetManageDrafts[selectedFleetMeta.id]?.memberListVisibility ||
+                        selectedFleetMeta.memberListVisibility ||
+                        'full';
+                      const visibleMembers =
+                        memberVisibility === 'count_only'
+                          ? []
+                          : memberVisibility === 'leaders_only'
+                          ? allMembers.filter(
+                              member =>
+                                member.role !== 'crew' ||
+                                member.uid === myUid ||
+                                selectedFleetMeta.captainUid === myUid,
+                            )
+                          : allMembers;
+                      const concealedCount = Math.max(0, allMembers.length - visibleMembers.length);
+
+                      return (
+                        <>
+                          {memberVisibility === 'count_only' ? (
+                            <Text style={{ color: 'rgba(255,255,255,0.72)', marginBottom: 8 }}>
+                              This roster is set to count-only. {allMembers.length} crew members are aboard.
                             </Text>
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
-                            {formatHandle(member.name)}
-                          </Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }}>
-                            {member.role.replace(/_/g, ' ')}
-                          </Text>
-                        </View>
-                        {selectedFleetMeta.captainUid === myUid && member.uid !== selectedFleetMeta.captainUid ? (
-                          <Text style={{ color: '#FCA5A5', fontSize: 11, fontWeight: '800' }}>
-                            Manage
-                          </Text>
-                        ) : null}
-                      </Pressable>
-                    ))
+                          ) : null}
+                          {visibleMembers.map(member => {
+                            const shouldAlias =
+                              selectedFleetMeta.visibility === 'shadow' &&
+                              member.role === 'crew' &&
+                              member.uid !== myUid &&
+                              selectedFleetMeta.captainUid !== myUid &&
+                              memberVisibility !== 'full';
+                            const displayName = shouldAlias
+                              ? `/Shade-${String(member.uid || '').slice(-4).toUpperCase() || 'CREW'}`
+                              : formatHandle(member.name);
+                            return (
+                              <Pressable
+                                key={`fleet-member-${selectedFleetMeta.id}-${member.uid}`}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  gap: 10,
+                                  paddingVertical: 8,
+                                  borderTopWidth: 1,
+                                  borderTopColor: 'rgba(255,255,255,0.08)',
+                                }}
+                                onPress={() => openFleetMemberActions(selectedFleetMeta, member)}
+                                disabled={fleetActionLoadingId === selectedFleetMeta.id}
+                              >
+                                {member.photo && !shouldAlias ? (
+                                  <Image source={{ uri: member.photo }} style={{ width: 34, height: 34, borderRadius: 17 }} />
+                                ) : (
+                                  <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}>
+                                    <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                                      {String(displayName || 'C').replace(/^[@/]+/, '').charAt(0).toUpperCase() || 'C'}
+                                    </Text>
+                                  </View>
+                                )}
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '700' }}>
+                                    {displayName}
+                                  </Text>
+                                  <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 2 }}>
+                                    {shouldAlias ? 'concealed crew' : member.role.replace(/_/g, ' ')}
+                                  </Text>
+                                </View>
+                                {selectedFleetMeta.captainUid === myUid && member.uid !== selectedFleetMeta.captainUid ? (
+                                  <Text style={{ color: '#FCA5A5', fontSize: 11, fontWeight: '800' }}>
+                                    Manage
+                                  </Text>
+                                ) : null}
+                              </Pressable>
+                            );
+                          })}
+                          {concealedCount > 0 ? (
+                            <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 8 }}>
+                              {concealedCount} crew member{concealedCount === 1 ? '' : 's'} concealed by roster settings.
+                            </Text>
+                          ) : null}
+                        </>
+                      );
+                    })()
                   )}
                 </View>
               ) : null}
@@ -26406,9 +27672,10 @@ type CommandCentreSection =
                         <Text style={styles.logbookActionText}>
                           {fleetWaveAuthor} dropped a Fleet Wave
                         </Text>
-                        <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20, marginTop: 4 }}>
-                          {wave.captionText || 'No text attached to this Fleet Wave yet.'}
-                        </Text>
+                        <ClickableTextWithLinks
+                          text={wave.captionText || 'No text attached to this Fleet Wave yet.'}
+                          style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20, marginTop: 4 }}
+                        />
                       </View>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -26482,7 +27749,7 @@ type CommandCentreSection =
                   <Text style={styles.logbookTitle}>{fleetQuickActionsTarget?.name || 'Fleet'}</Text>
                   <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 12, marginTop: 2 }}>
                     {fleetQuickActionsTarget
-                      ? `${fleetQuickActionsTarget.crewCount} crew • Code ${fleetQuickActionsTarget.inviteCode}`
+                      ? `${fleetQuickActionsTarget.crewCount} crew • ${getFleetVisibilityLabel(fleetQuickActionsTarget.visibility)} • Code ${fleetQuickActionsTarget.inviteCode}`
                       : ''}
                   </Text>
                 </View>
@@ -26544,7 +27811,13 @@ type CommandCentreSection =
                         }}
                       >
                         <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                          {fleetQuickActionsTarget.allowBoarding ? 'Require invite to board' : 'Allow direct boarding'}
+                          {fleetQuickActionsTarget.visibility === 'shadow'
+                            ? 'Shadow Fleet uses invite code boarding'
+                            : fleetQuickActionsTarget.visibility === 'private'
+                            ? 'Private Fleet uses invite code boarding'
+                            : fleetQuickActionsTarget.allowBoarding
+                            ? 'Require invite to board'
+                            : 'Allow direct boarding'}
                         </Text>
                       </Pressable>
                       <Pressable
@@ -26619,7 +27892,7 @@ type CommandCentreSection =
         </View>
       </Modal>
                     
-      {/* MY VIBES LIST */}
+      {/* MY WAVES LIST */}
       <Modal
         visible={showMyWaves}
         transparent
@@ -26645,18 +27918,26 @@ type CommandCentreSection =
             <View style={styles.logbookPage}>
               <Text style={styles.logbookTitle}>{t('profile.myVibes')}</Text>
               <ScrollView>
-                {vibesFeed.filter(w => w.ownerUid === myUid).length === 0 ? (
+                {mySpaceWaves.length === 0 ? (
                   <Text style={styles.hint}>
                     {t('myVibes.empty')}
                   </Text>
                 ) : (
-                  vibesFeed.filter(w => w.ownerUid === myUid).map((w, idx) => {
+                  mySpaceWaves.map((w, idx) => {
+                    const isPinnedWave = pinnedWaveIds.has(w.id);
+                    const isRecastedWave = castedWaveIds.has(w.id);
                     return (
                     <View
                       key={w.id}
                       style={{
                         flexDirection: 'row',
                         paddingVertical: 8,
+                        paddingHorizontal: 8,
+                        marginBottom: 8,
+                        borderRadius: 12,
+                        backgroundColor: isPinnedWave ? 'rgba(56,189,248,0.12)' : 'transparent',
+                        borderWidth: isPinnedWave ? 1 : 0,
+                        borderColor: isPinnedWave ? 'rgba(125,211,252,0.6)' : 'transparent',
                         borderBottomWidth: StyleSheet.hairlineWidth,
                         borderBottomColor: 'rgba(255,255,255,0.2)',
                       }}
@@ -26679,6 +27960,22 @@ type CommandCentreSection =
                         />
                       </Pressable>
                       <View style={{ flex: 1, marginLeft: 12 }}>
+                        {isPinnedWave ? (
+                          <View
+                            style={{
+                              alignSelf: 'flex-start',
+                              borderRadius: 999,
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              backgroundColor: 'rgba(56,189,248,0.18)',
+                              marginBottom: 6,
+                            }}
+                          >
+                            <Text style={{ color: '#BAE6FD', fontSize: 11, fontWeight: '900' }}>
+                              ⚓ Pinned To My Space
+                            </Text>
+                          </View>
+                        ) : null}
                         <Pressable
                           onPress={() =>
                             void focusWaveInFeed(w.id, {
@@ -26726,8 +28023,8 @@ type CommandCentreSection =
                         <View
                           style={{
                             flexDirection: 'row',
-                            flexWrap: 'wrap',
-                            gap: 8,
+                            alignItems: 'center',
+                            gap: 6,
                             marginTop: 6,
                           }}
                         >
@@ -26739,9 +28036,10 @@ type CommandCentreSection =
                               styles.closeBtn,
                               {
                                 backgroundColor: 'rgba(255,0,0,0.5)',
-                                paddingVertical: 4,
-                                paddingHorizontal: 8,
-                                marginTop: 4,
+                                minHeight: 0,
+                                paddingVertical: 3,
+                                paddingHorizontal: 6,
+                                marginTop: 2,
                                 opacity: deletingWaveIds[w.id] ? 0.65 : 1,
                               },
                             ]}
@@ -26749,12 +28047,12 @@ type CommandCentreSection =
                             {deletingWaveIds[w.id] ? (
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                                 <ActivityIndicator color="white" size="small" />
-                                <Text style={[styles.closeText, { fontSize: 12 }]}>
+                                <Text style={[styles.closeText, { fontSize: 10 }]}>
                                   {t('myVibes.deleting')}
                                 </Text>
                               </View>
                             ) : (
-                              <Text style={[styles.closeText, { fontSize: 12 }]}>
+                              <Text style={[styles.closeText, { fontSize: 10 }]}>
                                 {t('myVibes.delete')}
                               </Text>
                             )}
@@ -26764,13 +28062,15 @@ type CommandCentreSection =
                             style={[
                               styles.closeBtn,
                               {
-                                paddingVertical: 4,
-                                paddingHorizontal: 8,
-                                marginTop: 4,
+                                backgroundColor: isRecastedWave ? 'rgba(37,99,235,0.78)' : 'rgba(37,99,235,0.56)',
+                                minHeight: 0,
+                                paddingVertical: 3,
+                                paddingHorizontal: 6,
+                                marginTop: 2,
                               },
                             ]}
                           >
-                            <Text style={[styles.closeText, { fontSize: 12 }]}>
+                            <Text style={[styles.closeText, { fontSize: 10 }]}>
                               {t('myVibes.share')}
                             </Text>
                           </Pressable>
@@ -26779,14 +28079,16 @@ type CommandCentreSection =
                             style={[
                               styles.closeBtn,
                               {
-                                paddingVertical: 4,
-                                paddingHorizontal: 8,
-                                marginTop: 4,
+                                backgroundColor: isPinnedWave ? 'rgba(217,119,6,0.88)' : 'rgba(217,119,6,0.62)',
+                                minHeight: 0,
+                                paddingVertical: 3,
+                                paddingHorizontal: 6,
+                                marginTop: 2,
                               },
                             ]}
                           >
-                            <Text style={[styles.closeText, { fontSize: 12 }]}>
-                              {t('myVibes.anchor')}
+                            <Text style={[styles.closeText, { fontSize: 10 }]}>
+                              {isPinnedWave ? 'Anchored' : t('myVibes.anchor')}
                             </Text>
                           </Pressable>
                         </View>
@@ -28329,6 +29631,9 @@ type CommandCentreSection =
                     <Text style={styles.sectionSubtle}>
                       🦈 Ocean Legend from 7000 points
                     </Text>
+                    <Text style={styles.sectionSubtle}>
+                      🦋 Blue Butterfly from 10000 points
+                    </Text>
                     {!!profileMinuteFameTitle && (
                       <Text style={[styles.sectionSubtle, { marginTop: 8, color: '#FFFFFF' }]}>
                         Your current badge: {profileMinuteFameBadge}
@@ -29864,7 +31169,10 @@ type CommandCentreSection =
         visible={showDeepSearch}
         transparent
         animationType="none"
-        onRequestClose={() => setShowDeepSearch(false)}
+        onRequestClose={() => {
+          setShowDeepSearch(false);
+          setHuntInitialQuery('');
+        }}
       >
         <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}> 
           <View style={[styles.modalContent, { width: '100%', maxHeight: SCREEN_HEIGHT * 0.75 }]}> 
@@ -29872,15 +31180,23 @@ type CommandCentreSection =
               <VibeHuntUserSearch
                 myUid={myUid}
                 blockedUserIds={Array.from(blockedUsers)}
+                initialQuery={huntInitialQuery}
                 onProfilePhotoSelect={setProfilePhoto}
                 onOpenUserProfile={(targetUser) => {
                   setShowDeepSearch(false);
+                  setHuntInitialQuery('');
                   openCreatorProfile(targetUser.uid, targetUser.name);
                 }}
                 onOpenAvatarPreview={setZoomedProfilePic}
               /> 
             </React.Suspense> 
-            <Pressable style={styles.closeBtn} onPress={() => setShowDeepSearch(false)}> 
+            <Pressable
+              style={styles.closeBtn}
+              onPress={() => {
+                setShowDeepSearch(false);
+                setHuntInitialQuery('');
+              }}
+            > 
               <Text style={styles.closeText}>{t('common.close')}</Text> 
             </Pressable> 
           </View> 
@@ -30458,6 +31774,145 @@ type CommandCentreSection =
             <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal
+        visible={showShareDestinationModal}
+        transparent
+        animationType="fade"
+        onRequestClose={clearIncomingShareFlow}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+          <View style={styles.logbookPage}>
+            <Text style={styles.logbookTitle}>Share To CMEE</Text>
+            <Text style={{ color: 'rgba(255,255,255,0.74)', marginBottom: 16 }}>
+              Choose where this shared item should go.
+            </Text>
+            {!!incomingSharePayload?.text && (
+              <ClickableTextWithLinks
+                text={incomingSharePayload.text}
+                style={{ color: '#FFF', fontSize: 13, lineHeight: 19, marginBottom: 14 }}
+                numberOfLines={4}
+              />
+            )}
+            {incomingSharePayload?.files?.length ? (
+              <Text style={{ color: 'rgba(255,255,255,0.7)', marginBottom: 16 }}>
+                {incomingSharePayload.files.length} file
+                {incomingSharePayload.files.length === 1 ? '' : 's'} ready to share
+              </Text>
+            ) : null}
+            <Pressable
+              style={[styles.logbookAction, { marginBottom: 10 }]}
+              onPress={() => routeIncomingShareToFeed(incomingSharePayload)}
+            >
+              <Text style={styles.logbookActionText}>Share to Feed</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.logbookAction, { marginBottom: 10 }]}
+              onPress={() => {
+                setShowShareDestinationModal(false);
+                setShowShareDirectPicker(true);
+              }}
+            >
+              <Text style={styles.logbookActionText}>Send to Individual</Text>
+            </Pressable>
+            <Pressable
+              style={styles.logbookAction}
+              onPress={() => {
+                setShowShareDestinationModal(false);
+                setShowShareFleetPicker(true);
+              }}
+            >
+              <Text style={styles.logbookActionText}>Share to Fleet Deck</Text>
+            </Pressable>
+          </View>
+          <Pressable style={styles.dismissBtn} onPress={clearIncomingShareFlow}>
+            <Text style={styles.dismissText}>{t('common.cancel')}</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showShareDirectPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={clearIncomingShareFlow}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+          <View style={styles.logbookPage}>
+            <Text style={styles.logbookTitle}>Choose Person</Text>
+            <ScrollView style={{ maxHeight: 360 }}>
+              {messageThreads.filter(thread => !!thread.senderUid).length === 0 ? (
+                <Text style={{ color: 'rgba(255,255,255,0.72)' }}>
+                  Start a direct chat first, then shared items can be sent into that thread.
+                </Text>
+              ) : (
+                messageThreads
+                  .filter(thread => !!thread.senderUid)
+                  .slice(0, 12)
+                  .map(thread => (
+                    <Pressable
+                      key={`share-direct-${thread.senderUid}`}
+                      style={[styles.logbookAction, { marginBottom: 10 }]}
+                      onPress={() => routeIncomingShareToDirectThread(thread, incomingSharePayload)}
+                    >
+                      <Text style={styles.logbookActionText}>{thread.senderName || thread.senderUid}</Text>
+                    </Pressable>
+                  ))
+              )}
+            </ScrollView>
+          </View>
+          <Pressable
+            style={styles.dismissBtn}
+            onPress={() => {
+              setShowShareDirectPicker(false);
+              setShowShareDestinationModal(true);
+            }}
+          >
+            <Text style={styles.dismissText}>{t('common.back')}</Text>
+          </Pressable>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showShareFleetPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={clearIncomingShareFlow}
+      >
+        <View style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}>
+          <View style={styles.logbookPage}>
+            <Text style={styles.logbookTitle}>Choose Fleet</Text>
+            <ScrollView style={{ maxHeight: 360 }}>
+              {myFleets.length === 0 ? (
+                <Text style={{ color: 'rgba(255,255,255,0.72)' }}>
+                  Join or create a Fleet first to share here.
+                </Text>
+              ) : (
+                myFleets.map(fleet => (
+                  <Pressable
+                    key={`share-fleet-${fleet.id}`}
+                    style={[styles.logbookAction, { marginBottom: 10 }]}
+                    onPress={() => routeIncomingShareToFleet(fleet, incomingSharePayload)}
+                  >
+                    <Text style={styles.logbookActionText}>
+                      {fleet.moodEmoji || '🦈'} {fleet.name}
+                    </Text>
+                  </Pressable>
+                ))
+              )}
+            </ScrollView>
+          </View>
+          <Pressable
+            style={styles.dismissBtn}
+            onPress={() => {
+              setShowShareFleetPicker(false);
+              setShowShareDestinationModal(true);
+            }}
+          >
+            <Text style={styles.dismissText}>{t('common.back')}</Text>
+          </Pressable>
+        </View>
       </Modal>
                     
       {/* SEND MESSAGE */}
@@ -39627,7 +41082,7 @@ const App: React.FC = () => {
   const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
                     
   // Navigation ref for deep linking
-  const navigationRef = createNavigationContainerRef();
+  const navigationRef = useRef(createNavigationContainerRef<any>()).current;
                     
                     
   // Defensive: wrap all native module init in try/catch and show fallback UI if any fail
@@ -39809,23 +41264,59 @@ const App: React.FC = () => {
       if (!url) return;
       
       try {
-        // Parse the URL for wave ID
         const parsedUrl = new URL(url);
-        if ((parsedUrl.protocol === 'https:' && parsedUrl.hostname === 'aqualink.app' && parsedUrl.pathname.startsWith('/wave/')) ||
-            (parsedUrl.protocol === 'aqualink:' && parsedUrl.pathname.startsWith('/wave/'))) {
-          const waveId = parsedUrl.pathname.split('/wave/')[1];
+        const normalizedPath =
+          parsedUrl.protocol === 'aqualink:'
+            ? `${parsedUrl.hostname ? `/${parsedUrl.hostname}` : ''}${parsedUrl.pathname || ''}`
+            : parsedUrl.pathname || '';
+        if (
+          ((parsedUrl.protocol === 'https:' && parsedUrl.hostname === 'aqualink.app') ||
+            parsedUrl.protocol === 'aqualink:') &&
+          normalizedPath.startsWith('/wave/')
+        ) {
+          const waveId = decodeURIComponent(normalizedPath.split('/wave/')[1] || '');
           if (waveId && navigationRef.isReady()) {
-            // Fetch the wave data from Firestore
             try {
               const firestoreMod = require('@react-native-firebase/firestore').default;
               const waveDoc = await firestoreMod().collection('waves').doc(waveId).get();
               if (waveDoc.exists) {
                 const waveData = { id: waveDoc.id, ...waveDoc.data() };
-                // Navigate to the PostDetail screen with the full wave data
                 navigationRef.navigate('PostDetail', { post: waveData });
               }
             } catch (error) {
               console.log('Error fetching wave data:', error);
+            }
+          }
+          return;
+        }
+        if (
+          ((parsedUrl.protocol === 'https:' && parsedUrl.hostname === 'aqualink.app') ||
+            parsedUrl.protocol === 'aqualink:') &&
+          normalizedPath.startsWith('/profile/')
+        ) {
+          const profileUid = decodeURIComponent(normalizedPath.split('/profile/')[1] || '');
+          if (profileUid) {
+            try {
+              await AsyncStorage.setItem(
+                PENDING_PROFILE_DEEP_LINK_STORAGE_KEY,
+                JSON.stringify({
+                  uid: profileUid,
+                  receivedAt: Date.now(),
+                }),
+              );
+            } catch (storageError) {
+              console.log('Error storing pending profile deep link:', storageError);
+            }
+
+            if (user && navigationRef.isReady()) {
+              try {
+                navigationRef.navigate('AppHome', {
+                  pendingProfileUid: profileUid,
+                  pendingProfileAt: Date.now(),
+                });
+              } catch (navigationError) {
+                console.log('Error navigating to profile deep link:', navigationError);
+              }
             }
           }
         }
@@ -39845,7 +41336,7 @@ const App: React.FC = () => {
     return () => {
       subscription?.remove?.();
     };
-  }, []);
+  }, [navigationRef, user]);
                     
   // Defensive: check for native module errors and show fallback UI
   if (nativeInitError) {

@@ -20,3 +20,44 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Do not fail the whole build on lint in library modules (common RN release blocker)
+subprojects { sub ->
+    sub.plugins.withId("com.android.library") {
+        sub.android {
+            lint {
+                abortOnError false
+                checkReleaseBuilds false
+            }
+        }
+    }
+}
+
+// After `clean`, native prefab outputs can be missing while CMake configure runs (Gradle ordering gap).
+gradle.projectsEvaluated {
+    def worklets = rootProject.findProject(":react-native-worklets")
+    def reanimated = rootProject.findProject(":react-native-reanimated")
+    def visionCamera = rootProject.findProject(":react-native-vision-camera")
+    def appProject = rootProject.findProject(":app")
+
+    if (worklets != null && reanimated != null) {
+        def workletsPrefab = worklets.tasks.findByName("prefabReleasePackage")
+        if (workletsPrefab != null) {
+            reanimated.tasks.matching { it.name.startsWith("configureCMakeRelWithDebInfo") }.configureEach { t ->
+                t.dependsOn(workletsPrefab)
+            }
+        }
+    }
+
+    if (appProject != null) {
+        def prefabTasks = [worklets, reanimated, visionCamera]
+            .findAll { it != null }
+            .collect { it.tasks.findByName("prefabReleasePackage") }
+            .findAll { it != null }
+        if (!prefabTasks.isEmpty()) {
+            appProject.tasks.matching { it.name.startsWith("configureCMakeRelWithDebInfo") }.configureEach { t ->
+                prefabTasks.each { pkg -> t.dependsOn(pkg) }
+            }
+        }
+    }
+}

@@ -34,12 +34,12 @@ interface PosterActionBarProps {
   pearlsCount: number;
   isAnchored: boolean;
   isCasted: boolean;
-  onAdd: () => void;
-  onRemove: () => void;
-  onEcho: (waveId: string) => void;
-  onPearl: () => void;
-  onAnchor: () => void;
-  onCast: () => void;
+  onAdd: () => void | Promise<void>;
+  onRemove: () => void | Promise<void>;
+  onEcho: (waveId: string) => void | Promise<void>;
+  onPearl: () => void | Promise<void>;
+  onAnchor: () => void | Promise<void>;
+  onCast: () => void | Promise<void>;
   creatorUserId: string;
   splashSyncStatus?: 'idle' | 'saving' | 'error';
   onRetrySplash?: () => void;
@@ -68,8 +68,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 }) => {
   const [hasHugged, setHasHugged] = useState(false); // Initialize to false for instant response
   const [hasEchoed, setHasEchoed] = useState(false); // Initialize to false for instant response
+  const [hasAnchored, setHasAnchored] = useState(isAnchored);
+  const [hasCasted, setHasCasted] = useState(isCasted);
   const [localHugsCount, setLocalHugsCount] = useState(Math.max(0, splashesCount));
   const [localEchoesCount, setLocalEchoesCount] = useState(Math.max(0, echoesCount));
+  const [busyAction, setBusyAction] = useState<string | null>(null);
 
   // State for huggers dropdown
   const [showHuggersDropdown, setShowHuggersDropdown] = useState(false);
@@ -128,48 +131,74 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     setLocalEchoesCount(Math.max(0, echoesCount));
   }, [echoesCount]);
 
-  const handleHug = () => {
-    // Immediate visual feedback - no blocking
+  useEffect(() => {
+    setHasAnchored(isAnchored);
+  }, [isAnchored]);
+
+  useEffect(() => {
+    setHasCasted(isCasted);
+  }, [isCasted]);
+
+  const finishBusyAction = (actionKey: string) => {
+    setTimeout(() => {
+      setBusyAction(current => (current === actionKey ? null : current));
+    }, 220);
+  };
+
+  const handleHug = async () => {
+    if (busyAction) return;
+    setBusyAction('hug');
+
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
     setLocalHugsCount(prev => Math.max(0, prev + (newHasHugged ? 1 : -1)));
 
-    // Handle action based on connectivity - fire and forget
-    if (isOnline) {
-      // Call the parent callback for immediate sync
-      if (newHasHugged) {
-        // We just hugged, so this was an add action
-        onAdd();
+    try {
+      if (isOnline) {
+        if (newHasHugged) {
+          await Promise.resolve(onAdd());
+        } else {
+          await Promise.resolve(onRemove());
+        }
       } else {
-        // We just unhugged, so this was a remove action
-        onRemove();
+        await Promise.resolve(offlineQueueService.addAction(newHasHugged ? 'splash' : 'unsplash', waveId));
       }
-    } else {
-      // Queue action for offline processing
-      const actionType = newHasHugged ? 'splash' : 'unsplash';
-      offlineQueueService.addAction(actionType, waveId);
+    } catch (error) {
+      console.error('Error handling hug action:', error);
+      setHasHugged(!newHasHugged);
+      setLocalHugsCount(prev => Math.max(0, prev + (newHasHugged ? -1 : 1)));
+      Alert.alert('Action failed', 'We could not update that reaction right now.');
+    } finally {
+      finishBusyAction('hug');
     }
-
-    // No blocking timeout - allow instant re-taps
   };
 
-  const handleEcho = () => {
-    // Immediate visual feedback
+  const handleEcho = async () => {
+    if (busyAction) return;
+    setBusyAction('echo');
+
+    const shouldIncrement = !hasEchoed;
     if (!hasEchoed) {
       setHasEchoed(true);
       setLocalEchoesCount(prev => Math.max(0, prev + 1));
     }
 
-    // Handle action based on connectivity
-    if (isOnline) {
-      // Call the parent callback for immediate sync
-      onEcho(waveId);
-    } else {
-      // Queue action for offline processing (basic echo without text for now)
-      offlineQueueService.addAction('echo', waveId, { text: '' });
+    try {
+      if (isOnline) {
+        await Promise.resolve(onEcho(waveId));
+      } else {
+        await Promise.resolve(offlineQueueService.addAction('echo', waveId, { text: '' }));
+      }
+    } catch (error) {
+      console.error('Error handling echo action:', error);
+      if (shouldIncrement) {
+        setHasEchoed(false);
+        setLocalEchoesCount(prev => Math.max(0, prev - 1));
+      }
+      Alert.alert('Action failed', 'We could not send that echo right now.');
+    } finally {
+      finishBusyAction('echo');
     }
-
-    // No blocking timeout - allow instant re-taps
   };
 
   const fetchHuggers = async () => {
@@ -211,23 +240,46 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   };
 
   const handleHugAction = () => {
-    // Perform the hug action (increment/decrement count)
-    handleHug();
+    void handleHug();
   };
 
-  const handlePearl = () => {
-    // Call the parent callback
-    onPearl();
-    
-    // No blocking timeout - allow instant re-taps
+  const handlePearl = async () => {
+    if (busyAction) return;
+    setBusyAction('pearl');
+    try {
+      await Promise.resolve(onPearl());
+    } catch (error) {
+      console.error('Error handling pearl action:', error);
+      Alert.alert('Action failed', 'We could not send that gem right now.');
+    } finally {
+      finishBusyAction('pearl');
+    }
   };
 
-  const handleAnchor = () => {
-    onAnchor();
+  const handleAnchor = async () => {
+    if (busyAction) return;
+    setBusyAction('anchor');
+    try {
+      await Promise.resolve(onAnchor());
+    } catch (error) {
+      console.error('Error handling anchor action:', error);
+      Alert.alert('Action failed', 'We could not update this anchor right now.');
+    } finally {
+      finishBusyAction('anchor');
+    }
   };
 
-  const handleCast = () => {
-    onCast();
+  const handleCast = async () => {
+    if (busyAction) return;
+    setBusyAction('cast');
+    try {
+      await Promise.resolve(onCast());
+    } catch (error) {
+      console.error('Error handling cast action:', error);
+      Alert.alert('Action failed', 'We could not cast this post right now.');
+    } finally {
+      finishBusyAction('cast');
+    }
   };
 
   return (
@@ -246,9 +298,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         onPress={handleHugAction}
         style={({ pressed }) => [
           styles.textButton,
-          
-          pressed && styles.pressedButton
+          busyAction && styles.disabledButton,
+          pressed && !busyAction && styles.pressedButton
         ]}
+        disabled={!!busyAction}
         accessibilityRole="button"
         accessibilityLabel={(hasHugged && Math.max(0, splashesCount) > 0)
           ? translate('feed.removeHug')
@@ -274,7 +327,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           onPress={onRetrySplash}
           style={({ pressed }) => [
             styles.retryButton,
-            pressed && styles.pressedButton
+            pressed && !busyAction && styles.pressedButton
           ]}
           accessibilityRole="button"
           accessibilityLabel={translate('feed.retryHugSync')}
@@ -291,11 +344,13 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
       {/* Echoes Button (with icon and count) */}
       <Pressable
-        onPress={handleEcho}
+        onPress={() => void handleEcho()}
         style={({ pressed }) => [
           styles.textButton,
-          pressed && styles.pressedButton
+          busyAction && styles.disabledButton,
+          pressed && !busyAction && styles.pressedButton
         ]}
+        disabled={!!busyAction}
         accessibilityRole="button"
         accessibilityLabel={translate('feed.echoThisPost')}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
@@ -312,14 +367,41 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         </View>
       </Pressable>
 
+      {/* Cast Wave Button - Only show for other users' posts */}
+      {currentUserId !== creatorUserId && (
+        <Pressable
+          onPress={() => void handleCast()}
+          style={({ pressed }) => [
+            styles.textButton,
+            busyAction && styles.disabledButton,
+            pressed && !busyAction && styles.pressedButton
+          ]}
+          disabled={!!busyAction}
+          accessibilityRole="button"
+          accessibilityLabel={translate('feed.castThisPost')}
+          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+        >
+          <View style={styles.buttonContent}>
+            <Text style={[styles.actionIconSmall, hasCasted && styles.castActive]}>{'\uD83D\uDCE1'}</Text>
+            <Text style={[styles.actionLabel, hasCasted ? styles.castLabelActive : styles.whiteCount]}>
+              {translate('feed.cast')}
+            </Text>
+          </View>
+        </Pressable>
+      )}
+
       {/* Gems Button */}
       {currentUserId !== creatorUserId && (
         <Pressable
-          onPress={handlePearl}
+          onPress={() => void handlePearl()}
           style={({ pressed }) => [
             styles.textButton,
-            pressed && styles.pressedButton
+            busyAction && styles.disabledButton,
+            pressed && !busyAction && styles.pressedButton
           ]}
+          disabled={!!busyAction}
           accessibilityRole="button"
           accessibilityLabel={translate('feed.sendGem')}
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
@@ -336,11 +418,13 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
       {/* Anchor Wave Button - Only show for other users' posts */}
       {currentUserId !== creatorUserId && (
         <Pressable
-          onPress={handleAnchor}
+          onPress={() => void handleAnchor()}
           style={({ pressed }) => [
             styles.textButton,
-            pressed && styles.pressedButton
+            busyAction && styles.disabledButton,
+            pressed && !busyAction && styles.pressedButton
           ]}
+          disabled={!!busyAction}
           accessibilityRole="button"
           accessibilityLabel={translate('feed.anchorThisPost')}
           hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
@@ -348,29 +432,10 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
         >
           <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>{'\u2693\uFE0F'}</Text>
-            <Text style={styles.actionLabel}>{translate('feed.anchor')}</Text>
-          </View>
-        </Pressable>
-      )}
-
-      {/* Cast Wave Button - Only show for other users' posts */}
-      {currentUserId !== creatorUserId && (
-        <Pressable
-          onPress={handleCast}
-          style={({ pressed }) => [
-            styles.textButton,
-            pressed && styles.pressedButton
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={translate('feed.castThisPost')}
-          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-        >
-          <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>{'\uD83D\uDCE1'}</Text>
-            <Text style={styles.actionLabel}>{translate('feed.cast')}</Text>
+            <Text style={[styles.actionIconSmall, hasAnchored && styles.anchorActive]}>{'\u2693\uFE0F'}</Text>
+            <Text style={[styles.actionLabel, hasAnchored ? styles.anchorLabelActive : styles.whiteCount]}>
+              {translate('feed.anchor')}
+            </Text>
           </View>
         </Pressable>
       )}
@@ -534,6 +599,12 @@ const styles = StyleSheet.create({
   pearlActive: {
     color: '#ff0088', // Red for pearls/gems
   },
+  anchorActive: {
+    color: '#38BDF8',
+  },
+  castActive: {
+    color: '#F59E0B',
+  },
   actionLabel: {
     fontSize: 13,
     color: '#8D0000',
@@ -551,6 +622,12 @@ const styles = StyleSheet.create({
   },
   blueCount: {
     color: '#6FD6FF',
+  },
+  anchorLabelActive: {
+    color: '#38BDF8',
+  },
+  castLabelActive: {
+    color: '#F59E0B',
   },
   whiteCount: {
     color: '#8D0000',

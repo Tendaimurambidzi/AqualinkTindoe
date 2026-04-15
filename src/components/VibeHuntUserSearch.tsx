@@ -29,6 +29,8 @@ interface VibeHuntUserSearchProps {
   onProfilePhotoSelect?: (photoURL: string | null) => void;
   onOpenUserProfile?: (user: { uid: string; name: string }) => void;
   onOpenAvatarPreview?: (photoURL: string) => void;
+  /** Prefill search when opening Hunt (e.g. from a hashtag). */
+  initialQuery?: string;
 }
 
 const VIBE_HUNT_RECENT_KEY = 'vibe_hunt_recent_queries';
@@ -62,6 +64,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   onProfilePhotoSelect,
   onOpenUserProfile,
   onOpenAvatarPreview,
+  initialQuery = '',
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [directoryUsers, setDirectoryUsers] = useState<VibeUser[]>([]);
@@ -72,6 +75,13 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const [brokenAvatarIds, setBrokenAvatarIds] = useState<Set<string>>(new Set());
 
   const blockedSet = useMemo(() => new Set(blockedUserIds), [blockedUserIds]);
+
+  useEffect(() => {
+    const q = String(initialQuery || '').trim();
+    if (q) {
+      setSearchQuery(q);
+    }
+  }, [initialQuery]);
 
   useEffect(() => {
     let mounted = true;

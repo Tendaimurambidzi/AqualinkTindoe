@@ -26,6 +26,7 @@ class MainApplication : Application(), ReactApplication {
           add(PdfRendererPackage())
           add(CallNotificationPackage())
           add(BadgePackage())
+          add(ShareIntentPackage())
         },
     )
   }

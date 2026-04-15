@@ -109,14 +109,16 @@ var PosterActionBar = function (_a) {
     var waveId = _a.waveId, currentUserId = _a.currentUserId, splashesCount = _a.splashesCount, echoesCount = _a.echoesCount, pearlsCount = _a.pearlsCount, isAnchored = _a.isAnchored, isCasted = _a.isCasted, onAdd = _a.onAdd, onRemove = _a.onRemove, onEcho = _a.onEcho, onPearl = _a.onPearl, onAnchor = _a.onAnchor, onCast = _a.onCast, creatorUserId = _a.creatorUserId, _b = _a.splashSyncStatus, splashSyncStatus = _b === void 0 ? 'idle' : _b, onRetrySplash = _a.onRetrySplash, translate = _a.translate;
     var _c = (0, react_1.useState)(false), hasHugged = _c[0], setHasHugged = _c[1]; // Initialize to false for instant response
     var _d = (0, react_1.useState)(false), hasEchoed = _d[0], setHasEchoed = _d[1]; // Initialize to false for instant response
-    var _e = (0, react_1.useState)(Math.max(0, splashesCount)), localHugsCount = _e[0], setLocalHugsCount = _e[1];
-    var _f = (0, react_1.useState)(Math.max(0, echoesCount)), localEchoesCount = _f[0], setLocalEchoesCount = _f[1];
+    var _e = (0, react_1.useState)(isAnchored), hasAnchored = _e[0], setHasAnchored = _e[1];
+    var _f = (0, react_1.useState)(isCasted), hasCasted = _f[0], setHasCasted = _f[1];
+    var _g = (0, react_1.useState)(Math.max(0, splashesCount)), localHugsCount = _g[0], setLocalHugsCount = _g[1];
+    var _h = (0, react_1.useState)(Math.max(0, echoesCount)), localEchoesCount = _h[0], setLocalEchoesCount = _h[1];
     // State for huggers dropdown
-    var _g = (0, react_1.useState)(false), showHuggersDropdown = _g[0], setShowHuggersDropdown = _g[1];
-    var _h = (0, react_1.useState)([]), huggersList = _h[0], setHuggersList = _h[1];
-    var _j = (0, react_1.useState)(false), loadingHuggers = _j[0], setLoadingHuggers = _j[1];
+    var _j = (0, react_1.useState)(false), showHuggersDropdown = _j[0], setShowHuggersDropdown = _j[1];
+    var _k = (0, react_1.useState)([]), huggersList = _k[0], setHuggersList = _k[1];
+    var _l = (0, react_1.useState)(false), loadingHuggers = _l[0], setLoadingHuggers = _l[1];
     // Connectivity state
-    var _k = (0, react_1.useState)(true), isOnline = _k[0], setIsOnline = _k[1];
+    var _m = (0, react_1.useState)(true), isOnline = _m[0], setIsOnline = _m[1];
     // Monitor connectivity
     (0, react_1.useEffect)(function () {
         var unsubscribe = netinfo_1.default.addEventListener(function (state) {
@@ -171,6 +173,12 @@ var PosterActionBar = function (_a) {
     (0, react_1.useEffect)(function () {
         setLocalEchoesCount(Math.max(0, echoesCount));
     }, [echoesCount]);
+    (0, react_1.useEffect)(function () {
+        setHasAnchored(isAnchored);
+    }, [isAnchored]);
+    (0, react_1.useEffect)(function () {
+        setHasCasted(isCasted);
+    }, [isCasted]);
     var handleHug = function () {
         // Immediate visual feedback - no blocking
         var newHasHugged = !hasHugged;
@@ -339,6 +347,20 @@ var PosterActionBar = function (_a) {
         </react_native_1.View>
       </react_native_1.Pressable>
 
+      {/* Cast Wave Button - Only show for other users' posts */}
+      {currentUserId !== creatorUserId && (<react_native_1.Pressable onPress={handleCast} style={function (_a) {
+                var pressed = _a.pressed;
+                return [
+                    styles.textButton,
+                    pressed && styles.pressedButton
+                ];
+            }} accessibilityRole="button" accessibilityLabel={translate('feed.castThisPost')} hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }} pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }} android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}>
+          <react_native_1.View style={styles.buttonContent}>
+            <react_native_1.Text style={[styles.actionIconSmall, hasCasted && styles.castActive]}>{'\uD83D\uDCE1'}</react_native_1.Text>
+            <react_native_1.Text style={[styles.actionLabel, hasCasted ? styles.castLabelActive : styles.whiteCount]}>{translate('feed.cast')}</react_native_1.Text>
+          </react_native_1.View>
+        </react_native_1.Pressable>)}
+
       {/* Gems Button */}
       {currentUserId !== creatorUserId && (<react_native_1.Pressable onPress={handlePearl} style={function (_a) {
                 var pressed = _a.pressed;
@@ -362,22 +384,8 @@ var PosterActionBar = function (_a) {
                 ];
             }} accessibilityRole="button" accessibilityLabel={translate('feed.anchorThisPost')} hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }} pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }} android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}>
           <react_native_1.View style={styles.buttonContent}>
-            <react_native_1.Text style={styles.actionIconSmall}>{'\u2693\uFE0F'}</react_native_1.Text>
-            <react_native_1.Text style={styles.actionLabel}>{translate('feed.anchor')}</react_native_1.Text>
-          </react_native_1.View>
-        </react_native_1.Pressable>)}
-
-      {/* Cast Wave Button - Only show for other users' posts */}
-      {currentUserId !== creatorUserId && (<react_native_1.Pressable onPress={handleCast} style={function (_a) {
-                var pressed = _a.pressed;
-                return [
-                    styles.textButton,
-                    pressed && styles.pressedButton
-                ];
-            }} accessibilityRole="button" accessibilityLabel={translate('feed.castThisPost')} hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }} pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }} android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}>
-          <react_native_1.View style={styles.buttonContent}>
-            <react_native_1.Text style={styles.actionIconSmall}>{'\uD83D\uDCE1'}</react_native_1.Text>
-            <react_native_1.Text style={styles.actionLabel}>{translate('feed.cast')}</react_native_1.Text>
+            <react_native_1.Text style={[styles.actionIconSmall, hasAnchored && styles.anchorActive]}>{'\u2693\uFE0F'}</react_native_1.Text>
+            <react_native_1.Text style={[styles.actionLabel, hasAnchored ? styles.anchorLabelActive : styles.whiteCount]}>{translate('feed.anchor')}</react_native_1.Text>
           </react_native_1.View>
         </react_native_1.Pressable>)}
 
@@ -517,6 +525,12 @@ var styles = react_native_1.StyleSheet.create({
     pearlActive: {
         color: '#ff0088', // Red for pearls/gems
     },
+    anchorActive: {
+        color: '#38BDF8',
+    },
+    castActive: {
+        color: '#F59E0B',
+    },
     actionLabel: {
         fontSize: 13,
         color: '#8D0000',
@@ -534,6 +548,12 @@ var styles = react_native_1.StyleSheet.create({
     },
     blueCount: {
         color: '#6FD6FF',
+    },
+    anchorLabelActive: {
+        color: '#38BDF8',
+    },
+    castLabelActive: {
+        color: '#F59E0B',
     },
     whiteCount: {
         color: '#8D0000',
