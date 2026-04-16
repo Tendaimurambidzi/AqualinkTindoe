@@ -332,6 +332,7 @@ const EditableProfileAvatar: React.FC<EditableProfileAvatarProps> = ({
           <Image source={{ uri: photoUrl }} style={styles.avatarImage} />
         ) : (
           <View style={styles.placeholder}>
+            <Text style={styles.placeholderEmoji}>🔥</Text>
             <Text style={styles.placeholderText}>Tap to add photo</Text>
           </View>
         )}
@@ -356,15 +357,20 @@ const styles = StyleSheet.create({
     height: 120,
     borderRadius: 60,
     borderWidth: 2,
-    borderColor: '#ccc',
+    borderColor: '#FCA5A5',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#eef6ff',
+    backgroundColor: '#B91C1C',
+  },
+  placeholderEmoji: {
+    fontSize: 36,
+    marginBottom: 6,
   },
   placeholderText: {
     fontSize: 12,
-    color: '#555',
+    color: '#FFF5F5',
     textAlign: 'center',
+    fontWeight: '700',
   },
   usernameInput: {
     borderWidth: 1,

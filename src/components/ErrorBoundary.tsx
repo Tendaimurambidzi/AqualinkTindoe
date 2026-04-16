@@ -1,5 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { recordCrashError } from '../services/crashlyticsService';
 
 type ErrorBoundaryProps = {
   children: React.ReactNode;
@@ -26,6 +27,10 @@ export default class ErrorBoundary extends React.Component<
   componentDidCatch(error: Error, info: any) {
     console.error('ErrorBoundary caught error:', error);
     console.error('Error info:', info);
+    recordCrashError(error, {
+      source: 'ErrorBoundary',
+      componentStack: info?.componentStack || '',
+    });
   }
 
   handleReload = () => {

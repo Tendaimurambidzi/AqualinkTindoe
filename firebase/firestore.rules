@@ -10,6 +10,35 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == ownerUid;
     }
 
+    function requesterUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwnerAccount() {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          requesterUserDoc().isOwner == true ||
+          requesterUserDoc().owner == true ||
+          requesterUserDoc().role == 'owner' ||
+          requesterUserDoc().userRole == 'owner'
+        );
+    }
+
+    function isPrivilegedUserAccessWrite() {
+      return request.resource.data.diff(resource.data).changedKeys().hasAny([
+        'role',
+        'userRole',
+        'roles',
+        'admin',
+        'isAdmin',
+        'owner',
+        'isOwner',
+        'updatedByUid',
+        'updatedByName'
+      ]);
+    }
+
     function isPremiumHost() {
       return isAuthed()
         && (
@@ -122,8 +151,10 @@ service cloud.firestore {
     match /users/{uid} {
       // Allow any authenticated user to read user profiles (for search)
       allow read: if isAuthed();
-      // Only owner can create, update, delete
-      allow create, update: if isOwner(uid);
+      // Users can update their own normal profile fields, but only owner accounts can change roles.
+      allow create: if isOwner(uid);
+      allow update: if (isOwner(uid) && !isPrivilegedUserAccessWrite())
+                    || isOwnerAccount();
       allow delete: if isOwner(uid);
 
       match /pings/{pingId} {

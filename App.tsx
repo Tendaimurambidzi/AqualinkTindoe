@@ -10,6 +10,12 @@ import React, {
 } from 'react';
 import Fuse from 'fuse.js';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import {
+  logCrashMessage,
+  recordCrashError,
+  setCrashAttributes,
+  setCrashUser,
+} from './src/services/crashlyticsService';
 import { NavigationContainer, useIsFocused, useNavigation } from '@react-navigation/native';
 import { createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -90,7 +96,7 @@ import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import { generateVibeSuggestion, generateSearchSuggestion, generateEchoSuggestion, generateSchoolFeedback, generateStudyTip, generateQuizQuestion, generateExploreContent, generateCuriosityQuestion, generateExplorationPath, generatePersonalizedAdvice, generateCreativePrompt, analyzeAndSuggest, generateMediaCaptionSuggestion, generateSearchBackedExploreResponse, generateStudyHubResponse } from './src/services/aiService';
 import { registerNoticeBoard } from './src/services/schoolService';
 import CreatePostScreen from './src/screens/CreatePostScreen';
-import MainFeedItem from './src/feed/MainFeedItem';
+import MainFeedItem from './src/feed/MainFeedItem.js';
 import FreshDriftExpoModal from './src/live/FreshDriftExpoModal';
 import VideoWithTapControls from './src/components/VideoWithTapControls';
 import { appTokens } from './src/theme/tokens';
@@ -133,6 +139,15 @@ const FORCE_SIGN_OUT_ON_START = true;
 const STATS_OVERLAY_HEIGHT = 220;
                     
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+const DEFAULT_AVATAR_EMOJI = '🔥';
+const DEFAULT_AVATAR_BG = '#B91C1C';
+const DEFAULT_AVATAR_FG = '#FFF5F5';
+
+const buildDefaultAvatarBadge = () => ({
+  text: DEFAULT_AVATAR_EMOJI,
+  backgroundColor: DEFAULT_AVATAR_BG,
+  color: DEFAULT_AVATAR_FG,
+});
 
 const isRenderableRemoteMediaUri = (value: any): boolean => {
   const uri = String(value || '').trim();
@@ -1186,16 +1201,8 @@ const getUserAvatar = (userId: string | undefined, userData: Record<string, { na
   if (userInfo?.avatar) {
     return { uri: userInfo.avatar };
   }
-  
-  // Generate initials from username
-  const username = String(userInfo?.name || 'Unknown User').replace(/^[@/]+/, '');
-  const initials = username.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  
-  return {
-    text: initials,
-    backgroundColor: '#87CEEB', // Sky blue background for initials
-    color: '#000080', // Navy blue text
-  };
+
+  return buildDefaultAvatarBadge();
 };
 
 // Helper function to format notification messages with username and action only (no timestamp)
@@ -1947,6 +1954,30 @@ const preserveExistingGridCollection = (existingWaves: Vibe[], nextWaves: Vibe[]
   );
 };
 
+const getWaveCreatedAtMs = (wave: Vibe | null | undefined): number => {
+  const raw = wave?.createdAt as any;
+  if (!raw) return 0;
+  try {
+    if (typeof raw?.toDate === 'function') {
+      return raw.toDate().getTime();
+    }
+    if (raw instanceof Date) {
+      return raw.getTime();
+    }
+    if (typeof raw?.seconds === 'number') {
+      return raw.seconds * 1000 + Math.floor(Number(raw?.nanoseconds || 0) / 1000000);
+    }
+    const asNumber = Number(raw);
+    if (Number.isFinite(asNumber) && asNumber > 0) {
+      return asNumber;
+    }
+    const parsed = new Date(raw).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+};
+
 const getWaveMediaItemCount = (wave: Vibe | null | undefined): number => {
   if (Array.isArray(wave?.mediaItems)) {
     return wave.mediaItems.filter(item => isRenderableRemoteMediaUri(item?.uri)).length;
@@ -2001,7 +2032,17 @@ const mergeWaveCollectionsById = (...collections: Vibe[][]): Vibe[] => {
       merged.set(wave.id, mergeWaveVersions(existingWave, wave));
     });
   });
-  return Array.from(merged.values());
+  return Array.from(merged.values()).sort((a, b) => {
+    const createdDiff = getWaveCreatedAtMs(b) - getWaveCreatedAtMs(a);
+    if (createdDiff !== 0) return createdDiff;
+    return String(b?.id || '').localeCompare(String(a?.id || ''));
+  });
+};
+
+const upsertWaveAtTop = (waves: Vibe[], nextWave: Vibe): Vibe[] => {
+  const existingWave = waves.find(wave => wave.id === nextWave.id);
+  const mergedWave = mergeWaveVersions(existingWave, nextWave);
+  return [mergedWave, ...waves.filter(wave => wave.id !== nextWave.id)];
 };
 
 const normalizeStoredGridItems = (items: any[] | null | undefined): Array<{ uri: string; type?: string; fileName?: string }> => {
@@ -3837,6 +3878,25 @@ const hasReferralAdminAccess = (data: Record<string, any> = {}) => {
   );
 };
 
+const hasOwnerControlAccess = (data: Record<string, any> = {}) => {
+  const role = String(data?.role || data?.userRole || '').trim().toLowerCase();
+  const roles = Array.isArray(data?.roles)
+    ? data.roles.map((value: any) => String(value || '').trim().toLowerCase())
+    : [];
+  return (
+    data?.isOwner === true ||
+    data?.owner === true ||
+    role === 'owner' ||
+    roles.includes('owner')
+  );
+};
+
+const resolveUserAccessRole = (data: Record<string, any> = {}) => {
+  if (hasOwnerControlAccess(data)) return 'owner';
+  if (hasReferralAdminAccess(data)) return 'admin';
+  return String(data?.role || data?.userRole || 'user').trim().toLowerCase() || 'user';
+};
+
 const reserveUniqueUsername = async (
   uid: string,
   rawUsername: string,
@@ -3848,40 +3908,21 @@ const reserveUniqueUsername = async (
     throw new Error('username-invalid');
   }
 
-  await firestore().runTransaction(async tx => {
-    const userRef = firestore().collection('users').doc(uid);
-    const nextRef = firestore()
-      .collection('usernames')
-      .doc(usernameReservationId(usernameLc));
-    const nextSnap = await tx.get(nextRef);
-    const nextOwner = nextSnap.exists ? nextSnap.data()?.uid : null;
+  const conflictSnap = await firestore()
+    .collection('users')
+    .where('username_lc', '==', usernameLc)
+    .limit(5)
+    .get();
 
-    if (nextOwner && nextOwner !== uid) {
-      throw new Error('username-taken');
-    }
+  const conflictingUser = conflictSnap.docs.find(doc => doc.id !== uid);
+  if (conflictingUser) {
+    throw new Error('username-taken');
+  }
 
-    const previousLc = normalizeUniqueUsername(previousUsername).toLowerCase();
-    if (previousLc && previousLc !== usernameLc) {
-      const prevRef = firestore()
-        .collection('usernames')
-        .doc(usernameReservationId(previousLc));
-      const prevSnap = await tx.get(prevRef);
-      if (prevSnap.exists && prevSnap.data()?.uid === uid) {
-        tx.delete(prevRef);
-      }
-    }
-
-    tx.set(
-      nextRef,
-      {
-        uid,
-        username,
-        username_lc: usernameLc,
-      },
-      { merge: true },
-    );
-    tx.set(
-      userRef,
+  await firestore()
+    .collection('users')
+    .doc(uid)
+    .set(
       {
         username,
         userName: username,
@@ -3890,7 +3931,6 @@ const reserveUniqueUsername = async (
       },
       { merge: true },
     );
-  });
 
   return username;
 };
@@ -5968,13 +6008,29 @@ function AuthButton({
   onPress,
 }: {
   title: string;
-  onPress: () => void;
+  onPress: () => void | Promise<void>;
 }) {
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handlePress = useCallback(async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      await Promise.resolve(onPress());
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [isProcessing, onPress]);
+
   return (
     <Pressable 
-      onPress={onPress} 
+      onPress={() => {
+        void handlePress();
+      }}
+      disabled={isProcessing}
       style={({ pressed }) => [
         authStyles.btn,
+        isProcessing && { opacity: 0.72 },
         pressed && {
           opacity: 0.8,
           transform: [{ scale: 0.98 }],
@@ -5984,7 +6040,11 @@ function AuthButton({
       pressRetentionOffset={{ top: 30, bottom: 30, left: 25, right: 25 }}
       android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
     >
-      <Text style={authStyles.btnText}>{title}</Text>
+      {isProcessing ? (
+        <ActivityIndicator color="#ffffff" />
+      ) : (
+        <Text style={authStyles.btnText}>{title}</Text>
+      )}
     </Pressable>
   );
 }
@@ -6023,6 +6083,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Debug logging for myUid changes
   useEffect(() => {
     console.log('UID change:', myUid);
+  }, [myUid]);
+  useEffect(() => {
+    setCrashUser(myUid || 'anonymous');
+    setCrashAttributes({
+      signed_in: Boolean(myUid),
+      app_section: 'inner_app',
+    });
   }, [myUid]);
 
   // Automatic view tracking with 10-second dwell time
@@ -6489,6 +6556,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [profileBio, setProfileBio] = useState<string>('');
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [profileMinuteFameTitle, setProfileMinuteFameTitle] = useState<string>('');
+  const [currentUserAccessDoc, setCurrentUserAccessDoc] = useState<Record<string, any>>({});
 
   // Load profilePhoto from AsyncStorage on app start
   useEffect(() => {
@@ -7353,6 +7421,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const data = doc?.data() || {};
         console.log('User document exists:', exists);
         console.log('User data loaded:', data);
+        setCurrentUserAccessDoc(data);
         
         const derivedHandle =
           normalizeUserHandle(data.userName) ||
@@ -7818,6 +7887,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
       const activeIndex = displayFeedRef.current.findIndex(item => item.id === newActiveId);
       if (activeIndex !== -1) {
+        setCurrentIndex(activeIndex);
         const preloadIds = new Set<string>();
         for (
           let i = Math.max(0, activeIndex - 2);
@@ -7905,12 +7975,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           if (prev.some(w => w.id === wave.id)) return prev;
           return [wave, ...prev];
         });
+        setCurrentIndex(0);
+        setWaveKey(Date.now());
+        try {
+          feedRef.current?.scrollToOffset({ offset: 0, animated: true });
+        } catch {}
+      } else if (wave.fleetId) {
+        setSelectedFleetWaves(prev => {
+          const activeFleetId = String(prev[0]?.fleetId || '').trim();
+          if (prev.length > 0 && activeFleetId && activeFleetId !== wave.fleetId) {
+            return prev;
+          }
+          return upsertWaveAtTop(prev, wave);
+        });
       }
-      setCurrentIndex(0);
-      setWaveKey(Date.now());
-      try {
-        feedRef.current?.scrollToOffset({ offset: 0, animated: true });
-      } catch {}
       // Load echoes for the new wave
       loadPostEchoes(wave.id);
       // Load reach count for the new wave
@@ -7921,7 +7999,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Show success message for posting a CMEE vibe
       notifySuccess('You dropped a CMEE vibe!');
     },
-    [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
+    [
+      feedRef,
+      loadPostEchoes,
+      loadReachCounts,
+      notifySuccess,
+      setCurrentIndex,
+      setPostFeed,
+      setVibesFeed,
+      setWaveKey,
+    ],
   );
 
   // Restore scroll position when returning from PostDetail
@@ -7953,6 +8040,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [lastLoadedDoc, setLastLoadedDoc] = useState<any>(null);
   const [hasMoreItems, setHasMoreItems] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isFeedBackpressureActive, setIsFeedBackpressureActive] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const paginationInFlightRef = useRef(false);
   const refreshInFlightRef = useRef(false);
@@ -7974,6 +8062,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [creatorProfileName, setCreatorProfileName] = useState<string>('');
   const [creatorProfileLoadedPosts, setCreatorProfileLoadedPosts] = useState<Vibe[]>([]);
   const [creatorProfileLoading, setCreatorProfileLoading] = useState<boolean>(false);
+  const [creatorProfileActionBusy, setCreatorProfileActionBusy] = useState<string | null>(null);
   const creatorProfileScrollRef = useRef<ScrollView | null>(null);
   const [creatorProfilePostsAnchorY, setCreatorProfilePostsAnchorY] = useState<number>(0);
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
@@ -8056,6 +8145,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [minuteFameLoading, setMinuteFameLoading] = useState<boolean>(false);
   const [commandCentreSection, setCommandCentreSection] =
     useState<CommandCentreSection>('home');
+  const [ownerAdminQuery, setOwnerAdminQuery] = useState<string>('');
+  const [ownerAdminResults, setOwnerAdminResults] = useState<
+    Array<{
+      id: string;
+      displayName: string;
+      handle: string;
+      email: string;
+      phoneNumber: string;
+      role: string;
+      photoURL: string | null;
+      isAdmin: boolean;
+      isOwner: boolean;
+    }>
+  >([]);
+  const [ownerAdminLoading, setOwnerAdminLoading] = useState<boolean>(false);
+  const [ownerAdminError, setOwnerAdminError] = useState<string | null>(null);
+  const [ownerAdminBusyUid, setOwnerAdminBusyUid] = useState<string | null>(null);
   const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
   const [showAIModal, setShowAIModal] = useState<boolean>(false);
   const [aiResponse, setAiResponse] = useState<string>('');
@@ -8065,6 +8171,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [isWifi, setIsWifi] = useState<boolean>(true);
   const [isOffline, setIsOffline] = useState<boolean>(true);
   const [zoomedProfilePic, setZoomedProfilePic] = useState<string | null>(null);
+  const shouldPauseFeedPagination = isOffline || !isWifi || !!dataSaver?.enabled || !!dataSaver?.cellular;
+  const isOwnerControlUser = useMemo(
+    () => hasOwnerControlAccess(currentUserAccessDoc),
+    [currentUserAccessDoc],
+  );
   const minuteFameSessionStartedRef = useRef(false);
   const minuteFameChallenge = useMemo(
     () => getMinuteFameChallengeForWeek(new Date()),
@@ -9141,6 +9252,55 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     (msg: string, avatar: any = null) => showToast('negative', msg, 2000, avatar),
     [showToast],
   );
+  const isWaveWritePermissionError = useCallback((error: any) => {
+    const raw = String(error?.code || error?.message || error || '').toLowerCase();
+    return (
+      raw.includes('permission-denied') ||
+      raw.includes('missing or insufficient permissions') ||
+      raw.includes('unauthenticated')
+    );
+  }, []);
+  const createWaveDocWithRetry = useCallback(
+    async (firestoreMod: any, payload: Record<string, any>, authInstance?: any) => {
+      let lastError: any = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          if (attempt > 0) {
+            try {
+              await authInstance?.currentUser?.getIdToken?.(true);
+            } catch {}
+            try {
+              await authInstance?.currentUser?.reload?.();
+            } catch {}
+          }
+          return await firestoreMod().collection('waves').add(payload);
+        } catch (error) {
+          lastError = error;
+          if (!isWaveWritePermissionError(error) || attempt >= 1) {
+            throw error;
+          }
+          logCrashMessage('Retrying wave creation after auth refresh');
+        }
+      }
+      throw lastError || new Error('Failed to create post.');
+    },
+    [isWaveWritePermissionError],
+  );
+  const runCreatorProfileAction = useCallback(
+    async (actionId: string, action: () => Promise<void> | void) => {
+      if (creatorProfileActionBusy) return;
+      setCreatorProfileActionBusy(actionId);
+      try {
+        await Promise.resolve(action());
+      } catch (error) {
+        console.error(`Creator profile action failed: ${actionId}`, error);
+        notifyError('We could not complete that action right now.');
+      } finally {
+        setCreatorProfileActionBusy(current => (current === actionId ? null : current));
+      }
+    },
+    [creatorProfileActionBusy, notifyError],
+  );
 
   const savedExploreSources = useMemo(
     () =>
@@ -10211,6 +10371,7 @@ type CommandCentreSection =
   | 'notifications'
   | 'performance'
   | 'appearance'
+  | 'owner_admin'
   | 'about';
                     
   const [bridge, setBridge] = useState<BridgeSettings>({
@@ -10581,6 +10742,209 @@ type CommandCentreSection =
       return [];
     },
     [backendSearchBase, searchViaFirestore],
+  );
+  const runOwnerAdminSearch = useCallback(async () => {
+    const rawQuery = ownerAdminQuery.trim();
+    if (!isOwnerControlUser) {
+      Alert.alert('Owner access only', 'This command centre tool is reserved for the owner account.');
+      return;
+    }
+    if (!rawQuery) {
+      setOwnerAdminError('Enter a profile name, email, or phone number first.');
+      setOwnerAdminResults([]);
+      return;
+    }
+
+    let firestoreMod: any = null;
+    try {
+      firestoreMod = require('@react-native-firebase/firestore').default;
+    } catch {}
+    if (!firestoreMod) {
+      setOwnerAdminError('Firestore is not available right now.');
+      return;
+    }
+
+    const normalizedLower = rawQuery.toLowerCase();
+    const phoneQuery = rawQuery.replace(/[^\d+]/g, '');
+    const usersRef = firestoreMod().collection('users');
+    const seen = new Set<string>();
+
+    const mapUserDoc = (doc: any) => {
+      const uid = doc?.id;
+      if (!uid || seen.has(uid)) return null;
+      seen.add(uid);
+      const data = doc?.data?.() || {};
+      const displayName = String(
+        data.displayName ||
+          data.userName ||
+          data.username ||
+          data.name ||
+          uid,
+      ).trim();
+      const rawHandle = String(
+        data.userName || data.username || data.displayName || data.name || '',
+      ).trim();
+      return {
+        id: uid,
+        displayName: displayName || uid,
+        handle: rawHandle ? formatHandle(rawHandle) : '',
+        email: String(data.email || data.userEmail || '').trim(),
+        phoneNumber: String(
+          data.phoneNumber || data.phone || data.mobile || '',
+        ).trim(),
+        role: resolveUserAccessRole(data),
+        photoURL:
+          data.userPhoto || data.photoURL || data.avatar || data.profilePicture || null,
+        isAdmin: hasReferralAdminAccess(data),
+        isOwner: hasOwnerControlAccess(data),
+      };
+    };
+
+    const runPrefixSearch = async (field: string, value: string) => {
+      if (!value) return [];
+      try {
+        const snap = await usersRef
+          .where(field, '>=', value)
+          .where(field, '<=', value + '\uf8ff')
+          .limit(15)
+          .get();
+        return snap?.docs || [];
+      } catch {
+        return [];
+      }
+    };
+
+    setOwnerAdminLoading(true);
+    setOwnerAdminError(null);
+    try {
+      const docGroups = await Promise.all([
+        runPrefixSearch('displayName', rawQuery),
+        runPrefixSearch('userName', rawQuery),
+        runPrefixSearch('username_lc', normalizedLower),
+        runPrefixSearch('email', normalizedLower),
+        runPrefixSearch('phoneNumber', phoneQuery),
+      ]);
+      const results = docGroups
+        .flat()
+        .map(mapUserDoc)
+        .filter(Boolean)
+        .sort((a: any, b: any) => {
+          if (a.isOwner !== b.isOwner) return a.isOwner ? -1 : 1;
+          if (a.isAdmin !== b.isAdmin) return a.isAdmin ? -1 : 1;
+          return String(a.displayName).localeCompare(String(b.displayName));
+        });
+      setOwnerAdminResults(results as Array<{
+        id: string;
+        displayName: string;
+        handle: string;
+        email: string;
+        phoneNumber: string;
+        role: string;
+        photoURL: string | null;
+        isAdmin: boolean;
+        isOwner: boolean;
+      }>);
+      if (!results.length) {
+        setOwnerAdminError('No matching user was found in profiles.');
+      }
+    } catch (error: any) {
+      setOwnerAdminResults([]);
+      setOwnerAdminError(
+        error?.message || 'We could not search users right now.',
+      );
+    } finally {
+      setOwnerAdminLoading(false);
+    }
+  }, [formatHandle, isOwnerControlUser, ownerAdminQuery]);
+
+  const setOwnerAdminRole = useCallback(
+    async (targetUid: string, nextRole: 'admin' | 'user') => {
+      if (!isOwnerControlUser) {
+        Alert.alert('Owner access only', 'Only the owner account can change admin roles.');
+        return;
+      }
+      if (!targetUid) return;
+
+      let firestoreMod: any = null;
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      if (!firestoreMod) {
+        Alert.alert('Unavailable', 'Firestore is not available right now.');
+        return;
+      }
+
+      setOwnerAdminBusyUid(targetUid);
+      try {
+        const ref = firestoreMod().collection('users').doc(targetUid);
+        const snap = await ref.get();
+        const currentData = snap?.data?.() || {};
+        if (!snap?.exists) {
+          throw new Error('This user profile no longer exists.');
+        }
+        if (hasOwnerControlAccess(currentData)) {
+          throw new Error('Owner access cannot be changed from this screen.');
+        }
+
+        const effectiveRole = nextRole === 'admin' ? 'admin' : 'user';
+        const actorName =
+          profileName ||
+          accountCreationHandle ||
+          user?.email ||
+          auth?.()?.currentUser?.email ||
+          'Owner';
+        const updatedAt =
+          firestoreMod?.FieldValue?.serverTimestamp?.() || new Date();
+
+        await ref.set(
+          {
+            role: effectiveRole,
+            userRole: effectiveRole,
+            roles: [effectiveRole],
+            admin: effectiveRole === 'admin',
+            isAdmin: effectiveRole === 'admin',
+            updatedAt,
+            updatedByUid: myUid || null,
+            updatedByName: actorName,
+          },
+          { merge: true },
+        );
+
+        setOwnerAdminResults(prev =>
+          prev.map(item =>
+            item.id === targetUid
+              ? {
+                  ...item,
+                  role: effectiveRole,
+                  isAdmin: effectiveRole === 'admin',
+                  isOwner: false,
+                }
+              : item,
+          ),
+        );
+
+        Alert.alert(
+          'Access updated',
+          effectiveRole === 'admin'
+            ? 'This user can now access admin tools.'
+            : 'This user has been returned to normal user access.',
+        );
+      } catch (error: any) {
+        Alert.alert(
+          'Role update failed',
+          error?.message || 'We could not update this user right now.',
+        );
+      } finally {
+        setOwnerAdminBusyUid(null);
+      }
+    },
+    [
+      accountCreationHandle,
+      isOwnerControlUser,
+      myUid,
+      profileName,
+      user?.email,
+    ],
   );
   const buildWaveFromSearchResult = useCallback((result: SearchResult): Vibe | null => {
     if (result.kind !== 'vibe') return null;
@@ -13832,11 +14196,15 @@ type CommandCentreSection =
                 }
                 return existingWave;
               });
-              return [...newMyWaves, ...updatedExistingWaves];
+              return mergeWaveCollectionsById(newMyWaves, updatedExistingWaves);
             });
             // Filter out my own waves from public feed on my device
             const publicWaves = wavesWithUserData.filter(w => w.ownerUid !== myUid);
-            setPublicFeed(prev => preserveExistingGridCollection(prev, publicWaves));
+            setPublicFeed(prev => {
+              const merged = mergeWaveCollectionsById(publicWaves, prev);
+              const capped = merged.length > 80 ? merged.slice(0, 80) : merged;
+              return preserveExistingGridCollection(prev, capped);
+            });
                   
             // Load actual crew status for all users in the feed
             const currentUser = auth?.()?.currentUser;
@@ -13910,8 +14278,14 @@ type CommandCentreSection =
       queuedFeedRetryRef.current = true;
       return;
     }
+    if (shouldPauseFeedPagination && lastLoadedDoc && publicFeed.length >= 12) {
+      queuedFeedRetryRef.current = true;
+      setIsFeedBackpressureActive(true);
+      return;
+    }
     
     paginationInFlightRef.current = true;
+    setIsFeedBackpressureActive(false);
     setIsLoadingMore(true);
     try {
       let firestoreMod: any = null;
@@ -13929,7 +14303,7 @@ type CommandCentreSection =
       let query = firestoreMod()
         .collection('waves')
         .orderBy('createdAt', 'desc')
-        .limit(lastLoadedDoc ? 10 : 15); // Initial: 15, Pagination: 10
+        .limit(lastLoadedDoc ? (shouldPauseFeedPagination ? 5 : 10) : (shouldPauseFeedPagination ? 8 : 15));
       
       if (lastLoadedDoc) {
         query = query.startAfter(lastLoadedDoc);
@@ -14101,7 +14475,7 @@ type CommandCentreSection =
               // Append for pagination, merging richer duplicates instead of keeping the first stale copy.
               setPublicFeed(prev => {
                 const combined = mergeWaveCollectionsById(prev, wavesWithUserData);
-                const capped = combined.length > 35 ? combined.slice(-35) : combined;
+                const capped = combined.length > 80 ? combined.slice(0, 80) : combined;
                 return preserveExistingGridCollection(prev, capped);
               });
             } else {
@@ -14167,7 +14541,18 @@ type CommandCentreSection =
       paginationInFlightRef.current = false;
       setIsLoadingMore(false);
     }
-  }, [hasMoreItems, isLoadingMore, isOffline, lastLoadedDoc, loadPostEchoes, loadReachCounts, postEchoLists]);
+  }, [
+    hasMoreItems,
+    isFeedBackpressureActive,
+    isLoadingMore,
+    isOffline,
+    lastLoadedDoc,
+    loadPostEchoes,
+    loadReachCounts,
+    postEchoLists,
+    publicFeed.length,
+    shouldPauseFeedPagination,
+  ]);
 
   const onRefresh = useCallback(async () => {
     if (refreshInFlightRef.current) return;
@@ -14176,6 +14561,7 @@ type CommandCentreSection =
       return;
     }
     refreshInFlightRef.current = true;
+    setIsFeedBackpressureActive(false);
     setRefreshing(true);
     setLastLoadedDoc(null);
     setHasMoreItems(true);
@@ -14197,11 +14583,19 @@ type CommandCentreSection =
   useEffect(() => {
     if (isOffline) return;
     if (!queuedFeedRetryRef.current) return;
+    if (shouldPauseFeedPagination) return;
     queuedFeedRetryRef.current = false;
+    setIsFeedBackpressureActive(false);
     if (!isLoadingMore && !refreshing) {
       loadMoreFeedItems();
     }
-  }, [isOffline, isLoadingMore, loadMoreFeedItems, refreshing]);
+  }, [isOffline, isLoadingMore, loadMoreFeedItems, refreshing, shouldPauseFeedPagination]);
+
+  useEffect(() => {
+    if (!shouldPauseFeedPagination) {
+      setIsFeedBackpressureActive(false);
+    }
+  }, [shouldPauseFeedPagination]);
 
   useEffect(() => {
     if (!isOffline) return;
@@ -14240,6 +14634,7 @@ type CommandCentreSection =
         try {
           const d = snap?.data() || {};
           if (snap?.exists) {
+            setCurrentUserAccessDoc(d);
             if (typeof d?.userPhoto !== 'undefined')
               setProfilePhoto(d.userPhoto || null);
             if (typeof d?.bio !== 'undefined') {
@@ -17723,7 +18118,10 @@ type CommandCentreSection =
     } catch {}
   };
                     
-  const saveProfile = async () => {
+  const saveProfile = async (overrides?: {
+    profileName?: string;
+    profileBio?: string;
+  }) => {
     let firestoreMod: any = null;
     let authMod: any = null;
     let storageMod: any = null;
@@ -17737,6 +18135,8 @@ type CommandCentreSection =
       storageMod = require('@react-native-firebase/storage').default;
     } catch {}
     const uid = authMod?.().currentUser?.uid;
+    const draftProfileName = String(overrides?.profileName ?? profileName ?? '').trim();
+    const draftProfileBio = String(overrides?.profileBio ?? profileBio ?? '').trim();
     if (!firestoreMod || !uid) {
       setShowEditShore(false);
       return;
@@ -17771,7 +18171,7 @@ type CommandCentreSection =
             'Could not resolve a local path for your profile photo.',
           );
         } else {
-          const safeName = (profileName || 'profile').replace(
+          const safeName = (draftProfileName || 'profile').replace(
             /[^A-Za-z0-9._-]/g,
             '_',
           );
@@ -17783,7 +18183,12 @@ type CommandCentreSection =
         }
       }
                     
-      const normalizedProfileHandle = normalizeUserHandle(profileName);
+      const normalizedProfileHandle = normalizeUserHandle(draftProfileName);
+      const currentSnap = await firestoreMod().collection('users').doc(uid).get();
+      const currentUsername = String(
+        currentSnap.data()?.username || currentSnap.data()?.displayName || '',
+      ).trim();
+      await reserveUniqueUsername(uid, normalizedProfileHandle, currentUsername);
       await firestoreMod()
         .doc(`users/${uid}`)
         .set(
@@ -17793,7 +18198,7 @@ type CommandCentreSection =
             username_lc: normalizedProfileHandle.toLowerCase(),
             userPhoto: finalPhotoUrl || null,
             photoURL: finalPhotoUrl || null,
-            bio: profileBio,
+            bio: draftProfileBio,
           },
           { merge: true },
         );
@@ -17803,7 +18208,7 @@ type CommandCentreSection =
           ...prev[uid],
           name: formatHandle(normalizedProfileHandle) || prev[uid]?.name || 'User',
           avatar: finalPhotoUrl || '',
-          bio: profileBio || prev[uid]?.bio || '',
+          bio: draftProfileBio || prev[uid]?.bio || '',
           lastSeen: prev[uid]?.lastSeen || null,
           lastActiveAt: prev[uid]?.lastActiveAt || null,
           online: prev[uid]?.online,
@@ -17817,6 +18222,7 @@ type CommandCentreSection =
         });
       } catch {}
       setProfileName(normalizedProfileHandle);
+      setProfileBio(draftProfileBio);
       setProfilePhoto(finalPhotoUrl || null);
       setShowEditShore(false);
       showOceanDialog(
@@ -18708,9 +19114,7 @@ type CommandCentreSection =
             },
             trackUploadTask,
           );
-          const docRef = await firestoreMod()
-            .collection('waves')
-            .add({
+          const docRef = await createWaveDocWithRetry(firestoreMod, {
               authorId: uid,
               ownerUid: uid,
               authorName:
@@ -18734,7 +19138,7 @@ type CommandCentreSection =
               audience: activeFleetPostContext ? 'fleet' : 'public',
               fleetId: activeFleetPostContext?.fleetId || null,
               fleetName: activeFleetPostContext?.fleetName || null,
-            });
+            }, a);
 
           handlePostPublished({
             id: docRef?.id || new Date().toISOString(),
@@ -18773,7 +19177,7 @@ type CommandCentreSection =
               route: 'Fleet Deck',
             });
             setActiveFleetPostContext(null);
-            await loadFleetThreads();
+            void loadFleetThreads();
           }
 
           setUnifiedPostText('');
@@ -18901,9 +19305,7 @@ type CommandCentreSection =
           trackUploadTask,
         );
 
-        const docRef = await firestoreMod()
-          .collection('waves')
-          .add({
+        const docRef = await createWaveDocWithRetry(firestoreMod, {
             authorId: uid,
             ownerUid: uid,
             authorName:
@@ -18927,7 +19329,7 @@ type CommandCentreSection =
             audience: activeFleetPostContext ? 'fleet' : 'public',
             fleetId: activeFleetPostContext?.fleetId || null,
             fleetName: activeFleetPostContext?.fleetName || null,
-          });
+          }, a);
 
         handlePostPublished({
           id: docRef?.id || new Date().toISOString(),
@@ -18966,7 +19368,7 @@ type CommandCentreSection =
             route: 'Fleet Deck',
           });
           setActiveFleetPostContext(null);
-          await loadFleetThreads();
+          void loadFleetThreads();
         }
 
         setUnifiedPostText('');
@@ -18989,9 +19391,7 @@ type CommandCentreSection =
             );
             return;
           }
-          const docRef = await firestoreMod()
-            .collection('waves')
-            .add({
+          const docRef = await createWaveDocWithRetry(firestoreMod, {
               ownerUid,
               authorId: ownerUid,
               authorName: author,
@@ -19007,7 +19407,7 @@ type CommandCentreSection =
               audience: 'fleet',
               fleetId: activeFleetPostContext.fleetId,
               fleetName: activeFleetPostContext.fleetName,
-            });
+            }, auth?.());
           handlePostPublished({
             id: docRef.id,
             media: null,
@@ -19039,7 +19439,7 @@ type CommandCentreSection =
             route: 'Fleet Deck',
           });
           setActiveFleetPostContext(null);
-          await loadFleetThreads();
+          void loadFleetThreads();
         } else {
           const result = await uploadPost({
             caption: trimmedText,
@@ -19546,6 +19946,80 @@ type CommandCentreSection =
       }
     },
     [loadFleetThreads, notifySuccess, uploadImageToUserScopedPath],
+  );
+
+  const removeFleetPhoto = useCallback(
+    async (fleet: FleetSummary) => {
+      try {
+        setFleetActionLoadingId(fleet.id);
+        await firestore().collection('fleets').doc(fleet.id).set(
+          {
+            photoURL: null,
+            updatedAt: firestore.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        );
+        const crewSnapshot = await firestore()
+          .collection('fleets')
+          .doc(fleet.id)
+          .collection('crew')
+          .get();
+        if (!crewSnapshot.empty) {
+          const batch = firestore().batch();
+          crewSnapshot.docs.forEach(doc => {
+            batch.set(doc.ref, { fleetPhotoURL: null }, { merge: true });
+            const memberUid = String(doc.id || '').trim();
+            if (memberUid) {
+              batch.set(
+                firestore().collection(`users/${memberUid}/fleets`).doc(fleet.id),
+                { photoURL: null },
+                { merge: true },
+              );
+            }
+          });
+          await batch.commit();
+        }
+        setSelectedFleetMeta(current =>
+          current?.id === fleet.id ? { ...current, photoURL: null } : current,
+        );
+        void loadFleetThreads();
+        notifySuccess('Fleet photo removed.');
+      } catch (error) {
+        console.error('Remove fleet photo error:', error);
+        notifyError('We could not remove this Fleet photo right now.');
+      } finally {
+        setFleetActionLoadingId(current => (current === fleet.id ? null : current));
+      }
+    },
+    [loadFleetThreads, notifyError, notifySuccess],
+  );
+
+  const openFleetPhotoOptions = useCallback(
+    (fleet: FleetSummary) => {
+      if (fleet.role === 'crew') {
+        if (fleet.photoURL) {
+          setZoomedProfilePic(fleet.photoURL);
+        }
+        return;
+      }
+      Alert.alert('Fleet photo', '', [
+        {
+          text: 'Change / Edit photo',
+          onPress: () => {
+            void updateFleetPhoto(fleet);
+          },
+        },
+        {
+          text: 'Remove photo',
+          style: 'destructive',
+          onPress: () => {
+            void removeFleetPhoto(fleet);
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    },
+    [removeFleetPhoto, updateFleetPhoto],
   );
 
   const copyTextToClipboard = useCallback((value: string, title: string) => {
@@ -21938,9 +22412,7 @@ type CommandCentreSection =
         const primaryItem = uploadedItems[0];
         const hasAnyVideo = uploadedItems.some(item => item.postType === 'video');
         const gridPostType = storedGridItems.length > 1 ? 'gallery' : hasAnyVideo ? 'video' : 'image';
-        const docRef = await firestoreMod()
-          .collection('waves')
-          .add({
+        const docRef = await createWaveDocWithRetry(firestoreMod, {
             authorId: uid,
             ownerUid: uid,
             authorName:
@@ -21971,7 +22443,7 @@ type CommandCentreSection =
             mediaEdits: sanitizedMediaEdits,
             editorState: sanitizedMediaEdits,
             edits: sanitizedMediaEdits,
-          });
+          }, a);
         serverDocId = docRef?.id || null;
         handlePostPublished({
           id: serverDocId || new Date().toISOString(),
@@ -22013,7 +22485,7 @@ type CommandCentreSection =
             route: 'Fleet Deck',
           });
           setActiveFleetPostContext(null);
-          await loadFleetThreads();
+          void loadFleetThreads();
         }
         notifySuccess('You dropped a vibe!');
         setCapturedMedia(null);
@@ -22093,9 +22565,7 @@ type CommandCentreSection =
         const isHttp = (u: string) => /^https?:\/\//i.test(u);
         if (DEV_SKIP_STORAGE_UPLOAD) {
           // Dev-only: avoid native StorageTask crash on hot reload by skipping uploads
-          const docRef = await firestoreMod()
-            .collection('waves')
-            .add({
+          const docRef = await createWaveDocWithRetry(firestoreMod, {
               authorId: uid,
               ownerUid: uid,
               authorName: profileName || a.currentUser?.displayName || null,
@@ -22124,7 +22594,7 @@ type CommandCentreSection =
               editorState: sanitizedMediaEdits,
               edits: sanitizedMediaEdits,
               devSkipStorage: true,
-            });
+            }, a);
           serverDocId = docRef?.id || null;
           releaseSucceeded = true;
           setReleasing(false);
@@ -22334,9 +22804,7 @@ type CommandCentreSection =
         // Keep video+audio overlays client-driven in feed (muted video + overlay audio),
         // which is more reliable than backend mux for current release behavior.
         const canServerMergeOverlay = false;
-        const docRef = await firestoreMod()
-          .collection('waves')
-          .add({
+        const docRef = await createWaveDocWithRetry(firestoreMod, {
             authorId: uid,
             ownerUid: uid,
             authorName:
@@ -22374,7 +22842,7 @@ type CommandCentreSection =
             mergeOverlayAudioPath: canServerMergeOverlay
               ? overlayAudioStoragePath
               : null,
-          });
+          }, a);
         serverDocId = docRef?.id || null;
         releaseSucceeded = true;
         // Notify backend that a wave was posted (and request server merge if overlay exists)
@@ -22441,7 +22909,7 @@ type CommandCentreSection =
             route: 'Fleet Deck',
           });
           setActiveFleetPostContext(null);
-          await loadFleetThreads();
+          void loadFleetThreads();
         }
         // Use custom notification for better UX
       notifySuccess('You dropped a vibe!');
@@ -22468,9 +22936,7 @@ type CommandCentreSection =
             const a = authMod();
             const uid = a.currentUser?.uid;
             if (uid) {
-              const recoveredDocRef = await firestoreMod()
-                .collection('waves')
-                .add({
+              const recoveredDocRef = await createWaveDocWithRetry(firestoreMod, {
                   authorId: uid,
                   ownerUid: uid,
                   authorName:
@@ -22509,7 +22975,7 @@ type CommandCentreSection =
                   mergeRequested: false,
                   mergeSourceVideoPath: null,
                   mergeOverlayAudioPath: null,
-                });
+                }, a);
               serverDocId = recoveredDocRef?.id || null;
               releaseSucceeded = true;
               console.warn(
@@ -22535,9 +23001,18 @@ type CommandCentreSection =
         return;
       }
       // Update local feed immediately (uses local media path)
+      const resolvedMediaUri = String(videoDownloadUrl || capturedMedia?.uri || '').trim();
+      const nextMedia = resolvedMediaUri
+        ? ({
+            uri: resolvedMediaUri,
+            type: capturedMedia?.type,
+            fileName: capturedMedia?.fileName,
+          } as any)
+        : null;
       const newWave: Vibe = {
         id: serverDocId || new Date().toISOString(),
-        media: capturedMedia,
+        media: nextMedia,
+        mediaItems: nextMedia ? [nextMedia] : null,
         audio: audioDownloadUrl
           ? { uri: audioDownloadUrl, name: attachedAudio?.name }
           : null,
@@ -22562,6 +23037,10 @@ type CommandCentreSection =
             return null;
           }
         })(),
+        fleetId: activeFleetPostContext?.fleetId || null,
+        fleetName: activeFleetPostContext?.fleetName || null,
+        audience: activeFleetPostContext ? 'fleet' : 'public',
+        createdAt: new Date(),
         counts: { splashes: 0, echoes: 0 }, // Ensure counts.splashes is 0 for new waves
       };
       setHasSplashed(false); // Reset splash state for new wave
@@ -22577,12 +23056,7 @@ type CommandCentreSection =
       setTextOverlayDraft('');
       setSelectedGridMediaIndex(0);
       setAttachedAudio(null); // Clear attached audio
-      setVibesFeed(prev => {
-        // Add new wave to the beginning of the array
-        const next = [newWave, ...prev];
-        setCurrentIndex(0); // Set view to the new wave
-        return next;
-      });
+      handlePostPublished(newWave);
       // Close modals that pause playback and jump to the new wave
       try {
         setShowMakeWaves(false);
@@ -22590,15 +23064,11 @@ type CommandCentreSection =
       try {
         setIsPaused(false);
       } catch {}
-      requestAnimationFrame(() => {
-        try {
-          feedRef.current?.scrollToOffset({ offset: 0, animated: false });
-        } catch {}
-      });
       // If we created a server doc, watch for mux completion updates
       if (serverDocId && firestoreMod) {
         try {
-          firestoreMod()
+          let stopWatchingWave: (() => void) | null = null;
+          stopWatchingWave = firestoreMod()
             .collection('waves')
             .doc(serverDocId)
             .onSnapshot((snap: any) => {
@@ -22606,17 +23076,40 @@ type CommandCentreSection =
               const playbackUrl = data?.playbackUrl || null;
               const muxStatus = data?.muxStatus || null;
               if (playbackUrl || muxStatus) {
-                setVibesFeed(prev =>
-                  prev.map(w =>
-                    w.id === serverDocId
-                      ? {
-                          ...w,
-                          playbackUrl: playbackUrl ?? w.playbackUrl,
-                          muxStatus: (muxStatus as any) ?? w.muxStatus,
-                        }
-                      : w,
-                  ),
-                );
+                const applyMuxUpdate = (wave: Vibe): Vibe =>
+                  wave.id === serverDocId
+                    ? {
+                        ...wave,
+                        playbackUrl: playbackUrl ?? wave.playbackUrl,
+                        muxStatus: (muxStatus as any) ?? wave.muxStatus,
+                        media:
+                          playbackUrl && isVideoAsset(wave.media)
+                            ? ({
+                                ...(wave.media || {}),
+                                uri: playbackUrl,
+                              } as any)
+                            : wave.media,
+                        mediaItems: Array.isArray(wave.mediaItems)
+                          ? wave.mediaItems.map(item =>
+                              playbackUrl && isVideoAsset(item)
+                                ? ({
+                                    ...item,
+                                    uri: playbackUrl,
+                                  } as any)
+                                : item,
+                            )
+                          : wave.mediaItems,
+                      }
+                    : wave;
+                setVibesFeed(prev => prev.map(applyMuxUpdate));
+                setPostFeed(prev => prev.map(applyMuxUpdate));
+                setSelectedFleetWaves(prev => prev.map(applyMuxUpdate));
+              }
+              if (playbackUrl || muxStatus === 'ready' || muxStatus === 'failed') {
+                try {
+                  stopWatchingWave?.();
+                } catch {}
+                stopWatchingWave = null;
               }
             });
         } catch {}
@@ -22816,6 +23309,10 @@ type CommandCentreSection =
                 windowSize={5}
                 initialNumToRender={1}
                 updateCellsBatchingPeriod={80}
+                maintainVisibleContentPosition={{
+                  minIndexForVisible: 0,
+                  autoscrollToTopThreshold: 1,
+                }}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -22829,13 +23326,8 @@ type CommandCentreSection =
                   showTopBar(); // Reset top bar hibernation timer
                 }}
                 onScrollEndDrag={() => setIsSwiping(false)}
-                onMomentumScrollEnd={(event) => {
+                onMomentumScrollEnd={() => {
                   setIsSwiping(false);
-                  // Update currentIndex based on final scroll position
-                  const scrollY = event.nativeEvent.contentOffset.y;
-                  const averageItemHeight = 300; // approximate height per post (reduced for smaller video space)
-                  const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
-                  setCurrentIndex(newIndex);
                 }}
                 // Ultra-aggressive instant playback - videos start playing when 50% visible
                 viewabilityConfig={{
@@ -22846,6 +23338,10 @@ type CommandCentreSection =
                   const now = Date.now();
                   if (now - lastEndReachedTsRef.current < 1000) return;
                   lastEndReachedTsRef.current = now;
+                  if (shouldPauseFeedPagination && displayFeed.length >= 12) {
+                    setIsFeedBackpressureActive(true);
+                    return;
+                  }
                   if (paginationInFlightRef.current || isLoadingMore || !hasMoreItems) return;
                   try {
                     loadMoreFeedItems();
@@ -23030,6 +23526,13 @@ type CommandCentreSection =
               <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f0f2f5' }}>
                 <ActivityIndicator size="large" color="#00C2FF" />
                 <Text style={{ marginTop: 10, color: '#666', fontSize: 14 }}>{t('feed.loadingMoreWaves')}</Text>
+              </View>
+            )}
+            {!isLoadingMore && isFeedBackpressureActive && hasMoreItems && (
+              <View style={{ padding: 20, alignItems: 'center', backgroundColor: '#f0f2f5' }}>
+                <Text style={{ color: '#4B5563', fontSize: 13, textAlign: 'center' }}>
+                  Feed loading is paused for a steadier experience on this network. Pull to refresh or wait for a stronger connection.
+                </Text>
               </View>
             )}
             
@@ -23600,7 +24103,6 @@ type CommandCentreSection =
                   ]}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   onPress={async () => {
-                    // Validation for username
                     if (!profileName.trim()) {
                       Alert.alert(
                         t('profile.invalidUsernameTitle'),
@@ -23616,22 +24118,11 @@ type CommandCentreSection =
                       );
                       return;
                     }
-                    // Check if username is unique
                     try {
-                      if (!myUid) {
-                        Alert.alert('Profile Unavailable', 'Please sign in again and try once more.');
-                        return;
-                      }
-                      const currentSnap = await firestore().collection('users').doc(myUid).get();
-                      const currentUsername = String(currentSnap.data()?.username || currentSnap.data()?.displayName || '').trim();
-                      await reserveUniqueUsername(myUid, trimmedName, currentUsername);
-                      await firestore().collection('users').doc(myUid).set({
-                        bio: profileBio.trim(),
-                      }, { merge: true });
-                      try {
-                        await auth().currentUser?.updateProfile({ displayName: trimmedName });
-                      } catch {}
-                      Alert.alert(t('profile.updatedTitle'), t('profile.updatedBody'));
+                      await saveProfile({
+                        profileName: trimmedName,
+                        profileBio: profileBio.trim(),
+                      });
                     } catch (e: any) {
                       if (String(e?.message || '').includes('username-taken')) {
                         Alert.alert('Username Taken', 'That username is already in use. Try another one.');
@@ -23886,101 +24377,143 @@ type CommandCentreSection =
                       <View
                         style={{
                           flexDirection: 'row',
-                          gap: 8,
+                          flexWrap: 'wrap',
+                          gap: 10,
                           justifyContent: 'center',
                         }}
                       >
                         <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            openMessageThread(
-                              creatorProfileUid,
-                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
-                            );
-                          }}
-                        >
-                          <Text style={styles.bridgeSettingButtonText}>Message</Text>
-                        </Pressable>
-                        <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            startDirectCall('audio', {
-                              uid: creatorProfileUid,
-                              name:
-                                userData[creatorProfileUid]?.name ||
-                                creatorProfileName ||
-                                'User',
-                            });
-                          }}
-                        >
-                          <Text style={styles.bridgeSettingButtonText}>Audio Call</Text>
-                        </Pressable>
-                      </View>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          gap: 8,
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            startDirectCall('video', {
-                              uid: creatorProfileUid,
-                              name:
-                                userData[creatorProfileUid]?.name ||
-                                creatorProfileName ||
-                                'User',
-                            });
-                          }}
-                        >
-                          <Text style={styles.bridgeSettingButtonText}>Video Call</Text>
-                        </Pressable>
-                        <Pressable
-                          style={[
-                            styles.bridgeSettingButton,
-                            {
-                              flex: 1,
-                              minHeight: 40,
-                              backgroundColor: isInUserCrew[creatorProfileUid]
-                                ? 'rgba(13, 148, 136, 0.75)'
-                                : 'rgba(14, 116, 144, 0.78)',
-                            },
-                          ]}
+                          accessibilityLabel="Message user"
+                          disabled={!!creatorProfileActionBusy}
                           onPress={() =>
-                            handleToggleVibe(
-                              creatorProfileUid,
-                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
-                            )
+                            void runCreatorProfileAction('message', async () => {
+                              setShowCreatorProfile(false);
+                              openMessageThread(
+                                creatorProfileUid,
+                                userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                              );
+                            })
                           }
-                        >
-                          <Text style={styles.bridgeSettingButtonText}>
-                            {isInUserCrew[creatorProfileUid] ? 'Leave Tide' : 'Join Tide'}
-                          </Text>
-                        </Pressable>
-                      </View>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          gap: 8,
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Pressable
-                          style={[
-                            styles.bridgeSettingButton,
+                          style={({ pressed }) => [
                             {
-                              flex: 1,
-                              minHeight: 40,
-                              backgroundColor: blockedUsers.has(creatorProfileUid)
-                                ? 'rgba(22, 163, 74, 0.78)'
-                                : 'rgba(141, 0, 0, 0.78)',
+                              width: 54,
+                              height: 54,
+                              borderRadius: 27,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#2563EB',
+                              opacity: creatorProfileActionBusy && creatorProfileActionBusy !== 'message' ? 0.45 : 1,
                             },
+                            pressed && !creatorProfileActionBusy ? { opacity: 0.82, transform: [{ scale: 0.94 }] } : null,
                           ]}
+                        >
+                          {creatorProfileActionBusy === 'message' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={{ fontSize: 22 }}>📨</Text>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          accessibilityLabel="Start audio call"
+                          disabled={!!creatorProfileActionBusy}
+                          onPress={() =>
+                            void runCreatorProfileAction('audio-call', async () => {
+                              setShowCreatorProfile(false);
+                              startDirectCall('audio', {
+                                uid: creatorProfileUid,
+                                name:
+                                  userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              });
+                            })
+                          }
+                          style={({ pressed }) => [
+                            {
+                              width: 54,
+                              height: 54,
+                              borderRadius: 27,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#0F766E',
+                              opacity: creatorProfileActionBusy && creatorProfileActionBusy !== 'audio-call' ? 0.45 : 1,
+                            },
+                            pressed && !creatorProfileActionBusy ? { opacity: 0.82, transform: [{ scale: 0.94 }] } : null,
+                          ]}
+                        >
+                          {creatorProfileActionBusy === 'audio-call' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={{ fontSize: 22 }}>☎️</Text>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          accessibilityLabel="Start video call"
+                          disabled={!!creatorProfileActionBusy}
+                          onPress={() =>
+                            void runCreatorProfileAction('video-call', async () => {
+                              setShowCreatorProfile(false);
+                              startDirectCall('video', {
+                                uid: creatorProfileUid,
+                                name:
+                                  userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              });
+                            })
+                          }
+                          style={({ pressed }) => [
+                            {
+                              width: 54,
+                              height: 54,
+                              borderRadius: 27,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: '#7C3AED',
+                              opacity: creatorProfileActionBusy && creatorProfileActionBusy !== 'video-call' ? 0.45 : 1,
+                            },
+                            pressed && !creatorProfileActionBusy ? { opacity: 0.82, transform: [{ scale: 0.94 }] } : null,
+                          ]}
+                        >
+                          {creatorProfileActionBusy === 'video-call' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={{ fontSize: 22 }}>📹</Text>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          accessibilityLabel={isInUserCrew[creatorProfileUid] ? 'Leave tide' : 'Join tide'}
+                          disabled={!!creatorProfileActionBusy}
+                          onPress={() =>
+                            void runCreatorProfileAction('toggle-tide', async () => {
+                              await handleToggleVibe(
+                                creatorProfileUid,
+                                userData[creatorProfileUid]?.name || creatorProfileName || 'User',
+                              );
+                            })
+                          }
+                          style={({ pressed }) => [
+                            {
+                              width: 54,
+                              height: 54,
+                              borderRadius: 27,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: isInUserCrew[creatorProfileUid] ? '#0F766E' : '#0E7490',
+                              opacity: creatorProfileActionBusy && creatorProfileActionBusy !== 'toggle-tide' ? 0.45 : 1,
+                            },
+                            pressed && !creatorProfileActionBusy ? { opacity: 0.82, transform: [{ scale: 0.94 }] } : null,
+                          ]}
+                        >
+                          {creatorProfileActionBusy === 'toggle-tide' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={{ fontSize: 22 }}>{isInUserCrew[creatorProfileUid] ? '🤝' : '🌊'}</Text>
+                          )}
+                        </Pressable>
+                        <Pressable
+                          accessibilityLabel={blockedUsers.has(creatorProfileUid) ? 'Unblock user' : 'Block user'}
+                          disabled={!!creatorProfileActionBusy}
                           onPress={() => {
                             const targetName =
                               userData[creatorProfileUid]?.name || creatorProfileName || 'this user';
@@ -23993,7 +24526,9 @@ type CommandCentreSection =
                                   {
                                     text: 'Unblock',
                                     onPress: () =>
-                                      handleUnblockUser(creatorProfileUid, targetName),
+                                      void runCreatorProfileAction('toggle-block', async () => {
+                                        await handleUnblockUser(creatorProfileUid, targetName);
+                                      }),
                                   },
                                 ],
                               );
@@ -24008,17 +24543,38 @@ type CommandCentreSection =
                                   text: 'Block',
                                   style: 'destructive',
                                   onPress: () =>
-                                    handleBlockUser(creatorProfileUid, targetName),
+                                    void runCreatorProfileAction('toggle-block', async () => {
+                                      await handleBlockUser(creatorProfileUid, targetName);
+                                    }),
                                 },
                               ],
                             );
                           }}
+                          style={({ pressed }) => [
+                            {
+                              width: 54,
+                              height: 54,
+                              borderRadius: 27,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: blockedUsers.has(creatorProfileUid) ? '#16A34A' : '#B91C1C',
+                              opacity: creatorProfileActionBusy && creatorProfileActionBusy !== 'toggle-block' ? 0.45 : 1,
+                            },
+                            pressed && !creatorProfileActionBusy ? { opacity: 0.82, transform: [{ scale: 0.94 }] } : null,
+                          ]}
                         >
-                          <Text style={styles.bridgeSettingButtonText}>
-                            {blockedUsers.has(creatorProfileUid) ? 'Unblock User' : 'Block User'}
-                          </Text>
+                          {creatorProfileActionBusy === 'toggle-block' ? (
+                            <ActivityIndicator color="#FFFFFF" />
+                          ) : (
+                            <Text style={{ fontSize: 22 }}>{blockedUsers.has(creatorProfileUid) ? '✅' : '⛔'}</Text>
+                          )}
                         </Pressable>
                       </View>
+                      {!!creatorProfileActionBusy ? (
+                        <Text style={{ color: 'rgba(255,255,255,0.68)', fontSize: 11, textAlign: 'center' }}>
+                          Working on your last action…
+                        </Text>
+                      ) : null}
                     </View>
                   </View>
                 ) : null}
@@ -24576,7 +25132,7 @@ type CommandCentreSection =
                         keyExtractor={(item) => item.id}
                         renderItem={({ item }) => {
                         const getAvatarLetter = (name: string) => {
-                          if (!name || name.trim() === '') return '?';
+                          if (!name || name.trim() === '') return DEFAULT_AVATAR_EMOJI;
                           const cleanName = name.trim();
                           const parts = cleanName.split(/\s+/); // Split on any whitespace
                           
@@ -24592,11 +25148,14 @@ type CommandCentreSection =
                             // Single character name
                             return parts[0].charAt(0).toUpperCase() + parts[0].charAt(0).toUpperCase();
                           } else {
-                            return '?';
+                            return DEFAULT_AVATAR_EMOJI;
                           }
                         };
 
                         const getAvatarColor = (name: string) => {
+                          if (!name || !name.trim()) {
+                            return DEFAULT_AVATAR_BG;
+                          }
                           const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#98D8C8'];
                           const index = name.length % colors.length;
                           return colors[index];
@@ -25225,12 +25784,12 @@ type CommandCentreSection =
                           width: 32,
                           height: 32,
                           borderRadius: 16,
-                          backgroundColor: 'rgba(255,255,255,0.2)',
+                          backgroundColor: DEFAULT_AVATAR_BG,
                           justifyContent: 'center',
                           alignItems: 'center',
                           marginRight: 8,
                         }}>
-                          <Text style={{ fontSize: 12, color: 'white' }}>👤</Text>
+                          <Text style={{ fontSize: 12, color: DEFAULT_AVATAR_FG }}>🔥</Text>
                         </View>
                       )}
 
@@ -25799,10 +26358,10 @@ type CommandCentreSection =
                             borderRadius: 23,
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: fleet.coverColor || '#0F4C81',
+                            backgroundColor: DEFAULT_AVATAR_BG,
                           }}
                         >
-                          <Text style={{ fontSize: 22 }}>{fleet.moodEmoji}</Text>
+                          <Text style={{ fontSize: 22 }}>{DEFAULT_AVATAR_EMOJI}</Text>
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
@@ -25841,8 +26400,8 @@ type CommandCentreSection =
                       {fleet.photoURL ? (
                         <Image source={{ uri: fleet.photoURL }} style={{ width: 44, height: 44, borderRadius: 22 }} />
                       ) : (
-                        <View style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: fleet.coverColor || '#0F4C81' }}>
-                          <Text style={{ fontSize: 21 }}>{fleet.moodEmoji}</Text>
+                        <View style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: DEFAULT_AVATAR_BG }}>
+                          <Text style={{ fontSize: 21 }}>{DEFAULT_AVATAR_EMOJI}</Text>
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
@@ -25896,20 +26455,16 @@ type CommandCentreSection =
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                   <Pressable
                     onPress={() => {
-                      if (selectedFleetMeta?.photoURL) {
-                        setZoomedProfilePic(selectedFleetMeta.photoURL);
-                        return;
-                      }
-                      if (selectedFleetMeta && selectedFleetMeta.role !== 'crew') {
-                        void updateFleetPhoto(selectedFleetMeta);
+                      if (selectedFleetMeta) {
+                        openFleetPhotoOptions(selectedFleetMeta);
                       }
                     }}
                   >
                     {selectedFleetMeta?.photoURL ? (
                       <Image source={{ uri: selectedFleetMeta.photoURL }} style={{ width: 58, height: 58, borderRadius: 29 }} />
                     ) : (
-                      <View style={{ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: selectedFleetMeta?.coverColor || '#0F4C81' }}>
-                        <Text style={{ fontSize: 28 }}>{selectedFleetMeta?.moodEmoji || '🦈'}</Text>
+                      <View style={{ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: DEFAULT_AVATAR_BG }}>
+                        <Text style={{ fontSize: 28 }}>{DEFAULT_AVATAR_EMOJI}</Text>
                       </View>
                     )}
                   </Pressable>
@@ -26092,10 +26647,10 @@ type CommandCentreSection =
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                     <Pressable
                       style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#7C2D12' }}
-                      onPress={() => void updateFleetPhoto(selectedFleetMeta)}
+                      onPress={() => openFleetPhotoOptions(selectedFleetMeta)}
                       disabled={fleetActionLoadingId === selectedFleetMeta.id || selectedFleetMeta.role === 'crew'}
                     >
-                      <Text style={{ color: '#FFF', fontWeight: '800' }}>Change Photo</Text>
+                      <Text style={{ color: '#FFF', fontWeight: '800' }}>Photo Options</Text>
                     </Pressable>
                     <Pressable
                       style={{ flexBasis: '48%', borderRadius: 999, paddingVertical: 9, alignItems: 'center', backgroundColor: '#0F4C81' }}
@@ -26203,8 +26758,12 @@ type CommandCentreSection =
                     const fleetWaveAuthor = formatHandle(
                       String(wave.authorName || wave.user?.name || 'Crew').replace(/^[@/]+/, ''),
                     );
-                    const fleetWaveInitial =
-                      String(fleetWaveAuthor).replace(/^[@/]+/, '').charAt(0).toUpperCase() || 'C';
+                    const fleetWaveMediaItems = Array.isArray(wave.mediaItems) && wave.mediaItems.length > 0
+                      ? wave.mediaItems.filter(item => isRenderableRemoteMediaUri(item?.uri))
+                      : isRenderableRemoteMediaUri(wave.media?.uri)
+                      ? [wave.media]
+                      : [];
+                    const fleetWaveHasMedia = fleetWaveMediaItems.length > 0 || !!wave.audio?.uri;
                     return (
                   <View
                     key={`fleet-wave-${wave.id}`}
@@ -26224,11 +26783,11 @@ type CommandCentreSection =
                             borderRadius: 21,
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: 'rgba(14,165,233,0.22)',
+                            backgroundColor: DEFAULT_AVATAR_BG,
                           }}
                         >
-                          <Text style={{ color: '#FFF', fontWeight: '900' }}>
-                            {fleetWaveInitial}
+                          <Text style={{ color: DEFAULT_AVATAR_FG, fontWeight: '900', fontSize: 18 }}>
+                            {DEFAULT_AVATAR_EMOJI}
                           </Text>
                         </View>
                       )}
@@ -26237,8 +26796,102 @@ type CommandCentreSection =
                           {fleetWaveAuthor} dropped a Fleet Wave
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: 14, lineHeight: 20, marginTop: 4 }}>
-                          {wave.captionText || 'No text attached to this Fleet Wave yet.'}
+                          {wave.captionText || (fleetWaveHasMedia ? 'Media attached to this Fleet Wave.' : 'No text attached to this Fleet Wave yet.')}
                         </Text>
+                        {fleetWaveMediaItems.length > 0 ? (
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={{ marginTop: 10 }}
+                            contentContainerStyle={{ gap: 10, paddingRight: 6 }}
+                          >
+                            {fleetWaveMediaItems.map((mediaItem, mediaIndex) => {
+                              const mediaKey = `${wave.id}-media-${mediaIndex}`;
+                              if (isVideoAsset(mediaItem)) {
+                                return (
+                                  <View
+                                    key={mediaKey}
+                                    style={{
+                                      width: 220,
+                                      height: 280,
+                                      borderRadius: 16,
+                                      overflow: 'hidden',
+                                      backgroundColor: 'rgba(3,7,18,0.8)',
+                                      borderWidth: 1,
+                                      borderColor: 'rgba(255,255,255,0.08)',
+                                    }}
+                                  >
+                                    {RNVideo ? (
+                                      <RNVideo
+                                        source={{ uri: mediaItem.uri }}
+                                        style={{ width: '100%', height: '100%' }}
+                                        resizeMode="cover"
+                                        repeat
+                                        muted
+                                        controls
+                                        paused={false}
+                                        playWhenInactive={false}
+                                        ignoreSilentSwitch="ignore"
+                                      />
+                                    ) : (
+                                      <Pressable
+                                        style={{
+                                          flex: 1,
+                                          alignItems: 'center',
+                                          justifyContent: 'center',
+                                          paddingHorizontal: 18,
+                                        }}
+                                        onPress={() => Linking.openURL(mediaItem.uri).catch(() => {})}
+                                      >
+                                        <Text style={{ color: '#FFF', fontWeight: '800', textAlign: 'center' }}>
+                                          Open video
+                                        </Text>
+                                      </Pressable>
+                                    )}
+                                  </View>
+                                );
+                              }
+                              return (
+                                <Pressable
+                                  key={mediaKey}
+                                  onPress={() => Linking.openURL(String(mediaItem.uri || '')).catch(() => {})}
+                                  style={{
+                                    width: 220,
+                                    height: 280,
+                                    borderRadius: 16,
+                                    overflow: 'hidden',
+                                    backgroundColor: 'rgba(255,255,255,0.06)',
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.08)',
+                                  }}
+                                >
+                                  <Image
+                                    source={{ uri: String(mediaItem.uri || '') }}
+                                    style={{ width: '100%', height: '100%' }}
+                                    resizeMode="cover"
+                                  />
+                                </Pressable>
+                              );
+                            })}
+                          </ScrollView>
+                        ) : null}
+                        {!fleetWaveMediaItems.length && wave.audio?.uri ? (
+                          <Pressable
+                            onPress={() => Linking.openURL(String(wave.audio?.uri || '')).catch(() => {})}
+                            style={{
+                              marginTop: 10,
+                              alignSelf: 'flex-start',
+                              borderRadius: 999,
+                              paddingHorizontal: 12,
+                              paddingVertical: 8,
+                              backgroundColor: 'rgba(14,165,233,0.18)',
+                              borderWidth: 1,
+                              borderColor: 'rgba(125,211,252,0.45)',
+                            }}
+                          >
+                            <Text style={{ color: '#E0F2FE', fontWeight: '800' }}>Open audio</Text>
+                          </Pressable>
+                        ) : null}
                       </View>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -28443,6 +29096,8 @@ type CommandCentreSection =
                   ? t('command.performanceTitle')
                   : commandCentreSection === 'appearance'
                   ? t('command.appearanceTitle')
+                  : commandCentreSection === 'owner_admin'
+                  ? 'Owner Admin'
                   : t('command.aboutTitle')}
               </Text>
               <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, textAlign: 'center', marginBottom: 10 }}>
@@ -28467,6 +29122,13 @@ type CommandCentreSection =
                       ['notifications', t('command.notificationsTitle'), t('menu.notificationsDesc')],
                       ['performance', t('command.performanceTitle'), t('menu.performanceDesc')],
                       ['appearance', t('command.appearanceTitle'), t('menu.appearanceDesc')],
+                      ...(isOwnerControlUser
+                        ? [[
+                            'owner_admin',
+                            'Owner Admin',
+                            'Search users by name, email, or phone and control admin access.',
+                          ] as const]
+                        : []),
                       ['about', t('command.aboutTitle'), t('menu.aboutDesc')],
                     ].map(item => (
                       <Pressable
@@ -28928,6 +29590,161 @@ type CommandCentreSection =
                         </View>
                       ))}
                     </View>
+                </View>
+                ) : null}
+                {commandCentreSection === 'owner_admin' ? (
+                <View
+                  style={{
+                    paddingVertical: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: 'rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <View style={styles.logbookAction}>
+                    <Text style={[styles.logbookActionText, { fontSize: 18 }]}>
+                      Owner Admin
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.58)', fontSize: 12, marginTop: 6 }}>
+                      Search by My Space name, email, or phone number, then grant or remove admin access.
+                    </Text>
+                  </View>
+
+                  <View style={[styles.logbookAction, { gap: 10 }]}>
+                    <TextInput
+                      value={ownerAdminQuery}
+                      onChangeText={text => setOwnerAdminQuery(text)}
+                      onSubmitEditing={runOwnerAdminSearch}
+                      placeholder="Search name, email, or phone"
+                      placeholderTextColor="rgba(255,255,255,0.38)"
+                      autoCapitalize="none"
+                      keyboardType="default"
+                      style={{
+                        color: '#FFFFFF',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.12)',
+                        backgroundColor: 'rgba(255,255,255,0.04)',
+                        borderRadius: 12,
+                        paddingHorizontal: 14,
+                        paddingVertical: 12,
+                      }}
+                    />
+                    <Pressable
+                      style={[
+                        styles.bridgeSettingButton,
+                        ownerAdminLoading && {
+                          opacity: 0.6,
+                        },
+                      ]}
+                      onPress={runOwnerAdminSearch}
+                      disabled={ownerAdminLoading}
+                    >
+                      <Text style={styles.bridgeSettingButtonText}>
+                        {ownerAdminLoading ? 'Searching...' : 'Search users'}
+                      </Text>
+                    </Pressable>
+                  </View>
+
+                  {ownerAdminError ? (
+                    <View style={styles.logbookAction}>
+                      <Text style={{ color: '#FCA5A5', fontSize: 12 }}>
+                        {ownerAdminError}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {ownerAdminResults.map(result => {
+                    const isBusy = ownerAdminBusyUid === result.id;
+                    const actionLabel = result.isAdmin ? 'Remove Admin' : 'Make Admin';
+                    return (
+                      <View
+                        key={`owner-admin-user-${result.id}`}
+                        style={[
+                          styles.logbookAction,
+                          {
+                            borderRadius: 14,
+                            backgroundColor: 'rgba(255,255,255,0.04)',
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.08)',
+                            gap: 12,
+                          },
+                        ]}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                          {result.photoURL ? (
+                            <Image
+                              source={{ uri: result.photoURL }}
+                              style={{ width: 50, height: 50, borderRadius: 25 }}
+                            />
+                          ) : (
+                            <View
+                              style={{
+                                width: 50,
+                                height: 50,
+                                borderRadius: 25,
+                                backgroundColor: '#A30D11',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <Text style={{ fontSize: 24 }}>🔥</Text>
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.logbookActionText}>
+                              {result.displayName || result.handle || result.id}
+                            </Text>
+                            {result.handle ? (
+                              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 }}>
+                                {result.handle}
+                              </Text>
+                            ) : null}
+                            {result.email ? (
+                              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 }}>
+                                {result.email}
+                              </Text>
+                            ) : null}
+                            {result.phoneNumber ? (
+                              <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 2 }}>
+                                {result.phoneNumber}
+                              </Text>
+                            ) : null}
+                            <Text style={{ color: result.isOwner ? '#FDE68A' : result.isAdmin ? '#86EFAC' : 'rgba(255,255,255,0.6)', fontSize: 12, marginTop: 4 }}>
+                              Access: {result.isOwner ? 'owner' : result.role || 'user'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {result.isOwner ? (
+                          <Text style={{ color: '#FDE68A', fontSize: 12 }}>
+                            Owner access stays locked from this screen.
+                          </Text>
+                        ) : (
+                          <Pressable
+                            style={[
+                              styles.bridgeSettingButton,
+                              {
+                                backgroundColor: result.isAdmin
+                                  ? 'rgba(127,29,29,0.92)'
+                                  : 'rgba(22,163,74,0.88)',
+                              },
+                              isBusy && { opacity: 0.6 },
+                            ]}
+                            onPress={() =>
+                              setOwnerAdminRole(
+                                result.id,
+                                result.isAdmin ? 'user' : 'admin',
+                              )
+                            }
+                            disabled={isBusy}
+                          >
+                            <Text style={styles.bridgeSettingButtonText}>
+                              {isBusy ? 'Saving...' : actionLabel}
+                            </Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    );
+                  })}
                 </View>
                 ) : null}
                 {commandCentreSection === 'privacy' ? (
@@ -39207,7 +40024,7 @@ function AppStack() {
   return (
     <Stack.Navigator
       screenOptions={{ headerShown: false }}
-      initialRouteName="WelcomeAnimation"
+      initialRouteName="AppHome"
     >
       <Stack.Screen
         name="WelcomeAnimation"
@@ -39231,6 +40048,9 @@ function installGlobalErrorGuards(onError: (err: Error) => void) {
     errorUtils?.setGlobalHandler?.((err: any, isFatal?: boolean) => {
       try {
         const safeErr = err instanceof Error ? err : new Error(String(err));
+        logCrashMessage(`installGlobalErrorGuards fatal=${Boolean(isFatal)}`);
+        setCrashAttributes({ js_fatal: Boolean(isFatal) });
+        recordCrashError(safeErr, 'installGlobalErrorGuards');
         onError(safeErr);
       } catch {}
       if (__DEV__ && previousHandler) {
@@ -39248,6 +40068,7 @@ function installGlobalErrorGuards(onError: (err: Error) => void) {
     const rejectionHandler = (event: any) => {
       const reason = event?.reason || event;
       const safeErr = reason instanceof Error ? reason : new Error(String(reason));
+      recordCrashError(safeErr, 'Unhandled promise rejection');
       onError(safeErr);
       return true;
     };
@@ -39293,6 +40114,7 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
   componentDidMount() {
     this.cleanup = installGlobalErrorGuards((err: Error) => {
       console.error('Global error captured:', err);
+      recordCrashError(err, 'SafeApp global error');
       this.setState({ error: err });
     });
   }
@@ -39305,6 +40127,7 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
                     
   componentDidCatch(error: Error) {
     console.error('Render error boundary caught:', error);
+    recordCrashError(error, 'SafeApp render error');
     this.setState({ error });
   }
                     
@@ -39314,62 +40137,37 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
                     
   render() {
     if (this.state.error) {
-      const error = this.state.error;
-      const errorMessage = error.message || 'Unknown error';
-      const errorStack = error.stack || '';
-      const errorName = error.name || 'Error';
+      const errorMessage = this.state.error.message || 'Unknown error';
 
       return (
         <View
           style={{
             flex: 1,
-            backgroundColor: 'black',
+            backgroundColor: '#08131f',
             justifyContent: 'center',
             alignItems: 'center',
             padding: 24,
           }}
         >
-          <Text style={{ color: 'red', fontSize: 20, textAlign: 'center', marginBottom: 10, fontWeight: 'bold' }}>
-            ⚠️ APP ERROR ⚠️
+          <Text style={{ color: '#F5FBFF', fontSize: 22, textAlign: 'center', marginBottom: 10, fontWeight: '800' }}>
+            Something went wrong
           </Text>
 
-          <Text style={{ color: 'white', fontSize: 16, textAlign: 'center', marginBottom: 8 }}>
-            Error Type: {errorName}
+          <Text style={{ color: '#B8D4E6', fontSize: 14, textAlign: 'center', marginBottom: 16 }}>
+            We hit a problem opening this part of the app. Please try again.
           </Text>
-
-          <Text style={{ color: 'white', fontSize: 14, textAlign: 'center', marginBottom: 16, fontWeight: 'bold' }}>
+          <Text style={{ color: 'rgba(255,255,255,0.72)', fontSize: 13, textAlign: 'center', marginBottom: 16 }}>
             {errorMessage}
           </Text>
-
-          <Text style={{ color: 'yellow', fontSize: 12, textAlign: 'center', marginBottom: 16 }}>
-            Timestamp: {new Date().toISOString()}
-          </Text>
-
-          <ScrollView
-            style={{
-              maxHeight: 200,
-              width: '100%',
-              backgroundColor: 'rgba(255,255,255,0.1)',
-              borderRadius: 8,
-              padding: 12,
-              marginBottom: 16,
-            }}
-            showsVerticalScrollIndicator={true}
-          >
-            <Text style={{ color: 'white', fontSize: 10, fontFamily: 'monospace' }}>
-              {errorStack}
-            </Text>
-          </ScrollView>
 
           <Pressable
             onPress={this.handleRetry}
             style={({ pressed }) => [
               {
-                backgroundColor: '#00C2FF',
+                backgroundColor: '#0F5F8F',
                 paddingHorizontal: 18,
                 paddingVertical: 10,
-                borderRadius: 10,
-                marginBottom: 10,
+                borderRadius: 999,
               },
               pressed && {
                 opacity: 0.8,
@@ -39378,32 +40176,7 @@ class SafeApp extends React.Component<{ children: React.ReactNode }, { error: Er
             ]}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Text style={{ color: '#001529', fontWeight: '700', fontSize: 15 }}>Retry App</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              // Copy error details to clipboard for debugging
-              const errorDetails = `Error: ${errorName}\nMessage: ${errorMessage}\nStack:\n${errorStack}\nTimestamp: ${new Date().toISOString()}`;
-              // Note: In a real app, you'd use Clipboard.setString() from @react-native-clipboard/clipboard
-              console.log('Error details for debugging:', errorDetails);
-              Alert.alert('Error Details Copied', 'Error details have been logged to console for debugging.');
-            }}
-            style={({ pressed }) => [
-              {
-                backgroundColor: 'rgba(255,255,255,0.2)',
-                paddingHorizontal: 18,
-                paddingVertical: 8,
-                borderRadius: 8,
-              },
-              pressed && {
-                opacity: 0.8,
-                transform: [{ scale: 0.95 }],
-              }
-            ]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Text style={{ color: 'white', fontSize: 12 }}>Copy Error Details</Text>
+            <Text style={{ color: '#F8FDFF', fontWeight: '800', fontSize: 15 }}>Try Again</Text>
           </Pressable>
         </View>
       );
@@ -39444,7 +40217,6 @@ const App: React.FC = () => {
                     
   // Defensive: wrap all native module init in try/catch and show fallback UI if any fail
   const [nativeInitError, setNativeInitError] = useState<string | null>(null);
-  const [appResumeTick, setAppResumeTick] = useState(0);
                     
   const getRelativeTime = (date: Date) => {
     const now = new Date();
@@ -39473,9 +40245,12 @@ const App: React.FC = () => {
         const msg =
           (error && error.message) ||
           (typeof error === 'string' ? error : 'Unexpected error');
-        setNativeInitError(`App error${isFatal ? ' (fatal)' : ''}: ${msg}`);
+        logCrashMessage(`Root global handler fatal=${Boolean(isFatal)}`);
+        setCrashAttributes({ root_js_fatal: Boolean(isFatal) });
+        recordCrashError(error, 'App root global handler');
+        setNativeInitError(msg);
       } catch {}
-      if (previous && previous !== safeHandler) {
+      if (__DEV__ && previous && previous !== safeHandler) {
         try {
           previous(error, isFatal);
         } catch {}
@@ -39493,7 +40268,6 @@ const App: React.FC = () => {
     const sub = AppState.addEventListener('change', state => {
       if (state === 'active') {
         setNativeInitError(null);
-        setAppResumeTick(t => t + 1);
       }
     });
     return () => {
@@ -39501,20 +40275,6 @@ const App: React.FC = () => {
         sub?.remove?.();
       } catch {}
     };
-  }, []);
-                    
-  // Load authentication completion status from AsyncStorage
-  useEffect(() => {
-    const loadAuthStatus = async () => {
-      try {
-        const completed = await AsyncStorage.getItem('auth_completed');
-        setAuthCompleted(completed === 'true');
-      } catch (e) {
-        // If we can't load it, assume not completed
-        setAuthCompleted(false);
-      }
-    };
-    loadAuthStatus();
   }, []);
                     
   const previousUidRef = useRef<string | null>(null);
@@ -39613,7 +40373,7 @@ const App: React.FC = () => {
       setNativeInitError('Native module error: ' + (e && e.message ? e.message : String(e)));
     }
     return unsub;
-  }, [initializing, appResumeTick]);
+  }, []);
                     
   // Handle deep links for shared waves
   useEffect(() => {
@@ -39664,10 +40424,10 @@ const App: React.FC = () => {
     return (
       <View style={{ flex: 1, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
         <Text style={{ color: 'white', fontSize: 18, textAlign: 'center', marginBottom: 10 }}>
-          A critical error occurred initializing the app.
+          We hit a startup problem, but your app is still safe.
         </Text>
         <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 14, textAlign: 'center', marginBottom: 16 }}>
-          {nativeInitError}
+          {nativeInitError || 'Please try this screen again.'}
         </Text>
         <Pressable
           onPress={() => setNativeInitError(null)}

@@ -535,6 +535,8 @@ var normalizeLinkTarget = function (value) {
             ensureUserData(item.ownerUid);
         }
     }, [item.ownerUid, userData, ensureUserData]);
+    var isLongTextStory = !!item.captionText && item.captionText.length > 500;
+    var collapsedTextPreview = (0, react_1.useMemo)(function () { return (item.captionText ? item.captionText.substring(0, 500).trimEnd() : ''); }, [item.captionText]);
     var handleReadMore = (0, react_1.useCallback)(function () {
         setExpandedPosts(function (prev) {
             var _a;
@@ -1058,10 +1060,10 @@ var normalizeLinkTarget = function (value) {
           {/* Post Content - Text or Media */}
           {hasRenderableMedia ? (<>
               {/* Post Text (if any) */}
-              {item.captionText && (<react_native_1.View style={styles.captionWrap}>
+              {item.captionText && !textOnlyStory && (<react_native_1.View style={styles.captionWrap}>
                   <ClickableTextWithLinks_1.default text={expandedPosts[item.id]
-                    ? item.captionText
-                    : item.captionText.length > 500
+                        ? item.captionText
+                        : item.captionText.length > 500
                         ? item.captionText.substring(0, 500) + '...'
                         : item.captionText} style={styles.captionText}/>
                 </react_native_1.View>)}
@@ -1344,14 +1346,12 @@ var normalizeLinkTarget = function (value) {
             ]}>
               <react_native_linear_gradient_1.default colors={storyTheme.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.textStoryCard}>
                 {renderMoMoBadge()}
-                <ClickableTextWithLinks_1.default text={expandedPosts[item.id]
-                ? item.captionText
-                : item.captionText.length > 500
-                    ? item.captionText.substring(0, 500) + '...'
-                    : item.captionText} style={styles.textStoryBody}/>
-                {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] ? (<react_native_1.Pressable onPress={handleReadMore}>
-                    <react_native_1.Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>Read More</react_native_1.Text>
-                  </react_native_1.Pressable>) : null}
+                {isLongTextStory && !expandedPosts[item.id] ? (<react_native_1.Pressable onPress={handleReadMore}>
+                    <react_native_1.Text style={styles.textStoryBody}>
+                      {collapsedTextPreview}
+                      <react_native_1.Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>... Read More</react_native_1.Text>
+                    </react_native_1.Text>
+                  </react_native_1.Pressable>) : (<ClickableTextWithLinks_1.default text={item.captionText} style={styles.textStoryBody}/>)}
               </react_native_linear_gradient_1.default>
             </react_native_1.Pressable>)}
 
@@ -1368,8 +1368,8 @@ var normalizeLinkTarget = function (value) {
             </react_native_1.View>)}
 
           {/* Read More - positioned above footer */}
-          {textOnlyStory && item.captionText && item.captionText.length > 500 && (<react_native_1.Pressable onPress={handleReadMore} style={styles.readMoreButton}>
-              <react_native_1.Text style={styles.readMoreText}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</react_native_1.Text>
+          {textOnlyStory && isLongTextStory && expandedPosts[item.id] && (<react_native_1.Pressable onPress={handleReadMore} style={styles.readMoreButton}>
+              <react_native_1.Text style={styles.readMoreText}>Read Less</react_native_1.Text>
             </react_native_1.Pressable>)}
         </react_native_1.View>
 

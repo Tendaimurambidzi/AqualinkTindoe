@@ -8,6 +8,12 @@ import 'react-native-reanimated';
 import { AppRegistry } from 'react-native';
 import App from './App.tsx';
 import { name as appName } from './app.json';
+import {
+  logCrashMessage,
+  recordCrashError,
+  setCrashAttributes,
+  setCrashUser,
+} from './src/services/crashlyticsService';
 
 const PENDING_INCOMING_CALL_STORAGE_KEY = 'aqualink_pending_incoming_call_v1';
 
@@ -36,10 +42,14 @@ async function ensureAnon() {
       const current = auth().currentUser;
       if (!current) {
         await auth().signInAnonymously();
+        setCrashUser(auth().currentUser?.uid || 'anonymous');
+      } else {
+        setCrashUser(current.uid || 'anonymous');
       }
     }
   } catch (e) {
     console.warn('Firebase anonymous sign-in failed', e);
+    recordCrashError(e, 'ensureAnon failed');
   }
 }
 
@@ -96,7 +106,12 @@ try {
   if (global.ErrorUtils && typeof global.ErrorUtils.setGlobalHandler === 'function') {
     global.ErrorUtils.setGlobalHandler((err, isFatal) => {
       try { console.warn('GlobalError', err?.message || err); } catch {}
-      if (typeof prev === 'function') {
+      try {
+        logCrashMessage(`GlobalError fatal=${Boolean(isFatal)}`);
+        setCrashAttributes({ js_fatal: Boolean(isFatal) });
+        recordCrashError(err, 'index.js global handler');
+      } catch {}
+      if (__DEV__ && typeof prev === 'function') {
         try { prev(err, isFatal); } catch {}
       }
     });

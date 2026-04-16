@@ -5,6 +5,7 @@ import functions from '@react-native-firebase/functions';
 import auth from '@react-native-firebase/auth';
 import { Platform } from 'react-native';
 import { Video as MediaVideoCompressor } from 'react-native-compressor';
+import { logCrashMessage, recordCrashError } from './crashlyticsService';
 
 export interface SimpleMedia {
   uri: string;
@@ -85,6 +86,39 @@ const isRecoverableStorageUploadError = (error: any) => {
   );
 };
 
+const isRetryableAuthWriteError = (error: any) => {
+  const raw = String(error?.code || error?.message || error || '').toLowerCase();
+  return (
+    raw.includes('permission-denied') ||
+    raw.includes('missing or insufficient permissions') ||
+    raw.includes('unauthenticated')
+  );
+};
+
+const createWaveDocWithRetry = async (payload: Record<string, any>, authInstance: ReturnType<typeof auth>) => {
+  let lastError: any = null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      if (attempt > 0) {
+        try {
+          await authInstance.currentUser?.getIdToken(true);
+        } catch {}
+        try {
+          await authInstance.currentUser?.reload();
+        } catch {}
+      }
+      return await firestore().collection('waves').add(payload);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableAuthWriteError(error) || attempt >= 1) {
+        throw error;
+      }
+      logCrashMessage('uploadPost retrying wave write after auth refresh');
+    }
+  }
+  throw lastError || new Error('Failed to create post.');
+};
+
 const uploadFileWithRecovery = async (
   filePath: string,
   localPath: string,
@@ -139,6 +173,10 @@ export async function uploadPost({ media, caption, link, authorName }: UploadPos
   if (!uid) {
     throw new Error('Please sign in to upload a post.');
   }
+
+  try {
+    await a.currentUser?.getIdToken?.();
+  } catch {}
 
   const mediaUri = String(media?.uri || '').trim();
   const hasMedia = Boolean(mediaUri);
@@ -227,7 +265,7 @@ export async function uploadPost({ media, caption, link, authorName }: UploadPos
     mediaType = type || mediaType;
   }
 
-  const docRef = await firestore().collection('waves').add({
+  const docRef = await createWaveDocWithRetry({
     ownerUid: uid,
     authorId: uid,
     authorName: authorName || a.currentUser?.displayName || null,
@@ -239,7 +277,7 @@ export async function uploadPost({ media, caption, link, authorName }: UploadPos
     createdAt: firestore.FieldValue.serverTimestamp(),
     // Add default caption position
     caption: { x: 0, y: 0 },
-  });
+  }, a);
 
   // Process mentions in caption
   if (caption) {
@@ -311,6 +349,7 @@ async function processMentionsInText(text: string, authorUid: string, waveId: st
       }
     }
   } catch (error) {
+    recordCrashError(error, 'uploadPost mention processing failed');
     console.warn('Error processing mentions:', error);
   }
 }

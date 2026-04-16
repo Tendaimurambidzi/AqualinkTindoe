@@ -40,6 +40,7 @@ var WaveButton = function (_a) {
     var ripple1 = (0, react_1.useRef)(new react_native_1.Animated.Value(0)).current;
     var ripple2 = (0, react_1.useRef)(new react_native_1.Animated.Value(0)).current;
     var scale = (0, react_1.useRef)(new react_native_1.Animated.Value(1)).current;
+    var _b = (0, react_1.useState)(false), isProcessing = _b[0], setIsProcessing = _b[1];
     var handlePressIn = function () {
         // Scale down slightly
         react_native_1.Animated.spring(scale, {
@@ -85,8 +86,18 @@ var WaveButton = function (_a) {
             opacity: rippleOpacity,
         };
     };
-    return (<react_native_1.Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut} hitSlop={hitSlop} style={style}>
-      <react_native_1.Animated.View style={{ transform: [{ scale: scale }], position: 'relative' }}>
+    var handlePress = function () {
+        if (isProcessing)
+            return;
+        setIsProcessing(true);
+        Promise.resolve(onPress()).finally(function () {
+            setIsProcessing(false);
+        });
+    };
+    return (<react_native_1.Pressable onPress={function () {
+            void handlePress();
+        }} onPressIn={handlePressIn} onPressOut={handlePressOut} disabled={isProcessing} hitSlop={hitSlop} style={style}>
+      <react_native_1.Animated.View style={{ transform: [{ scale: scale }], position: 'relative', opacity: isProcessing ? 0.7 : 1 }}>
         {children}
         {/* Ripple effects */}
         <react_native_1.Animated.View style={[styles.ripple, getRippleStyle(ripple1)]} pointerEvents="none"/>

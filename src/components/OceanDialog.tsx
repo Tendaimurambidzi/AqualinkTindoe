@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Modal, View, Text, Pressable, StyleSheet, Animated, Dimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Modal, View, Text, Pressable, StyleSheet, Animated, Dimensions, ActivityIndicator } from 'react-native';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -15,9 +15,11 @@ const OceanDialog: React.FC<OceanDialogProps> = ({ visible, title, message, butt
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
   const ripples = useRef([new Animated.Value(0), new Animated.Value(0)]).current;
+  const [activeButtonIndex, setActiveButtonIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (visible) {
+      setActiveButtonIndex(null);
       ripples.forEach(r => r.setValue(0));
       fadeAnim.setValue(0);
       scaleAnim.setValue(0.8);
@@ -43,9 +45,17 @@ const OceanDialog: React.FC<OceanDialogProps> = ({ visible, title, message, butt
     if (onDismiss) onDismiss();
   };
 
-  const handleButtonPress = (onPress?: () => void) => {
-    if (onPress) onPress();
-    handleDismiss();
+  const handleButtonPress = async (index: number, onPress?: () => void) => {
+    if (activeButtonIndex !== null) return;
+    setActiveButtonIndex(index);
+    try {
+      if (onPress) {
+        await Promise.resolve(onPress());
+      }
+      handleDismiss();
+    } finally {
+      setActiveButtonIndex(null);
+    }
   };
 
   const defaultButtons = buttons.length > 0 ? buttons : [{ text: 'OK', onPress: handleDismiss }];
@@ -89,17 +99,26 @@ const OceanDialog: React.FC<OceanDialogProps> = ({ visible, title, message, butt
                   btn.style === 'cancel' && styles.cancelButton,
                   btn.style === 'destructive' && styles.destructiveButton,
                   defaultButtons.length === 1 && styles.singleButton,
+                  activeButtonIndex !== null && styles.buttonDisabled,
+                  activeButtonIndex === idx && styles.buttonBusy,
                 ]}
-                onPress={() => handleButtonPress(btn.onPress)}
+                disabled={activeButtonIndex !== null}
+                onPress={() => {
+                  void handleButtonPress(idx, btn.onPress);
+                }}
               >
-                <Text
-                  style={[
-                    styles.buttonText,
-                    btn.style === 'destructive' && styles.destructiveText,
-                  ]}
-                >
-                  {btn.text}
-                </Text>
+                {activeButtonIndex === idx ? (
+                  <ActivityIndicator color={btn.style === 'destructive' ? '#fff' : '#001529'} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.buttonText,
+                      btn.style === 'destructive' && styles.destructiveText,
+                    ]}
+                  >
+                    {btn.text}
+                  </Text>
+                )}
               </Pressable>
             ))}
           </View>
@@ -176,6 +195,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#00C2FF',
     alignItems: 'center',
+  },
+  buttonBusy: {
+    opacity: 0.85,
+  },
+  buttonDisabled: {
+    opacity: 0.72,
   },
   singleButton: {
     flex: 0,

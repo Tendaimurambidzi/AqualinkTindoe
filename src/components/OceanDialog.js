@@ -41,8 +41,10 @@ var OceanDialog = function (_a) {
     var fadeAnim = (0, react_1.useRef)(new react_native_1.Animated.Value(0)).current;
     var scaleAnim = (0, react_1.useRef)(new react_native_1.Animated.Value(0.8)).current;
     var ripples = (0, react_1.useRef)([new react_native_1.Animated.Value(0), new react_native_1.Animated.Value(0)]).current;
+    var _c = (0, react_1.useState)(null), activeButtonIndex = _c[0], setActiveButtonIndex = _c[1];
     (0, react_1.useEffect)(function () {
         if (visible) {
+            setActiveButtonIndex(null);
             ripples.forEach(function (r) { return r.setValue(0); });
             fadeAnim.setValue(0);
             scaleAnim.setValue(0.8);
@@ -64,10 +66,17 @@ var OceanDialog = function (_a) {
         if (onDismiss)
             onDismiss();
     };
-    var handleButtonPress = function (onPress) {
-        if (onPress)
-            onPress();
-        handleDismiss();
+    var handleButtonPress = function (index, onPress) {
+        if (activeButtonIndex !== null)
+            return;
+        setActiveButtonIndex(index);
+        Promise.resolve(onPress ? onPress() : undefined)
+            .then(function () {
+            handleDismiss();
+        })
+            .finally(function () {
+            setActiveButtonIndex(null);
+        });
     };
     var defaultButtons = buttons.length > 0 ? buttons : [{ text: 'OK', onPress: handleDismiss }];
     return (<react_native_1.Modal visible={visible} transparent animationType="none" onRequestClose={handleDismiss}>
@@ -100,13 +109,15 @@ var OceanDialog = function (_a) {
                 btn.style === 'cancel' && styles.cancelButton,
                 btn.style === 'destructive' && styles.destructiveButton,
                 defaultButtons.length === 1 && styles.singleButton,
-            ]} onPress={function () { return handleButtonPress(btn.onPress); }}>
-                <react_native_1.Text style={[
+                activeButtonIndex !== null && styles.buttonDisabled,
+                activeButtonIndex === idx && styles.buttonBusy,
+            ]} disabled={activeButtonIndex !== null} onPress={function () { return handleButtonPress(idx, btn.onPress); }}>
+                {activeButtonIndex === idx ? (<react_native_1.ActivityIndicator color={btn.style === 'destructive' ? '#fff' : '#001529'}/>) : (<react_native_1.Text style={[
                 styles.buttonText,
                 btn.style === 'destructive' && styles.destructiveText,
             ]}>
-                  {btn.text}
-                </react_native_1.Text>
+                    {btn.text}
+                  </react_native_1.Text>)}
               </react_native_1.Pressable>); })}
           </react_native_1.View>
         </react_native_1.Animated.View>
@@ -180,6 +191,12 @@ var styles = react_native_1.StyleSheet.create({
         borderWidth: 1,
         borderColor: '#00C2FF',
         alignItems: 'center',
+    },
+    buttonBusy: {
+        opacity: 0.85,
+    },
+    buttonDisabled: {
+        opacity: 0.72,
     },
     singleButton: {
         flex: 0,

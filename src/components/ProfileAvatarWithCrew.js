@@ -139,19 +139,6 @@ var ProfileAvatarWithCrew = function (_a) {
     var photoURLWithCacheBust = photoURL && !photoURL.includes('via.placeholder.com')
         ? "".concat(photoURL, "?t=").concat(cacheBustKey)
         : null;
-    // Helper to get initials from displayName or username
-    var getInitials = function () {
-        var _a;
-        var name = String((userData === null || userData === void 0 ? void 0 : userData.displayName) || (userData === null || userData === void 0 ? void 0 : userData.name) || (userData === null || userData === void 0 ? void 0 : userData.username) || '')
-            .replace(/^[@/]+/, '')
-            .trim();
-        if (!name)
-            return '?';
-        var parts = name.trim().split(' ');
-        if (parts.length === 1)
-            return ((_a = parts[0][0]) === null || _a === void 0 ? void 0 : _a.toUpperCase()) || '?';
-        return (parts[0][0] + parts[1][0]).toUpperCase();
-    };
     // Format crew count (show "1k" for 1000+)
     var formatCrewCount = function (count) {
         if (count >= 1000) {
@@ -184,12 +171,12 @@ var ProfileAvatarWithCrew = function (_a) {
                     width: size,
                     height: size,
                     borderRadius: size / 2,
-                    backgroundColor: '#00C2FF33',
+                    backgroundColor: '#B91C1C',
                     justifyContent: 'center',
                     alignItems: 'center',
                 },
             ]}>
-              <react_native_1.Text style={styles.initials}>{getInitials()}</react_native_1.Text>
+              <react_native_1.Text style={styles.initials}>🔥</react_native_1.Text>
             </react_native_1.View>)}
         </react_native_1.Pressable>
         <react_native_1.View style={styles.countsContainer}>
@@ -222,10 +209,10 @@ var ProfileAvatarWithCrew = function (_a) {
                 height: '100%',
                 justifyContent: 'center',
                 alignItems: 'center',
-                backgroundColor: '#00C2FF33',
+                backgroundColor: '#B91C1C',
                 borderRadius: 10,
             }}>
-                <react_native_1.Text style={[styles.initials, { fontSize: 48 }]}>{getInitials()}</react_native_1.Text>
+                <react_native_1.Text style={[styles.initials, { fontSize: 48 }]}>🔥</react_native_1.Text>
               </react_native_1.View>)}
           </react_native_1.Pressable>
         </react_native_1.View>
@@ -243,12 +230,12 @@ var styles = react_native_1.StyleSheet.create({
         alignItems: 'flex-start',
     },
     avatar: {
-        backgroundColor: '#ccc',
+        backgroundColor: '#B91C1C',
         borderWidth: 2,
-        borderColor: '#00C2FF',
+        borderColor: '#FCA5A5',
     },
     initials: {
-        color: '#00C2FF',
+        color: '#FFF5F5',
         fontWeight: 'bold',
         fontSize: 24,
     },

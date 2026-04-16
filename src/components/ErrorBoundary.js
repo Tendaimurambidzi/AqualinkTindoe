@@ -20,6 +20,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 var react_1 = __importDefault(require("react"));
 var react_native_1 = require("react-native");
+var crashlyticsService_1 = require("../services/crashlyticsService");
 var ErrorBoundary = /** @class */ (function (_super) {
     __extends(ErrorBoundary, _super);
     function ErrorBoundary(props) {
@@ -36,6 +37,10 @@ var ErrorBoundary = /** @class */ (function (_super) {
     ErrorBoundary.prototype.componentDidCatch = function (error, info) {
         console.error('ErrorBoundary caught error:', error);
         console.error('Error info:', info);
+        (0, crashlyticsService_1.recordCrashError)(error, {
+            source: 'ErrorBoundary',
+            componentStack: (info === null || info === void 0 ? void 0 : info.componentStack) || '',
+        });
     };
     ErrorBoundary.prototype.render = function () {
         if (this.state.hasError) {

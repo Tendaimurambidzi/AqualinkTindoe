@@ -1,8 +1,8 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { Pressable, Animated, StyleSheet, ViewStyle } from 'react-native';
 
 interface WaveButtonProps {
-  onPress: () => void;
+  onPress: () => void | Promise<void>;
   style?: ViewStyle | ViewStyle[];
   children: React.ReactNode;
   hitSlop?: number | { top?: number; bottom?: number; left?: number; right?: number };
@@ -12,6 +12,7 @@ const WaveButton: React.FC<WaveButtonProps> = ({ onPress, style, children, hitSl
   const ripple1 = useRef(new Animated.Value(0)).current;
   const ripple2 = useRef(new Animated.Value(0)).current;
   const scale = useRef(new Animated.Value(1)).current;
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const handlePressIn = () => {
     // Scale down slightly
@@ -63,15 +64,34 @@ const WaveButton: React.FC<WaveButtonProps> = ({ onPress, style, children, hitSl
     };
   };
 
+  const handlePress = async () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+      await Promise.resolve(onPress());
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        void handlePress();
+      }}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
+      disabled={isProcessing}
       hitSlop={hitSlop}
       style={style}
     >
-      <Animated.View style={{ transform: [{ scale }], position: 'relative' }}>
+      <Animated.View
+        style={{
+          transform: [{ scale }],
+          position: 'relative',
+          opacity: isProcessing ? 0.7 : 1,
+        }}
+      >
         {children}
         {/* Ripple effects */}
         <Animated.View style={[styles.ripple, getRippleStyle(ripple1)]} pointerEvents="none" />

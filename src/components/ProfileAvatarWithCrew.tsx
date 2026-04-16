@@ -137,17 +137,6 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
     ? `${photoURL}?t=${cacheBustKey}`
     : null;
 
-  // Helper to get initials from displayName or username
-  const getInitials = () => {
-    const name = String(userData?.displayName || userData?.name || userData?.username || '')
-      .replace(/^[@/]+/, '')
-      .trim();
-    if (!name) return '?';
-    const parts = name.trim().split(' ');
-    if (parts.length === 1) return parts[0][0]?.toUpperCase() || '?';
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  };
-
   // Format crew count (show "1k" for 1000+)
   const formatCrewCount = (count: number) => {
     if (count >= 1000) {
@@ -192,13 +181,13 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
                   width: size,
                   height: size,
                   borderRadius: size / 2,
-                  backgroundColor: '#00C2FF33',
+                  backgroundColor: '#B91C1C',
                   justifyContent: 'center',
                   alignItems: 'center',
                 },
               ]}
             >
-              <Text style={styles.initials}>{getInitials()}</Text>
+              <Text style={styles.initials}>🔥</Text>
             </View>
           )}
         </Pressable>
@@ -255,11 +244,11 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
                   height: '100%',
                   justifyContent: 'center',
                   alignItems: 'center',
-                  backgroundColor: '#00C2FF33',
+                  backgroundColor: '#B91C1C',
                   borderRadius: 10,
                 }}
               >
-                <Text style={[styles.initials, { fontSize: 48 }]}>{getInitials()}</Text>
+                <Text style={[styles.initials, { fontSize: 48 }]}>🔥</Text>
               </View>
             )}
           </Pressable>
@@ -280,12 +269,12 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   avatar: {
-    backgroundColor: '#ccc',
+    backgroundColor: '#B91C1C',
     borderWidth: 2,
-    borderColor: '#00C2FF',
+    borderColor: '#FCA5A5',
   },
   initials: {
-    color: '#00C2FF',
+    color: '#FFF5F5',
     fontWeight: 'bold',
     fontSize: 24,
   },

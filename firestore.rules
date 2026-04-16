@@ -11,6 +11,35 @@ service cloud.firestore {
       return isAuthed() && request.auth.uid == ownerUid;
     }
 
+    function requesterUserDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwnerAccount() {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && (
+          requesterUserDoc().isOwner == true ||
+          requesterUserDoc().owner == true ||
+          requesterUserDoc().role == 'owner' ||
+          requesterUserDoc().userRole == 'owner'
+        );
+    }
+
+    function isPrivilegedUserAccessWrite() {
+      return request.resource.data.diff(resource.data).changedKeys().hasAny([
+        'role',
+        'userRole',
+        'roles',
+        'admin',
+        'isAdmin',
+        'owner',
+        'isOwner',
+        'updatedByUid',
+        'updatedByName'
+      ]);
+    }
+
     function isPremiumHost() {
       return isAuthed()
         && (
@@ -177,7 +206,9 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isAuthed();
       allow create: if isAuthed() && request.auth.uid == uid;
-      allow update, delete: if isOwner(uid);
+      allow update: if (isOwner(uid) && !isPrivilegedUserAccessWrite())
+                    || isOwnerAccount();
+      allow delete: if isOwner(uid);
 
       match /pings/{pingId} {
         allow read, create, update, delete: if isAuthed();

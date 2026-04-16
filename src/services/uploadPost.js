@@ -56,6 +56,7 @@ var functions_1 = __importDefault(require("@react-native-firebase/functions"));
 var auth_1 = __importDefault(require("@react-native-firebase/auth"));
 var react_native_1 = require("react-native");
 var react_native_compressor_1 = require("react-native-compressor");
+var crashlyticsService_1 = require("./crashlyticsService");
 var RNFS = null;
 var MAX_SAFE_POST_MEDIA_BYTES = 120 * 1024 * 1024;
 var resolveRNFS = function () {
@@ -135,6 +136,55 @@ var isRecoverableStorageUploadError = function (error) {
         raw.includes('timeout') ||
         raw.includes('unavailable'));
 };
+var isRetryableAuthWriteError = function (error) {
+    var raw = String((error === null || error === void 0 ? void 0 : error.code) || (error === null || error === void 0 ? void 0 : error.message) || error || '').toLowerCase();
+    return (raw.includes('permission-denied') ||
+        raw.includes('missing or insufficient permissions') ||
+        raw.includes('unauthenticated'));
+};
+var createWaveDocWithRetry = function (payload, authInstance) { return __awaiter(void 0, void 0, void 0, function () {
+    var lastError, attempt, error_2;
+    var _a, _b;
+    return __generator(this, function (_c) {
+        switch (_c.label) {
+            case 0:
+                lastError = null;
+                attempt = 0;
+                _c.label = 1;
+            case 1:
+                if (!(attempt < 2)) return [3 /*break*/, 10];
+                _c.label = 2;
+            case 2:
+                _c.trys.push([2, 7, , 9]);
+                if (!(attempt > 0)) return [3 /*break*/, 5];
+                _c.label = 3;
+            case 3:
+                _c.trys.push([3, 4, , 5]);
+                return [4 /*yield*/, (_a = authInstance.currentUser) === null || _a === void 0 ? void 0 : _a.getIdToken(true)];
+            case 4:
+                _c.sent();
+                return [3 /*break*/, 5];
+            case 5:
+                _c.trys.push([5, 6, , 7]);
+                return [4 /*yield*/, (_b = authInstance.currentUser) === null || _b === void 0 ? void 0 : _b.reload()];
+            case 6:
+                _c.sent();
+                return [3 /*break*/, 7];
+            case 7: return [4 /*yield*/, (0, firestore_1.default)().collection('waves').add(payload)];
+            case 8: return [2 /*return*/, _c.sent()];
+            case 9:
+                error_2 = _c.sent();
+                lastError = error_2;
+                if (!isRetryableAuthWriteError(error_2) || attempt >= 1) {
+                    throw error_2;
+                }
+                (0, crashlyticsService_1.logCrashMessage)('uploadPost retrying wave write after auth refresh');
+                attempt += 1;
+                return [3 /*break*/, 1];
+            case 10: throw lastError || new Error('Failed to create post.');
+        }
+    });
+}); };
 var uploadFileWithRecovery = function (filePath_1, localPath_1, metadata_1) {
     var args_1 = [];
     for (var _i = 3; _i < arguments.length; _i++) {
@@ -258,22 +308,30 @@ var uploadFileWithRecovery = function (filePath_1, localPath_1, metadata_1) {
 function uploadPost(_a) {
     return __awaiter(this, arguments, void 0, function (_b) {
         var a, uid, mediaUri, hasMedia, mediaUrl, mediaPath, mediaType, nameGuessRaw, type, sanitizedBase, baseNoExt, ext, filePath, localPath, declaredSize, rnfs, safeExt, copyDest, rnfs, stats, _c, resolvedSize, error_3, uploadContentType, docRef;
-        var _d, _e, _f;
+        var _d, _e, _f, _g;
         var media = _b.media, caption = _b.caption, link = _b.link, authorName = _b.authorName;
-        return __generator(this, function (_g) {
-            switch (_g.label) {
+        return __generator(this, function (_h) {
+            switch (_h.label) {
                 case 0:
                     a = (0, auth_1.default)();
                     uid = (_d = a.currentUser) === null || _d === void 0 ? void 0 : _d.uid;
                     if (!uid) {
                         throw new Error('Please sign in to upload a post.');
                     }
+                    _h.label = 1;
+                case 1:
+                    _h.trys.push([1, 2, , 3]);
+                    return [4 /*yield*/, (_e = a.currentUser) === null || _e === void 0 ? void 0 : _e.getIdToken()];
+                case 2:
+                    _h.sent();
+                    return [3 /*break*/, 3];
+                case 3:
                     mediaUri = String((media === null || media === void 0 ? void 0 : media.uri) || '').trim();
                     hasMedia = Boolean(mediaUri);
                     mediaUrl = null;
                     mediaPath = null;
                     mediaType = (media === null || media === void 0 ? void 0 : media.type) || null;
-                    if (!hasMedia) return [3 /*break*/, 11];
+                    if (!hasMedia) return [3 /*break*/, 12];
                     nameGuessRaw = (media === null || media === void 0 ? void 0 : media.fileName) || 'post';
                     type = ((media === null || media === void 0 ? void 0 : media.type) || '').toLowerCase();
                     sanitizedBase = nameGuessRaw
@@ -302,7 +360,7 @@ function uploadPost(_a) {
                     if (react_native_1.Platform.OS === 'android' && localPath.startsWith('file://')) {
                         localPath = localPath.replace('file://', '');
                     }
-                    if (!(react_native_1.Platform.OS === 'android' && /^content:/.test(localPath))) return [3 /*break*/, 2];
+                    if (!(react_native_1.Platform.OS === 'android' && /^content:/.test(localPath))) return [3 /*break*/, 3];
                     rnfs = resolveRNFS();
                     if (!rnfs) {
                         throw new Error('react-native-fs is required to upload content:// media on Android.');
@@ -314,53 +372,53 @@ function uploadPost(_a) {
                     _g.sent();
                     localPath = copyDest;
                     _g.label = 2;
-                case 2:
+                case 3:
                     if (!localPath) {
                         throw new Error('Could not resolve a local path for the selected media.');
                     }
-                    _g.label = 3;
-                case 3:
-                    _g.trys.push([3, 7, , 8]);
-                    rnfs = resolveRNFS();
-                    if (!rnfs) return [3 /*break*/, 5];
-                    return [4 /*yield*/, rnfs.stat(localPath)];
+                    _h.label = 4;
                 case 4:
-                    _c = _g.sent();
-                    return [3 /*break*/, 6];
+                    _h.trys.push([4, 8, , 9]);
+                    rnfs = resolveRNFS();
+                    if (!rnfs) return [3 /*break*/, 6];
+                    return [4 /*yield*/, rnfs.stat(localPath)];
                 case 5:
-                    _c = null;
-                    _g.label = 6;
+                    _c = _h.sent();
+                    return [3 /*break*/, 7];
                 case 6:
+                    _c = null;
+                    _h.label = 7;
+                case 7:
                     stats = _c;
                     resolvedSize = Math.max(0, Number((stats === null || stats === void 0 ? void 0 : stats.size) || 0));
                     if (resolvedSize > MAX_SAFE_POST_MEDIA_BYTES) {
                         throw new Error('This media file is too large to upload safely on a phone. Keep it under 120 MB.');
                     }
-                    return [3 /*break*/, 8];
-                case 7:
-                    error_3 = _g.sent();
+                    return [3 /*break*/, 9];
+                case 8:
+                    error_3 = _h.sent();
                     if (String((error_3 === null || error_3 === void 0 ? void 0 : error_3.message) || '').includes('too large')) {
                         throw error_3;
                     }
-                    return [3 /*break*/, 8];
-                case 8: return [4 /*yield*/, maybeCompressVideoForUpload(localPath, type || mediaType)];
-                case 9:
-                    localPath = _g.sent();
+                    return [3 /*break*/, 9];
+                case 9: return [4 /*yield*/, maybeCompressVideoForUpload(localPath, type || mediaType)];
+                case 10:
+                    localPath = _h.sent();
                     uploadContentType = type && (type.startsWith('video/') || type.startsWith('image/'))
                         ? type
                         : 'application/octet-stream';
                     return [4 /*yield*/, uploadFileWithRecovery(filePath, localPath, {
                             contentType: uploadContentType,
                         })];
-                case 10:
-                    mediaUrl = _g.sent();
+                case 11:
+                    mediaUrl = _h.sent();
                     mediaPath = filePath;
                     mediaType = type || mediaType;
-                    _g.label = 11;
-                case 11: return [4 /*yield*/, (0, firestore_1.default)().collection('waves').add({
+                    _h.label = 12;
+                case 12: return [4 /*yield*/, createWaveDocWithRetry({
                         ownerUid: uid,
                         authorId: uid,
-                        authorName: authorName || ((_e = a.currentUser) === null || _e === void 0 ? void 0 : _e.displayName) || null,
+                        authorName: authorName || ((_f = a.currentUser) === null || _f === void 0 ? void 0 : _f.displayName) || null,
                         text: caption, // vibes use 'text' for caption
                         link: link || null,
                         mediaUrl: mediaUrl,
@@ -369,15 +427,15 @@ function uploadPost(_a) {
                         createdAt: firestore_1.default.FieldValue.serverTimestamp(),
                         // Add default caption position
                         caption: { x: 0, y: 0 },
-                    })];
-                case 12:
-                    docRef = _g.sent();
-                    if (!caption) return [3 /*break*/, 14];
-                    return [4 /*yield*/, processMentionsInText(caption, uid, docRef.id, authorName || ((_f = a.currentUser) === null || _f === void 0 ? void 0 : _f.displayName) || 'Someone')];
+                    }, a)];
                 case 13:
-                    _g.sent();
-                    _g.label = 14;
-                case 14: return [2 /*return*/, { id: docRef.id, mediaUrl: mediaUrl }];
+                    docRef = _h.sent();
+                    if (!caption) return [3 /*break*/, 15];
+                    return [4 /*yield*/, processMentionsInText(caption, uid, docRef.id, authorName || ((_g = a.currentUser) === null || _g === void 0 ? void 0 : _g.displayName) || 'Someone')];
+                case 14:
+                    _h.sent();
+                    _h.label = 15;
+                case 15: return [2 /*return*/, { id: docRef.id, mediaUrl: mediaUrl }];
             }
         });
     });
@@ -458,6 +516,7 @@ function processMentionsInText(text, authorUid, waveId, authorName) {
                 case 9: return [3 /*break*/, 11];
                 case 10:
                     error_5 = _a.sent();
+                    (0, crashlyticsService_1.recordCrashError)(error_5, 'uploadPost mention processing failed');
                     console.warn('Error processing mentions:', error_5);
                     return [3 /*break*/, 11];
                 case 11: return [2 /*return*/];

@@ -718,6 +718,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
   }, [item.ownerUid, userData, ensureUserData]);
 
+  const isLongTextStory = !!item.captionText && item.captionText.length > 500;
+  const collapsedTextPreview = useMemo(
+    () => (item.captionText ? item.captionText.substring(0, 500).trimEnd() : ''),
+    [item.captionText],
+  );
   const handleReadMore = useCallback(() => {
     setExpandedPosts(prev => ({ ...prev, [item.id]: !prev[item.id] }));
   }, [item.id, setExpandedPosts]);
@@ -1320,27 +1325,27 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 style={styles.textStoryCard}
               >
                 {/* MoMo badge removed */}
-                <ClickableTextWithLinks
-                  text={
-                    expandedPosts[item.id]
-                      ? item.captionText
-                      : item.captionText.length > 500
-                      ? item.captionText.substring(0, 500) + '...'
-                      : item.captionText
-                  }
-                  style={styles.textStoryBody}
-                />
-                {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] ? (
+                {isLongTextStory && !expandedPosts[item.id] ? (
                   <Pressable onPress={handleReadMore}>
-                    <Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>Read More</Text>
+                    <Text style={styles.textStoryBody}>
+                      {collapsedTextPreview}
+                      <Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>
+                        ... Read More
+                      </Text>
+                    </Text>
                   </Pressable>
-                ) : null}
+                ) : (
+                  <ClickableTextWithLinks
+                    text={item.captionText}
+                    style={styles.textStoryBody}
+                  />
+                )}
               </LinearGradient>
             </Pressable>
           )}
             <>
               {/* Post Text (if any) */}
-              {item.captionText && (
+              {item.captionText && !textOnlyStory && (
                 <View style={styles.captionWrap}>
                   <ClickableTextWithLinks
                     text={
@@ -1862,21 +1867,21 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 style={styles.textStoryCard}
               >
                 {/* MoMo badge removed */}
-                <ClickableTextWithLinks
-                  text={
-                    expandedPosts[item.id]
-                      ? item.captionText
-                      : item.captionText.length > 500
-                      ? item.captionText.substring(0, 500) + '...'
-                      : item.captionText
-                  }
-                  style={styles.textStoryBody}
-                />
-                {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] ? (
+                {isLongTextStory && !expandedPosts[item.id] ? (
                   <Pressable onPress={handleReadMore}>
-                    <Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>Read More</Text>
+                    <Text style={styles.textStoryBody}>
+                      {collapsedTextPreview}
+                      <Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>
+                        ... Read More
+                      </Text>
+                    </Text>
                   </Pressable>
-                ) : null}
+                ) : (
+                  <ClickableTextWithLinks
+                    text={item.captionText}
+                    style={styles.textStoryBody}
+                  />
+                )}
               </LinearGradient>
             </Pressable>
           )}
@@ -1898,9 +1903,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           )}
 
           {/* Read More - positioned above footer */}
-          {textOnlyStory && item.captionText && item.captionText.length > 500 && (
+          {textOnlyStory && isLongTextStory && expandedPosts[item.id] && (
             <Pressable onPress={handleReadMore} style={styles.readMoreButton}>
-              <Text style={styles.readMoreText}>{expandedPosts[item.id] ? 'Read Less' : 'Read More'}</Text>
+              <Text style={styles.readMoreText}>Read Less</Text>
             </Pressable>
           )}
         </View>
