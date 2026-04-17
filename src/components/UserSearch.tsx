@@ -116,25 +116,33 @@ const UserSearch: React.FC<UserSearchProps> = ({
         .where('displayName', '<=', searchTerm + '\uf8ff')
         .limit(20)
         .get();
-      let users: UserResult[] = displayNameSnap.docs.map(doc => ({
-        uid: doc.id,
-        displayName: doc.data().displayName || 'Anonymous',
-        photoURL: doc.data().photoURL || null,
-        username: doc.data().username,
-        email: doc.data().email,
-      }));
+      let users: UserResult[] = displayNameSnap.docs
+        .map(doc => {
+          const data = doc.data() || {};
+          if (data.appRemoved === true) return null;
+          return {
+            uid: doc.id,
+            displayName: data.displayName || 'Anonymous',
+            photoURL: data.photoURL || null,
+            username: data.username,
+            email: data.email,
+          };
+        })
+        .filter(Boolean) as UserResult[];
       for (const variant of usernameVariants) {
         const usernameSnap = await usersRef
           .where('username', '==', variant)
           .limit(20)
           .get();
         usernameSnap.docs.forEach(doc => {
+          const data = doc.data() || {};
+          if (data.appRemoved === true) return;
           const user = {
             uid: doc.id,
-            displayName: doc.data().displayName || 'Anonymous',
-            photoURL: doc.data().photoURL || null,
-            username: doc.data().username,
-            email: doc.data().email,
+            displayName: data.displayName || 'Anonymous',
+            photoURL: data.photoURL || null,
+            username: data.username,
+            email: data.email,
           };
           if (!users.find(u => u.uid === user.uid)) {
             users.push(user);
@@ -145,13 +153,19 @@ const UserSearch: React.FC<UserSearchProps> = ({
       if (users.length === 0) {
         // Fuzzy suggestions if no exact match
         const allSnap = await usersRef.limit(100).get();
-        const allUsers: UserResult[] = allSnap.docs.map(doc => ({
-          uid: doc.id,
-          displayName: doc.data().displayName || 'Anonymous',
-          photoURL: doc.data().photoURL || null,
-          username: doc.data().username,
-          email: doc.data().email,
-        }));
+        const allUsers: UserResult[] = allSnap.docs
+          .map(doc => {
+            const data = doc.data() || {};
+            if (data.appRemoved === true) return null;
+            return {
+              uid: doc.id,
+              displayName: data.displayName || 'Anonymous',
+              photoURL: data.photoURL || null,
+              username: data.username,
+              email: data.email,
+            };
+          })
+          .filter(Boolean) as UserResult[];
         const fuse = new Fuse(allUsers, {
           keys: ['displayName', 'username', 'email'],
           threshold: 0.4,
@@ -182,10 +196,13 @@ const UserSearch: React.FC<UserSearchProps> = ({
         setResults([]);
       }}
     >
-      <Image
-        source={{ uri: item.photoURL || 'https://via.placeholder.com/50' }}
-        style={styles.avatar}
-      />
+      {item.photoURL ? (
+        <Image source={{ uri: item.photoURL }} style={styles.avatar} />
+      ) : (
+        <View style={[styles.avatar, styles.avatarFallback]}>
+          <Text style={styles.fallbackEmoji}>🔥</Text>
+        </View>
+      )}
       <View style={styles.userInfo}>
         <Text style={styles.displayName}>{item.displayName}</Text>
         {item.username ? (
@@ -420,6 +437,16 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     borderWidth: 2,
     borderColor: 'rgba(0, 194, 255, 0.5)',
+  },
+  avatarFallback: {
+    backgroundColor: 'rgba(0, 194, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fallbackEmoji: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#00C2FF',
   },
   userInfo: {
     marginLeft: 12,

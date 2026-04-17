@@ -136,6 +136,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         const users = sortUsers(
           snap.docs.map(doc => {
             const data = doc.data() || {};
+            if (data?.appRemoved === true) return null as any;
             return {
               uid: doc.id,
               username: String(
@@ -156,7 +157,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
                 data?.minuteFameTitleLabel || data?.minuteFameTitle || null,
             } as VibeUser;
           }),
-        ).filter(user => !!user.uid && user.uid !== myUid);
+        ).filter(user => !!user?.uid && user.uid !== myUid);
         if (!cancelled) {
           setDirectoryUsers(users);
           setResults(users.slice(0, 80));
@@ -273,7 +274,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         >
           <View style={styles.avatarWrap}>
             <View style={[styles.avatar, styles.avatarFallback]}>
-              <Text style={styles.initials}>{getInitials(item)}</Text>
+              <Text style={styles.initials}>🔥</Text>
             </View>
             {showPhoto ? (
               <Image

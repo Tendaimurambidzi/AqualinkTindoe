@@ -120,7 +120,7 @@ try {
 const paperTexture = null;
 const myLogo = (() => {
   try {
-    return require('./assets/cmee_logo_final.png');
+    return require('./assets/xapxap_logo.png');
   } catch {
     return null;
   }
@@ -1176,15 +1176,11 @@ const getUserAvatar = (userId: string | undefined, userData: Record<string, { na
   if (userInfo?.avatar) {
     return { uri: userInfo.avatar };
   }
-  
-  // Generate initials from username
-  const username = String(userInfo?.name || 'Unknown User').replace(/^[@/]+/, '');
-  const initials = username.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-  
+
   return {
-    text: initials,
-    backgroundColor: '#87CEEB', // Sky blue background for initials
-    color: '#000080', // Navy blue text
+    text: '🔥',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    color: '#FFFFFF',
   };
 };
 
@@ -2044,7 +2040,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'Shona',
     'language.ndebele': 'Ndebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'CMEE',
+    'welcome.title': 'Xapxap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Create your account',
@@ -2133,7 +2129,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'We could not open sharing right now. Please try again.',
     'rewards.shareBody':
-      'Join CMEE on the Play Store: {{storeUrl}}\n\nUse my referral code {{code}} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.',
+      'Join Xapxap on the Play Store: {{storeUrl}}\n\nUse my referral code {{code}} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.',
     'settings.languageValue': 'Language: {{language}}',
     'settings.selectLanguageTitle': 'Select language',
     'settings.selectLanguageBody': 'Choose app language preference.',
@@ -2263,7 +2259,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'A referral counts only when the invited person is a real new user, signs up with your code, and is active on at least {{days}} different days. Fake accounts, duplicate accounts, and self-referrals do not qualify.',
     'profile.referralReviewRule':
-      'Airtime and other rewards are reviewed before issue. CMEE may replace a reward with an equivalent promo benefit where needed.',
+      'Airtime and other rewards are reviewed before issue. Xapxap may replace a reward with an equivalent promo benefit where needed.',
     'profile.shareReferral': 'Share Referral',
     'profile.invalidUsernameTitle': 'Invalid Username',
     'profile.invalidUsernameEmpty': 'Username cannot be empty.',
@@ -2331,18 +2327,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Copy link',
     'feed.optionCopyLinkDesc': 'Copy your post link for quick sharing.',
     'feed.optionShare': 'Share',
-    'feed.optionShareDesc': 'Share the CMEE link with friends.',
+    'feed.optionShareDesc': 'Share the Xapxap link with friends.',
     'feed.optionSave': 'Save to device',
-    'feed.optionSaveDesc': 'Download a copy of this CMEE post for offline viewing.',
+    'feed.optionSaveDesc': 'Download a copy of this Xapxap post for offline viewing.',
     'feed.optionReport': 'Report',
-    'feed.optionReportDesc': 'Let us know if this CMEE post violates guidelines.',
+    'feed.optionReportDesc': 'Let us know if this Xapxap post violates guidelines.',
     'feed.linkCopied': 'Link copied.',
     'feed.copyLinkTitle': 'Copy link',
     'feed.saveFailedTitle': 'Save Failed',
     'feed.saveFailedBody': 'The wave could not be saved to the sea.',
-    'feed.shareTitle': 'Share CMEE',
-    'feed.shareBody': 'Share CMEE - Check out {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'this CMEE post',
+    'feed.shareTitle': 'Share Xapxap',
+    'feed.shareBody': 'Share Xapxap - Check out {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'this Xapxap post',
     'feed.reportQueued': 'Going to moderation.',
     'feed.comingSoon': 'Coming soon!',
     'feed.joinTide': 'Join Tide',
@@ -2397,7 +2393,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'ChiShona',
     'language.ndebele': 'isiNdebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'CMEE',
+    'welcome.title': 'Xapxap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Gadzira account yako',
@@ -2486,7 +2482,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Hatina kukwanisa kuvhura kugovera parizvino. Edza zvakare.',
     'rewards.shareBody':
-      'Join CMEE pa Play Store: {{storeUrl}}\n\nShandisa kodhi yangu yerefero {{code}} paunonyoresa. Mibayiro inobva kuvakakodzera: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kana mumwe mubayiro wabvumidzwa.',
+      'Join Xapxap pa Play Store: {{storeUrl}}\n\nShandisa kodhi yangu yerefero {{code}} paunonyoresa. Mibayiro inobva kuvakakodzera: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kana mumwe mubayiro wabvumidzwa.',
     'settings.languageValue': 'Mutauro: {{language}}',
     'settings.selectLanguageTitle': 'Sarudza mutauro',
     'settings.selectLanguageBody': 'Sarudza mutauro waunoda kushandisa muapp.',
@@ -2615,7 +2611,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Refero inoverengwa chete kana munhu akokwa ari mushandisi mutsva chaiye, anyoresa nekodhi yako, uye ashande mazuva anosvika {{days}} akasiyana. Maakaunzi enhema, akadzokororwa, kana kuzvikoka pachako hazviverengwi.',
     'profile.referralReviewRule':
-      'Airtime nemimwe mibayiro zvinoongororwa zvisati zvapihwa. CMEE inogona kutsiva mubayiro nemubatsiro wakaenzana.',
+      'Airtime nemimwe mibayiro zvinoongororwa zvisati zvapihwa. Xapxap inogona kutsiva mubayiro nemubatsiro wakaenzana.',
     'profile.shareReferral': 'Govera Refero',
     'profile.invalidUsernameTitle': 'Username haina kunaka',
     'profile.invalidUsernameEmpty': 'Username haigoni kusiiwa isina chinhu.',
@@ -2683,18 +2679,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Kopa link',
     'feed.optionCopyLinkDesc': 'Kopa link yepost yako kuitira kugovera nekukurumidza.',
     'feed.optionShare': 'Govera',
-    'feed.optionShareDesc': 'Govera link yeCMEE kushamwari.',
+    'feed.optionShareDesc': 'Govera link yeXapxap kushamwari.',
     'feed.optionSave': 'Chengeta pamudziyo',
-    'feed.optionSaveDesc': 'Dhaunirodha kopi yeCMEE iyi kuti uione pasina internet.',
+    'feed.optionSaveDesc': 'Dhaunirodha kopi yeXapxap iyi kuti uione pasina internet.',
     'feed.optionReport': 'Mhanara',
-    'feed.optionReportDesc': 'Tizivise kana CMEE iyi ichityora mitemo.',
+    'feed.optionReportDesc': 'Tizivise kana Xapxap iyi ichityora mitemo.',
     'feed.linkCopied': 'Link yakopiwa.',
     'feed.copyLinkTitle': 'Kopa link',
     'feed.saveFailedTitle': 'Kuchengeta kwatadza',
     'feed.saveFailedBody': 'Wave yatadza kuchengetwa mugungwa.',
-    'feed.shareTitle': 'Govera CMEE',
-    'feed.shareBody': 'Govera CMEE - ona {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'CMEE iyi',
+    'feed.shareTitle': 'Govera Xapxap',
+    'feed.shareBody': 'Govera Xapxap - ona {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'Xapxap iyi',
     'feed.reportQueued': 'Yatumirwa kumoderation.',
     'feed.comingSoon': 'Zvichauya munguva pfupi!',
     'feed.joinTide': 'Pinda muTide',
@@ -2749,7 +2745,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'IsiShona',
     'language.ndebele': 'isiNdebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'CMEE',
+    'welcome.title': 'Xapxap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Yakha i-account yakho',
@@ -2838,7 +2834,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Sehlulekile ukuvula ukwabelana khathesi. Zama njalo.',
     'rewards.shareBody':
-      'Join CMEE ku Play Store: {{storeUrl}}\n\nSebenzisa ikhodi yami yereferensi {{code}} lapho ubhalisa. Imivuzo isekelwe kwabafaneleyo: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe omunye umvuzo ovunyiweyo.',
+      'Join Xapxap ku Play Store: {{storeUrl}}\n\nSebenzisa ikhodi yami yereferensi {{code}} lapho ubhalisa. Imivuzo isekelwe kwabafaneleyo: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe omunye umvuzo ovunyiweyo.',
     'settings.languageValue': 'Ulimi: {{language}}',
     'settings.selectLanguageTitle': 'Khetha ulimi',
     'settings.selectLanguageBody': 'Khetha ulimi ofuna ukuthi i-app isebenzise.',
@@ -3101,7 +3097,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'Kishona',
     'language.ndebele': 'Kindebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'CMEE',
+    'welcome.title': 'Xapxap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Fungua akaunti yako',
@@ -3191,7 +3187,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Hatukuweza kufungua kushiriki kwa sasa. Tafadhali jaribu tena.',
     'rewards.shareBody':
-      'Jiunge na CMEE kwenye Play Store: {{storeUrl}}\n\nTumia msimbo wangu wa rufaa {{code}} wakati wa kujisajili. Zawadi zinategemea rufaa zilizohitimu: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi nyingine iliyoidhinishwa.',
+      'Jiunge na Xapxap kwenye Play Store: {{storeUrl}}\n\nTumia msimbo wangu wa rufaa {{code}} wakati wa kujisajili. Zawadi zinategemea rufaa zilizohitimu: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi nyingine iliyoidhinishwa.',
     'settings.languageValue': 'Lugha: {{language}}',
     'settings.selectLanguageTitle': 'Chagua lugha',
     'settings.selectLanguageBody': 'Chagua lugha unayotaka app itumie.',
@@ -3320,7 +3316,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Rufaa huhesabiwa tu pale mtu aliyealikwa akiwa mtumiaji mpya wa kweli, akisajili kwa msimbo wako, na kuwa hai kwa angalau siku {{days}} tofauti. Akaunti bandia, za kurudia, au kujialika hazihesabiwi.',
     'profile.referralReviewRule':
-      'Airtime na zawadi nyingine hukaguliwa kabla ya kutolewa. CMEE inaweza kubadilisha zawadi na faida nyingine sawia inapobidi.',
+      'Airtime na zawadi nyingine hukaguliwa kabla ya kutolewa. Xapxap inaweza kubadilisha zawadi na faida nyingine sawia inapobidi.',
     'profile.shareReferral': 'Shiriki Rufaa',
     'profile.invalidUsernameTitle': 'Username si sahihi',
     'profile.invalidUsernameEmpty': 'Username haiwezi kuwa tupu.',
@@ -3388,18 +3384,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Nakili link',
     'feed.optionCopyLinkDesc': 'Nakili link ya post yako kwa kushiriki haraka.',
     'feed.optionShare': 'Shiriki',
-    'feed.optionShareDesc': 'Shiriki link ya CMEE na marafiki.',
+    'feed.optionShareDesc': 'Shiriki link ya Xapxap na marafiki.',
     'feed.optionSave': 'Hifadhi kwenye kifaa',
-    'feed.optionSaveDesc': 'Pakua nakala ya CMEE hii uione bila intaneti.',
+    'feed.optionSaveDesc': 'Pakua nakala ya Xapxap hii uione bila intaneti.',
     'feed.optionReport': 'Ripoti',
-    'feed.optionReportDesc': 'Tujulishe kama CMEE hii inakiuka miongozo.',
+    'feed.optionReportDesc': 'Tujulishe kama Xapxap hii inakiuka miongozo.',
     'feed.linkCopied': 'Link imenakiliwa.',
     'feed.copyLinkTitle': 'Nakili link',
     'feed.saveFailedTitle': 'Kuhifadhi kumeshindikana',
     'feed.saveFailedBody': 'Wave haikuweza kuhifadhiwa baharini.',
-    'feed.shareTitle': 'Shiriki CMEE',
-    'feed.shareBody': 'Shiriki CMEE - angalia {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'CMEE hii',
+    'feed.shareTitle': 'Shiriki Xapxap',
+    'feed.shareBody': 'Shiriki Xapxap - angalia {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'Xapxap hii',
     'feed.reportQueued': 'Inaenda kwa moderation.',
     'feed.comingSoon': 'Inakuja karibuni!',
     'feed.joinTide': 'Jiunge na Tide',
@@ -3825,6 +3821,38 @@ const hasReferralAdminAccess = (data: Record<string, any> = {}) => {
     roles.includes('admin') ||
     roles.includes('owner')
   );
+};
+
+const APP_OWNER_EMAILS = [
+  'mukuemrambidzi@gmail.com',
+  'mukemrambidzi@gmail.com',
+];
+
+const isAppOwnerEmail = (email?: string | null) =>
+  APP_OWNER_EMAILS.includes(String(email || '').trim().toLowerCase());
+
+const getAppAccessRole = (data: Record<string, any> = {}) => {
+  const role = String(data?.appRole || data?.role || data?.userRole || '')
+    .trim()
+    .toLowerCase();
+  const roles = Array.isArray(data?.roles)
+    ? data.roles.map((value: any) => String(value || '').trim().toLowerCase())
+    : [];
+  if (
+    data?.appAdmin === true ||
+    role === 'admin' ||
+    roles.includes('admin')
+  ) {
+    return 'admin';
+  }
+  if (
+    isAppOwnerEmail(data?.email) ||
+    role === 'owner' ||
+    roles.includes('owner')
+  ) {
+    return 'owner';
+  }
+  return 'user';
 };
 
 const reserveUniqueUsername = async (
@@ -6112,6 +6140,65 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     });
     return sub;
   }, []);
+
+  const isCurrentUserAppOwner = useMemo(
+    () => isAppOwnerEmail(user?.email),
+    [user?.email],
+  );
+  const [currentUserAppAccessRole, setCurrentUserAppAccessRole] = useState<
+    'owner' | 'admin' | 'user'
+  >('user');
+  const isCurrentUserAppAdmin = useMemo(
+    () =>
+      isCurrentUserAppOwner ||
+      currentUserAppAccessRole === 'owner' ||
+      currentUserAppAccessRole === 'admin',
+    [currentUserAppAccessRole, isCurrentUserAppOwner],
+  );
+
+  useEffect(() => {
+    if (!user?.uid || !isCurrentUserAppOwner) return;
+    firestore()
+      .collection('users')
+      .doc(user.uid)
+      .set(
+        {
+          email: user.email || null,
+          appRole: 'owner',
+          appAdmin: true,
+          role: 'owner',
+          roles: ['owner', 'admin'],
+          ownerTaggedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      )
+      .catch(error => {
+        console.warn('Owner bootstrap sync failed:', error);
+      });
+  }, [isCurrentUserAppOwner, user?.email, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid) return;
+    const unsubscribe = firestore()
+      .collection('users')
+      .doc(user.uid)
+      .onSnapshot(snapshot => {
+        const data = snapshot.data() || {};
+        setCurrentUserAppAccessRole(getAppAccessRole(data) as 'owner' | 'admin' | 'user');
+        if (data.appRemoved === true) {
+          Alert.alert(
+            'Access Removed',
+            'Your access to this app has been removed by the owner.',
+          );
+          auth()
+            .signOut()
+            .catch(error => {
+              console.warn('Forced sign-out after removal failed:', error);
+            });
+        }
+      });
+    return unsubscribe;
+  }, [user?.uid]);
   
   // Set up notifications listener
   useEffect(() => {
@@ -7386,8 +7473,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               type: 'minute_fame_badge',
               toUserId: myUid,
               fromUid: 'system',
-              fromName: 'CMEE',
-              fromUserHandle: 'CMEE',
+              fromName: 'Xapxap',
+              fromUserHandle: 'Xapxap',
               message: `Your creator journey starts with the ${startingTier.label} badge ${startingTier.icon}.`,
               read: false,
               createdAt: firestore.FieldValue.serverTimestamp(),
@@ -7908,8 +7995,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Clear captured media after successful posting
       setCapturedMedia(null);
       setCapturedMediaEdits(defaultMediaEdits);
-      // Show success message for posting a CMEE vibe
-      notifySuccess('You dropped a CMEE vibe!');
+      notifySuccess('You dropped a Xapxap vibe!');
     },
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
   );
@@ -7956,8 +8042,45 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [creatorProfileName, setCreatorProfileName] = useState<string>('');
   const [creatorProfileLoadedPosts, setCreatorProfileLoadedPosts] = useState<Vibe[]>([]);
   const [creatorProfileLoading, setCreatorProfileLoading] = useState<boolean>(false);
+  const [creatorProfileActionBusy, setCreatorProfileActionBusy] = useState(false);
+  const [profileSaveBusy, setProfileSaveBusy] = useState(false);
+  const tapLocksRef = useRef<Record<string, boolean>>({});
+  const [tapFeedbackMap, setTapFeedbackMap] = useState<Record<string, boolean>>({});
   const creatorProfileScrollRef = useRef<ScrollView | null>(null);
   const [creatorProfilePostsAnchorY, setCreatorProfilePostsAnchorY] = useState<number>(0);
+
+  const runCreatorProfileAction = async (fn: () => Promise<void> | void) => {
+    if (creatorProfileActionBusy) return;
+    setCreatorProfileActionBusy(true);
+    try {
+      await Promise.resolve(fn());
+    } catch (err) {
+      console.error('Creator profile action failed:', err);
+      Alert.alert('Error', 'Action failed. Please try again.');
+    } finally {
+      setCreatorProfileActionBusy(false);
+    }
+  };
+  const runSingleTapAction = useCallback(
+    async (key: string, fn: () => Promise<void> | void, minLockMs = 420) => {
+      if (!key || tapLocksRef.current[key]) return;
+      tapLocksRef.current[key] = true;
+      setTapFeedbackMap(prev => ({ ...prev, [key]: true }));
+      const startedAt = Date.now();
+      try {
+        await Promise.resolve(fn());
+      } finally {
+        const elapsed = Date.now() - startedAt;
+        const releaseIn = Math.max(0, minLockMs - elapsed);
+        setTimeout(() => {
+          tapLocksRef.current[key] = false;
+          setTapFeedbackMap(prev => ({ ...prev, [key]: false }));
+        }, releaseIn);
+      }
+    },
+    [],
+  );
+
   const [showMakeWaves, setShowMakeWaves] = useState<boolean>(false);
   const [showTextComposer, setShowTextComposer] = useState<boolean>(false);
   const [textComposerText, setTextComposerText] = useState<string>('');
@@ -8003,6 +8126,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     createdAt?: any;
   }>>([]);
   const [showBridge, setShowBridge] = useState<boolean>(false);
+  const [ownerManagedUsers, setOwnerManagedUsers] = useState<Array<{
+    uid: string;
+    email: string;
+    displayName: string;
+    appRole: 'owner' | 'admin' | 'user';
+    appRemoved: boolean;
+  }>>([]);
+  const [ownerUsersLoading, setOwnerUsersLoading] = useState(false);
+  const [ownerUserActionUid, setOwnerUserActionUid] = useState<string | null>(null);
   const [showLanguagePicker, setShowLanguagePicker] = useState<boolean>(false);
   const [showMinuteFame, setShowMinuteFame] = useState<boolean>(false);
   const [minuteFamePhase, setMinuteFamePhase] = useState<'home' | 'queue' | 'countdown' | 'live' | 'results'>('home');
@@ -8082,6 +8214,125 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setCommandCentreSection('home');
     }
   }, [showBridge, stopTonePreview]);
+
+  const loadOwnerManagedUsers = useCallback(async () => {
+    if (!isCurrentUserAppAdmin) return;
+    setOwnerUsersLoading(true);
+    try {
+      const snap = await firestore()
+        .collection('users')
+        .limit(100)
+        .get();
+      const rows = (snap.docs || [])
+        .map(doc => {
+          const data = doc.data() || {};
+          return {
+            uid: doc.id,
+            email: String(data.email || '').trim(),
+            displayName: String(
+              data.displayName || data.username || data.userName || data.name || 'User',
+            ).trim(),
+            appRole: getAppAccessRole(data) as 'owner' | 'admin' | 'user',
+            appRemoved: data.appRemoved === true,
+          };
+        })
+        .sort((a, b) => {
+          const roleWeight = (role: 'owner' | 'admin' | 'user') =>
+            role === 'owner' ? 0 : role === 'admin' ? 1 : 2;
+          return (
+            roleWeight(a.appRole) - roleWeight(b.appRole) ||
+            a.displayName.localeCompare(b.displayName)
+          );
+        });
+      setOwnerManagedUsers(rows);
+    } catch (error) {
+      console.error('Load owner-managed users error:', error);
+      Alert.alert('Admin Tools', 'Could not load app users right now.');
+    } finally {
+      setOwnerUsersLoading(false);
+    }
+  }, [isCurrentUserAppAdmin]);
+
+  const updateManagedUserRole = useCallback(
+    async (
+      target: { uid: string; email: string; displayName: string; appRole: 'owner' | 'admin' | 'user' },
+      nextRole: 'admin' | 'user',
+    ) => {
+      if (!isCurrentUserAppAdmin || !user?.uid) return;
+      if (!target?.uid || target.uid === user.uid || isAppOwnerEmail(target.email)) {
+        Alert.alert('Owner Tools', 'The owner account cannot be changed here.');
+        return;
+      }
+      setOwnerUserActionUid(target.uid);
+      try {
+        await firestore()
+          .collection('users')
+          .doc(target.uid)
+          .set(
+            {
+              email: target.email || null,
+              appRole: nextRole,
+              appAdmin: nextRole === 'admin',
+              role: nextRole,
+              roles: nextRole === 'admin' ? ['admin'] : [],
+              moderatedBy: user.uid,
+              moderatedAt: firestore.FieldValue.serverTimestamp(),
+              appRemoved: false,
+            },
+            { merge: true },
+          );
+        await loadOwnerManagedUsers();
+      } catch (error) {
+        console.error('Update managed user role error:', error);
+        Alert.alert('Owner Tools', 'Could not update that role right now.');
+      } finally {
+        setOwnerUserActionUid(current => (current === target.uid ? null : current));
+      }
+    },
+    [isCurrentUserAppOwner, loadOwnerManagedUsers, user?.uid],
+  );
+
+  const updateManagedUserRemoval = useCallback(
+    async (
+      target: { uid: string; email: string; displayName: string; appRemoved: boolean },
+      nextRemoved: boolean,
+    ) => {
+      if (!isCurrentUserAppOwner || !user?.uid) return;
+      if (!target?.uid || target.uid === user.uid || isAppOwnerEmail(target.email)) {
+        Alert.alert('Admin Tools', 'The owner account cannot be removed.');
+        return;
+      }
+      setOwnerUserActionUid(target.uid);
+      try {
+        await firestore()
+          .collection('users')
+          .doc(target.uid)
+          .set(
+            {
+              email: target.email || null,
+              appRemoved: nextRemoved,
+              moderatedBy: user.uid,
+              moderatedAt: firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true },
+          );
+        await loadOwnerManagedUsers();
+      } catch (error) {
+        console.error('Update managed user removal error:', error);
+        Alert.alert('Admin Tools', 'Could not update app access right now.');
+      } finally {
+        setOwnerUserActionUid(current => (current === target.uid ? null : current));
+      }
+    },
+    [isCurrentUserAppAdmin, loadOwnerManagedUsers, user?.uid],
+  );
+
+  useEffect(() => {
+    if (!showBridge || !isCurrentUserAppAdmin) return;
+    if (commandCentreSection === 'owner' || commandCentreSection === 'home') {
+      loadOwnerManagedUsers();
+    }
+  }, [commandCentreSection, isCurrentUserAppAdmin, loadOwnerManagedUsers, showBridge]);
 
   useEffect(() => {
     if (!showMinuteFame) {
@@ -8271,8 +8522,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   type: 'minute_fame_badge',
                   toUserId: myUid,
                   fromUid: 'system',
-                  fromName: 'CMEE',
-                  fromUserHandle: 'CMEE',
+                  fromName: 'Xapxap',
+                  fromUserHandle: 'Xapxap',
                   message: `You have reached ${nextTier.label} ${nextTier.icon}.`,
                   read: false,
                   createdAt: firestore.FieldValue.serverTimestamp(),
@@ -8634,10 +8885,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const shareMinuteFameCard = useCallback(
     async (entry?: Partial<MinuteFameSpotlightEntry> | null) => {
       const title = entry?.titleLabel || profileMinuteFameTitle || getMinuteFameTitleLabelFromPoints(minuteFameCareerPoints);
-      const creatorName = entry?.ownerName || profileName || 'A creator on CMEE';
+      const creatorName = entry?.ownerName || profileName || 'A creator on Xapxap';
       const score = Number(entry?.score || minuteFameResults?.score || 0);
       const category = String(entry?.category || minuteFameCategory || 'Talent');
-      const body = `${creatorName} is building momentum on ${getMinuteFameDisplayName(resolvedLanguage)}.\n\nTitle: ${title}\nCategory: ${category}\nScore: ${score}\n\nRecognized on CMEE for creator growth, reach, and real audience response.`;
+      const body = `${creatorName} is building momentum on ${getMinuteFameDisplayName(resolvedLanguage)}.\n\nTitle: ${title}\nCategory: ${category}\nScore: ${score}\n\nRecognized on Xapxap for creator growth, reach, and real audience response.`;
       try {
         await Share.share({
           title: `${getMinuteFameDisplayName(resolvedLanguage)} Card`,
@@ -8980,7 +9231,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setVibesFeed(prev => prev.map(patchWaveCounts));
       setPublicFeed(prev => prev.map(patchWaveCounts));
       setPostFeed(prev => prev.map(patchWaveCounts));
-      setWaves(prev => prev.map(patchWaveCounts));
+      setWavesFeed(prev => prev.map(patchWaveCounts));
     } catch (error) {
       console.warn('Failed to sync wave reaction counts:', waveId, error);
     }
@@ -10182,6 +10433,7 @@ type CommandCentreSection =
   | 'notifications'
   | 'performance'
   | 'appearance'
+  | 'owner'
   | 'about';
                     
   const [bridge, setBridge] = useState<BridgeSettings>({
@@ -10454,7 +10706,7 @@ type CommandCentreSection =
         results.push({
           kind: 'vibe',
           id,
-          label: String(data.captionText || data.caption || data.authorName || 'CMEE'),
+          label: String(data.captionText || data.caption || data.authorName || 'Xapxap'),
           extra: {
             caption: data.captionText || data.caption || '',
             authorName: data.authorName || data.ownerName || '',
@@ -12442,6 +12694,7 @@ type CommandCentreSection =
     return displayFeed.filter(wave => {
       if (!wave?.id || seen.has(wave.id)) return false;
       if (wave.ownerUid !== creatorProfileUid) return false;
+      if (wave.audience === 'fleet' || !!wave.fleetId) return false;
       seen.add(wave.id);
       return true;
     });
@@ -14072,7 +14325,7 @@ type CommandCentreSection =
               // Append for pagination, merging richer duplicates instead of keeping the first stale copy.
               setPublicFeed(prev => {
                 const combined = mergeWaveCollectionsById(prev, wavesWithUserData);
-                const capped = combined.length > 35 ? combined.slice(-35) : combined;
+                const capped = combined.length > 120 ? combined.slice(0, 120) : combined;
                 return preserveExistingGridCollection(prev, capped);
               });
             } else {
@@ -15390,7 +15643,7 @@ type CommandCentreSection =
       setVibesFeed(prev => prev.map(patchEchoCount));
       setPublicFeed(prev => prev.map(patchEchoCount));
       setPostFeed(prev => prev.map(patchEchoCount));
-      setWaves(prev => prev.map(patchEchoCount));
+      setWavesFeed(prev => prev.map(patchEchoCount));
 
       if (parentEchoId) {
         setEchoList(prev =>
@@ -16005,12 +16258,12 @@ type CommandCentreSection =
       if (!wave) {
         await Share.share({
           title: 'Cast Vibe',
-          message: `Check out CMEE on Google Play:\n${PLAY_STORE_URL}`,
+          message: `Check out Xapxap on Google Play:\n${PLAY_STORE_URL}`,
         });
         return;
       }
       const caption = wave.captionText ? `"${wave.captionText}"` : 'my vibe';
-      const msg = `Check out ${caption} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      const msg = `Check out ${caption} on Xapxap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to cast the net right now.');
@@ -16018,9 +16271,9 @@ type CommandCentreSection =
   };
   const onShareWave = async (wave: Vibe) => {
     try {
-      const caption = wave.captionText ? `"${wave.captionText}"` : 'my CMEE post';
-      const msg = `Check out ${caption} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
-      await Share.share({ title: 'Share CMEE', message: msg });
+      const caption = wave.captionText ? `"${wave.captionText}"` : 'my Xapxap post';
+      const msg = `Check out ${caption} on Xapxap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      await Share.share({ title: 'Share Xapxap', message: msg });
     } catch {
       showOceanDialog(
         'Share Failed',
@@ -16142,7 +16395,7 @@ type CommandCentreSection =
           : vibe
       ));
 
-      setWaves(prev =>
+      setWavesFeed(prev =>
         prev.map(w =>
           w.id === wave.id
             ? { ...w, counts: { ...w.counts, hugs: nextHugCount } }
@@ -17371,7 +17624,7 @@ type CommandCentreSection =
   const shareProfile = async () => {
     try {
       const name = profileName || accountCreationHandle || '@your_handle';
-      const msg = `Check out my Space ${name} on CMEE.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      const msg = `Check out my Space ${name} on Xapxap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
@@ -17426,7 +17679,7 @@ type CommandCentreSection =
     try {
       await Share.share({
         title: 'Share Profile Link',
-        message: `Download CMEE on Google Play:\n${PLAY_STORE_URL}`,
+        message: `Download Xapxap on Google Play:\n${PLAY_STORE_URL}`,
       });
     } catch {
       Alert.alert('Share failed', 'Unable to share the link right now.');
@@ -17644,7 +17897,12 @@ type CommandCentreSection =
     } catch {}
   };
                     
-  const saveProfile = async () => {
+  const saveProfile = async (opts?: {
+    profileName?: string;
+    profileBio?: string;
+    profilePhoto?: string | null;
+    showOceanDialog?: boolean;
+  }) => {
     let firestoreMod: any = null;
     let authMod: any = null;
     let storageMod: any = null;
@@ -17662,8 +17920,13 @@ type CommandCentreSection =
       setShowEditShore(false);
       return;
     }
+    const nextProfileName = opts?.profileName ?? profileName;
+    const nextProfileBio = opts?.profileBio ?? profileBio;
+    const nextProfilePhoto = opts?.profilePhoto ?? profilePhoto;
+    const showOceanDialogEnabled = opts?.showOceanDialog ?? true;
+
     try {
-      let finalPhotoUrl: string | null = profilePhoto || null;
+      let finalPhotoUrl: string | null = nextProfilePhoto || null;
       const isHttp = (u?: string | null) => !!u && /^https?:\/\//i.test(u);
       if (DEV_SKIP_STORAGE_UPLOAD) {
         // Keep local photo in dev; avoid Storage task
@@ -17697,14 +17960,18 @@ type CommandCentreSection =
             '_',
           );
           const dest = `users/${uid}/profile_${Date.now()}_${safeName}.jpg`;
-          await storageMod()
-            .ref(dest)
-            .putFile(localPath, { contentType: 'image/jpeg' });
-          finalPhotoUrl = await storageMod().ref(dest).getDownloadURL();
+          try {
+            await storageMod()
+              .ref(dest)
+              .putFile(localPath, { contentType: 'image/jpeg' });
+            finalPhotoUrl = await storageMod().ref(dest).getDownloadURL();
+          } catch (uploadError) {
+            console.warn('Profile photo upload failed, saving text fields only:', uploadError);
+          }
         }
       }
                     
-      const normalizedProfileHandle = normalizeUserHandle(profileName);
+      const normalizedProfileHandle = normalizeUserHandle(nextProfileName);
       await firestoreMod()
         .doc(`users/${uid}`)
         .set(
@@ -17714,7 +17981,7 @@ type CommandCentreSection =
             username_lc: normalizedProfileHandle.toLowerCase(),
             userPhoto: finalPhotoUrl || null,
             photoURL: finalPhotoUrl || null,
-            bio: profileBio,
+            bio: nextProfileBio,
           },
           { merge: true },
         );
@@ -17724,7 +17991,7 @@ type CommandCentreSection =
           ...prev[uid],
           name: formatHandle(normalizedProfileHandle) || prev[uid]?.name || 'User',
           avatar: finalPhotoUrl || '',
-          bio: profileBio || prev[uid]?.bio || '',
+          bio: nextProfileBio || prev[uid]?.bio || '',
           lastSeen: prev[uid]?.lastSeen || null,
           lastActiveAt: prev[uid]?.lastActiveAt || null,
           online: prev[uid]?.online,
@@ -17740,15 +18007,18 @@ type CommandCentreSection =
       setProfileName(normalizedProfileHandle);
       setProfilePhoto(finalPhotoUrl || null);
       setShowEditShore(false);
-      showOceanDialog(
-        'Shore Updated',
-        'Your shore has been charted successfully!',
-      );
-    } catch (e) {
-      showOceanDialog(
-        'Save Failed',
-        'Could not update your shore. Try again when the tides are calmer.',
-      );
+      if (showOceanDialogEnabled) {
+        showOceanDialog('Shore Updated', 'Your shore has been charted successfully!');
+      }
+    } catch (e: any) {
+      console.warn('saveProfile error:', e);
+      if (showOceanDialogEnabled) {
+        showOceanDialog(
+          'Save Failed',
+          `Could not update your shore right now.${e?.message ? ` (${String(e.message)})` : ''}`,
+        );
+      }
+      throw e;
     }
   };
                     
@@ -18677,24 +18947,11 @@ type CommandCentreSection =
           });
 
           if (activeFleetPostContext?.fleetId) {
-            await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
-              lastActivityText: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
-              lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+            syncFleetPostSideEffects(firestoreMod, activeFleetPostContext.fleetId, {
+              actorName: profileName || accountCreationHandle || 'Crew',
               lastWaveText: trimmedText || 'Fleet Wave',
-              lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
-              updatedAt: firestoreMod.FieldValue.serverTimestamp(),
-            }, { merge: true });
-            await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
-              text: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
-              fromUid: uid,
-              fromName: profileName || accountCreationHandle || 'Crew',
-              createdAt: firestoreMod.FieldValue.serverTimestamp(),
-              type: 'fleet_wave',
               waveId: docRef?.id || null,
-              route: 'Fleet Deck',
             });
-            setActiveFleetPostContext(null);
-            await loadFleetThreads();
           }
 
           setUnifiedPostText('');
@@ -18870,24 +19127,11 @@ type CommandCentreSection =
         });
 
         if (activeFleetPostContext?.fleetId) {
-          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
-            lastActivityText: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
-            lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+          syncFleetPostSideEffects(firestoreMod, activeFleetPostContext.fleetId, {
+            actorName: profileName || accountCreationHandle || 'Crew',
             lastWaveText: trimmedText || 'Fleet Wave',
-            lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
-            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
-          }, { merge: true });
-          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
-            text: `${profileName || accountCreationHandle || 'Crew'} dropped a Fleet Wave`,
-            fromUid: uid,
-            fromName: profileName || accountCreationHandle || 'Crew',
-            createdAt: firestoreMod.FieldValue.serverTimestamp(),
-            type: 'fleet_wave',
             waveId: docRef?.id || null,
-            route: 'Fleet Deck',
           });
-          setActiveFleetPostContext(null);
-          await loadFleetThreads();
         }
 
         setUnifiedPostText('');
@@ -18943,24 +19187,11 @@ type CommandCentreSection =
             fleetName: activeFleetPostContext.fleetName,
             audience: 'fleet',
           });
-          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).set({
-            lastActivityText: `${author || 'Crew'} dropped a Fleet Wave`,
-            lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+          syncFleetPostSideEffects(firestoreMod, activeFleetPostContext.fleetId, {
+            actorName: author || 'Crew',
             lastWaveText: trimmedText || 'Fleet Wave',
-            lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
-            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
-          }, { merge: true });
-          await firestoreMod().collection('fleets').doc(activeFleetPostContext.fleetId).collection('messages').add({
-            text: `${author || 'Crew'} dropped a Fleet Wave`,
-            fromUid: ownerUid,
-            fromName: author || 'Crew',
-            createdAt: firestoreMod.FieldValue.serverTimestamp(),
-            type: 'fleet_wave',
             waveId: docRef.id,
-            route: 'Fleet Deck',
           });
-          setActiveFleetPostContext(null);
-          await loadFleetThreads();
         } else {
           const result = await uploadPost({
             caption: trimmedText,
@@ -19002,6 +19233,47 @@ type CommandCentreSection =
       setUnifiedPostProgress(null);
     }
   };
+
+  const syncFleetPostSideEffects = useCallback(
+    (firestoreMod: any, fleetId: string | null | undefined, payload: { actorName: string; lastWaveText: string; waveId: string | null }) => {
+      if (!firestoreMod || !fleetId) return;
+      const actorName = String(payload.actorName || 'Crew').trim() || 'Crew';
+      const lastWaveText = String(payload.lastWaveText || 'Fleet Wave').trim() || 'Fleet Wave';
+      const waveId = payload.waveId || null;
+      const fleetRef = firestoreMod().collection('fleets').doc(fleetId);
+      void fleetRef
+        .set(
+          {
+            lastActivityText: `${actorName} dropped a Fleet Wave`,
+            lastActivityAt: firestoreMod.FieldValue.serverTimestamp(),
+            lastWaveText,
+            lastWaveAt: firestoreMod.FieldValue.serverTimestamp(),
+            updatedAt: firestoreMod.FieldValue.serverTimestamp(),
+          },
+          { merge: true },
+        )
+        .catch((error: any) => {
+          console.warn('Fleet side-effect set failed:', error);
+        });
+      void fleetRef
+        .collection('messages')
+        .add({
+          text: `${actorName} dropped a Fleet Wave`,
+          fromUid: auth?.()?.currentUser?.uid || null,
+          fromName: actorName,
+          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          type: 'fleet_wave',
+          waveId,
+          route: 'Fleet Deck',
+        })
+        .catch((error: any) => {
+          console.warn('Fleet side-effect message failed:', error);
+        });
+      setActiveFleetPostContext(null);
+      void loadFleetThreads();
+    },
+    [loadFleetThreads],
+  );
 
   const openMessageThread = (targetUid: string, targetName?: string) => {
     if (!targetUid) return;
@@ -19174,7 +19446,7 @@ type CommandCentreSection =
         .doc(fleet.id)
         .collection('crew')
         .get();
-      const members = crewSnapshot.docs
+      const rawMembers = crewSnapshot.docs
         .map(doc => {
           const data = doc.data() || {};
           return {
@@ -19191,6 +19463,40 @@ type CommandCentreSection =
           const priority = { captain: 0, co_captain: 1, crew: 2 };
           return priority[a.role] - priority[b.role];
         });
+      // Use the same avatar selection priority as MY SPACE: userPhoto > photoURL > avatar > profilePicture
+      const uniqueUids = [...new Set(rawMembers.map(m => String(m.uid || '').trim()).filter(Boolean))];
+      const userAvatars: Record<string, { name?: string; photo?: string | null }> = {};
+      try {
+        const userDocs = await Promise.all(
+          uniqueUids.map(uid => firestore().collection('users').doc(uid).get()),
+        );
+        userDocs.forEach((docSnap, index) => {
+          const uid = uniqueUids[index];
+          if (!uid) return;
+          const d = docSnap?.data?.() || (docSnap && (docSnap as any).data ? (docSnap as any).data() : null) || {};
+          const avatarUrl =
+            d?.userPhoto || d?.photoURL || d?.avatar || d?.profilePicture || null;
+          userAvatars[uid] = {
+            name: d?.displayName || d?.name || d?.username || undefined,
+            photo: avatarUrl ? String(avatarUrl) : null,
+          };
+        });
+      } catch (e) {
+        console.warn('Load fleet member user profiles failed:', e);
+      }
+
+      const members = rawMembers.map(m => {
+        const uid = String(m.uid || '').trim();
+        const profile = uid ? userAvatars[uid] : undefined;
+        return {
+          ...m,
+          name:
+            (profile?.name ? String(profile.name) : null) ||
+            (m.name && m.name !== 'Crew' ? m.name : 'Crew'),
+          photo: (profile?.photo ?? null) || m.photo || null,
+        } as FleetMember;
+      });
+
       setFleetMembersByFleetId(prev => ({ ...prev, [fleet.id]: members }));
     } catch (error) {
       console.error('Load fleet members error:', error);
@@ -19409,8 +19715,8 @@ type CommandCentreSection =
         const result = await launchImageLibrary({
           mediaType: 'photo',
           selectionLimit: 1,
+          saveToPhotos: true,
           includeBase64: false,
-          presentationStyle: 'fullScreen',
         });
         const asset = result.assets?.[0];
         const sourceUri = asset?.uri;
@@ -19484,6 +19790,17 @@ type CommandCentreSection =
     } catch {}
     Alert.alert(title, text);
   }, [notifySuccess]);
+
+  const exportLocalErrorLogToClipboard = useCallback(async () => {
+    try {
+      const { getLocalErrorRingExportText } = require('./src/crashReport');
+      const text = await getLocalErrorRingExportText();
+      copyTextToClipboard(text, 'Error log');
+    } catch (e) {
+      console.warn('exportLocalErrorLogToClipboard', e);
+      notifyError('Could not export error log.');
+    }
+  }, [copyTextToClipboard, notifyError]);
 
   const shareFleetInvite = useCallback(async (fleet: FleetSummary) => {
     try {
@@ -23513,6 +23830,7 @@ type CommandCentreSection =
                       alignSelf: 'center',
                       minHeight: 42,
                       justifyContent: 'center',
+                      opacity: profileSaveBusy ? 0.65 : 1,
                     },
                     pressed && {
                       opacity: 0.8,
@@ -23520,13 +23838,17 @@ type CommandCentreSection =
                     }
                   ]}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  disabled={profileSaveBusy}
                   onPress={async () => {
+                    if (profileSaveBusy) return;
+                    setProfileSaveBusy(true);
                     // Validation for username
                     if (!profileName.trim()) {
                       Alert.alert(
                         t('profile.invalidUsernameTitle'),
                         t('profile.invalidUsernameEmpty'),
                       );
+                      setProfileSaveBusy(false);
                       return;
                     }
                     const trimmedName = normalizeUniqueUsername(profileName);
@@ -23535,34 +23857,43 @@ type CommandCentreSection =
                         t('profile.invalidUsernameTitle'),
                         t('profile.invalidUsernameShort'),
                       );
+                      setProfileSaveBusy(false);
                       return;
                     }
                     // Check if username is unique
                     try {
                       if (!myUid) {
                         Alert.alert('Profile Unavailable', 'Please sign in again and try once more.');
+                        setProfileSaveBusy(false);
                         return;
                       }
                       const currentSnap = await firestore().collection('users').doc(myUid).get();
                       const currentUsername = String(currentSnap.data()?.username || currentSnap.data()?.displayName || '').trim();
                       await reserveUniqueUsername(myUid, trimmedName, currentUsername);
-                      await firestore().collection('users').doc(myUid).set({
-                        bio: profileBio.trim(),
-                      }, { merge: true });
-                      try {
-                        await auth().currentUser?.updateProfile({ displayName: trimmedName });
-                      } catch {}
+                      await saveProfile({
+                        profileName: trimmedName,
+                        profileBio: profileBio.trim(),
+                        profilePhoto,
+                        showOceanDialog: false,
+                      });
                       Alert.alert(t('profile.updatedTitle'), t('profile.updatedBody'));
                     } catch (e: any) {
                       if (String(e?.message || '').includes('username-taken')) {
                         Alert.alert('Username Taken', 'That username is already in use. Try another one.');
                       } else {
-                        Alert.alert('Save Failed', 'We could not save your profile right now. Please try again.');
+                        Alert.alert(
+                          'Save Failed',
+                          `We could not save your profile right now.${e?.message ? ` (${String(e.message)})` : ''}`,
+                        );
                       }
+                    } finally {
+                      setProfileSaveBusy(false);
                     }
                   }}
                 >
-                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>{t('profile.saveProfile')}</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 13 }}>
+                    {profileSaveBusy ? 'Saving...' : t('profile.saveProfile')}
+                  </Text>
                 </Pressable>
               </View>
               {/* My Vibes and My Treasure */}
@@ -23770,31 +24101,45 @@ type CommandCentreSection =
                         }}
                       >
                         <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            openMessageThread(
-                              creatorProfileUid,
-                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
-                            );
-                          }}
+                          style={[
+                            styles.bridgeSettingButton,
+                            { flex: 1, minHeight: 72, opacity: creatorProfileActionBusy ? 0.6 : 1 },
+                          ]}
+                          disabled={creatorProfileActionBusy}
+                          onPress={() =>
+                            runCreatorProfileAction(() => {
+                              setShowCreatorProfile(false);
+                              openMessageThread(
+                                creatorProfileUid,
+                                userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              );
+                            })
+                          }
                         >
-                          <Text style={styles.bridgeSettingButtonText}>Message</Text>
+                          <Text style={[styles.bridgeSettingButtonText, { fontSize: 26 }]}>{'\uD83D\uDCAC'}</Text>
                         </Pressable>
                         <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            startDirectCall('audio', {
-                              uid: creatorProfileUid,
-                              name:
-                                userData[creatorProfileUid]?.name ||
-                                creatorProfileName ||
-                                'User',
-                            });
-                          }}
+                          style={[
+                            styles.bridgeSettingButton,
+                            { flex: 1, minHeight: 72, opacity: creatorProfileActionBusy ? 0.6 : 1 },
+                          ]}
+                          disabled={creatorProfileActionBusy}
+                          onPress={() =>
+                            runCreatorProfileAction(() => {
+                              setShowCreatorProfile(false);
+                              startDirectCall('audio', {
+                                uid: creatorProfileUid,
+                                name:
+                                  userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              });
+                            })
+                          }
                         >
-                          <Text style={styles.bridgeSettingButtonText}>Audio Call</Text>
+                          <Text style={[styles.bridgeSettingButtonText, { fontSize: 26 }]}>{'\uD83C\uDFA4'}</Text>
                         </Pressable>
                       </View>
                       <View
@@ -23805,41 +24150,51 @@ type CommandCentreSection =
                         }}
                       >
                         <Pressable
-                          style={[styles.bridgeSettingButton, { flex: 1, minHeight: 40 }]}
-                          onPress={() => {
-                            setShowCreatorProfile(false);
-                            startDirectCall('video', {
-                              uid: creatorProfileUid,
-                              name:
-                                userData[creatorProfileUid]?.name ||
-                                creatorProfileName ||
-                                'User',
-                            });
-                          }}
+                          style={[
+                            styles.bridgeSettingButton,
+                            { flex: 1, minHeight: 72, opacity: creatorProfileActionBusy ? 0.6 : 1 },
+                          ]}
+                          disabled={creatorProfileActionBusy}
+                          onPress={() =>
+                            runCreatorProfileAction(() => {
+                              setShowCreatorProfile(false);
+                              startDirectCall('video', {
+                                uid: creatorProfileUid,
+                                name:
+                                  userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              });
+                            })
+                          }
                         >
-                          <Text style={styles.bridgeSettingButtonText}>Video Call</Text>
+                          <Text style={[styles.bridgeSettingButtonText, { fontSize: 26 }]}>{'\uD83C\uDFA5'}</Text>
                         </Pressable>
                         <Pressable
                           style={[
                             styles.bridgeSettingButton,
                             {
                               flex: 1,
-                              minHeight: 40,
+                              minHeight: 72,
+                              opacity: creatorProfileActionBusy ? 0.6 : 1,
                               backgroundColor: isInUserCrew[creatorProfileUid]
                                 ? 'rgba(13, 148, 136, 0.75)'
                                 : 'rgba(14, 116, 144, 0.78)',
                             },
                           ]}
+                          disabled={creatorProfileActionBusy}
                           onPress={() =>
-                            handleToggleVibe(
-                              creatorProfileUid,
-                              userData[creatorProfileUid]?.name || creatorProfileName || 'User',
-                            )
+                            runCreatorProfileAction(async () => {
+                              await handleToggleVibe(
+                                creatorProfileUid,
+                                userData[creatorProfileUid]?.name ||
+                                  creatorProfileName ||
+                                  'User',
+                              );
+                            })
                           }
                         >
-                          <Text style={styles.bridgeSettingButtonText}>
-                            {isInUserCrew[creatorProfileUid] ? 'Leave Tide' : 'Join Tide'}
-                          </Text>
+                          <Text style={[styles.bridgeSettingButtonText, { fontSize: 26 }]}>{'\uD83C\uDF0A'}</Text>
                         </Pressable>
                       </View>
                       <View
@@ -23854,47 +24209,53 @@ type CommandCentreSection =
                             styles.bridgeSettingButton,
                             {
                               flex: 1,
-                              minHeight: 40,
-                              backgroundColor: blockedUsers.has(creatorProfileUid)
-                                ? 'rgba(22, 163, 74, 0.78)'
-                                : 'rgba(141, 0, 0, 0.78)',
+                              minHeight: 72,
+                              opacity: creatorProfileActionBusy ? 0.6 : 1,
+                              backgroundColor: 'transparent',
+                              borderColor: 'transparent',
+                              borderWidth: 0,
                             },
                           ]}
+                          disabled={creatorProfileActionBusy}
                           onPress={() => {
-                            const targetName =
-                              userData[creatorProfileUid]?.name || creatorProfileName || 'this user';
-                            if (blockedUsers.has(creatorProfileUid)) {
+                            runCreatorProfileAction(async () => {
+                              const targetName =
+                                userData[creatorProfileUid]?.name ||
+                                creatorProfileName ||
+                                'this user';
+                              if (blockedUsers.has(creatorProfileUid)) {
+                                Alert.alert(
+                                  'Unblock User',
+                                  `Unblock ${targetName}?`,
+                                  [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    {
+                                      text: 'Unblock',
+                                      onPress: () =>
+                                        handleUnblockUser(creatorProfileUid, targetName),
+                                    },
+                                  ],
+                                );
+                                return;
+                              }
                               Alert.alert(
-                                'Unblock User',
-                                `Unblock ${targetName}?`,
+                                'Block User',
+                                `Block ${targetName}? They will be hidden from your feed.`,
                                 [
                                   { text: 'Cancel', style: 'cancel' },
                                   {
-                                    text: 'Unblock',
+                                    text: 'Block',
+                                    style: 'destructive',
                                     onPress: () =>
-                                      handleUnblockUser(creatorProfileUid, targetName),
+                                      handleBlockUser(creatorProfileUid, targetName),
                                   },
                                 ],
                               );
-                              return;
-                            }
-                            Alert.alert(
-                              'Block User',
-                              `Block ${targetName}? They will be hidden from your feed.`,
-                              [
-                                { text: 'Cancel', style: 'cancel' },
-                                {
-                                  text: 'Block',
-                                  style: 'destructive',
-                                  onPress: () =>
-                                    handleBlockUser(creatorProfileUid, targetName),
-                                },
-                              ],
-                            );
+                            });
                           }}
                         >
-                          <Text style={styles.bridgeSettingButtonText}>
-                            {blockedUsers.has(creatorProfileUid) ? 'Unblock User' : 'Block User'}
+                          <Text style={[styles.bridgeSettingButtonText, { fontSize: 26 }]}>
+                            {blockedUsers.has(creatorProfileUid) ? '\u2705' : '\uD83D\uDEAB'}
                           </Text>
                         </Pressable>
                       </View>
@@ -23980,7 +24341,7 @@ type CommandCentreSection =
                       )}
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.logbookActionText} numberOfLines={2}>
-                          {post.captionText || post.authorName || 'Untitled CMEE'}
+                          {post.captionText || post.authorName || 'Untitled Xapxap'}
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 6 }}>
                           {post.postType || (post.audio?.uri ? 'audio' : post.media ? 'media' : 'text')}
@@ -25561,7 +25922,7 @@ type CommandCentreSection =
                             backgroundColor: fleet.coverColor || '#0F4C81',
                           }}
                         >
-                          <Text style={{ fontSize: 22 }}>{fleet.moodEmoji}</Text>
+                          <Text style={{ fontSize: 22 }}>🔥</Text>
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
@@ -25601,7 +25962,7 @@ type CommandCentreSection =
                         <Image source={{ uri: fleet.photoURL }} style={{ width: 44, height: 44, borderRadius: 22 }} />
                       ) : (
                         <View style={{ width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: fleet.coverColor || '#0F4C81' }}>
-                          <Text style={{ fontSize: 21 }}>{fleet.moodEmoji}</Text>
+                          <Text style={{ fontSize: 21 }}>🔥</Text>
                         </View>
                       )}
                       <View style={{ flex: 1 }}>
@@ -25668,7 +26029,7 @@ type CommandCentreSection =
                       <Image source={{ uri: selectedFleetMeta.photoURL }} style={{ width: 58, height: 58, borderRadius: 29 }} />
                     ) : (
                       <View style={{ width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', backgroundColor: selectedFleetMeta?.coverColor || '#0F4C81' }}>
-                        <Text style={{ fontSize: 28 }}>{selectedFleetMeta?.moodEmoji || '🦈'}</Text>
+                        <Text style={{ fontSize: 28 }}>🔥</Text>
                       </View>
                     )}
                   </Pressable>
@@ -25900,9 +26261,7 @@ type CommandCentreSection =
                           <Image source={{ uri: member.photo }} style={{ width: 34, height: 34, borderRadius: 17 }} />
                         ) : (
                           <View style={{ width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.14)' }}>
-                            <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                              {String(member.name || 'C').replace(/^[@/]+/, '').charAt(0).toUpperCase() || 'C'}
-                            </Text>
+                            <Text style={{ color: '#FFF', fontWeight: '800' }}>🔥</Text>
                           </View>
                         )}
                         <View style={{ flex: 1 }}>
@@ -26779,7 +27138,8 @@ type CommandCentreSection =
                       {t('compose.postFailed', { message: unifiedPostError })}
                     </Text>
                     <Pressable
-                      onPress={handleUnifiedPost}
+                      onPress={() => void runSingleTapAction('compose-retry-post', handleUnifiedPost)}
+                      disabled={!!tapFeedbackMap['compose-retry-post']}
                       style={{
                         marginTop: 8,
                         alignSelf: 'flex-start',
@@ -26787,6 +27147,7 @@ type CommandCentreSection =
                         paddingVertical: 5,
                         borderRadius: 6,
                         backgroundColor: '#ff7a00',
+                        opacity: tapFeedbackMap['compose-retry-post'] ? 0.55 : 1,
                       }}
                     >
                       <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
@@ -26802,48 +27163,48 @@ type CommandCentreSection =
                 {!editingWave ? (
                   <>
                     <Pressable
-                      onPress={handleUnifiedCameraCapture}
-                      disabled={isUnifiedPosting}
+                      onPress={() => void runSingleTapAction('compose-camera', handleUnifiedCameraCapture)}
+                      disabled={isUnifiedPosting || !!tapFeedbackMap['compose-camera']}
                       style={[
                         styles.createPostActionBtn,
                         styles.createPostCameraBtn,
-                        isUnifiedPosting && { opacity: 0.5 },
+                        (isUnifiedPosting || tapFeedbackMap['compose-camera']) && { opacity: 0.5 },
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>📷</Text>
                       <Text style={styles.createPostActionLabel}>{t('compose.camera')}</Text>
                     </Pressable>
                     <Pressable
-                      onPress={handleUnifiedGallerySelect}
-                      disabled={isUnifiedPosting}
+                      onPress={() => void runSingleTapAction('compose-gallery', handleUnifiedGallerySelect)}
+                      disabled={isUnifiedPosting || !!tapFeedbackMap['compose-gallery']}
                       style={[
                         styles.createPostActionBtn,
                         styles.createPostGalleryBtn,
-                        isUnifiedPosting && { opacity: 0.5 },
+                        (isUnifiedPosting || tapFeedbackMap['compose-gallery']) && { opacity: 0.5 },
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>🖼️</Text>
                       <Text style={styles.createPostActionLabel}>{t('compose.gallery')}</Text>
                     </Pressable>
                     <Pressable
-                      onPress={handleSDCardPicker}
-                      disabled={isUnifiedPosting}
+                      onPress={() => void runSingleTapAction('compose-sdcard', handleSDCardPicker)}
+                      disabled={isUnifiedPosting || !!tapFeedbackMap['compose-sdcard']}
                       style={[
                         styles.createPostActionBtn,
                         styles.createPostSdBtn,
-                        isUnifiedPosting && { opacity: 0.5 },
+                        (isUnifiedPosting || tapFeedbackMap['compose-sdcard']) && { opacity: 0.5 },
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>💾</Text>
                       <Text style={styles.createPostActionLabel}>{t('compose.sdCard')}</Text>
                     </Pressable>
                     <Pressable
-                      onPress={handleUnifiedAudioSelect}
-                      disabled={isUnifiedPosting}
+                      onPress={() => void runSingleTapAction('compose-audio', handleUnifiedAudioSelect)}
+                      disabled={isUnifiedPosting || !!tapFeedbackMap['compose-audio']}
                       style={[
                         styles.createPostActionBtn,
                         styles.createPostMusicBtn,
-                        isUnifiedPosting && { opacity: 0.5 },
+                        (isUnifiedPosting || tapFeedbackMap['compose-audio']) && { opacity: 0.5 },
                       ]}
                     >
                       <Text style={styles.createPostActionIcon}>🎵</Text>
@@ -26855,8 +27216,8 @@ type CommandCentreSection =
                 <View style={styles.textComposerButtonRow}>
                 <Pressable
                   style={[styles.textComposerButton, styles.textComposerCancelBtn]}
-                  onPress={closeUnifiedPostModal}
-                  disabled={isUnifiedPosting}
+                  onPress={() => void runSingleTapAction('compose-cancel', closeUnifiedPostModal)}
+                  disabled={isUnifiedPosting || !!tapFeedbackMap['compose-cancel']}
                 >
                   <Text style={styles.textComposerButtonText}>Cancel</Text>
                 </Pressable>
@@ -26864,9 +27225,10 @@ type CommandCentreSection =
                   style={[
                     styles.textComposerButton,
                     styles.textComposerSubmitBtn,
+                    (isUnifiedPosting || tapFeedbackMap['compose-submit']) && { opacity: 0.55 },
                   ]}
-                  onPress={handleUnifiedPost}
-                  disabled={isUnifiedPosting}
+                  onPress={() => void runSingleTapAction('compose-submit', handleUnifiedPost, 800)}
+                  disabled={isUnifiedPosting || !!tapFeedbackMap['compose-submit']}
                 >
                   {isUnifiedPosting ? (
                     <ActivityIndicator color="white" />
@@ -27883,7 +28245,7 @@ type CommandCentreSection =
                           onPress={() => setMinuteFameSelectedWaveId(item.id)}
                         >
                           <Text style={styles.savedItemText} numberOfLines={2}>
-                            {item.captionText || item.authorName || 'Untitled CMEE'}
+                            {item.captionText || item.authorName || 'Untitled Xapxap'}
                           </Text>
                           <Text style={[styles.sectionSubtle, { marginTop: 4 }]}>
                             Tap to prepare this post for spotlight review and creator growth.
@@ -28049,7 +28411,7 @@ type CommandCentreSection =
                     <Text style={styles.sectionHeader}>Fame Queue</Text>
                     <Text style={styles.sectionSubtle}>You are in line for your moment…</Text>
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
-                      Selected post: {minuteFameChoices.find(item => item.id === minuteFameSelectedWaveId)?.captionText || 'CMEE post'}
+                      Selected post: {minuteFameChoices.find(item => item.id === minuteFameSelectedWaveId)?.captionText || 'Xapxap post'}
                     </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 10 }}>
                       #{minuteFameQueueSpot}
@@ -28200,6 +28562,8 @@ type CommandCentreSection =
                   ? t('command.notificationsTitle')
                   : commandCentreSection === 'performance'
                   ? t('command.performanceTitle')
+                  : commandCentreSection === 'owner'
+                  ? (isCurrentUserAppOwner ? 'OWNER TOOLS' : 'ADMIN TOOLS')
                   : commandCentreSection === 'appearance'
                   ? t('command.appearanceTitle')
                   : t('command.aboutTitle')}
@@ -28227,6 +28591,13 @@ type CommandCentreSection =
                       ['performance', t('command.performanceTitle'), t('menu.performanceDesc')],
                       ['appearance', t('command.appearanceTitle'), t('menu.appearanceDesc')],
                       ['about', t('command.aboutTitle'), t('menu.aboutDesc')],
+                      ...(isCurrentUserAppAdmin
+                        ? [[
+                            'owner',
+                            isCurrentUserAppOwner ? 'OWNER TOOLS' : 'ADMIN TOOLS',
+                            'Manage app admins and user access',
+                          ]]
+                        : []),
                     ].map(item => (
                       <Pressable
                         key={`command-centre-card-${item[0]}`}
@@ -28682,12 +29053,171 @@ type CommandCentreSection =
                                 >
                                   <Text style={styles.bridgeSettingButtonText}>{t('settings.checkNow')}</Text>
                                 </Pressable>
+                                <Text
+                                  style={{
+                                    color: 'rgba(255,255,255,0.55)',
+                                    fontSize: 11,
+                                    marginTop: 12,
+                                    lineHeight: 15,
+                                  }}
+                                >
+                                  Local JS error log (recent unhandled errors on this device). Full crash analytics
+                                  stay in Firebase Crashlytics.
+                                </Text>
+                                <Pressable
+                                  style={[styles.bridgeSettingButton, { marginTop: 8 }]}
+                                  onPress={() => void exportLocalErrorLogToClipboard()}
+                                >
+                                  <Text style={styles.bridgeSettingButtonText}>Export error log</Text>
+                                </Pressable>
                               </View>
                             )}
                         </View>
                       ))}
                     </View>
                 </View>
+                ) : null}
+                {commandCentreSection === 'owner' && isCurrentUserAppAdmin ? (
+                  <View
+                    style={{
+                      paddingVertical: 12,
+                      borderBottomWidth: 1,
+                      borderBottomColor: 'rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    <View style={styles.logbookAction}>
+                      <Text style={[styles.logbookActionText, { fontSize: 18 }]}>
+                        {isCurrentUserAppOwner ? 'Owner account confirmed' : 'Admin account confirmed'}
+                      </Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, marginTop: 4 }}>
+                        Signed in as {String(user?.email || '').trim() || 'admin'}
+                      </Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, marginTop: 8 }}>
+                        Admins can help manage the app, moderate content, and support operations. They do not get
+                        Firebase-console or database-console access.
+                      </Text>
+                    </View>
+                    <Pressable
+                      style={[styles.bridgeSettingButton, { marginBottom: 10 }]}
+                      onPress={() => loadOwnerManagedUsers()}
+                      disabled={ownerUsersLoading}
+                    >
+                      <Text style={styles.bridgeSettingButtonText}>
+                        {ownerUsersLoading ? 'Refreshing...' : 'Refresh Users'}
+                      </Text>
+                    </Pressable>
+                    {ownerUsersLoading ? (
+                      <View style={styles.logbookAction}>
+                        <ActivityIndicator color="#7DD3FC" />
+                        <Text style={[styles.logbookActionText, { marginTop: 8 }]}>
+                          Loading app users...
+                        </Text>
+                      </View>
+                    ) : null}
+                    {!ownerUsersLoading && ownerManagedUsers.length === 0 ? (
+                      <View style={styles.logbookAction}>
+                        <Text style={styles.logbookActionText}>No users loaded yet.</Text>
+                      </View>
+                    ) : null}
+                    {ownerManagedUsers.map(managedUser => {
+                      const isSelf = managedUser.uid === user?.uid;
+                      const busy = ownerUserActionUid === managedUser.uid;
+                      const lockedOwner = isAppOwnerEmail(managedUser.email);
+                      return (
+                        <View
+                          key={`owner-user-${managedUser.uid}`}
+                          style={[
+                            styles.logbookAction,
+                            {
+                              backgroundColor: managedUser.appRemoved
+                                ? 'rgba(141,0,0,0.22)'
+                                : managedUser.appRole === 'admin'
+                                ? 'rgba(14,116,144,0.20)'
+                                : 'rgba(255,255,255,0.04)',
+                            },
+                          ]}
+                        >
+                          <Text style={styles.logbookActionText}>
+                            {managedUser.displayName || 'User'}
+                          </Text>
+                          <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 4 }}>
+                            {managedUser.email || managedUser.uid}
+                          </Text>
+                          <Text style={{ color: '#7DD3FC', fontSize: 11, marginTop: 6, fontWeight: '700' }}>
+                            {lockedOwner
+                              ? 'Owner'
+                              : managedUser.appRemoved
+                              ? 'Removed'
+                              : managedUser.appRole === 'admin'
+                              ? 'Admin'
+                              : 'User'}
+                            {isSelf ? ' • You' : ''}
+                          </Text>
+                          {!lockedOwner && !isSelf ? (
+                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
+                              {isCurrentUserAppOwner ? (
+                              <Pressable
+                                style={[
+                                  styles.bridgeSettingButton,
+                                  {
+                                    flex: 1,
+                                    opacity: busy ? 0.6 : 1,
+                                    backgroundColor:
+                                      managedUser.appRole === 'admin'
+                                        ? 'rgba(255,255,255,0.08)'
+                                        : 'rgba(14,116,144,0.78)',
+                                  },
+                                ]}
+                                disabled={busy}
+                                onPress={() =>
+                                  updateManagedUserRole(
+                                    managedUser,
+                                    managedUser.appRole === 'admin' ? 'user' : 'admin',
+                                  )
+                                }
+                              >
+                                <Text style={styles.bridgeSettingButtonText}>
+                                  {busy
+                                    ? 'Saving...'
+                                    : managedUser.appRole === 'admin'
+                                    ? 'Remove Admin'
+                                    : 'Make Admin'}
+                                </Text>
+                              </Pressable>
+                              ) : null}
+                              <Pressable
+                                style={[
+                                  styles.bridgeSettingButton,
+                                  {
+                                    flex: 1,
+                                    opacity: busy ? 0.6 : 1,
+                                    backgroundColor: managedUser.appRemoved
+                                      ? 'rgba(22,163,74,0.78)'
+                                      : 'rgba(141,0,0,0.78)',
+                                  },
+                                ]}
+                                disabled={busy}
+                                onPress={() =>
+                                  updateManagedUserRemoval(
+                                    managedUser,
+                                    !managedUser.appRemoved,
+                                  )
+                                }
+                              >
+                                <Text style={styles.bridgeSettingButtonText}>
+                                  {busy
+                                    ? 'Saving...'
+                                    : managedUser.appRemoved
+                                    ? 'Restore User'
+                                    : 'Remove User'}
+                                </Text>
+                              </Pressable>
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
                 ) : null}
                 {commandCentreSection === 'privacy' ? (
                 <>
@@ -38520,7 +39050,7 @@ function WelcomeAnimationScreen({ navigation }: any) {
         }}
       >
         <Image
-          source={require('./assets/cmee_logo_final.png')}
+          source={require('./assets/xapxap_logo.png')}
           style={{
             width: 156,
             height: 156,
@@ -38937,7 +39467,7 @@ function PostDetailScreen({ route, navigation }: any) {
           }}
         >
           <Text style={{ color: 'white', fontSize: 16 }}>
-            {isFollowing ? '✓ Connected' : '+ Connect CMEE'}
+            {isFollowing ? '✓ Connected' : '+ Connect Xapxap'}
           </Text>
         </Pressable>
       )}

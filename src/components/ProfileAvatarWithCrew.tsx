@@ -131,22 +131,13 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
     userData?.userPhoto ||
     userData?.avatar ||
     userData?.profilePicture ||
-    'https://via.placeholder.com/50';
+    null;
   // Use stable cache-busting key that only updates when photoURL actually changes
   const photoURLWithCacheBust = photoURL && !photoURL.includes('via.placeholder.com')
     ? `${photoURL}?t=${cacheBustKey}`
     : null;
 
-  // Helper to get initials from displayName or username
-  const getInitials = () => {
-    const name = String(userData?.displayName || userData?.name || userData?.username || '')
-      .replace(/^[@/]+/, '')
-      .trim();
-    if (!name) return '?';
-    const parts = name.trim().split(' ');
-    if (parts.length === 1) return parts[0][0]?.toUpperCase() || '?';
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-  };
+  const getFallbackEmoji = () => '🔥';
 
   // Format crew count (show "1k" for 1000+)
   const formatCrewCount = (count: number) => {
@@ -198,7 +189,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
                 },
               ]}
             >
-              <Text style={styles.initials}>{getInitials()}</Text>
+              <Text style={styles.initials}>{getFallbackEmoji()}</Text>
             </View>
           )}
         </Pressable>
@@ -259,7 +250,7 @@ const ProfileAvatarWithCrew: React.FC<ProfileAvatarWithCrewProps> = ({
                   borderRadius: 10,
                 }}
               >
-                <Text style={[styles.initials, { fontSize: 48 }]}>{getInitials()}</Text>
+                <Text style={[styles.initials, { fontSize: 48 }]}>{getFallbackEmoji()}</Text>
               </View>
             )}
           </Pressable>
