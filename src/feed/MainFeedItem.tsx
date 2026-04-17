@@ -1,4 +1,6 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing } from 'react-native';
+import HapticWaveFeedback from '../../services/HapticWaveFeedback';
 import { View, Text, Pressable, Image, ScrollView, ActivityIndicator, Alert, Linking, TextInput, StyleSheet, Modal } from 'react-native';
 import { Dimensions } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
@@ -280,6 +282,9 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   recordTextReach,
 }) => {
   const [status, setStatus] = useState<string>('');
+  const [fleetProcessing, setFleetProcessing] = useState(false);
+  const fleetScaleAnim = useRef(new Animated.Value(1)).current;
+  const fleetOpacityAnim = useRef(new Animated.Value(1)).current;
   const [isHereNow, setIsHereNow] = useState<boolean>(false);
   const [activeEchoActionId, setActiveEchoActionId] = useState<string | null>(null);
   const [localEchoHugs, setLocalEchoHugs] = useState<Record<string, { hugs: number; hugged: boolean }>>({});
@@ -1114,10 +1119,40 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 {item.ownerUid === myUid ? (
                   <View style={styles.sideButtonRail}>
                   <Pressable
-                    onPress={onOpenFleetDeck}
+                    onPressIn={() => {
+                      if (fleetProcessing) return;
+                      HapticWaveFeedback.impactLight();
+                      Animated.parallel([
+                        Animated.sequence([
+                          Animated.timing(fleetScaleAnim, { toValue: 0.95, duration: 80, useNativeDriver: true }),
+                          Animated.timing(fleetScaleAnim, { toValue: 1.05, duration: 80, useNativeDriver: true }),
+                          Animated.timing(fleetScaleAnim, { toValue: 0.98, duration: 80, useNativeDriver: true }),
+                          Animated.timing(fleetScaleAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
+                        ]),
+                        Animated.sequence([
+                          Animated.timing(fleetOpacityAnim, { toValue: 0.3, duration: 80, useNativeDriver: true }),
+                          Animated.timing(fleetOpacityAnim, { toValue: 1, duration: 320, useNativeDriver: true }),
+                        ]),
+                      ]).start();
+                    }}
+                    onPressOut={() => {
+                      if (fleetProcessing) return;
+                      HapticWaveFeedback.selection();
+                    }}
+                    onPress={async () => {
+                      if (fleetProcessing) return;
+                      setFleetProcessing(true);
+                      HapticWaveFeedback.heavy();
+                      try {
+                        onOpenFleetDeck();
+                      } finally {
+                        setFleetProcessing(false);
+                      }
+                    }}
+                    disabled={fleetProcessing}
                     style={({ pressed }) => [
                       {
-                      backgroundColor: '#00C2FF',
+                      backgroundColor: fleetProcessing ? '#B91C1C' : '#00C2FF',
                       borderRadius: 18,
                       paddingHorizontal: 14,
                       paddingVertical: 8,
@@ -1127,12 +1162,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       justifyContent: 'center',
                       minWidth: 44,
                       position: 'relative',
+                      transform: [{ scale: fleetScaleAnim }],
+                      opacity: fleetOpacityAnim,
                       },
                       pressed && { opacity: 0.7 },
                     ]}
                     hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                   >
-                    <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>Fleet Deck</Text>
+<Text style={{ color: '#B91C1C', fontWeight: '900', fontSize: 15 }}>FLEET DECKS</Text>
                     {fleetDeckBadgeCount > 0 ? (
                       <View
                         style={{

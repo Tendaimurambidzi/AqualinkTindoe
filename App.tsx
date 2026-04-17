@@ -118,13 +118,8 @@ try {
                     
 // Paper texture is optional; keep null-safe to avoid crashes if the asset is missing
 const paperTexture = null;
-const myLogo = (() => {
-  try {
-    return require('./assets/xapxap_logo.png');
-  } catch {
-    return null;
-  }
-})();
+// Metro resolves `require()` at bundle time; asset must exist for release builds.
+const myLogo = require('./assets/xapxap_logo.png');
                     
 // Debug safety switch: force sign out on cold start to ensure new users go through signup flow
 const FORCE_SIGN_OUT_ON_START = true;
@@ -2040,7 +2035,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'Shona',
     'language.ndebele': 'Ndebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Xapxap',
+    'welcome.title': 'XapXap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Create your account',
@@ -2129,7 +2124,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'We could not open sharing right now. Please try again.',
     'rewards.shareBody':
-      'Join Xapxap on the Play Store: {{storeUrl}}\n\nUse my referral code {{code}} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.',
+      'Join XapXap on the Play Store: {{storeUrl}}\n\nUse my referral code {{code}} during signup. Rewards are based on qualified referrals: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data or another approved promo reward.',
     'settings.languageValue': 'Language: {{language}}',
     'settings.selectLanguageTitle': 'Select language',
     'settings.selectLanguageBody': 'Choose app language preference.',
@@ -2259,7 +2254,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'A referral counts only when the invited person is a real new user, signs up with your code, and is active on at least {{days}} different days. Fake accounts, duplicate accounts, and self-referrals do not qualify.',
     'profile.referralReviewRule':
-      'Airtime and other rewards are reviewed before issue. Xapxap may replace a reward with an equivalent promo benefit where needed.',
+      'Airtime and other rewards are reviewed before issue. XapXap may replace a reward with an equivalent promo benefit where needed.',
     'profile.shareReferral': 'Share Referral',
     'profile.invalidUsernameTitle': 'Invalid Username',
     'profile.invalidUsernameEmpty': 'Username cannot be empty.',
@@ -2327,18 +2322,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Copy link',
     'feed.optionCopyLinkDesc': 'Copy your post link for quick sharing.',
     'feed.optionShare': 'Share',
-    'feed.optionShareDesc': 'Share the Xapxap link with friends.',
+    'feed.optionShareDesc': 'Share the XapXap link with friends.',
     'feed.optionSave': 'Save to device',
-    'feed.optionSaveDesc': 'Download a copy of this Xapxap post for offline viewing.',
+    'feed.optionSaveDesc': 'Download a copy of this XapXap post for offline viewing.',
     'feed.optionReport': 'Report',
-    'feed.optionReportDesc': 'Let us know if this Xapxap post violates guidelines.',
+    'feed.optionReportDesc': 'Let us know if this XapXap post violates guidelines.',
     'feed.linkCopied': 'Link copied.',
     'feed.copyLinkTitle': 'Copy link',
     'feed.saveFailedTitle': 'Save Failed',
     'feed.saveFailedBody': 'The wave could not be saved to the sea.',
-    'feed.shareTitle': 'Share Xapxap',
-    'feed.shareBody': 'Share Xapxap - Check out {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'this Xapxap post',
+    'feed.shareTitle': 'Share XapXap',
+    'feed.shareBody': 'Share XapXap - Check out {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'this XapXap post',
     'feed.reportQueued': 'Going to moderation.',
     'feed.comingSoon': 'Coming soon!',
     'feed.joinTide': 'Join Tide',
@@ -2393,7 +2388,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'ChiShona',
     'language.ndebele': 'isiNdebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Xapxap',
+    'welcome.title': 'XapXap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Gadzira account yako',
@@ -2482,7 +2477,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Hatina kukwanisa kuvhura kugovera parizvino. Edza zvakare.',
     'rewards.shareBody':
-      'Join Xapxap pa Play Store: {{storeUrl}}\n\nShandisa kodhi yangu yerefero {{code}} paunonyoresa. Mibayiro inobva kuvakakodzera: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kana mumwe mubayiro wabvumidzwa.',
+      'Join XapXap pa Play Store: {{storeUrl}}\n\nShandisa kodhi yangu yerefero {{code}} paunonyoresa. Mibayiro inobva kuvakakodzera: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kana mumwe mubayiro wabvumidzwa.',
     'settings.languageValue': 'Mutauro: {{language}}',
     'settings.selectLanguageTitle': 'Sarudza mutauro',
     'settings.selectLanguageBody': 'Sarudza mutauro waunoda kushandisa muapp.',
@@ -2611,7 +2606,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Refero inoverengwa chete kana munhu akokwa ari mushandisi mutsva chaiye, anyoresa nekodhi yako, uye ashande mazuva anosvika {{days}} akasiyana. Maakaunzi enhema, akadzokororwa, kana kuzvikoka pachako hazviverengwi.',
     'profile.referralReviewRule':
-      'Airtime nemimwe mibayiro zvinoongororwa zvisati zvapihwa. Xapxap inogona kutsiva mubayiro nemubatsiro wakaenzana.',
+      'Airtime nemimwe mibayiro zvinoongororwa zvisati zvapihwa. XapXap inogona kutsiva mubayiro nemubatsiro wakaenzana.',
     'profile.shareReferral': 'Govera Refero',
     'profile.invalidUsernameTitle': 'Username haina kunaka',
     'profile.invalidUsernameEmpty': 'Username haigoni kusiiwa isina chinhu.',
@@ -2679,18 +2674,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Kopa link',
     'feed.optionCopyLinkDesc': 'Kopa link yepost yako kuitira kugovera nekukurumidza.',
     'feed.optionShare': 'Govera',
-    'feed.optionShareDesc': 'Govera link yeXapxap kushamwari.',
+    'feed.optionShareDesc': 'Govera link yeXapXap kushamwari.',
     'feed.optionSave': 'Chengeta pamudziyo',
-    'feed.optionSaveDesc': 'Dhaunirodha kopi yeXapxap iyi kuti uione pasina internet.',
+    'feed.optionSaveDesc': 'Dhaunirodha kopi yeXapXap iyi kuti uione pasina internet.',
     'feed.optionReport': 'Mhanara',
-    'feed.optionReportDesc': 'Tizivise kana Xapxap iyi ichityora mitemo.',
+    'feed.optionReportDesc': 'Tizivise kana XapXap iyi ichityora mitemo.',
     'feed.linkCopied': 'Link yakopiwa.',
     'feed.copyLinkTitle': 'Kopa link',
     'feed.saveFailedTitle': 'Kuchengeta kwatadza',
     'feed.saveFailedBody': 'Wave yatadza kuchengetwa mugungwa.',
-    'feed.shareTitle': 'Govera Xapxap',
-    'feed.shareBody': 'Govera Xapxap - ona {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'Xapxap iyi',
+    'feed.shareTitle': 'Govera XapXap',
+    'feed.shareBody': 'Govera XapXap - ona {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'XapXap iyi',
     'feed.reportQueued': 'Yatumirwa kumoderation.',
     'feed.comingSoon': 'Zvichauya munguva pfupi!',
     'feed.joinTide': 'Pinda muTide',
@@ -2745,7 +2740,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'IsiShona',
     'language.ndebele': 'isiNdebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Xapxap',
+    'welcome.title': 'XapXap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Yakha i-account yakho',
@@ -2834,7 +2829,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Sehlulekile ukuvula ukwabelana khathesi. Zama njalo.',
     'rewards.shareBody':
-      'Join Xapxap ku Play Store: {{storeUrl}}\n\nSebenzisa ikhodi yami yereferensi {{code}} lapho ubhalisa. Imivuzo isekelwe kwabafaneleyo: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe omunye umvuzo ovunyiweyo.',
+      'Join XapXap ku Play Store: {{storeUrl}}\n\nSebenzisa ikhodi yami yereferensi {{code}} lapho ubhalisa. Imivuzo isekelwe kwabafaneleyo: 5 = visibility boost, 10 = $1 airtime/data, 20 = $2 airtime/data kumbe omunye umvuzo ovunyiweyo.',
     'settings.languageValue': 'Ulimi: {{language}}',
     'settings.selectLanguageTitle': 'Khetha ulimi',
     'settings.selectLanguageBody': 'Khetha ulimi ofuna ukuthi i-app isebenzise.',
@@ -2963,7 +2958,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Ireferensi ibalwa kuphela nxa umuntu ommemeleyo engumsebenzisi omutsha oqotho, ebhalisa ngekhodi yakho, aphinde asebenze okungenani izinsuku ezi {{days}} ezehlukileyo. Ama-akhawunti enkohliso, aphindwe kabili, loba ukuzimema akwamukelwa.',
     'profile.referralReviewRule':
-      'I-airtime leminye imivuzo kuyahlolwa kungakakhitshwa. ICMEE ingatshintsha umvuzo ngomunye olingana lawo.',
+      'I-airtime leminye imivuzo kuyahlolwa kungakakhitshwa. XapXap ingatshintsha umvuzo ngomunye olingana lawo.',
     'profile.shareReferral': 'Yabelana ngeReferensi',
     'profile.invalidUsernameTitle': 'Username ayilunganga',
     'profile.invalidUsernameEmpty': 'Username kayingabi yize.',
@@ -3031,18 +3026,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Kopisha ilink',
     'feed.optionCopyLinkDesc': 'Kopisha ilink yepost yakho ukuze wabelane masinyane.',
     'feed.optionShare': 'Yabelana',
-    'feed.optionShareDesc': 'Yabelana ngelink yeCMEE labangane.',
+    'feed.optionShareDesc': 'Yabelana ngelink yeXapXap labangane.',
     'feed.optionSave': 'Gcina kudivayisi',
-    'feed.optionSaveDesc': 'Landa ikhophi yeCMEE le ukuze uyibuke offline.',
+    'feed.optionSaveDesc': 'Landa ikhophi yeXapXap le ukuze uyibuke offline.',
     'feed.optionReport': 'Bika',
-    'feed.optionReportDesc': 'Sitshele nxa iCMEE le isephula imilayo.',
+    'feed.optionReportDesc': 'Sitshele nxa iXapXap le isephula imilayo.',
     'feed.linkCopied': 'Ilink ikopishiwe.',
     'feed.copyLinkTitle': 'Kopisha ilink',
     'feed.saveFailedTitle': 'Ukugcina kwehlulekile',
     'feed.saveFailedBody': 'I-wave yehlulekile ukugcinwa olwandle.',
-    'feed.shareTitle': 'Yabelana ngeCMEE',
-    'feed.shareBody': 'Yabelana ngeCMEE - buka {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'iCMEE le',
+    'feed.shareTitle': 'Yabelana ngeXapXap',
+    'feed.shareBody': 'Yabelana ngeXapXap - buka {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'iXapXap le',
     'feed.reportQueued': 'Kusiya ku moderation.',
     'feed.comingSoon': 'Kuyeza maduzane!',
     'feed.joinTide': 'Joyina iTide',
@@ -3097,7 +3092,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'language.shona': 'Kishona',
     'language.ndebele': 'Kindebele',
     'language.kiswahili': 'Kiswahili',
-    'welcome.title': 'Xapxap',
+    'welcome.title': 'XapXap',
     'welcome.subtitle': 'Everyone deserves to be seen!',
     'loading.tagline': 'Everyone deserves to be seen!',
     'auth.signupTitle': 'Fungua akaunti yako',
@@ -3187,7 +3182,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'rewards.shareFailedBody':
       'Hatukuweza kufungua kushiriki kwa sasa. Tafadhali jaribu tena.',
     'rewards.shareBody':
-      'Jiunge na Xapxap kwenye Play Store: {{storeUrl}}\n\nTumia msimbo wangu wa rufaa {{code}} wakati wa kujisajili. Zawadi zinategemea rufaa zilizohitimu: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi nyingine iliyoidhinishwa.',
+      'Jiunge na XapXap kwenye Play Store: {{storeUrl}}\n\nTumia msimbo wangu wa rufaa {{code}} wakati wa kujisajili. Zawadi zinategemea rufaa zilizohitimu: 5 = kuongeza kuonekana, 10 = $1 airtime/data, 20 = $2 airtime/data au zawadi nyingine iliyoidhinishwa.',
     'settings.languageValue': 'Lugha: {{language}}',
     'settings.selectLanguageTitle': 'Chagua lugha',
     'settings.selectLanguageBody': 'Chagua lugha unayotaka app itumie.',
@@ -3316,7 +3311,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'profile.referralQualifyRule':
       'Rufaa huhesabiwa tu pale mtu aliyealikwa akiwa mtumiaji mpya wa kweli, akisajili kwa msimbo wako, na kuwa hai kwa angalau siku {{days}} tofauti. Akaunti bandia, za kurudia, au kujialika hazihesabiwi.',
     'profile.referralReviewRule':
-      'Airtime na zawadi nyingine hukaguliwa kabla ya kutolewa. Xapxap inaweza kubadilisha zawadi na faida nyingine sawia inapobidi.',
+      'Airtime na zawadi nyingine hukaguliwa kabla ya kutolewa. XapXap inaweza kubadilisha zawadi na faida nyingine sawia inapobidi.',
     'profile.shareReferral': 'Shiriki Rufaa',
     'profile.invalidUsernameTitle': 'Username si sahihi',
     'profile.invalidUsernameEmpty': 'Username haiwezi kuwa tupu.',
@@ -3384,18 +3379,18 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionCopyLink': 'Nakili link',
     'feed.optionCopyLinkDesc': 'Nakili link ya post yako kwa kushiriki haraka.',
     'feed.optionShare': 'Shiriki',
-    'feed.optionShareDesc': 'Shiriki link ya Xapxap na marafiki.',
+    'feed.optionShareDesc': 'Shiriki link ya XapXap na marafiki.',
     'feed.optionSave': 'Hifadhi kwenye kifaa',
-    'feed.optionSaveDesc': 'Pakua nakala ya Xapxap hii uione bila intaneti.',
+    'feed.optionSaveDesc': 'Pakua nakala ya XapXap hii uione bila intaneti.',
     'feed.optionReport': 'Ripoti',
-    'feed.optionReportDesc': 'Tujulishe kama Xapxap hii inakiuka miongozo.',
+    'feed.optionReportDesc': 'Tujulishe kama XapXap hii inakiuka miongozo.',
     'feed.linkCopied': 'Link imenakiliwa.',
     'feed.copyLinkTitle': 'Nakili link',
     'feed.saveFailedTitle': 'Kuhifadhi kumeshindikana',
     'feed.saveFailedBody': 'Wave haikuweza kuhifadhiwa baharini.',
-    'feed.shareTitle': 'Shiriki Xapxap',
-    'feed.shareBody': 'Shiriki Xapxap - angalia {{subject}}\n\n{{link}}',
-    'feed.defaultSubject': 'Xapxap hii',
+    'feed.shareTitle': 'Shiriki XapXap',
+    'feed.shareBody': 'Shiriki XapXap - angalia {{subject}}\n\n{{link}}',
+    'feed.defaultSubject': 'XapXap hii',
     'feed.reportQueued': 'Inaenda kwa moderation.',
     'feed.comingSoon': 'Inakuja karibuni!',
     'feed.joinTide': 'Jiunge na Tide',
@@ -7473,8 +7468,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               type: 'minute_fame_badge',
               toUserId: myUid,
               fromUid: 'system',
-              fromName: 'Xapxap',
-              fromUserHandle: 'Xapxap',
+              fromName: 'XapXap',
+              fromUserHandle: 'XapXap',
               message: `Your creator journey starts with the ${startingTier.label} badge ${startingTier.icon}.`,
               read: false,
               createdAt: firestore.FieldValue.serverTimestamp(),
@@ -7995,7 +7990,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       // Clear captured media after successful posting
       setCapturedMedia(null);
       setCapturedMediaEdits(defaultMediaEdits);
-      notifySuccess('You dropped a Xapxap vibe!');
+      notifySuccess('You dropped a XapXap vibe!');
     },
     [feedRef, setCurrentIndex, setPostFeed, setWaveKey, setVibesFeed, notifySuccess],
   );
@@ -8522,8 +8517,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   type: 'minute_fame_badge',
                   toUserId: myUid,
                   fromUid: 'system',
-                  fromName: 'Xapxap',
-                  fromUserHandle: 'Xapxap',
+                  fromName: 'XapXap',
+                  fromUserHandle: 'XapXap',
                   message: `You have reached ${nextTier.label} ${nextTier.icon}.`,
                   read: false,
                   createdAt: firestore.FieldValue.serverTimestamp(),
@@ -8885,10 +8880,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const shareMinuteFameCard = useCallback(
     async (entry?: Partial<MinuteFameSpotlightEntry> | null) => {
       const title = entry?.titleLabel || profileMinuteFameTitle || getMinuteFameTitleLabelFromPoints(minuteFameCareerPoints);
-      const creatorName = entry?.ownerName || profileName || 'A creator on Xapxap';
+      const creatorName = entry?.ownerName || profileName || 'A creator on XapXap';
       const score = Number(entry?.score || minuteFameResults?.score || 0);
       const category = String(entry?.category || minuteFameCategory || 'Talent');
-      const body = `${creatorName} is building momentum on ${getMinuteFameDisplayName(resolvedLanguage)}.\n\nTitle: ${title}\nCategory: ${category}\nScore: ${score}\n\nRecognized on Xapxap for creator growth, reach, and real audience response.`;
+      const body = `${creatorName} is building momentum on ${getMinuteFameDisplayName(resolvedLanguage)}.\n\nTitle: ${title}\nCategory: ${category}\nScore: ${score}\n\nRecognized on XapXap for creator growth, reach, and real audience response.`;
       try {
         await Share.share({
           title: `${getMinuteFameDisplayName(resolvedLanguage)} Card`,
@@ -10706,7 +10701,7 @@ type CommandCentreSection =
         results.push({
           kind: 'vibe',
           id,
-          label: String(data.captionText || data.caption || data.authorName || 'Xapxap'),
+          label: String(data.captionText || data.caption || data.authorName || 'XapXap'),
           extra: {
             caption: data.captionText || data.caption || '',
             authorName: data.authorName || data.ownerName || '',
@@ -13246,7 +13241,7 @@ type CommandCentreSection =
               .replace(/[^A-Za-z0-9._-]+/g, '_')
               .replace(/^_+|_+$/g, '')
               .slice(0, 42) || 'momo';
-            const fileName = `CMEE_${safeBase}_${Date.now()}.${inferredExt}`;
+            const fileName = `XapXap_${safeBase}_${Date.now()}.${inferredExt}`;
             if (
               !(await ensureNetworkActionAllowed('download', {
                 label: 'save this post',
@@ -16258,12 +16253,12 @@ type CommandCentreSection =
       if (!wave) {
         await Share.share({
           title: 'Cast Vibe',
-          message: `Check out Xapxap on Google Play:\n${PLAY_STORE_URL}`,
+          message: `Check out XapXap on Google Play:\n${PLAY_STORE_URL}`,
         });
         return;
       }
       const caption = wave.captionText ? `"${wave.captionText}"` : 'my vibe';
-      const msg = `Check out ${caption} on Xapxap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      const msg = `Check out ${caption} on XapXap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to cast the net right now.');
@@ -16271,9 +16266,9 @@ type CommandCentreSection =
   };
   const onShareWave = async (wave: Vibe) => {
     try {
-      const caption = wave.captionText ? `"${wave.captionText}"` : 'my Xapxap post';
-      const msg = `Check out ${caption} on Xapxap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
-      await Share.share({ title: 'Share Xapxap', message: msg });
+      const caption = wave.captionText ? `"${wave.captionText}"` : 'my XapXap post';
+      const msg = `Check out ${caption} on XapXap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      await Share.share({ title: 'Share XapXap', message: msg });
     } catch {
       showOceanDialog(
         'Share Failed',
@@ -17624,7 +17619,7 @@ type CommandCentreSection =
   const shareProfile = async () => {
     try {
       const name = profileName || accountCreationHandle || '@your_handle';
-      const msg = `Check out my Space ${name} on Xapxap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
+      const msg = `Check out my Space ${name} on XapXap.\n\nDownload the app on Google Play:\n${PLAY_STORE_URL}`;
       await Share.share({ title: 'Cast Vibe', message: msg });
     } catch {
       Alert.alert('Share failed', 'Unable to share your profile right now.');
@@ -17679,7 +17674,7 @@ type CommandCentreSection =
     try {
       await Share.share({
         title: 'Share Profile Link',
-        message: `Download Xapxap on Google Play:\n${PLAY_STORE_URL}`,
+        message: `Download XapXap on Google Play:\n${PLAY_STORE_URL}`,
       });
     } catch {
       Alert.alert('Share failed', 'Unable to share the link right now.');
@@ -24341,7 +24336,7 @@ type CommandCentreSection =
                       )}
                       <View style={{ flex: 1, minWidth: 0 }}>
                         <Text style={styles.logbookActionText} numberOfLines={2}>
-                          {post.captionText || post.authorName || 'Untitled Xapxap'}
+                          {post.captionText || post.authorName || 'Untitled XapXap'}
                         </Text>
                         <Text style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11, marginTop: 6 }}>
                           {post.postType || (post.audio?.uri ? 'audio' : post.media ? 'media' : 'text')}
@@ -28245,7 +28240,7 @@ type CommandCentreSection =
                           onPress={() => setMinuteFameSelectedWaveId(item.id)}
                         >
                           <Text style={styles.savedItemText} numberOfLines={2}>
-                            {item.captionText || item.authorName || 'Untitled Xapxap'}
+                            {item.captionText || item.authorName || 'Untitled XapXap'}
                           </Text>
                           <Text style={[styles.sectionSubtle, { marginTop: 4 }]}>
                             Tap to prepare this post for spotlight review and creator growth.
@@ -28411,7 +28406,7 @@ type CommandCentreSection =
                     <Text style={styles.sectionHeader}>Fame Queue</Text>
                     <Text style={styles.sectionSubtle}>You are in line for your moment…</Text>
                     <Text style={[styles.sectionSubtle, { marginTop: 8 }]}>
-                      Selected post: {minuteFameChoices.find(item => item.id === minuteFameSelectedWaveId)?.captionText || 'Xapxap post'}
+                      Selected post: {minuteFameChoices.find(item => item.id === minuteFameSelectedWaveId)?.captionText || 'XapXap post'}
                     </Text>
                     <Text style={{ color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 10 }}>
                       #{minuteFameQueueSpot}
@@ -39050,7 +39045,7 @@ function WelcomeAnimationScreen({ navigation }: any) {
         }}
       >
         <Image
-          source={require('./assets/xapxap_logo.png')}
+          source={myLogo}
           style={{
             width: 156,
             height: 156,
@@ -39467,7 +39462,7 @@ function PostDetailScreen({ route, navigation }: any) {
           }}
         >
           <Text style={{ color: 'white', fontSize: 16 }}>
-            {isFollowing ? '✓ Connected' : '+ Connect Xapxap'}
+            {isFollowing ? '✓ Connected' : '+ Connect XapXap'}
           </Text>
         </Pressable>
       )}
