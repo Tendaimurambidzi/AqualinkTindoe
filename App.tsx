@@ -1387,6 +1387,7 @@ type TranslationKey =
   | 'command.performanceTitle'
   | 'command.appearanceTitle'
   | 'command.aboutTitle'
+  | 'command.contactTitle'
   | 'command.pickChange'
   | 'command.tapBelow'
   | 'command.settingsForCategory'
@@ -1396,6 +1397,7 @@ type TranslationKey =
   | 'menu.performanceDesc'
   | 'menu.appearanceDesc'
   | 'menu.aboutDesc'
+  | 'menu.contactDesc'
   | 'settings.profileAccess'
   | 'settings.interaction'
   | 'settings.system'
@@ -2137,6 +2139,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'command.performanceTitle': 'PERFORMANCE',
     'command.appearanceTitle': 'APPEARANCE',
     'command.aboutTitle': 'ABOUT',
+    'command.contactTitle': 'CONTACT',
     'command.pickChange': 'Pick what you want to change.',
     'command.tapBelow': 'Tap a setting below.',
     'command.settingsForCategory': 'Settings for this category',
@@ -2146,6 +2149,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'menu.performanceDesc': 'Data saver, playback, cache, and loading',
     'menu.appearanceDesc': 'Storm and visual effects',
     'menu.aboutDesc': 'Version info, updates, and sign out',
+    'menu.contactDesc': 'Reach XapXap support',
     'settings.profileAccess': 'Profile & Access',
     'settings.interaction': 'Interaction',
     'settings.system': 'System',
@@ -2492,6 +2496,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'command.performanceTitle': 'MAITIRO',
     'command.appearanceTitle': 'MAONEKERO',
     'command.aboutTitle': 'NEZVAYO',
+    'command.contactTitle': 'BATA NESU',
     'command.pickChange': 'Sarudza chaunoda kuchinja.',
     'command.tapBelow': 'Baya zvimiro zviri pasi.',
     'command.settingsForCategory': 'Zvirongwa zvechikamu ichi',
@@ -2501,6 +2506,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'menu.performanceDesc': 'Kuchengetedza data, playback, cache, nekurodha',
     'menu.appearanceDesc': 'Mhepo nemhedzisiro yekuonekwa',
     'menu.aboutDesc': 'Shanduro, updates, nekubuda',
+    'menu.contactDesc': 'Bata support yeXapXap',
     'settings.profileAccess': 'Profayiri & Kuwana',
     'settings.interaction': 'Kudyidzana',
     'settings.system': 'Sisitimu',
@@ -2846,6 +2852,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'command.performanceTitle': 'UKUSEBENZA',
     'command.appearanceTitle': 'UKUBUKALA',
     'command.aboutTitle': 'MAYELANA',
+    'command.contactTitle': 'XHUMANA LATHI',
     'command.pickChange': 'Khetha ofuna ukukuguqula.',
     'command.tapBelow': 'Chofoza isethingi engezansi.',
     'command.settingsForCategory': 'Amasethingi esigaba lesi',
@@ -2855,6 +2862,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'menu.performanceDesc': 'Ukonga data, playback, cache, lokulayisha',
     'menu.appearanceDesc': 'Izivunguvungu lemithelela yokubukeka',
     'menu.aboutDesc': 'Ulwazi lweversion, updates, lokuphuma',
+    'menu.contactDesc': 'Xhumana le support yeXapXap',
     'settings.profileAccess': 'Iphrofayili & Ukufinyelela',
     'settings.interaction': 'Ukusebenzisana',
     'settings.system': 'Isistimu',
@@ -3201,6 +3209,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'command.performanceTitle': 'UTENDAJI',
     'command.appearanceTitle': 'MWONEKANO',
     'command.aboutTitle': 'KUHUSU',
+    'command.contactTitle': 'WASILIANA',
     'command.pickChange': 'Chagua unachotaka kubadilisha.',
     'command.tapBelow': 'Gusa mpangilio hapa chini.',
     'command.settingsForCategory': 'Mipangilio ya sehemu hii',
@@ -3210,6 +3219,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'menu.performanceDesc': 'Kuokoa data, playback, cache, na upakiaji',
     'menu.appearanceDesc': 'Athari za storm na mwonekano',
     'menu.aboutDesc': 'Taarifa za toleo, updates, na kutoka',
+    'menu.contactDesc': 'Wasiliana na support ya XapXap',
     'settings.profileAccess': 'Profaili & Ufikiaji',
     'settings.interaction': 'Mwingiliano',
     'settings.system': 'Mfumo',
@@ -7870,6 +7880,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     const safeViewableItems = Array.isArray(viewableItems) ? viewableItems : [];
 
     if (safeViewableItems.length > 0) {
+      const firstVisibleIndex = safeViewableItems
+        .map((entry: any) => Number(entry?.index))
+        .filter((value: number) => Number.isFinite(value))
+        .sort((a: number, b: number) => a - b)[0];
+      if (Number.isFinite(firstVisibleIndex)) {
+        setCurrentIndex((prev: number) => (prev === firstVisibleIndex ? prev : firstVisibleIndex));
+      }
+
       const firstVisibleVideo = safeViewableItems.find((entry: any) =>
         isFeedVideoCandidate(entry?.item),
       )?.item;
@@ -8037,6 +8055,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const refreshInFlightRef = useRef(false);
   const queuedFeedRetryRef = useRef(false);
   const lastEndReachedTsRef = useRef(0);
+  const lastPaginationTriggerIndexRef = useRef(-1);
                     
   const [showProfile, setShowProfile] = useState<boolean>(false);
   const [showMyWaves, setShowMyWaves] = useState<boolean>(false);
@@ -10654,7 +10673,8 @@ type CommandCentreSection =
   | 'performance'
   | 'appearance'
   | 'owner'
-  | 'about';
+  | 'about'
+  | 'contact';
                     
   const [bridge, setBridge] = useState<BridgeSettings>({
     dataSaverDefaultOnCell: true,
@@ -14610,6 +14630,9 @@ type CommandCentreSection =
     } finally {
       paginationInFlightRef.current = false;
       setIsLoadingMore(false);
+      if (!hasMoreItems) {
+        lastPaginationTriggerIndexRef.current = -1;
+      }
     }
   }, [hasMoreItems, isLoadingMore, isOffline, lastLoadedDoc, loadPostEchoes, loadReachCounts, postEchoLists]);
 
@@ -23270,10 +23293,10 @@ type CommandCentreSection =
                 data={displayFeed}
                 keyExtractor={(item) => item.id}
                 removeClippedSubviews={Platform.OS === 'android'}
-                maxToRenderPerBatch={2}
-                windowSize={5}
-                initialNumToRender={1}
-                updateCellsBatchingPeriod={80}
+                maxToRenderPerBatch={4}
+                windowSize={9}
+                initialNumToRender={3}
+                updateCellsBatchingPeriod={40}
                 pagingEnabled={false}
                 snapToInterval={undefined}
                 decelerationRate={'normal'}
@@ -23289,29 +23312,35 @@ type CommandCentreSection =
                 onScrollEndDrag={() => setIsSwiping(false)}
                 onMomentumScrollEnd={(event) => {
                   setIsSwiping(false);
-                  // Update currentIndex based on final scroll position
-                  const scrollY = event.nativeEvent.contentOffset.y;
-                  const averageItemHeight = 300; // approximate height per post (reduced for smaller video space)
-                  const newIndex = Math.max(0, Math.min(displayFeed.length - 1, Math.round(scrollY / averageItemHeight)));
-                  setCurrentIndex(newIndex);
                 }}
                 // Ultra-aggressive instant playback - videos start playing when 50% visible
                 viewabilityConfig={{
-                  itemVisiblePercentThreshold: 60, // stable activation without frequent pause/resume gaps
+                  itemVisiblePercentThreshold: 75,
                 }}
                 onViewableItemsChanged={onViewableItemsChanged.current}
                 onEndReached={() => {
                   const now = Date.now();
-                  if (now - lastEndReachedTsRef.current < 1000) return;
+                  if (now - lastEndReachedTsRef.current < 2200) return;
                   lastEndReachedTsRef.current = now;
                   if (paginationInFlightRef.current || isLoadingMore || !hasMoreItems) return;
+                  const minLoadedBeforePaging = 20;
+                  const nearEndThreshold = 4;
+                  if (displayFeed.length < minLoadedBeforePaging) return;
+                  if (currentIndex < displayFeed.length - nearEndThreshold) return;
+                  if (
+                    lastPaginationTriggerIndexRef.current >= 0 &&
+                    currentIndex - lastPaginationTriggerIndexRef.current < 10
+                  ) {
+                    return;
+                  }
+                  lastPaginationTriggerIndexRef.current = currentIndex;
                   try {
                     loadMoreFeedItems();
                   } catch (error) {
                     console.warn('Error in onEndReached:', error);
                   }
                 }}
-                onEndReachedThreshold={0.25}
+                onEndReachedThreshold={0.01}
                 onScrollToIndexFailed={(info) => {
                   // Fallback when scrollToIndex fails - try to scroll to a nearby index
                   const { index, highestMeasuredFrameIndex } = info;
@@ -28786,6 +28815,8 @@ type CommandCentreSection =
                   ? (isCurrentUserAppOwner ? 'OWNER TOOLS' : 'ADMIN TOOLS')
                   : commandCentreSection === 'appearance'
                   ? t('command.appearanceTitle')
+                  : commandCentreSection === 'contact'
+                  ? t('command.contactTitle')
                   : t('command.aboutTitle')}
               </Text>
               <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12, textAlign: 'center', marginBottom: 10 }}>
@@ -28811,6 +28842,7 @@ type CommandCentreSection =
                       ['performance', t('command.performanceTitle'), t('menu.performanceDesc')],
                       ['appearance', t('command.appearanceTitle'), t('menu.appearanceDesc')],
                       ['about', t('command.aboutTitle'), t('menu.aboutDesc')],
+                      ['contact', t('command.contactTitle'), t('menu.contactDesc')],
                       ...(isCurrentUserAppAdmin
                         ? [[
                             'owner',
@@ -28846,7 +28878,8 @@ type CommandCentreSection =
                   commandCentreSection === 'privacy' ||
                   commandCentreSection === 'notifications' ||
                   commandCentreSection === 'performance' ||
-                  commandCentreSection === 'about') ? (
+                  commandCentreSection === 'about' ||
+                  commandCentreSection === 'contact') ? (
                 <View
                   style={{
                     paddingVertical: 12,
@@ -28867,6 +28900,8 @@ type CommandCentreSection =
                         ? t('command.notificationsTitle')
                         : commandCentreSection === 'performance'
                         ? t('command.performanceTitle')
+                        : commandCentreSection === 'contact'
+                        ? t('command.contactTitle')
                         : t('command.aboutTitle')}
                     </Text>
                     <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 12 }}>
@@ -29883,6 +29918,34 @@ type CommandCentreSection =
                       </Pressable>
                     </View>
                   </>
+                ) : null}
+                {commandCentreSection === 'contact' ? (
+                  <View style={styles.logbookAction}>
+                    <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 6 }]}>
+                      Contact Support
+                    </Text>
+                    <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 12, marginBottom: 10 }}>
+                      Tap the email below to contact the XapXap team.
+                    </Text>
+                    <Pressable
+                      style={styles.bridgeSettingButton}
+                      onPress={async () => {
+                        const emailUrl = 'mailto:splashlineapp@gmail.com?subject=XapXap%20Support';
+                        try {
+                          const canOpen = await Linking.canOpenURL(emailUrl);
+                          if (!canOpen) {
+                            Alert.alert('Contact', 'No email app is available on this device.');
+                            return;
+                          }
+                          await Linking.openURL(emailUrl);
+                        } catch (error) {
+                          Alert.alert('Contact', 'Could not open email composer right now.');
+                        }
+                      }}
+                    >
+                      <Text style={styles.bridgeSettingButtonText}>splashlineapp@gmail.com</Text>
+                    </Pressable>
+                  </View>
                 ) : null}
               </ScrollView>
             </View>

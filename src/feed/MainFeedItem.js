@@ -173,9 +173,11 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
     var _5 = (0, react_1.useState)(0), viewerIndex = _5[0], setViewerIndex = _5[1];
     var _6 = (0, react_1.useState)(1), viewerZoom = _6[0], setViewerZoom = _6[1];
     var _7 = (0, react_1.useState)(-1), activeGridVideoIndex = _7[0], setActiveGridVideoIndex = _7[1];
-    var _8 = (0, react_1.useState)('idle'), splashSyncStatus = _8[0], setSplashSyncStatus = _8[1];
-    var _9 = (0, react_1.useState)(null), lastSplashAction = _9[0], setLastSplashAction = _9[1];
-    var _10 = (0, react_1.useState)(false), preferFallbackVideoSource = _10[0], setPreferFallbackVideoSource = _10[1];
+    var _8 = (0, react_1.useState)(0), activeGridMediaIndex = _8[0], setActiveGridMediaIndex = _8[1];
+    var _9 = (0, react_1.useState)({}), mediaActionCounts = _9[0], setMediaActionCounts = _9[1];
+    var _10 = (0, react_1.useState)('idle'), splashSyncStatus = _10[0], setSplashSyncStatus = _10[1];
+    var _11 = (0, react_1.useState)(null), lastSplashAction = _11[0], setLastSplashAction = _11[1];
+    var _12 = (0, react_1.useState)(false), preferFallbackVideoSource = _12[0], setPreferFallbackVideoSource = _12[1];
     var renderMoMoBadge = (0, react_1.useCallback)(function () { return null; }, []);
     var audioControlsTimerRef = (0, react_1.useRef)(null);
     (0, react_1.useEffect)(function () {
@@ -324,6 +326,33 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
     var mediaUri = String((primaryMedia === null || primaryMedia === void 0 ? void 0 : primaryMedia.uri) || '').trim();
     var mediaType = String((primaryMedia === null || primaryMedia === void 0 ? void 0 : primaryMedia.type) || '').toLowerCase();
     var hasMultiMediaGrid = galleryMediaItems.length > 1;
+    (0, react_1.useEffect)(function () {
+        var baseSplashes = Math.max(0, Number(((_a = item.counts) === null || _a === void 0 ? void 0 : _a.splashes) || 0));
+        var baseEchoes = Math.max(0, Number(((_b = item.counts) === null || _b === void 0 ? void 0 : _b.echoes) || 0));
+        var next = {};
+        var length = Math.max(1, galleryMediaItems.length);
+        for (var i = 0; i < length; i += 1) {
+            next[i] = { splashes: i === 0 ? baseSplashes : 0, echoes: i === 0 ? baseEchoes : 0 };
+        }
+        setMediaActionCounts(next);
+        setActiveGridMediaIndex(0);
+    }, [item.id, (item.counts || {}).splashes, (item.counts || {}).echoes, galleryMediaItems.length]);
+    var selectedMediaIndex = hasMultiMediaGrid
+        ? Math.max(0, Math.min(activeGridMediaIndex, Math.max(0, galleryMediaItems.length - 1)))
+        : 0;
+    var selectedMediaCounts = mediaActionCounts[selectedMediaIndex] || { splashes: 0, echoes: 0 };
+    (0, react_1.useEffect)(function () {
+        if (!hasMultiMediaGrid)
+            return;
+        setActiveGridMediaIndex(function (prev) { return (prev === viewerIndex ? prev : viewerIndex); });
+    }, [hasMultiMediaGrid, viewerIndex]);
+    (0, react_1.useEffect)(function () {
+        if (!hasMultiMediaGrid)
+            return;
+        if (activeGridVideoIndex < 0)
+            return;
+        setActiveGridMediaIndex(function (prev) { return (prev === activeGridVideoIndex ? prev : activeGridVideoIndex); });
+    }, [activeGridVideoIndex, hasMultiMediaGrid]);
     var previewGridItems = galleryMediaItems.slice(0, 6);
     var hiddenGridCount = Math.max(0, galleryMediaItems.length - 6);
     var latestGridVideoIndex = (0, react_1.useMemo)(function () {
@@ -628,6 +657,30 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
         setCurrentIndex(index);
         setShowEchoes(true);
     }, [item.id, index, setEchoWaveId, setCurrentIndex, setShowEchoes]);
+    var handleAddSplashForSelectedMedia = (0, react_1.useCallback)(function () {
+        setMediaActionCounts(function (prev) {
+            var _a;
+            var current = prev[selectedMediaIndex] || { splashes: 0, echoes: 0 };
+            return __assign(__assign({}, prev), (_a = {}, _a[selectedMediaIndex] = { splashes: current.splashes + 1, echoes: current.echoes }, _a));
+        });
+        handleAddSplash();
+    }, [handleAddSplash, selectedMediaIndex]);
+    var handleRemoveSplashForSelectedMedia = (0, react_1.useCallback)(function () {
+        setMediaActionCounts(function (prev) {
+            var _a;
+            var current = prev[selectedMediaIndex] || { splashes: 0, echoes: 0 };
+            return __assign(__assign({}, prev), (_a = {}, _a[selectedMediaIndex] = { splashes: Math.max(0, current.splashes - 1), echoes: current.echoes }, _a));
+        });
+        handleRemoveSplash();
+    }, [handleRemoveSplash, selectedMediaIndex]);
+    var handleEchoForSelectedMedia = (0, react_1.useCallback)(function () {
+        setMediaActionCounts(function (prev) {
+            var _a;
+            var current = prev[selectedMediaIndex] || { splashes: 0, echoes: 0 };
+            return __assign(__assign({}, prev), (_a = {}, _a[selectedMediaIndex] = { splashes: current.splashes, echoes: current.echoes + 1 }, _a));
+        });
+        handleEcho();
+    }, [handleEcho, selectedMediaIndex]);
     var handlePearl = (0, react_1.useCallback)(function () {
         setShowPearls(true);
     }, [setShowPearls]);
@@ -1366,7 +1419,7 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
         </react_native_1.View>
 
         <react_native_1.View style={styles.posterActionWrap}>
-          <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={((_o = item.counts) === null || _o === void 0 ? void 0 : _o.splashes) || 0} echoesCount={((_p = item.counts) === null || _p === void 0 ? void 0 : _p.echoes) || 0} pearlsCount={0} isAnchored={false} isCasted={false} creatorUserId={item.ownerUid} onAdd={handleAddSplash} onRemove={handleRemoveSplash} onEcho={handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
+          <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : (((_o = item.counts) === null || _o === void 0 ? void 0 : _o.splashes) || 0)} echoesCount={hasMultiMediaGrid ? selectedMediaCounts.echoes : (((_p = item.counts) === null || _p === void 0 ? void 0 : _p.echoes) || 0)} pearlsCount={0} isAnchored={false} isCasted={false} creatorUserId={item.ownerUid} onAdd={hasMultiMediaGrid ? handleAddSplashForSelectedMedia : handleAddSplash} onRemove={hasMultiMediaGrid ? handleRemoveSplashForSelectedMedia : handleRemoveSplash} onEcho={hasMultiMediaGrid ? handleEchoForSelectedMedia : handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
         </react_native_1.View>
 
         <react_native_1.Modal visible={viewerVisible} transparent animationType="fade" onRequestClose={function () {
@@ -1455,7 +1508,7 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                   </react_native_1.Pressable>); })}
               </react_native_1.ScrollView>) : null}
             <react_native_1.View style={{ position: 'absolute', left: 0, right: 0, bottom: 18 }}>
-              <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={((_q = item.counts) === null || _q === void 0 ? void 0 : _q.splashes) || 0} echoesCount={((_r = item.counts) === null || _r === void 0 ? void 0 : _r.echoes) || 0} pearlsCount={0} isAnchored={false} isCasted={false} creatorUserId={item.ownerUid} onAdd={handleAddSplash} onRemove={handleRemoveSplash} onEcho={handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
+              <PosterActionBar_1.default waveId={item.id} currentUserId={myUid || ''} splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : (((_q = item.counts) === null || _q === void 0 ? void 0 : _q.splashes) || 0)} echoesCount={hasMultiMediaGrid ? selectedMediaCounts.echoes : (((_r = item.counts) === null || _r === void 0 ? void 0 : _r.echoes) || 0)} pearlsCount={0} isAnchored={false} isCasted={false} creatorUserId={item.ownerUid} onAdd={hasMultiMediaGrid ? handleAddSplashForSelectedMedia : handleAddSplash} onRemove={hasMultiMediaGrid ? handleRemoveSplashForSelectedMedia : handleRemoveSplash} onEcho={hasMultiMediaGrid ? handleEchoForSelectedMedia : handleEcho} onPearl={handlePearl} onAnchor={handleAnchor} onCast={handleCast} splashSyncStatus={splashSyncStatus} onRetrySplash={handleRetrySplashSync} translate={translate}/>
             </react_native_1.View>
           </react_native_1.View>
         </react_native_1.Modal>
