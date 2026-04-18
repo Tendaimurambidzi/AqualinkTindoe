@@ -2247,10 +2247,33 @@ const preserveExistingGridCollection = (
   existingWaves: Vibe[],
   nextWaves: Vibe[],
 ): Vibe[] => {
+  // Create a map of existing waves by ID
   const existingById = new Map(existingWaves.map(wave => [wave.id, wave]));
-  return nextWaves.map(nextWave =>
-    preserveExistingGridWave(existingById.get(nextWave.id), nextWave),
-  );
+
+  // Map next waves, preserving existing ones but maintaining order from nextWaves
+  const result: Vibe[] = [];
+  const seenIds = new Set<string>();
+
+  // First add all nextWaves (they are already sorted by time)
+  nextWaves.forEach(nextWave => {
+    const existing = existingById.get(nextWave.id);
+    if (existing) {
+      // Merge with existing but use the nextWave's position in the order
+      result.push(mergeWaveVersions(existing, nextWave));
+    } else {
+      result.push(nextWave);
+    }
+    seenIds.add(nextWave.id);
+  });
+
+  // Add any existing waves that weren't in nextWaves (at the end)
+  existingWaves.forEach(wave => {
+    if (!seenIds.has(wave.id)) {
+      result.push(wave);
+    }
+  });
+
+  return result;
 };
 
 const getWaveMediaItemCount = (wave: Vibe | null | undefined): number => {
@@ -2314,7 +2337,25 @@ const mergeWaveCollectionsById = (...collections: Vibe[][]): Vibe[] => {
       merged.set(wave.id, mergeWaveVersions(existingWave, wave));
     });
   });
-  return Array.from(merged.values());
+  // Sort by createdAt timestamp - newest first, then by ID for stable sorting
+  const sorted = Array.from(merged.values()).sort((a, b) => {
+    const timeA = a.createdAt
+      ? typeof a.createdAt.toDate === 'function'
+        ? a.createdAt.toDate().getTime()
+        : new Date(a.createdAt).getTime()
+      : 0;
+    const timeB = b.createdAt
+      ? typeof b.createdAt.toDate === 'function'
+        ? b.createdAt.toDate().getTime()
+        : new Date(b.createdAt).getTime()
+      : 0;
+    if (timeA !== timeB) {
+      return timeB - timeA; // Descending order (newest first)
+    }
+    // Secondary sort by ID for stable ordering when timestamps are equal
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+  return sorted;
 };
 
 const normalizeStoredGridItems = (
@@ -8353,7 +8394,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             counts: data.counts || {},
           });
         });
-        setWavesFeed(prev => preserveExistingGridCollection(prev, waves));
+        setWavesFeed(prev => {
+          const combined = mergeWaveCollectionsById(prev, waves);
+          return combined;
+        });
       });
 
     return () => unsub();
@@ -15634,9 +15678,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             const publicWaves = wavesWithUserData.filter(
               w => w.ownerUid !== myUid,
             );
-            setPublicFeed(prev =>
-              preserveExistingGridCollection(prev, publicWaves),
-            );
+            setPublicFeed(prev => {
+              const combined = mergeWaveCollectionsById(prev, publicWaves);
+              return combined;
+            });
 
             // Load actual crew status for all users in the feed
             const currentUser = auth?.()?.currentUser;
@@ -15938,7 +15983,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
             // Add new waves to the feed with memory-safe limit
             if (lastLoadedDoc) {
-              // Append for pagination, merging richer duplicates instead of keeping the first stale copy.
+              // Append for pagination - merge and keep sorted by time
               setPublicFeed(prev => {
                 const combined = mergeWaveCollectionsById(
                   prev,
@@ -15946,13 +15991,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 );
                 const capped =
                   combined.length > 120 ? combined.slice(0, 120) : combined;
-                return preserveExistingGridCollection(prev, capped);
+                return capped;
               });
             } else {
               // Replace for initial load or refresh
-              setPublicFeed(prev =>
-                preserveExistingGridCollection(prev, wavesWithUserData),
-              );
+              setPublicFeed(prev => {
+                const combined = mergeWaveCollectionsById(
+                  prev,
+                  wavesWithUserData,
+                );
+                return combined;
+              });
             }
 
             // Update wave stats and load additional data
