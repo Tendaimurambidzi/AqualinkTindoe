@@ -5,7 +5,7 @@ import TapSplashEffect, { TapSplashEffectHandle } from './TapSplashEffect';
 // Try to use react-native-video for playing a short audio cue
 let RNVideo: any = null;
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   RNVideo = require('react-native-video').default;
 } catch {}
 

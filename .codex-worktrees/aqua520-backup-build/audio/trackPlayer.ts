@@ -4,7 +4,7 @@ let TP: any = null;
 function getTP() {
   if (TP) return TP;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const mod = require('react-native-track-player');
     TP = mod.default || mod;
     return TP;

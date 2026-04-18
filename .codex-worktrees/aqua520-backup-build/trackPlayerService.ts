@@ -4,7 +4,7 @@ export default async function setupService() {
   let AppKilledPlaybackBehavior: any;
   let Capability: any;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const mod = require('react-native-track-player');
     TP = mod.default || mod;
     Event = mod.Event;

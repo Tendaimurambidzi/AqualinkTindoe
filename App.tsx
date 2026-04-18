@@ -49,6 +49,7 @@ import {
   TouchableOpacity,
   Vibration,
   View,
+  ImageSourcePropType,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from './src/components/ProfileAvatarWithCrew';
@@ -117,8 +118,7 @@ try {
 }
                     
 // Paper texture is optional; keep null-safe to avoid crashes if the asset is missing
-const paperTexture = null;
-// Metro resolves `require()` at bundle time; asset must exist for release builds.
+const paperTexture: ImageSourcePropType | null = null;
 const myLogo = require('./assets/xapxap_logo.png');
                     
 // Debug safety switch: force sign out on cold start to ensure new users go through signup flow
@@ -2070,9 +2070,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'alert.agreementRequiredBody':
       'You must agree to the Terms of Service and Privacy Policy to continue.',
     'alert.termsTitle': 'Terms',
-    'alert.termsBody': 'Terms of Service go here.',
+    'alert.termsBody':
+      'By creating an account you agree to follow XapXap rules, obey local laws, and respect other users. Do not post illegal, harmful, violent, exploitative, sexual abuse, child endangerment, terrorism, fraud, hate speech, harassment, revenge porn, non-consensual intimate media, phishing, impersonation, malware, or stolen/private/confidential data. We may suspend, ban, remove content, or limit features for violations.',
     'alert.privacyTitle': 'Privacy',
-    'alert.privacyBody': 'Privacy Policy goes here.',
+    'alert.privacyBody':
+      'XapXap collects account, content, and usage data to run safety, moderation, and service operations. We may share information when required by law, valid legal process, or urgent safety requests from authorities. Do not upload private third-party information without consent. You remain responsible for content you publish.',
     'alert.signUpFailedTitle': 'Sign Up Failed',
     'alert.signUpFailedBody':
       'We could not create your account right now. Please try again.',
@@ -2423,9 +2425,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'alert.agreementRequiredBody':
       'Unofanira kubvuma Mitemo yeSevhisi neMutemo weKuvanzika kuti uenderere mberi.',
     'alert.termsTitle': 'Mitemo',
-    'alert.termsBody': 'Mitemo yeSevhisi inoiswa pano.',
+    'alert.termsBody':
+      'By creating an account you agree to follow XapXap rules, obey local laws, and respect other users. Do not post illegal, harmful, violent, exploitative, sexual abuse, child endangerment, terrorism, fraud, hate speech, harassment, revenge porn, non-consensual intimate media, phishing, impersonation, malware, or stolen/private/confidential data. We may suspend, ban, remove content, or limit features for violations.',
     'alert.privacyTitle': 'Kuvanzika',
-    'alert.privacyBody': 'Mutemo weKuvanzika unoiswa pano.',
+    'alert.privacyBody':
+      'XapXap collects account, content, and usage data to run safety, moderation, and service operations. We may share information when required by law, valid legal process, or urgent safety requests from authorities. Do not upload private third-party information without consent. You remain responsible for content you publish.',
     'alert.signUpFailedTitle': 'Kunyoresa kwatadza',
     'alert.signUpFailedBody':
       'Hatina kukwanisa kugadzira account yako izvozvi. Edza zvakare.',
@@ -2775,9 +2779,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'alert.agreementRequiredBody':
       'Kumele uvume Imigomo Yesevisi leNqubomgomo Yobumfihlo ukuze uqhubeke.',
     'alert.termsTitle': 'Imigomo',
-    'alert.termsBody': 'Imigomo Yesevisi izafakwa lapha.',
+    'alert.termsBody':
+      'By creating an account you agree to follow XapXap rules, obey local laws, and respect other users. Do not post illegal, harmful, violent, exploitative, sexual abuse, child endangerment, terrorism, fraud, hate speech, harassment, revenge porn, non-consensual intimate media, phishing, impersonation, malware, or stolen/private/confidential data. We may suspend, ban, remove content, or limit features for violations.',
     'alert.privacyTitle': 'Ubumfihlo',
-    'alert.privacyBody': 'Inqubomgomo Yobumfihlo izafakwa lapha.',
+    'alert.privacyBody':
+      'XapXap collects account, content, and usage data to run safety, moderation, and service operations. We may share information when required by law, valid legal process, or urgent safety requests from authorities. Do not upload private third-party information without consent. You remain responsible for content you publish.',
     'alert.signUpFailedTitle': 'Ukubhalisa kwehlulekile',
     'alert.signUpFailedBody':
       'Sehlulekile ukwakha i-account yakho khathesi. Zama njalo.',
@@ -3127,9 +3133,11 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'alert.agreementRequiredBody':
       'Lazima ukubali Masharti ya Huduma na Sera ya Faragha ili kuendelea.',
     'alert.termsTitle': 'Masharti',
-    'alert.termsBody': 'Masharti ya Huduma yatawekwa hapa.',
+    'alert.termsBody':
+      'By creating an account you agree to follow XapXap rules, obey local laws, and respect other users. Do not post illegal, harmful, violent, exploitative, sexual abuse, child endangerment, terrorism, fraud, hate speech, harassment, revenge porn, non-consensual intimate media, phishing, impersonation, malware, or stolen/private/confidential data. We may suspend, ban, remove content, or limit features for violations.',
     'alert.privacyTitle': 'Faragha',
-    'alert.privacyBody': 'Sera ya Faragha itawekwa hapa.',
+    'alert.privacyBody':
+      'XapXap collects account, content, and usage data to run safety, moderation, and service operations. We may share information when required by law, valid legal process, or urgent safety requests from authorities. Do not upload private third-party information without consent. You remain responsible for content you publish.',
     'alert.signUpFailedTitle': 'Usajili umeshindikana',
     'alert.signUpFailedBody':
       'Hatukuweza kufungua akaunti yako sasa hivi. Tafadhali jaribu tena.',
@@ -3511,7 +3519,7 @@ type AppLanguageContextValue = {
 const AppLanguageContext = createContext<AppLanguageContextValue | null>(null);
 
 const AppLanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [languagePreference, setLanguagePreferenceState] =
+  const [languagePreference] =
     useState<SupportedAppLanguage>('system');
 
   useEffect(() => {
@@ -8127,9 +8135,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     displayName: string;
     appRole: 'owner' | 'admin' | 'user';
     appRemoved: boolean;
+    isSuspended?: boolean;
+    isBanned?: boolean;
   }>>([]);
   const [ownerUsersLoading, setOwnerUsersLoading] = useState(false);
   const [ownerUserActionUid, setOwnerUserActionUid] = useState<string | null>(null);
+  const [ownerSearchQuery, setOwnerSearchQuery] = useState('');
+  const [ownerSearchResults, setOwnerSearchResults] = useState<
+    Array<{
+      uid: string;
+      email: string;
+      displayName: string;
+      appRole: 'owner' | 'admin' | 'user';
+      appRemoved: boolean;
+      isSuspended?: boolean;
+      isBanned?: boolean;
+    }>
+  >([]);
+  const [selectedManagedUser, setSelectedManagedUser] = useState<{
+    uid: string;
+    email: string;
+    displayName: string;
+    appRole: 'owner' | 'admin' | 'user';
+    appRemoved: boolean;
+    isSuspended?: boolean;
+    isBanned?: boolean;
+  } | null>(null);
+  const [ownerActionMenuOpen, setOwnerActionMenuOpen] = useState(false);
   const [showLanguagePicker, setShowLanguagePicker] = useState<boolean>(false);
   const [showMinuteFame, setShowMinuteFame] = useState<boolean>(false);
   const [minuteFamePhase, setMinuteFamePhase] = useState<'home' | 'queue' | 'countdown' | 'live' | 'results'>('home');
@@ -8216,7 +8248,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     try {
       const snap = await firestore()
         .collection('users')
-        .limit(100)
+        .limit(400)
         .get();
       const rows = (snap.docs || [])
         .map(doc => {
@@ -8229,6 +8261,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ).trim(),
             appRole: getAppAccessRole(data) as 'owner' | 'admin' | 'user',
             appRemoved: data.appRemoved === true,
+            isSuspended: data.suspended === true,
+            isBanned: data.banned === true,
           };
         })
         .sort((a, b) => {
@@ -8247,6 +8281,197 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setOwnerUsersLoading(false);
     }
   }, [isCurrentUserAppAdmin]);
+
+  const huntManagedUsers = useCallback(() => {
+    const query = ownerSearchQuery.trim().toLowerCase();
+    if (!query) {
+      setOwnerSearchResults([]);
+      setSelectedManagedUser(null);
+      return;
+    }
+    const results = ownerManagedUsers.filter(row => {
+      const name = String(row.displayName || '').toLowerCase();
+      const email = String(row.email || '').toLowerCase();
+      return name.includes(query) || email.includes(query);
+    });
+    setOwnerSearchResults(results);
+    setSelectedManagedUser(results.length === 1 ? results[0] : null);
+    setOwnerActionMenuOpen(false);
+  }, [ownerManagedUsers, ownerSearchQuery]);
+
+  const moderateManagedUser = useCallback(
+    async (
+      target: {
+        uid: string;
+        email: string;
+        displayName: string;
+        appRole: 'owner' | 'admin' | 'user';
+        appRemoved: boolean;
+        isSuspended?: boolean;
+        isBanned?: boolean;
+      },
+      action:
+        | 'warn'
+        | 'suspend'
+        | 'unsuspend'
+        | 'ban'
+        | 'unban'
+        | 'remove_admin'
+        | 'make_admin'
+        | 'remove_access'
+        | 'restore_access'
+        | 'delete_recent_posts',
+    ) => {
+      if (!isCurrentUserAppAdmin || !user?.uid) return;
+      if (!target?.uid || target.uid === user.uid || isAppOwnerEmail(target.email)) {
+        Alert.alert('Owner Tools', 'That account cannot be changed here.');
+        return;
+      }
+      setOwnerUserActionUid(target.uid);
+      try {
+        const userRef = firestore().collection('users').doc(target.uid);
+        const actor = user.uid;
+        switch (action) {
+          case 'warn':
+            await userRef.set(
+              {
+                moderation: {
+                  lastWarningAt: firestore.FieldValue.serverTimestamp(),
+                  lastWarningBy: actor,
+                },
+              },
+              { merge: true },
+            );
+            break;
+          case 'suspend':
+            await userRef.set(
+              {
+                suspended: true,
+                appRemoved: true,
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'unsuspend':
+            await userRef.set(
+              {
+                suspended: false,
+                appRemoved: false,
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'ban':
+            await userRef.set(
+              {
+                banned: true,
+                appRemoved: true,
+                appRole: 'user',
+                appAdmin: false,
+                roles: [],
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'unban':
+            await userRef.set(
+              {
+                banned: false,
+                appRemoved: false,
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'remove_admin':
+            await userRef.set(
+              {
+                appRole: 'user',
+                appAdmin: false,
+                role: 'user',
+                roles: [],
+                appRemoved: false,
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'make_admin':
+            if (!isCurrentUserAppOwner) {
+              Alert.alert('Owner Tools', 'Only the owner can assign admins.');
+              break;
+            }
+            await userRef.set(
+              {
+                appRole: 'admin',
+                appAdmin: true,
+                role: 'admin',
+                roles: ['admin'],
+                appRemoved: false,
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'remove_access':
+            await userRef.set(
+              {
+                appRemoved: true,
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'restore_access':
+            await userRef.set(
+              {
+                appRemoved: false,
+                moderatedBy: actor,
+                moderatedAt: firestore.FieldValue.serverTimestamp(),
+              },
+              { merge: true },
+            );
+            break;
+          case 'delete_recent_posts': {
+            const postSnap = await firestore()
+              .collection('waves')
+              .where('ownerUid', '==', target.uid)
+              .limit(30)
+              .get();
+            const batch = firestore().batch();
+            postSnap.docs.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+            break;
+          }
+          default:
+            break;
+        }
+        await loadOwnerManagedUsers();
+        Alert.alert('Owner Tools', 'Action completed.');
+      } catch (error) {
+        console.error('Moderation action error:', error);
+        Alert.alert('Owner Tools', 'Could not complete that action right now.');
+      } finally {
+        setOwnerUserActionUid(current => (current === target.uid ? null : current));
+      }
+    },
+    [
+      isCurrentUserAppAdmin,
+      isCurrentUserAppOwner,
+      loadOwnerManagedUsers,
+      user?.uid,
+    ],
+  );
 
   const updateManagedUserRole = useCallback(
     async (
@@ -29101,6 +29326,31 @@ type CommandCentreSection =
                         {ownerUsersLoading ? 'Refreshing...' : 'Refresh Users'}
                       </Text>
                     </Pressable>
+                    <View style={styles.logbookAction}>
+                      <TextInput
+                        value={ownerSearchQuery}
+                        onChangeText={setOwnerSearchQuery}
+                        placeholder="Search by display name or email"
+                        placeholderTextColor="rgba(255,255,255,0.45)"
+                        style={{
+                          color: '#FFF',
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.2)',
+                          borderRadius: 8,
+                          paddingHorizontal: 12,
+                          paddingVertical: 10,
+                        }}
+                      />
+                      <Pressable
+                        style={[
+                          styles.bridgeSettingButton,
+                          { marginTop: 8, backgroundColor: 'rgba(14,116,144,0.82)' },
+                        ]}
+                        onPress={huntManagedUsers}
+                      >
+                        <Text style={styles.bridgeSettingButtonText}>Hunt</Text>
+                      </Pressable>
+                    </View>
                     {ownerUsersLoading ? (
                       <View style={styles.logbookAction}>
                         <ActivityIndicator color="#7DD3FC" />
@@ -29109,113 +29359,150 @@ type CommandCentreSection =
                         </Text>
                       </View>
                     ) : null}
-                    {!ownerUsersLoading && ownerManagedUsers.length === 0 ? (
+                    {!ownerUsersLoading && ownerSearchQuery.trim() && ownerSearchResults.length === 0 ? (
                       <View style={styles.logbookAction}>
-                        <Text style={styles.logbookActionText}>No users loaded yet.</Text>
+                        <Text style={styles.logbookActionText}>No users found for that search.</Text>
                       </View>
                     ) : null}
-                    {ownerManagedUsers.map(managedUser => {
-                      const isSelf = managedUser.uid === user?.uid;
-                      const busy = ownerUserActionUid === managedUser.uid;
-                      const lockedOwner = isAppOwnerEmail(managedUser.email);
-                      return (
-                        <View
-                          key={`owner-user-${managedUser.uid}`}
-                          style={[
-                            styles.logbookAction,
-                            {
-                              backgroundColor: managedUser.appRemoved
-                                ? 'rgba(141,0,0,0.22)'
-                                : managedUser.appRole === 'admin'
-                                ? 'rgba(14,116,144,0.20)'
+                    {ownerSearchResults.map(managedUser => (
+                      <Pressable
+                        key={`owner-user-${managedUser.uid}`}
+                        style={[
+                          styles.logbookAction,
+                          {
+                            backgroundColor:
+                              selectedManagedUser?.uid === managedUser.uid
+                                ? 'rgba(14,116,144,0.24)'
                                 : 'rgba(255,255,255,0.04)',
-                            },
-                          ]}
+                          },
+                        ]}
+                        onPress={() => {
+                          setSelectedManagedUser(managedUser);
+                          setOwnerActionMenuOpen(false);
+                        }}
+                      >
+                        <Text style={styles.logbookActionText}>{managedUser.displayName || 'User'}</Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 4 }}>
+                          {managedUser.email || managedUser.uid}
+                        </Text>
+                      </Pressable>
+                    ))}
+                    {selectedManagedUser ? (
+                      <View style={[styles.logbookAction, { marginTop: 10 }]}>
+                        <Text style={[styles.logbookActionText, { fontSize: 16 }]}>
+                          Selected: {selectedManagedUser.displayName || 'User'}
+                        </Text>
+                        <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11, marginTop: 4 }}>
+                          {selectedManagedUser.email || selectedManagedUser.uid}
+                        </Text>
+                        <Text style={{ color: '#7DD3FC', fontSize: 11, marginTop: 6, fontWeight: '700' }}>
+                          Role: {selectedManagedUser.appRole.toUpperCase()}
+                          {selectedManagedUser.appRemoved ? ' • ACCESS REMOVED' : ''}
+                          {selectedManagedUser.isSuspended ? ' • SUSPENDED' : ''}
+                          {selectedManagedUser.isBanned ? ' • BANNED' : ''}
+                        </Text>
+                        <Pressable
+                          style={[styles.bridgeSettingButton, { marginTop: 10 }]}
+                          disabled={ownerUserActionUid === selectedManagedUser.uid}
+                          onPress={() => setOwnerActionMenuOpen(prev => !prev)}
                         >
-                          <Text style={styles.logbookActionText}>
-                            {managedUser.displayName || 'User'}
+                          <Text style={styles.bridgeSettingButtonText}>
+                            {ownerUserActionUid === selectedManagedUser.uid
+                              ? 'Processing...'
+                              : ownerActionMenuOpen
+                              ? 'Hide actions'
+                              : 'Open actions'}
                           </Text>
-                          <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 11, marginTop: 4 }}>
-                            {managedUser.email || managedUser.uid}
-                          </Text>
-                          <Text style={{ color: '#7DD3FC', fontSize: 11, marginTop: 6, fontWeight: '700' }}>
-                            {lockedOwner
-                              ? 'Owner'
-                              : managedUser.appRemoved
-                              ? 'Removed'
-                              : managedUser.appRole === 'admin'
-                              ? 'Admin'
-                              : 'User'}
-                            {isSelf ? ' • You' : ''}
-                          </Text>
-                          {!lockedOwner && !isSelf ? (
-                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-                              {isCurrentUserAppOwner ? (
+                        </Pressable>
+                        {ownerActionMenuOpen ? (
+                          <View style={{ marginTop: 8, gap: 6 }}>
+                            {[
+                              { key: 'warn', label: 'Warn user' },
+                              {
+                                key: selectedManagedUser.isSuspended ? 'unsuspend' : 'suspend',
+                                label: selectedManagedUser.isSuspended ? 'Unsuspend user' : 'Suspend user',
+                              },
+                              {
+                                key: selectedManagedUser.isBanned ? 'unban' : 'ban',
+                                label: selectedManagedUser.isBanned ? 'Unban user' : 'Ban user',
+                              },
+                              {
+                                key: selectedManagedUser.appRemoved ? 'restore_access' : 'remove_access',
+                                label: selectedManagedUser.appRemoved
+                                  ? 'Restore app access'
+                                  : 'Remove app access',
+                              },
+                              { key: 'delete_recent_posts', label: 'Delete selected content (recent posts)' },
+                              ...(isCurrentUserAppOwner
+                                ? [
+                                    {
+                                      key:
+                                        selectedManagedUser.appRole === 'admin'
+                                          ? 'remove_admin'
+                                          : 'make_admin',
+                                      label:
+                                        selectedManagedUser.appRole === 'admin'
+                                          ? 'Remove as admin'
+                                          : 'Grant admin status',
+                                    },
+                                  ]
+                                : []),
+                            ].map(option => (
                               <Pressable
-                                style={[
-                                  styles.bridgeSettingButton,
-                                  {
-                                    flex: 1,
-                                    opacity: busy ? 0.6 : 1,
-                                    backgroundColor:
-                                      managedUser.appRole === 'admin'
-                                        ? 'rgba(255,255,255,0.08)'
-                                        : 'rgba(14,116,144,0.78)',
-                                  },
-                                ]}
-                                disabled={busy}
+                                key={`owner-action-${option.key}`}
                                 onPress={() =>
-                                  updateManagedUserRole(
-                                    managedUser,
-                                    managedUser.appRole === 'admin' ? 'user' : 'admin',
+                                  moderateManagedUser(
+                                    selectedManagedUser,
+                                    option.key as
+                                      | 'warn'
+                                      | 'suspend'
+                                      | 'unsuspend'
+                                      | 'ban'
+                                      | 'unban'
+                                      | 'remove_admin'
+                                      | 'make_admin'
+                                      | 'remove_access'
+                                      | 'restore_access'
+                                      | 'delete_recent_posts',
                                   )
                                 }
                               >
-                                <Text style={styles.bridgeSettingButtonText}>
-                                  {busy
-                                    ? 'Saving...'
-                                    : managedUser.appRole === 'admin'
-                                    ? 'Remove Admin'
-                                    : 'Make Admin'}
+                                <Text
+                                  style={{
+                                    color: '#BFDBFE',
+                                    fontSize: 13,
+                                    textDecorationLine: 'underline',
+                                  }}
+                                >
+                                  {option.label}
                                 </Text>
                               </Pressable>
-                              ) : null}
-                              <Pressable
-                                style={[
-                                  styles.bridgeSettingButton,
-                                  {
-                                    flex: 1,
-                                    opacity: busy ? 0.6 : 1,
-                                    backgroundColor: managedUser.appRemoved
-                                      ? 'rgba(22,163,74,0.78)'
-                                      : 'rgba(141,0,0,0.78)',
-                                  },
-                                ]}
-                                disabled={busy}
-                                onPress={() =>
-                                  updateManagedUserRemoval(
-                                    managedUser,
-                                    !managedUser.appRemoved,
-                                  )
-                                }
-                              >
-                                <Text style={styles.bridgeSettingButtonText}>
-                                  {busy
-                                    ? 'Saving...'
-                                    : managedUser.appRemoved
-                                    ? 'Restore User'
-                                    : 'Remove User'}
-                                </Text>
-                              </Pressable>
-                            </View>
-                          ) : null}
-                        </View>
-                      );
-                    })}
+                            ))}
+                          </View>
+                        ) : null}
+                      </View>
+                    ) : null}
                   </View>
                 ) : null}
                 {commandCentreSection === 'privacy' ? (
                 <>
+                <View style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
+                  <Text style={[styles.logbookActionText, { fontSize: 18, marginBottom: 8 }]}>
+                    Terms & Privacy
+                  </Text>
+                  <Pressable
+                    style={styles.bridgeSettingButton}
+                    onPress={() => Alert.alert(t('alert.termsTitle'), t('alert.termsBody'))}
+                  >
+                    <Text style={styles.bridgeSettingButtonText}>{t('auth.terms')}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.bridgeSettingButton, { marginTop: 8 }]}
+                    onPress={() => Alert.alert(t('alert.privacyTitle'), t('alert.privacyBody'))}
+                  >
+                    <Text style={styles.bridgeSettingButtonText}>{t('auth.privacy')}</Text>
+                  </Pressable>
+                </View>
                 {/* Safe Harbor Section */}
                 <View style={{ paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.1)' }}>
                   <Pressable

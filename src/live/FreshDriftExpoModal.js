@@ -24,7 +24,7 @@ var __createBinding = (this && this.__createBinding) || (Object.create ? (functi
 var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
     Object.defineProperty(o, "default", { enumerable: true, value: v });
 }) : function(o, v) {
-    o["default"] = v;
+    o.default = v;
 });
 var __importStar = (this && this.__importStar) || (function () {
     var ownKeys = function(o) {
@@ -47,19 +47,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator.throw(value)); } catch (e) { reject(e); } }
         function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
 var __generator = (this && this.__generator) || function (thisArg, body) {
     var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
-    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    return g.next = verb(0), g.throw = verb(1), g.return = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
     function verb(n) { return function (v) { return step([n, v]); }; }
     function step(op) {
         if (f) throw new TypeError("Generator is already executing.");
         while (g && (g = 0, op[0] && (_ = 0)), _) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (f = 1, y && (t = op[0] & 2 ? y.return : op[0] ? y.throw || ((t = y.return) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
             if (y = 0, t) op = [op[0] & 2, t.value];
             switch (op[0]) {
                 case 0: case 1: t = op; break;
@@ -948,7 +948,7 @@ var FreshDriftExpoModal = function (_a) {
                     return [4 /*yield*/, react_native_fs_1.default.exists(localPath)];
                 case 1:
                     exists = _a.sent();
-                    if (!!exists) return [3 /*break*/, 3];
+                    if (exists) return [3 /*break*/, 3];
                     download = react_native_fs_1.default.downloadFile({
                         fromUrl: doc.downloadUrl,
                         toFile: localPath,
@@ -1873,7 +1873,7 @@ var FreshDriftExpoModal = function (_a) {
                             /\.doc$/i.test(name) ||
                             /\.docx$/i.test(name));
                     });
-                    if (!!(selectedEntry === null || selectedEntry === void 0 ? void 0 : selectedEntry.uri)) return [3 /*break*/, 5];
+                    if (selectedEntry === null || selectedEntry === void 0 ? void 0 : selectedEntry.uri) return [3 /*break*/, 5];
                     return [4 /*yield*/, (0, firestore_1.default)()
                             .collection('live')
                             .doc(roomId)
@@ -2037,7 +2037,7 @@ var FreshDriftExpoModal = function (_a) {
                                         return [4 /*yield*/, react_native_fs_1.default.exists(localCachePath)];
                                     case 1:
                                         exists = _c.sent();
-                                        if (!!exists) return [3 /*break*/, 3];
+                                        if (exists) return [3 /*break*/, 3];
                                         return [4 /*yield*/, react_native_fs_1.default.copyFile(uploadPath_1, localCachePath)];
                                     case 2:
                                         _c.sent();
@@ -2118,7 +2118,7 @@ var FreshDriftExpoModal = function (_a) {
                     return [4 /*yield*/, react_native_fs_1.default.exists(localCachePath)];
                 case 14:
                     exists = _c.sent();
-                    if (!!exists) return [3 /*break*/, 16];
+                    if (exists) return [3 /*break*/, 16];
                     return [4 /*yield*/, react_native_fs_1.default.copyFile(uploadPath_1, localCachePath)];
                 case 15:
                     _c.sent();

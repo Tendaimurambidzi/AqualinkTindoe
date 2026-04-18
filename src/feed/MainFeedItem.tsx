@@ -300,6 +300,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const [viewerIndex, setViewerIndex] = useState(0);
   const [viewerZoom, setViewerZoom] = useState(1);
   const [activeGridVideoIndex, setActiveGridVideoIndex] = useState<number>(-1);
+  const [activeGridMediaIndex, setActiveGridMediaIndex] = useState<number>(0);
+  const [mediaActionCounts, setMediaActionCounts] = useState<
+    Record<number, { splashes: number; echoes: number }>
+  >({});
   const [splashSyncStatus, setSplashSyncStatus] = useState<'idle' | 'saving' | 'error'>('idle');
   const [lastSplashAction, setLastSplashAction] = useState<'add' | 'remove' | null>(null);
   const [preferFallbackVideoSource, setPreferFallbackVideoSource] = useState(false);
@@ -464,6 +468,28 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
     return item.media?.uri ? [item.media] : [];
   }, [item.media, item.mediaItems, (item as any).galleryItems]);
+
+  useEffect(() => {
+    const mediaLength = Math.max(1, galleryMediaItems.length);
+    const initialSplashes = Math.max(0, Number(item.counts?.splashes || 0));
+    const initialEchoes = Math.max(0, Number(item.counts?.echoes || 0));
+    const next: Record<number, { splashes: number; echoes: number }> = {};
+    for (let i = 0; i < mediaLength; i += 1) {
+      next[i] = { splashes: i === 0 ? initialSplashes : 0, echoes: i === 0 ? initialEchoes : 0 };
+    }
+    setMediaActionCounts(next);
+    setActiveGridMediaIndex(0);
+  }, [item.id, item.counts?.splashes, item.counts?.echoes, galleryMediaItems.length]);
+
+  const selectedMediaIndex = useMemo(() => {
+    if (!hasMultiMediaGrid) return 0;
+    return Math.max(0, Math.min(activeGridMediaIndex, Math.max(0, galleryMediaItems.length - 1)));
+  }, [activeGridMediaIndex, galleryMediaItems.length, hasMultiMediaGrid]);
+
+  const selectedMediaCounts = useMemo(
+    () => mediaActionCounts[selectedMediaIndex] || { splashes: 0, echoes: 0 },
+    [mediaActionCounts, selectedMediaIndex],
+  );
   const primaryMedia = (galleryMediaItems[0] || item.media || null) as Asset | null;
   const mediaUri = String(primaryMedia?.uri || '').trim();
   const mediaType = String(primaryMedia?.type || '').toLowerCase();
@@ -822,6 +848,39 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     setShowEchoes(true);
   }, [item.id, index, setEchoWaveId, setCurrentIndex, setShowEchoes]);
 
+  const handleAddSplashForSelectedMedia = useCallback(() => {
+    setMediaActionCounts(prev => {
+      const current = prev[selectedMediaIndex] || { splashes: 0, echoes: 0 };
+      return {
+        ...prev,
+        [selectedMediaIndex]: { ...current, splashes: current.splashes + 1 },
+      };
+    });
+    handleAddSplash();
+  }, [handleAddSplash, selectedMediaIndex]);
+
+  const handleRemoveSplashForSelectedMedia = useCallback(() => {
+    setMediaActionCounts(prev => {
+      const current = prev[selectedMediaIndex] || { splashes: 0, echoes: 0 };
+      return {
+        ...prev,
+        [selectedMediaIndex]: { ...current, splashes: Math.max(0, current.splashes - 1) },
+      };
+    });
+    handleRemoveSplash();
+  }, [handleRemoveSplash, selectedMediaIndex]);
+
+  const handleEchoForSelectedMedia = useCallback(() => {
+    setMediaActionCounts(prev => {
+      const current = prev[selectedMediaIndex] || { splashes: 0, echoes: 0 };
+      return {
+        ...prev,
+        [selectedMediaIndex]: { ...current, echoes: current.echoes + 1 },
+      };
+    });
+    handleEcho();
+  }, [handleEcho, selectedMediaIndex]);
+
   const handlePearl = useCallback(() => {
     setShowPearls(true);
   }, [setShowPearls]);
@@ -1119,26 +1178,52 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                 {item.ownerUid === myUid ? (
                   <View style={styles.sideButtonRail}>
                   <Pressable
-                    onPressIn={() => {
-                      if (fleetProcessing) return;
-                      HapticWaveFeedback.impactLight();
-                      Animated.parallel([
-                        Animated.sequence([
-                          Animated.timing(fleetScaleAnim, { toValue: 0.95, duration: 80, useNativeDriver: true }),
-                          Animated.timing(fleetScaleAnim, { toValue: 1.05, duration: 80, useNativeDriver: true }),
-                          Animated.timing(fleetScaleAnim, { toValue: 0.98, duration: 80, useNativeDriver: true }),
-                          Animated.timing(fleetScaleAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
-                        ]),
-                        Animated.sequence([
-                          Animated.timing(fleetOpacityAnim, { toValue: 0.3, duration: 80, useNativeDriver: true }),
-                          Animated.timing(fleetOpacityAnim, { toValue: 1, duration: 320, useNativeDriver: true }),
-                        ]),
-                      ]).start();
-                    }}
-                    onPressOut={() => {
-                      if (fleetProcessing) return;
-                      HapticWaveFeedback.selection();
-                    }}
+                     onPressIn={() => {
+                       if (fleetProcessing) return;
+                       HapticWaveFeedback.impactLight();
+                       Animated.parallel([
+                         Animated.sequence([
+                           Animated.timing(fleetScaleAnim, { toValue: 0.95, duration: 80, useNativeDriver: true }),
+                           Animated.timing(fleetScaleAnim, { toValue: 1.05, duration: 80, useNativeDriver: true }),
+                           Animated.timing(fleetScaleAnim, { toValue: 0.98, duration: 80, useNativeDriver: true }),
+                           Animated.timing(fleetScaleAnim, { toValue: 1, duration: 80, useNativeDriver: true }),
+                         ]),
+                         Animated.sequence([
+                           Animated.timing(fleetOpacityAnim, { toValue: 0.3, duration: 80, useNativeDriver: true }),
+                           Animated.timing(fleetOpacityAnim, { toValue: 1, duration: 320, useNativeDriver: true }),
+                         ]),
+                       ]).start();
+                     }}
+                     onPressOut={() => {
+                       if (fleetProcessing) return;
+                       HapticWaveFeedback.selection();
+                       // Flickering effect: rapid color changes
+                       const flickerAnim = Animated.loop(
+                         Animated.sequence([
+                           Animated.timing(fleetScaleAnim, { toValue: 1.02, duration: 50, useNativeDriver: true }),
+                           Animated.timing(fleetScaleAnim, { toValue: 1, duration: 50, useNativeDriver: true }),
+                         ]),
+                         { iterations: 6 }
+                       );
+                       flickerAnim.start(() => {
+                         Animated.timing(fleetScaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }).start();
+                       });
+                     }}
+                     onPressOut={() => {
+                       if (fleetProcessing) return;
+                       HapticWaveFeedback.selection();
+                       // Flickering effect: rapid color changes
+                       const flickerAnim = Animated.loop(
+                         Animated.sequence([
+                           Animated.timing(fleetScaleAnim, { toValue: 1.02, duration: 50, useNativeDriver: true }),
+                           Animated.timing(fleetScaleAnim, { toValue: 1, duration: 50, useNativeDriver: true }),
+                         ]),
+                         { iterations: 6 }
+                       );
+                       flickerAnim.start(() => {
+                         Animated.timing(fleetScaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }).start();
+                       });
+                     }}
                     onPress={async () => {
                       if (fleetProcessing) return;
                       setFleetProcessing(true);
@@ -1152,7 +1237,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     disabled={fleetProcessing}
                     style={({ pressed }) => [
                       {
-                      backgroundColor: fleetProcessing ? '#B91C1C' : '#00C2FF',
+                       backgroundColor: fleetProcessing ? '#FF4444' : '#00C2FF',
                       borderRadius: 18,
                       paddingHorizontal: 14,
                       paddingVertical: 8,
@@ -1437,7 +1522,13 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                           >
                             {/* MoMo badge removed */}
                             {isImage ? (
-                              <Pressable onPress={() => openMediaViewer(mediaIndex)} style={{ width: '100%', height: '100%' }}>
+                              <Pressable
+                                onPress={() => {
+                                  setActiveGridMediaIndex(mediaIndex);
+                                  openMediaViewer(mediaIndex);
+                                }}
+                                style={{ width: '100%', height: '100%' }}
+                              >
                                 <Image
                                   source={{ uri: String(mediaItem.uri) }}
                                   style={{ width: '100%', height: '100%' }}
@@ -1454,11 +1545,17 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                                 shouldPreload={near || mediaIndex === latestGridVideoIndex}
                                 hideTimeout={4000}
                                 muted={activeGridVideoIndex !== mediaIndex}
-                                onTap={() => setActiveGridVideoIndex(mediaIndex)}
+                                onTap={() => {
+                                  setActiveGridVideoIndex(mediaIndex);
+                                  setActiveGridMediaIndex(mediaIndex);
+                                }}
                               />
                             ) : (
                               <Pressable
-                                onPress={() => openMediaViewer(mediaIndex)}
+                                onPress={() => {
+                                  setActiveGridMediaIndex(mediaIndex);
+                                  openMediaViewer(mediaIndex);
+                                }}
                                 style={{ width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center', padding: 10 }}
                               >
                                 <Text style={{ fontSize: 28, color: '#fff' }}>File</Text>
@@ -1498,7 +1595,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                             ) : null}
                             {isVideo && mediaIndex !== activeGridVideoIndex ? (
                               <Pressable
-                                onPress={() => setActiveGridVideoIndex(mediaIndex)}
+                                onPress={() => {
+                                  setActiveGridVideoIndex(mediaIndex);
+                                  setActiveGridMediaIndex(mediaIndex);
+                                }}
                                 style={{
                                   position: 'absolute',
                                   right: 8,
@@ -1939,15 +2039,15 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           <PosterActionBar
             waveId={item.id}
             currentUserId={myUid || ''}
-            splashesCount={item.counts?.splashes || 0}
-            echoesCount={item.counts?.echoes || 0}
+            splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : item.counts?.splashes || 0}
+            echoesCount={hasMultiMediaGrid ? selectedMediaCounts.echoes : item.counts?.echoes || 0}
             pearlsCount={0}
             isAnchored={false}
             isCasted={false}
             creatorUserId={item.ownerUid!}
-            onAdd={handleAddSplash}
-            onRemove={handleRemoveSplash}
-            onEcho={handleEcho}
+            onAdd={hasMultiMediaGrid ? handleAddSplashForSelectedMedia : handleAddSplash}
+            onRemove={hasMultiMediaGrid ? handleRemoveSplashForSelectedMedia : handleRemoveSplash}
+            onEcho={hasMultiMediaGrid ? handleEchoForSelectedMedia : handleEcho}
             onPearl={handlePearl}
             onAnchor={handleAnchor}
             onCast={handleCast}
@@ -2093,6 +2193,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     onPress={() => {
                       setViewerZoom(1);
                       setViewerIndex(idx);
+                      setActiveGridMediaIndex(idx);
                     }}
                     style={{
                       width: 68,
@@ -2125,15 +2226,15 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               <PosterActionBar
                 waveId={item.id}
                 currentUserId={myUid || ''}
-                splashesCount={item.counts?.splashes || 0}
-                echoesCount={item.counts?.echoes || 0}
+                splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : item.counts?.splashes || 0}
+                echoesCount={hasMultiMediaGrid ? selectedMediaCounts.echoes : item.counts?.echoes || 0}
                 pearlsCount={0}
                 isAnchored={false}
                 isCasted={false}
                 creatorUserId={item.ownerUid!}
-                onAdd={handleAddSplash}
-                onRemove={handleRemoveSplash}
-                onEcho={handleEcho}
+                onAdd={hasMultiMediaGrid ? handleAddSplashForSelectedMedia : handleAddSplash}
+                onRemove={hasMultiMediaGrid ? handleRemoveSplashForSelectedMedia : handleRemoveSplash}
+                onEcho={hasMultiMediaGrid ? handleEchoForSelectedMedia : handleEcho}
                 onPearl={handlePearl}
                 onAnchor={handleAnchor}
                 onCast={handleCast}

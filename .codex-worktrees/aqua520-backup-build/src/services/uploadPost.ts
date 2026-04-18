@@ -22,7 +22,7 @@ let RNFS: typeof import('react-native-fs') | null = null;
 const resolveRNFS = () => {
   if (RNFS) return RNFS;
   try {
-    // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+    // eslint-disable-next-line import/no-extraneous-dependencies
     RNFS = require('react-native-fs');
   } catch (err) {
     console.warn('react-native-fs is unavailable in uploadPost:', err?.message || err);

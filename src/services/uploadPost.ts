@@ -24,7 +24,7 @@ const MAX_SAFE_POST_MEDIA_BYTES = 120 * 1024 * 1024;
 const resolveRNFS = () => {
   if (RNFS) return RNFS;
   try {
-    // eslint-disable-next-line global-require, import/no-extraneous-dependencies
+    // eslint-disable-next-line import/no-extraneous-dependencies
     RNFS = require('react-native-fs');
   } catch (err) {
     console.warn('react-native-fs is unavailable in uploadPost:', err?.message || err);

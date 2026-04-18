@@ -39,7 +39,7 @@ var __createBinding = (this && this.__createBinding) || (Object.create ? (functi
 var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
     Object.defineProperty(o, "default", { enumerable: true, value: v });
 }) : function(o, v) {
-    o["default"] = v;
+    o.default = v;
 });
 var __importStar = (this && this.__importStar) || (function () {
     var ownKeys = function(o) {
@@ -62,19 +62,19 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator.throw(value)); } catch (e) { reject(e); } }
         function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
 var __generator = (this && this.__generator) || function (thisArg, body) {
     var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
-    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    return g.next = verb(0), g.throw = verb(1), g.return = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
     function verb(n) { return function (v) { return step([n, v]); }; }
     function step(op) {
         if (f) throw new TypeError("Generator is already executing.");
         while (g && (g = 0, op[0] && (_ = 0)), _) try {
-            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (f = 1, y && (t = op[0] & 2 ? y.return : op[0] ? y.throw || ((t = y.return) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
             if (y = 0, t) op = [op[0] & 2, t.value];
             switch (op[0]) {
                 case 0: case 1: t = op; break;
@@ -9050,7 +9050,7 @@ var InnerApp = function (_a) {
                     console.warn('Notice advert Firestore write failed, using local store fallback:', writeErr_1);
                     return [3 /*break*/, 12];
                 case 12:
-                    if (!!cloudSaved) return [3 /*break*/, 15];
+                    if (cloudSaved) return [3 /*break*/, 15];
                     return [4 /*yield*/, async_storage_1.default.getItem(NOTICE_ADS_LOCAL_KEY)];
                 case 13:
                     localRaw = _a.sent();
@@ -12109,7 +12109,7 @@ var InnerApp = function (_a) {
                     _a = _c.sent();
                     return [3 /*break*/, 9];
                 case 9:
-                    if (!!downloadUrl_1) return [3 /*break*/, 16];
+                    if (downloadUrl_1) return [3 /*break*/, 16];
                     _c.label = 10;
                 case 10:
                     _c.trys.push([10, 15, , 16]);
@@ -12986,7 +12986,7 @@ var InnerApp = function (_a) {
                                         _i++;
                                         return [3 /*break*/, 1];
                                     case 7:
-                                        if (!!cancelled) return [3 /*break*/, 17];
+                                        if (cancelled) return [3 /*break*/, 17];
                                         uniqueOwnerUids_1 = __spreadArray([], new Set(out.map(function (w) { return w.ownerUid; }).filter(Boolean)), true);
                                         userDataMap_1 = {};
                                         if (!(uniqueOwnerUids_1.length > 0)) return [3 /*break*/, 11];
@@ -15340,7 +15340,7 @@ var InnerApp = function (_a) {
                 case 0:
                     _b.trys.push([0, 4, , 5]);
                     wave = currentWave;
-                    if (!!wave) return [3 /*break*/, 2];
+                    if (wave) return [3 /*break*/, 2];
                     return [4 /*yield*/, react_native_1.Share.share({
                             title: 'Cast Vibe',
                             message: "Check out CMEE on Google Play:\n".concat(PLAY_STORE_URL),
@@ -17487,7 +17487,7 @@ var InnerApp = function (_a) {
                     if (react_native_1.Platform.OS === 'android' && localPath.startsWith('file://')) {
                         localPath = localPath.replace('file://', '');
                     }
-                    if (!!localPath) return [3 /*break*/, 4];
+                    if (localPath) return [3 /*break*/, 4];
                     react_native_1.Alert.alert('Upload error', 'Could not resolve a local path for your profile photo.');
                     return [3 /*break*/, 7];
                 case 4:
@@ -17699,7 +17699,7 @@ var InnerApp = function (_a) {
                             asset = (_a = response.assets) === null || _a === void 0 ? void 0 : _a[0];
                             if (!(((_b = asset === null || asset === void 0 ? void 0 : asset.type) === null || _b === void 0 ? void 0 : _b.startsWith('audio/')) && asset.uri)) return [3 /*break*/, 5];
                             rawUri = String(asset.uri);
-                            if (!!/^file:/.test(rawUri)) return [3 /*break*/, 4];
+                            if (/^file:/.test(rawUri)) return [3 /*break*/, 4];
                             _c.label = 1;
                         case 1:
                             _c.trys.push([1, 3, , 4]);
@@ -19097,7 +19097,7 @@ var InnerApp = function (_a) {
                         return [2 /*return*/];
                     trimmed = text.trim();
                     ref = (0, firestore_1.default)().collection("users/".concat(targetUid, "/typing")).doc(myUid);
-                    if (!!trimmed) return [3 /*break*/, 5];
+                    if (trimmed) return [3 /*break*/, 5];
                     _c.label = 1;
                 case 1:
                     _c.trys.push([1, 3, , 4]);
@@ -19139,7 +19139,7 @@ var InnerApp = function (_a) {
                         return [2 /*return*/];
                     trimmed = text.trim();
                     ref = (0, firestore_1.default)().collection('fleets').doc(fleetId).collection('typing').doc(myUid);
-                    if (!!trimmed) return [3 /*break*/, 5];
+                    if (trimmed) return [3 /*break*/, 5];
                     _c.label = 1;
                 case 1:
                     _c.trys.push([1, 3, , 4]);
@@ -19181,7 +19181,7 @@ var InnerApp = function (_a) {
                     ref = (0, firestore_1.default)()
                         .collection("users/".concat(ownerUid, "/post_typing"))
                         .doc("".concat(waveId, "_").concat(myUid));
-                    if (!!trimmed) return [3 /*break*/, 5];
+                    if (trimmed) return [3 /*break*/, 5];
                     _c.label = 1;
                 case 1:
                     _c.trys.push([1, 3, , 4]);
@@ -22227,7 +22227,7 @@ var InnerApp = function (_a) {
                     if (react_native_1.Platform.OS === 'android' && audioLocal.startsWith('file://')) {
                         audioLocal = audioLocal.replace('file://', '');
                     }
-                    if (!!audioLocal) return [3 /*break*/, 32];
+                    if (audioLocal) return [3 /*break*/, 32];
                     console.warn('Skipping audio upload: empty local audio path');
                     return [3 /*break*/, 35];
                 case 32: return [4 /*yield*/, ensureNetworkActionAllowed('upload', {
@@ -31458,7 +31458,7 @@ var LiveStreamModal = function (_a) {
                         if (ALLOW_TOKENLESS_DRIFT && !tokenCandidates_4.includes(null)) {
                             tokenCandidates_4.push(null);
                         }
-                        if (!!ALLOW_TOKENLESS_DRIFT) return [3 /*break*/, 5];
+                        if (ALLOW_TOKENLESS_DRIFT) return [3 /*break*/, 5];
                         _d.label = 1;
                     case 1:
                         _d.trys.push([1, 4, , 5]);
@@ -31932,7 +31932,7 @@ var LiveStreamModal = function (_a) {
                     _e.label = 1;
                 case 1:
                     _e.trys.push([1, 7, , 8]);
-                    if (!!isScreenSharing) return [3 /*break*/, 5];
+                    if (isScreenSharing) return [3 /*break*/, 5];
                     if (!(react_native_1.Platform.OS === 'android')) return [3 /*break*/, 3];
                     return [4 /*yield*/, requestScreenCapturePermission()];
                 case 2:
@@ -32025,7 +32025,7 @@ var LiveStreamModal = function (_a) {
                         react_native_1.Alert.alert('Recording', 'Backend recording endpoint not configured.');
                         return [2 /*return*/];
                     }
-                    if (!!isRecording) return [3 /*break*/, 3];
+                    if (isRecording) return [3 /*break*/, 3];
                     return [4 /*yield*/, fetch("".concat(base, "/start-recording"), {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -36212,7 +36212,7 @@ var App = function () {
                             return [4 /*yield*/, async_storage_1.default.getItem('app_installed')];
                         case 2:
                             installed = _a.sent();
-                            if (!!installed) return [3 /*break*/, 5];
+                            if (installed) return [3 /*break*/, 5];
                             return [4 /*yield*/, async_storage_1.default.setItem('app_installed', 'true')];
                         case 3:
                             _a.sent();
