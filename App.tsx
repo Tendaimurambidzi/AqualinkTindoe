@@ -25740,6 +25740,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       !hasMoreItems
                     )
                       return;
+                    // Only load when truly overwhelmed - user is scrolling very fast
+                    // Never show loading indicator during normal scrolling
+                    if (!isOverwhelmedRef.current) {
+                      // Silent background loading - professional social media style
+                      loadMoreFeedItems();
+                      return;
+                    }
+                    // Only reach here when overwhelmed (fast scrolling)
                     const minLoadedBeforePaging = 10;
                     const nearEndThreshold = 8;
                     if (displayFeed.length < minLoadedBeforePaging) return;
@@ -25751,17 +25759,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     ) {
                       return;
                     }
-                    // User is near end - show loading indicator
-                    hasReachedEndRef.current = true;
                     lastPaginationTriggerIndexRef.current = currentIndex;
                     try {
-                      // Silent loading - professional social media style
-                      // Don't set isLoadingMore true for normal pagination
-                      // Only show loading indicator when overwhelmed (fast scrolling)
                       loadMoreFeedItems();
                     } catch (error) {
                       console.warn('Error in onEndReached:', error);
-                      hasReachedEndRef.current = false;
                     }
                   }}
                   onEndReachedThreshold={0.01}
@@ -26006,8 +26008,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 />
               </ErrorBoundary>
 
-              {/* Loading indicator for pagination - show when overwhelmed OR reaching end of loaded content */}
-              {isLoadingMore && (isOverwhelmed || hasReachedEndRef.current) && (
+              {/* Loading indicator - ONLY show when overwhelmed (fast scrolling) */}
+              {isLoadingMore && isOverwhelmed && (
                 <View
                   style={{
                     padding: 20,
@@ -33786,7 +33788,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                         account: (
                                           <Text
                                             style={{
-                                              color: '#00C2FF',
+                                              color: '#FF4444',
                                               fontWeight: '600',
                                             }}
                                           >
