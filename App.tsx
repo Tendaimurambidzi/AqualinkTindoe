@@ -8710,6 +8710,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const queuedFeedRetryRef = useRef(false);
   const lastEndReachedTsRef = useRef(0);
   const lastPaginationTriggerIndexRef = useRef(-1);
+  const hasReachedEndRef = useRef(false); // Track when user reaches near end of loaded content
 
   // Smart feed loading - professional social media style
   const [isOverwhelmed, setIsOverwhelmed] = useState(false);
@@ -16067,6 +16068,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     } finally {
       paginationInFlightRef.current = false;
       setIsLoadingMore(false);
+      hasReachedEndRef.current = false; // Reset end reached flag
       if (!hasMoreItems) {
         lastPaginationTriggerIndexRef.current = -1;
       }
@@ -25749,6 +25751,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     ) {
                       return;
                     }
+                    // User is near end - show loading indicator
+                    hasReachedEndRef.current = true;
                     lastPaginationTriggerIndexRef.current = currentIndex;
                     try {
                       // Silent loading - professional social media style
@@ -25757,6 +25761,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       loadMoreFeedItems();
                     } catch (error) {
                       console.warn('Error in onEndReached:', error);
+                      hasReachedEndRef.current = false;
                     }
                   }}
                   onEndReachedThreshold={0.01}
@@ -26001,8 +26006,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 />
               </ErrorBoundary>
 
-              {/* Loading indicator for pagination - only show when overwhelmed (fast scrolling) */}
-              {isLoadingMore && isOverwhelmed && (
+              {/* Loading indicator for pagination - show when overwhelmed OR reaching end of loaded content */}
+              {isLoadingMore && (isOverwhelmed || hasReachedEndRef.current) && (
                 <View
                   style={{
                     padding: 20,
@@ -33778,9 +33783,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                       }}
                                     >
                                       {t('settings.signedInAs', {
-                                        account:
-                                          user?.email ||
-                                          t('settings.anonymous'),
+                                        account: (
+                                          <Text
+                                            style={{
+                                              color: '#00C2FF',
+                                              fontWeight: '600',
+                                            }}
+                                          >
+                                            {user?.email ||
+                                              t('settings.anonymous')}
+                                          </Text>
+                                        ),
                                       })}
                                     </Text>
                                   </View>
@@ -35218,12 +35231,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         styles.logbookAction,
                         {
                           backgroundColor: isSelected
-                            ? 'rgba(0,186,255,0.16)'
+                            ? 'rgba(0,194,255,0.25)'
                             : 'rgba(255,255,255,0.03)',
                           borderRadius: 10,
                           flexDirection: 'row',
                           alignItems: 'center',
                           justifyContent: 'space-between',
+                          borderWidth: isSelected ? 1 : 0,
+                          borderColor: isSelected ? '#00C2FF' : 'transparent',
                         },
                       ]}
                       onPress={async () => {
@@ -35231,13 +35246,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         setShowLanguagePicker(false);
                       }}
                     >
-                      <Text style={styles.logbookActionText}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          {
+                            color: isSelected
+                              ? '#00C2FF'
+                              : 'rgba(255,255,255,0.6)',
+                            fontWeight: isSelected ? '700' : '400',
+                            fontSize: isSelected ? 16 : 14,
+                          },
+                        ]}
+                      >
                         {getTranslationLabel(resolvedLanguage, option.code)}
                       </Text>
                       <Text
                         style={[
                           styles.logbookActionText,
-                          { fontSize: 13, opacity: isSelected ? 1 : 0.35 },
+                          {
+                            fontSize: 13,
+                            color: isSelected
+                              ? '#00C2FF'
+                              : 'rgba(255,255,255,0.2)',
+                            fontWeight: isSelected ? '700' : '400',
+                          },
                         ]}
                       >
                         {isSelected ? t('common.ok') : ''}
@@ -35306,12 +35338,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         styles.logbookAction,
                         {
                           backgroundColor: isSelected
-                            ? 'rgba(0,186,255,0.16)'
+                            ? 'rgba(0,194,255,0.25)'
                             : 'rgba(255,255,255,0.03)',
                           borderRadius: 10,
                           flexDirection: 'row',
                           alignItems: 'center',
                           justifyContent: 'space-between',
+                          borderWidth: isSelected ? 1 : 0,
+                          borderColor: isSelected ? '#00C2FF' : 'transparent',
                         },
                       ]}
                       onPress={async () => {
@@ -35324,13 +35358,29 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         });
                       }}
                     >
-                      <Text style={styles.logbookActionText}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          {
+                            color: isSelected
+                              ? '#00C2FF'
+                              : 'rgba(255,255,255,0.6)',
+                            fontWeight: isSelected ? '700' : '400',
+                          },
+                        ]}
+                      >
                         {opt.id === 'none' ? t('settings.noTone') : opt.label}
                       </Text>
                       <Text
                         style={[
                           styles.logbookActionText,
-                          { fontSize: 13, opacity: isSelected ? 1 : 0.4 },
+                          {
+                            fontSize: 13,
+                            color: isSelected
+                              ? '#00C2FF'
+                              : 'rgba(255,255,255,0.2)',
+                            fontWeight: isSelected ? '700' : '400',
+                          },
                         ]}
                       >
                         {isSelected ? t('common.selected') : ''}
