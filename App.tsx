@@ -184,6 +184,28 @@ const isRenderableRemoteMediaUri = (value: any): boolean => {
   return false;
 };
 
+// Check if an asset is a renderable media (images, videos) or PDF
+const isRenderableMediaAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const uri = String(asset.uri || '').toLowerCase();
+  const type = (asset.type || '').toLowerCase();
+  // Images
+  if (
+    type.includes('image') ||
+    /\.(jpg|jpeg|png|gif|heic|webp)($|\?)/i.test(uri)
+  )
+    return true;
+  // Videos
+  if (
+    type.includes('video') ||
+    /\.(mp4|mov|m4v|webm|3gp|3gpp|mkv|avi)($|\?)/i.test(uri)
+  )
+    return true;
+  // PDFs - can be displayed
+  if (type === 'application/pdf' || /\.pdf($|\?)/i.test(uri)) return true;
+  return false;
+};
+
 const isVideoAsset = (asset: Asset | null | undefined): boolean => {
   if (!asset) return false;
   const t = (asset.type || '').toLowerCase();
@@ -666,6 +688,170 @@ const FLEET_MOODS = [
   { emoji: '⚓', color: '#155E75' },
   { emoji: '🔥', color: '#B91C1C' },
 ];
+
+const MOCK_ADS = [
+  {
+    id: 'ad-sir-willer',
+    title: 'Watch Sir Willer next',
+    subtitle: 'Hilarious content that will make your day!',
+    actionLabel: 'Watch now',
+    advertiserName: 'Sir Willer',
+    advertiserCategory: 'entertainment',
+  },
+  {
+    id: 'ad-tyson-bundles',
+    title: 'See more from Tyson Bundles',
+    subtitle: 'Expert tips on Bundesliga matches and predictions',
+    actionLabel: 'Open profile',
+    advertiserName: 'Tyson Bundles',
+    advertiserCategory: 'sports',
+  },
+  {
+    id: 'ad-tech-gadgets',
+    title: 'Check out Tech Gadgets 360',
+    subtitle: 'Latest tech reviews and unboxings',
+    actionLabel: 'Learn more',
+    advertiserName: 'Tech Gadgets 360',
+    advertiserCategory: 'technology',
+  },
+  {
+    id: 'ad-fitness-pro',
+    title: 'Join Fitness Pro Club',
+    subtitle: 'Get personalized workout plans and nutrition guides',
+    actionLabel: 'Join now',
+    advertiserName: 'Fitness Pro',
+    advertiserCategory: 'health',
+  },
+  {
+    id: 'ad-music-beats',
+    title: 'Stream Top Hits Daily',
+    subtitle: 'Discover new music from artists worldwide',
+    actionLabel: 'Listen now',
+    advertiserName: 'Music Beats',
+    advertiserCategory: 'music',
+  },
+  {
+    id: 'ad-food-recipes',
+    title: 'Try These Delicious Recipes',
+    subtitle: 'Easy recipes for breakfast, lunch, and dinner',
+    actionLabel: 'View recipes',
+    advertiserName: 'Foodie Kitchen',
+    advertiserCategory: 'food',
+  },
+  {
+    id: 'ad-travel-adventures',
+    title: 'Explore Hidden Gems',
+    subtitle: 'Adventure travel destinations off the beaten path',
+    actionLabel: 'Explore',
+    advertiserName: 'Travel Adventures',
+    advertiserCategory: 'travel',
+  },
+  {
+    id: 'ad-game-zone',
+    title: 'Play Mobile Games',
+    subtitle: 'Free-to-play games with epic rewards',
+    actionLabel: 'Play now',
+    advertiserName: 'Game Zone',
+    advertiserCategory: 'gaming',
+  },
+  {
+    id: 'ad-learn-language',
+    title: 'Learn a New Language',
+    subtitle: 'Speak fluently in 30 days with our app',
+    actionLabel: 'Start learning',
+    advertiserName: 'Lingua Learn',
+    advertiserCategory: 'education',
+  },
+  {
+    id: 'ad-crypto-trading',
+    title: 'Start Crypto Trading',
+    subtitle: 'Trade Bitcoin and other cryptos with zero fees',
+    actionLabel: 'Get started',
+    advertiserName: 'CryptoTrade Pro',
+    advertiserCategory: 'finance',
+  },
+  {
+    id: 'ad-fashion-style',
+    title: 'Latest Fashion Trends',
+    subtitle: 'Upgrade your wardrobe with trendy styles',
+    actionLabel: 'Shop now',
+    advertiserName: 'Fashion Style',
+    advertiserCategory: 'fashion',
+  },
+  {
+    id: 'ad-pet-care',
+    title: 'Pet Care Essentials',
+    subtitle: 'Everything your furry friend needs',
+    actionLabel: 'Browse',
+    advertiserName: 'Pet Care Hub',
+    advertiserCategory: 'pets',
+  },
+  {
+    id: 'ad-business-tips',
+    title: 'Grow Your Business',
+    subtitle: 'Expert advice for entrepreneurs and startups',
+    actionLabel: 'Learn more',
+    advertiserName: 'Business Pro',
+    advertiserCategory: 'business',
+  },
+  {
+    id: 'ad-movie-stream',
+    title: 'Watch Movies Free',
+    subtitle: 'Stream latest blockbusters without subscription',
+    actionLabel: 'Start watching',
+    advertiserName: 'MovieStream',
+    advertiserCategory: 'entertainment',
+  },
+  {
+    id: 'ad-yoga-zen',
+    title: 'Daily Yoga Sessions',
+    subtitle: 'Mindfulness and yoga for beginners',
+    actionLabel: 'Begin practice',
+    advertiserName: 'Yoga Zen',
+    advertiserCategory: 'health',
+  },
+  {
+    id: 'ad-car-deals',
+    title: 'Best Car Deals',
+    subtitle: 'Find your dream car at unbeatable prices',
+    actionLabel: 'Browse cars',
+    advertiserName: 'Auto Deals',
+    advertiserCategory: 'automotive',
+  },
+  {
+    id: 'ad-job-find',
+    title: 'Find Your Dream Job',
+    subtitle: 'Thousands of remote and office jobs available',
+    actionLabel: 'Search jobs',
+    advertiserName: 'Job Finder',
+    advertiserCategory: 'career',
+  },
+  {
+    id: 'ad-stock-market',
+    title: 'Learn Stock Trading',
+    subtitle: 'Free courses on investing in the stock market',
+    actionLabel: 'Start learning',
+    advertiserName: 'Stock Academy',
+    advertiserCategory: 'finance',
+  },
+  {
+    id: 'ad-photo-editing',
+    title: 'Pro Photo Editor',
+    subtitle: 'Edit photos like a pro with easy tools',
+    actionLabel: 'Download',
+    advertiserName: 'Photo Pro',
+    advertiserCategory: 'software',
+  },
+  {
+    id: 'ad-book-club',
+    title: 'Join Book Club',
+    subtitle: 'Discuss bestsellers with readers worldwide',
+    actionLabel: 'Join',
+    advertiserName: 'Book Club',
+    advertiserCategory: 'books',
+  },
+];
+
 const TYPING_EXPIRY_MS = 10000;
 
 type Vibe = {
@@ -747,10 +933,12 @@ type FeedSuggestion = {
   title: string;
   subtitle: string;
   actionLabel: string;
-  kind: 'watch_wave' | 'open_profile' | 'open_fleet';
+  kind: 'watch_wave' | 'open_profile' | 'open_fleet' | 'sponsored_ad';
   waveId?: string;
   ownerUid?: string | null;
   ownerName?: string | null;
+  advertiserName?: string;
+  advertiserCategory?: string;
 };
 
 type SelectedInboxThread = {
@@ -10312,6 +10500,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [dismissedFeedSuggestions, setDismissedFeedSuggestions] = useState<
     Set<string>
   >(new Set());
+  const [dismissedAds, setDismissedAds] = useState<Set<string>>(new Set());
+  const lastAdShownTimeRef = useRef<number>(0);
   const toastTimerRef = useRef<any>(null);
   const hibernationTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -14109,6 +14299,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         subtitle: 'Launch a Fleet, board one, or post straight to your crew.',
         actionLabel: 'Open Fleet Deck',
       });
+    }
+
+    // Add sponsored ads randomly (not always, ~40% chance when conditions are met)
+    const now = Date.now();
+    const timeSinceLastAd = now - lastAdShownTimeRef.current;
+    const shouldShowAd =
+      displayFeed.length > 5 &&
+      (timeSinceLastAd > 300000 || lastAdShownTimeRef.current === 0) && // At least 5 min since last ad or first time
+      Math.random() < 0.4; // 40% chance
+
+    if (shouldShowAd && !dismissedAds.has('last-ad')) {
+      // Get random ad from MOCK_ADS
+      const randomAdIndex = Math.floor(Math.random() * MOCK_ADS.length);
+      const randomAd = MOCK_ADS[randomAdIndex];
+
+      if (!dismissedAds.has(randomAd.id)) {
+        suggestions.push({
+          id: `ad-${randomAd.id}`,
+          kind: 'sponsored_ad',
+          title: randomAd.title,
+          subtitle: randomAd.subtitle,
+          actionLabel: randomAd.actionLabel,
+          advertiserName: randomAd.advertiserName,
+          advertiserCategory: randomAd.advertiserCategory,
+        });
+        lastAdShownTimeRef.current = now;
+      }
     }
 
     const seen = new Set<string>();
@@ -20466,6 +20683,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const isImage =
           mimeType.startsWith('image/') ||
           /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(fileName);
+        const isPDF =
+          mimeType === 'application/pdf' || /\.pdf$/i.test(fileName);
+        // PDFs are allowed as media attachments (DOCS not supported)
+        const isAllowed = isAudio || isVideo || isImage || isPDF;
+        if (!isAllowed) {
+          console.log('File type not supported:', fileName);
+          return;
+        }
         if (isAudio && !attachedAudio && pickedItems.length === 1) {
           setUnifiedPostAudio({ uri, name: fileName || 'Audio from SD Card' });
           attachedAudio = true;
@@ -25906,15 +26131,43 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               }}
                             >
                               <View style={{ flex: 1 }}>
-                                <Text
+                                <View
                                   style={{
-                                    color: '#0F172A',
-                                    fontSize: 14,
-                                    fontWeight: '900',
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 6,
                                   }}
                                 >
-                                  {suggestion.title}
-                                </Text>
+                                  <Text
+                                    style={{
+                                      color: '#0F172A',
+                                      fontSize: 14,
+                                      fontWeight: '900',
+                                    }}
+                                  >
+                                    {suggestion.title}
+                                  </Text>
+                                  {suggestion.kind === 'sponsored_ad' && (
+                                    <View
+                                      style={{
+                                        backgroundColor: '#FEF3C7',
+                                        paddingHorizontal: 6,
+                                        paddingVertical: 2,
+                                        borderRadius: 4,
+                                      }}
+                                    >
+                                      <Text
+                                        style={{
+                                          color: '#B45309',
+                                          fontSize: 9,
+                                          fontWeight: '700',
+                                        }}
+                                      >
+                                        SPONSORED
+                                      </Text>
+                                    </View>
+                                  )}
+                                </View>
                                 <Text
                                   style={{
                                     color: '#4B5563',
@@ -25925,6 +26178,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 >
                                   {suggestion.subtitle}
                                 </Text>
+                                {suggestion.kind === 'sponsored_ad' &&
+                                  suggestion.advertiserName && (
+                                    <Text
+                                      style={{
+                                        color: '#9CA3AF',
+                                        fontSize: 10,
+                                        marginTop: 4,
+                                      }}
+                                    >
+                                      {suggestion.advertiserName}
+                                    </Text>
+                                  )}
                                 <View
                                   style={{
                                     flexDirection: 'row',
@@ -25979,13 +26244,20 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                       paddingVertical: 8,
                                       backgroundColor: 'rgba(15,76,129,0.08)',
                                     }}
-                                    onPress={() =>
+                                    onPress={() => {
+                                      if (suggestion.kind === 'sponsored_ad') {
+                                        setDismissedAds(prev => {
+                                          const next = new Set(prev);
+                                          next.add(suggestion.id);
+                                          return next;
+                                        });
+                                      }
                                       setDismissedFeedSuggestions(prev => {
                                         const next = new Set(prev);
                                         next.add(suggestion.id);
                                         return next;
-                                      })
-                                    }
+                                      });
+                                    }}
                                   >
                                     <Text
                                       style={{
