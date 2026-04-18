@@ -2895,6 +2895,8 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
       'Open this post in the right composer and update it.',
     'feed.optionDelete': 'Delete post',
     'feed.optionDeleteDesc': 'Remove this post from your feed immediately.',
+    'feed.castRecast': 'Cast / Recast',
+    'feed.castRecastDesc': 'Share this post to Fleet Deck or individuals.',
     'feed.optionCopyLink': 'Copy link',
     'feed.optionCopyLinkDesc': 'Copy your post link for quick sharing.',
     'feed.optionShare': 'Share',
@@ -3270,6 +3272,8 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
       'Vhura post iyi mucomposer chaiyo wobva wagadzirisa.',
     'feed.optionDelete': 'Bvisa post',
     'feed.optionDeleteDesc': 'Bvisa post iyi kubva kufeed yako ipapo ipapo.',
+    'feed.castRecast': 'Cast / Recast',
+    'feed.castRecastDesc': 'Govera post iyi kuFleet Deck kana vashanyi.',
     'feed.optionCopyLink': 'Kopa link',
     'feed.optionCopyLinkDesc':
       'Kopa link yepost yako kuitira kugovera nekukurumidza.',
@@ -3646,6 +3650,8 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionEditDesc': 'Vula ipost le kucomposer ofaneleyo uyivuselele.',
     'feed.optionDelete': 'Susa ipost',
     'feed.optionDeleteDesc': 'Susa ipost le kufeed yakho masinyane.',
+    'feed.castRecast': 'Cast / Recast',
+    'feed.castRecastDesc': 'Yabelana ngeleyi post kuFleet Deck noma abantu.',
     'feed.optionCopyLink': 'Kopisha ilink',
     'feed.optionCopyLinkDesc':
       'Kopisha ilink yepost yakho ukuze wabelane masinyane.',
@@ -4019,6 +4025,8 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
       'Fungua post hii kwenye composer sahihi na uisasishe.',
     'feed.optionDelete': 'Futa post',
     'feed.optionDeleteDesc': 'Ondoa post hii kwenye feed yako mara moja.',
+    'feed.castRecast': 'Cast / Recast',
+    'feed.castRecastDesc': 'Shiriki post hii kwenye Fleet Deck au watu.',
     'feed.optionCopyLink': 'Nakili link',
     'feed.optionCopyLinkDesc': 'Nakili link ya post yako kwa kushiriki haraka.',
     'feed.optionShare': 'Shiriki',
@@ -4363,6 +4371,11 @@ const getWaveOptionMenu = (
           description: t('feed.optionDeleteDesc'),
         },
         {
+          key: 'cast',
+          label: t('feed.castRecast'),
+          description: t('feed.castRecastDesc'),
+        },
+        {
           key: 'copy_link',
           label: t('feed.optionCopyLink'),
           description: t('feed.optionCopyLinkDesc'),
@@ -4375,6 +4388,11 @@ const getWaveOptionMenu = (
         // Fleet Deck option removed
       ]
     : [
+        {
+          key: 'cast',
+          label: t('feed.castRecast'),
+          description: t('feed.castRecastDesc'),
+        },
         {
           key: 'save',
           label: t('feed.optionSave'),
@@ -10490,6 +10508,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [myWaveCount, setMyWaveCount] = useState<number | null>(null);
   const [waveOptionsTarget, setWaveOptionsTarget] = useState<Vibe | null>(null);
   const [isSavingWave, setIsSavingWave] = useState(false);
+  const [showCastModal, setShowCastModal] = useState(false);
+  const [castTargetWave, setCastTargetWave] = useState<Vibe | null>(null);
+  const [castCaption, setCastCaption] = useState('');
+  const [castSearchQuery, setCastSearchQuery] = useState('');
   // Notification toast state
   const [toastVisible, setToastVisible] = useState(false);
   const [toastKind, setToastKind] = useState<'positive' | 'negative'>(
@@ -14906,6 +14928,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return;
       }
 
+      // Cast/Recast - open the cast modal with caption input
+      if (entry?.key === 'cast') {
+        setCastTargetWave(waveOptionsTarget);
+        setCastCaption('');
+        setCastSearchQuery('');
+        setShowCastModal(true);
+        return;
+      }
+
       if (entry?.key === 'save') {
         if (isSavingWave) return;
         setIsSavingWave(true);
@@ -18318,6 +18349,137 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       );
     }
   };
+
+  // Cast/Recast - send post to Fleet Deck
+  const castToFleet = async (fleetId: string, fleetName: string) => {
+    if (!castTargetWave) return;
+    try {
+      let firestoreMod: any = null;
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      if (!firestoreMod) {
+        Alert.alert('Error', 'Unable to cast right now. Try again later.');
+        return;
+      }
+
+      // Create a new wave post in the fleet
+      await firestoreMod()
+        .collection('waves')
+        .add({
+          captionText:
+            castCaption ||
+            `Recasted from feed: ${castTargetWave.captionText || ''}`,
+          text:
+            castCaption ||
+            `Recasted from feed: ${castTargetWave.captionText || ''}`,
+          mediaUrl: castTargetWave.media?.uri || null,
+          mediaType: castTargetWave.media?.type || null,
+          playbackUrl: castTargetWave.playbackUrl || null,
+          mediaItems: castTargetWave.mediaItems || null,
+          audio: castTargetWave.audio || null,
+          authorName: profileName || 'User',
+          ownerUid: myUid,
+          audience: 'fleet',
+          fleetId: fleetId,
+          originalWaveId: castTargetWave.id, // Reference to original post
+          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          counts: { echoes: 0, hugs: 0, views: 0, splashes: 0 },
+        });
+
+      notifySuccess(`Cast to ${fleetName}!`);
+    } catch (error) {
+      console.warn('Cast to fleet error:', error);
+      Alert.alert('Cast Failed', 'Could not cast to fleet deck. Try again.');
+    }
+  };
+
+  // Cast/Recast - send post to individual (create DM)
+  const castToIndividual = async (
+    recipientUid: string,
+    recipientName: string,
+  ) => {
+    if (!castTargetWave) return;
+    try {
+      let firestoreMod: any = null;
+      let authMod: any = null;
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      try {
+        authMod = require('@react-native-firebase/auth').default;
+      } catch {}
+      const uid = authMod?.()?.currentUser?.uid;
+      if (!firestoreMod || !uid) {
+        Alert.alert('Error', 'Unable to cast right now. Try again later.');
+        return;
+      }
+
+      // Get recipient user data for avatar
+      const recipientUser = userData[recipientUid];
+
+      // Create a direct message thread with the recasted content
+      const threadRef = await firestoreMod()
+        .collection('threads')
+        .add({
+          kind: 'direct',
+          participants: [uid, recipientUid],
+          lastMessage:
+            castCaption ||
+            `Recasted: ${castTargetWave.captionText || 'Check out this post!'}`,
+          lastMessageAt: firestoreMod.FieldValue.serverTimestamp(),
+          lastMessageSenderUid: uid,
+          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          // Store the shared wave reference
+          sharedWaveId: castTargetWave.id,
+          sharedWaveCaption: castTargetWave.captionText,
+          sharedWaveMediaUrl: castTargetWave.media?.uri,
+          unreadCount: { [recipientUid]: 1 },
+        });
+
+      // Add message to the thread
+      await firestoreMod()
+        .collection(`threads/${threadRef.id}/messages`)
+        .add({
+          senderUid: uid,
+          text:
+            castCaption ||
+            `Recasted: ${castTargetWave.captionText || 'Check out this post!'}`,
+          createdAt: firestoreMod.FieldValue.serverTimestamp(),
+          type: 'recast',
+          sharedWaveId: castTargetWave.id,
+          sharedWaveCaption: castTargetWave.captionText,
+          sharedWaveMediaUrl: castTargetWave.media?.uri,
+        });
+
+      notifySuccess(`Sent to ${recipientName}!`);
+    } catch (error) {
+      console.warn('Cast to individual error:', error);
+      Alert.alert('Cast Failed', 'Could not send to user. Try again.');
+    }
+  };
+
+  // Get crew members from local user data
+  const crewMembersList = useMemo(() => {
+    const crew: Array<{
+      uid: string;
+      name: string;
+      avatar: string;
+      handle: string;
+    }> = [];
+    Object.entries(userData).forEach(([uid, data]) => {
+      // Filter to only include users that are likely crew (have valid name and avatar)
+      if (uid !== myUid && data.name) {
+        crew.push({
+          uid,
+          name: data.name,
+          avatar: data.avatar || '',
+          handle: data.name.toLowerCase().replace(/\s+/g, ''),
+        });
+      }
+    });
+    return crew;
+  }, [userData, myUid]);
   const anchorWave = async (wave: Vibe) => {
     try {
       let firestoreMod: any = null;
@@ -31096,9 +31258,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   </View>
                                 ) : (
                                   <Text
-                                    style={[styles.closeText, { fontSize: 12 }]}
+                                    style={{
+                                      color: 'rgba(255,255,255,0.4)',
+                                      fontSize: 12,
+                                    }}
                                   >
-                                    {t('myVibes.delete')}
+                                    No contacts yet. Your contacts will appear
+                                    here.
                                   </Text>
                                 )}
                               </Pressable>
@@ -38777,6 +38943,275 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             </Pressable>
           </View>
         </Pressable>
+      </Modal>
+
+      {/* CAST/RECAST MODAL - Share posts to Fleet Deck or individuals */}
+      <Modal
+        visible={showCastModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowCastModal(false);
+          setCastTargetWave(null);
+          setCastCaption('');
+          setCastSearchQuery('');
+        }}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
+        >
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.85,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>CAST / REPOST</Text>
+
+              {/* Caption Input */}
+              <View style={{ marginBottom: 16 }}>
+                <Text
+                  style={{
+                    color: 'rgba(255,255,255,0.7)',
+                    fontSize: 12,
+                    marginBottom: 8,
+                  }}
+                >
+                  Add a caption (optional)
+                </Text>
+                <TextInput
+                  value={castCaption}
+                  onChangeText={setCastCaption}
+                  placeholder="Write a caption about this post..."
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  multiline
+                  numberOfLines={3}
+                  style={{
+                    color: '#FFF',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    borderRadius: 8,
+                    padding: 12,
+                    minHeight: 80,
+                    textAlignVertical: 'top',
+                  }}
+                />
+              </View>
+
+              {/* Destination Selection */}
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.7)',
+                  fontSize: 12,
+                  marginBottom: 8,
+                }}
+              >
+                Send to...
+              </Text>
+
+              {/* Search Input for Individuals */}
+              <View style={{ marginBottom: 12 }}>
+                <TextInput
+                  value={castSearchQuery}
+                  onChangeText={setCastSearchQuery}
+                  placeholder="Search individuals..."
+                  placeholderTextColor="rgba(255,255,255,0.4)"
+                  style={{
+                    color: '#FFF',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                    borderRadius: 8,
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                  }}
+                />
+              </View>
+
+              <ScrollView style={{ flex: 1 }}>
+                {/* Fleet Decks Section */}
+                <Text
+                  style={{
+                    color: '#00C2FF',
+                    fontSize: 11,
+                    fontWeight: '700',
+                    marginBottom: 8,
+                    marginTop: 8,
+                  }}
+                >
+                  FLEET DECKS
+                </Text>
+                {myFleets
+                  .filter(fleet =>
+                    fleet.name
+                      ?.toLowerCase()
+                      .includes(castSearchQuery.toLowerCase()),
+                  )
+                  .map(fleet => (
+                    <Pressable
+                      key={`cast-fleet-${fleet.id}`}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        padding: 12,
+                        backgroundColor: 'rgba(255,255,255,0.05)',
+                        borderRadius: 8,
+                        marginBottom: 8,
+                      }}
+                      onPress={() => {
+                        // Cast to fleet deck
+                        castToFleet(fleet.id, fleet.name || 'Fleet');
+                        setShowCastModal(false);
+                        setCastTargetWave(null);
+                        setCastCaption('');
+                        setCastSearchQuery('');
+                      }}
+                    >
+                      <Text style={{ fontSize: 20, marginRight: 12 }}>
+                        {fleet.moodEmoji || '🌊'}
+                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFF', fontWeight: '600' }}>
+                          {fleet.name}
+                        </Text>
+                        <Text
+                          style={{
+                            color: 'rgba(255,255,255,0.5)',
+                            fontSize: 11,
+                          }}
+                        >
+                          {fleet.crewCount || 0} crew members
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                {myFleets.length === 0 && (
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.4)',
+                      fontSize: 12,
+                      marginBottom: 12,
+                    }}
+                  >
+                    No fleet decks yet. Create one to cast posts!
+                  </Text>
+                )}
+
+                {/* Crew Members Section */}
+                <Text
+                  style={{
+                    color: '#00C2FF',
+                    fontSize: 11,
+                    fontWeight: '700',
+                    marginBottom: 8,
+                    marginTop: 12,
+                  }}
+                >
+                  CREW / INDIVIDUALS
+                </Text>
+                {crewMembersList
+                  .filter(
+                    crew =>
+                      crew.name
+                        ?.toLowerCase()
+                        .includes(castSearchQuery.toLowerCase()) ||
+                      crew.handle
+                        ?.toLowerCase()
+                        .includes(castSearchQuery.toLowerCase()),
+                  )
+                  .map(crew => (
+                    <Pressable
+                      key={`cast-crew-${crew.uid}`}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        padding: 12,
+                        backgroundColor: 'rgba(255,255,255,0.05)',
+                        borderRadius: 8,
+                        marginBottom: 8,
+                      }}
+                      onPress={() => {
+                        // Cast to individual
+                        castToIndividual(crew.uid, crew.name || 'User');
+                        setShowCastModal(false);
+                        setCastTargetWave(null);
+                        setCastCaption('');
+                        setCastSearchQuery('');
+                      }}
+                    >
+                      {crew.avatar ? (
+                        <Image
+                          source={{ uri: crew.avatar }}
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 20,
+                            marginRight: 12,
+                          }}
+                        />
+                      ) : (
+                        <View
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 20,
+                            backgroundColor: '#0F4C81',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginRight: 12,
+                          }}
+                        >
+                          <Text style={{ color: '#FFF', fontSize: 16 }}>
+                            👤
+                          </Text>
+                        </View>
+                      )}
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ color: '#FFF', fontWeight: '600' }}>
+                          {crew.name}
+                        </Text>
+                        <Text
+                          style={{
+                            color: 'rgba(255,255,255,0.5)',
+                            fontSize: 11,
+                          }}
+                        >
+                          @{crew.handle || 'user'}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                {crewMembers.length === 0 && (
+                  <Text
+                    style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}
+                  >
+                    No crew members yet.
+                  </Text>
+                )}
+              </ScrollView>
+
+              {/* Cancel Button */}
+              <Pressable
+                style={[styles.dismissBtn, { marginTop: 16 }]}
+                onPress={() => {
+                  setShowCastModal(false);
+                  setCastTargetWave(null);
+                  setCastCaption('');
+                  setCastSearchQuery('');
+                }}
+              >
+                <Text style={styles.dismissText}>Cancel</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Modal>
 
       {/* DIRECT CALL OUTGOING */}
