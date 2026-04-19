@@ -1909,6 +1909,20 @@ type TranslationKey =
   | 'settings.alertBellsDesc'
   | 'settings.cacheCurrents'
   | 'settings.cacheCurrentsDesc'
+  | 'settings.sentStorage'
+  | 'settings.sentStorageDesc'
+  | 'settings.manageSentStorage'
+  | 'settings.sentStorageSummary'
+  | 'settings.sentStorageApprox'
+  | 'settings.selectAllSent'
+  | 'settings.clearSentSelection'
+  | 'settings.deleteSelectedSent'
+  | 'settings.deleteAllSent'
+  | 'settings.sentStorageEmpty'
+  | 'settings.sentStorageLoadError'
+  | 'settings.sentStorageBulkConfirmTitle'
+  | 'settings.sentStorageBulkConfirmBody'
+  | 'settings.sentStorageBulkDone'
   | 'settings.tongueRegion'
   | 'settings.tongueRegionDesc'
   | 'settings.tidePatches'
@@ -2553,6 +2567,13 @@ const mergeWaveCollectionsById = (...collections: Vibe[][]): Vibe[] => {
   return sorted;
 };
 
+/** Public feed: larger first paint + background pages; spinner only at high depth + fast scroll */
+const PUBLIC_FEED_INITIAL_LIMIT = 50;
+const PUBLIC_FEED_PAGE_SIZE = 30;
+const PUBLIC_FEED_LIST_MEMORY_CAP = 500;
+const FEED_VISIBLE_LOADING_MORE_MIN_ITEMS = 1000;
+const PUBLIC_FEED_PREFETCH_FROM_END = 14;
+
 const normalizeStoredGridItems = (
   items: any[] | null | undefined,
 ): Array<{ uri: string; type?: string; fileName?: string }> => {
@@ -2740,6 +2761,22 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.alertBellsDesc': 'Notification tones and badge behavior',
     'settings.cacheCurrents': 'Cache & Currents',
     'settings.cacheCurrentsDesc': 'Storage and data transfer mode',
+    'settings.sentStorage': 'Sent posts & storage',
+    'settings.sentStorageDesc':
+      'See space used by your posts and delete some or all to free room.',
+    'settings.manageSentStorage': 'Manage sent posts',
+    'settings.sentStorageSummary': '{{count}} posts on your shore',
+    'settings.sentStorageApprox': 'Rough size on device & cloud: ~{{size}}',
+    'settings.selectAllSent': 'Select all',
+    'settings.clearSentSelection': 'Clear selection',
+    'settings.deleteSelectedSent': 'Delete selected',
+    'settings.deleteAllSent': 'Delete all my posts here',
+    'settings.sentStorageEmpty': 'No sent posts found.',
+    'settings.sentStorageLoadError': 'Could not load your posts. Try again.',
+    'settings.sentStorageBulkConfirmTitle': 'Delete posts?',
+    'settings.sentStorageBulkConfirmBody':
+      'This removes {{count}} post(s) from your shore and frees storage. This cannot be undone.',
+    'settings.sentStorageBulkDone': 'Removed {{count}} post(s).',
     'settings.myLook': 'My Look',
     'settings.myLookDesc': 'Customize app appearance and theme',
     'settings.themeMode': 'Theme Mode',
@@ -3128,6 +3165,22 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.alertBellsDesc': 'Matoni ezviziviso nemabheji',
     'settings.cacheCurrents': 'Cache & Currents',
     'settings.cacheCurrentsDesc': 'Kuchengeta nedata transfer mode',
+    'settings.sentStorage': 'Zvatumwa nezvakachengetwa',
+    'settings.sentStorageDesc':
+      'Ona nzvimbo uye dzvisa zvimwe kana zvose kuti uwane nzvimbo.',
+    'settings.manageSentStorage': 'Tonga zvatumwa',
+    'settings.sentStorageSummary': '{{count}} zvatumwa pamhiri pako',
+    'settings.sentStorageApprox': 'Saizi yakafanana: ~{{size}}',
+    'settings.selectAllSent': 'Sarudza zvose',
+    'settings.clearSentSelection': 'Bvisa sarudzo',
+    'settings.deleteSelectedSent': 'Dzvisa zvakasarudzwa',
+    'settings.deleteAllSent': 'Dzvisa zvose pano',
+    'settings.sentStorageEmpty': 'Hapana zvatumwa.',
+    'settings.sentStorageLoadError': 'Hatina kugona kuzviudza. Edza zvakare.',
+    'settings.sentStorageBulkConfirmTitle': 'Dzvisa zvatumwa?',
+    'settings.sentStorageBulkConfirmBody':
+      'Izvi zvinobvisa {{count}} zvatumwa uye hazvigone kudzoserwa.',
+    'settings.sentStorageBulkDone': 'Zvabviswa: {{count}}.',
     'settings.tongueRegion': 'Mutauro & Nharaunda',
     'settings.tongueRegionDesc': 'Sarudzo yemutauro weapp',
     'settings.tidePatches': 'Tide Patches',
@@ -3508,6 +3561,22 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.alertBellsDesc': 'Amathoni ezaziso lemikhuba yebheji',
     'settings.cacheCurrents': 'Cache & Currents',
     'settings.cacheCurrentsDesc': 'Ukugcina lendlela yokudlulisa data',
+    'settings.sentStorage': 'Okuthunyelwe nesitoreji',
+    'settings.sentStorageDesc':
+      'Bona isikhala esisetshenzisiwe bese ususa okunye noma konke.',
+    'settings.manageSentStorage': 'Phatha okuthunyelwe',
+    'settings.sentStorageSummary': '{{count}} okuthunyelwe ogwini lwakho',
+    'settings.sentStorageApprox': 'Ubungako obulinganiselwe: ~{{size}}',
+    'settings.selectAllSent': 'Khetha konke',
+    'settings.clearSentSelection': 'Sula ukukhetha',
+    'settings.deleteSelectedSent': 'Sula okukhethiwe',
+    'settings.deleteAllSent': 'Sula konke lapha',
+    'settings.sentStorageEmpty': 'Awukho umthunyelwe.',
+    'settings.sentStorageLoadError': 'Ayikwazanga ukulayisha. Zama futhi.',
+    'settings.sentStorageBulkConfirmTitle': 'Sula okuthunyelwe?',
+    'settings.sentStorageBulkConfirmBody':
+      'Kuzosula okuthunyelwe okungu-{{count}}. Akukwazi ukubuyiselwa.',
+    'settings.sentStorageBulkDone': 'Kususiwe: {{count}}.',
     'settings.tongueRegion': 'Ulimi leSifunda',
     'settings.tongueRegionDesc': 'Ukukhetha ulimi lweapp',
     'settings.tidePatches': 'Tide Patches',
@@ -3884,6 +3953,22 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.alertBellsDesc': 'Sauti za arifa na tabia ya beji',
     'settings.cacheCurrents': 'Cache & Currents',
     'settings.cacheCurrentsDesc': 'Hifadhi na mtindo wa uhamisho wa data',
+    'settings.sentStorage': 'Machapisho yaliyotumwa na hifadhi',
+    'settings.sentStorageDesc':
+      'Ona nafasi iliyotumika na futa baadhi au yote ili kuongeza nafasi.',
+    'settings.manageSentStorage': 'Dhibiti machapisho yaliyotumwa',
+    'settings.sentStorageSummary': 'Machapisho {{count}} kwenye pwani yako',
+    'settings.sentStorageApprox': 'Ukubwa takriban: ~{{size}}',
+    'settings.selectAllSent': 'Chagua yote',
+    'settings.clearSentSelection': 'Futa uteuzi',
+    'settings.deleteSelectedSent': 'Futa ulichochagua',
+    'settings.deleteAllSent': 'Futa yote hapa',
+    'settings.sentStorageEmpty': 'Hakuna machapisho yaliyotumwa.',
+    'settings.sentStorageLoadError': 'Haikuweza kupakia. Jaribu tena.',
+    'settings.sentStorageBulkConfirmTitle': 'Futa machapisho?',
+    'settings.sentStorageBulkConfirmBody':
+      'Hii itafuta machapisho {{count}} na haiwezi kutenduliwa.',
+    'settings.sentStorageBulkDone': 'Yamefutwa: {{count}}.',
     'settings.tongueRegion': 'Lugha & Eneo',
     'settings.tongueRegionDesc': 'Chaguo la lugha ya app',
     'settings.tidePatches': 'Tide Patches',
@@ -4280,6 +4365,16 @@ const toJSDate = (ts: any) => {
   } catch {
     return new Date(0);
   }
+};
+
+/** Rough footprint for storage hints (media-heavy posts weigh more). */
+const estimateRoughWaveMegabytes = (wave: Vibe | null | undefined): number => {
+  if (!wave) return 0.25;
+  const mt = String(wave.media?.type || wave.postType || '').toLowerCase();
+  if (mt.includes('video')) return 10;
+  if (mt.includes('image')) return 1.2;
+  if (wave.audio?.uri) return 0.4;
+  return 0.35;
 };
 
 const toMillis = (ts: any): number => {
@@ -7291,6 +7386,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       data_saver_mode: false,
       tongue_region: false,
       tide_patches: false,
+      sent_posts_storage: false,
     });
   const [tonePicker, setTonePicker] = useState<TonePickerState>({
     visible: false,
@@ -8944,6 +9040,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [navigation, preservedScrollPosition, displayFeed?.length]);
 
   const [publicFeed, setPublicFeed] = useState<Vibe[]>([]);
+  const loadMoreFeedItemsRef = useRef<(() => Promise<void>) | null>(null);
   const [isFeedLoaded, setIsFeedLoaded] = useState(false);
   const [lastLoadedDoc, setLastLoadedDoc] = useState<any>(null);
   const [hasMoreItems, setHasMoreItems] = useState(true);
@@ -8953,6 +9050,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const refreshInFlightRef = useRef(false);
   const queuedFeedRetryRef = useRef(false);
   const lastEndReachedTsRef = useRef(0);
+  const lastFeedBackgroundFetchTsRef = useRef(0);
   const lastPaginationTriggerIndexRef = useRef(-1);
   const hasReachedEndRef = useRef(false); // Track when user reaches near end of loaded content
 
@@ -9215,6 +9313,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [minuteFameLoading, setMinuteFameLoading] = useState<boolean>(false);
   const [commandCentreSection, setCommandCentreSection] =
     useState<CommandCentreSection>('home');
+  const [showManageSentStorage, setShowManageSentStorage] =
+    useState<boolean>(false);
+  const [manageSentStorageList, setManageSentStorageList] = useState<Vibe[]>(
+    [],
+  );
+  const [manageSentStorageBusy, setManageSentStorageBusy] =
+    useState<boolean>(false);
+  const [manageSentStorageSelected, setManageSentStorageSelected] = useState<
+    Set<string>
+  >(new Set());
   const [showGemDropdown, setShowGemDropdown] = useState<boolean>(false);
   const [showAIModal, setShowAIModal] = useState<boolean>(false);
   const [aiResponse, setAiResponse] = useState<string>('');
@@ -15273,7 +15381,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, []);
 
-  const deleteWave = (waveId: string) => {
+  const deleteWave = (
+    waveId: string,
+    options?: { silent?: boolean; skipConfirm?: boolean },
+  ) => {
+    const silent = !!options?.silent;
     const doDelete = async (retryCount = 0) => {
       let firestoreMod: any = null;
       let storageMod: any = null;
@@ -15294,7 +15406,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           delete next[waveId];
           return next;
         });
-        Alert.alert('Delete failed', 'Not signed in or backend unavailable.');
+        if (!silent) {
+          Alert.alert('Delete failed', 'Not signed in or backend unavailable.');
+        }
         return;
       }
 
@@ -15343,7 +15457,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             delete next[waveId];
             return next;
           });
-          Alert.alert('Wave deleted', 'Wave already removed.');
+          if (!silent) {
+            Alert.alert('Wave deleted', 'Wave already removed.');
+          }
           return;
         }
         const waveData = waveDoc.data() || {};
@@ -15356,23 +15472,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           vibesFeed.find(w => w.id === waveId)?.ownerUid ||
           null;
 
-        console.log('[DELETE DEBUG] waveId:', waveId);
-        console.log('[DELETE DEBUG] user.uid:', user.uid);
-        console.log('[DELETE DEBUG] waveData.ownerUid:', waveData.ownerUid);
-        console.log('[DELETE DEBUG] waveData.authorId:', waveData.authorId);
-        console.log('[DELETE DEBUG] waveOwner:', waveOwner);
-        console.log(
-          '[DELETE DEBUG] waveOwner === user.uid:',
-          waveOwner === user.uid,
-        );
-
         if (waveOwner && waveOwner !== user.uid) {
           setDeletingWaveIds(prev => {
             const next = { ...prev };
             delete next[waveId];
             return next;
           });
-          Alert.alert('Delete failed', 'You can only delete your own wave.');
+          if (!silent) {
+            Alert.alert('Delete failed', 'You can only delete your own wave.');
+          }
           return;
         }
         // Delete media from storage if present
@@ -15395,10 +15503,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           delete next[waveId];
           return next;
         });
-        Alert.alert(
-          'Wave deleted',
-          'Your wave has been removed from My Shore.',
-        );
+        if (!silent) {
+          Alert.alert(
+            'Wave deleted',
+            'Your wave has been removed from My Shore.',
+          );
+        }
       } catch (e) {
         console.warn('Delete wave failed', e);
         if (retryCount < 2) {
@@ -15409,13 +15519,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             delete next[waveId];
             return next;
           });
-          Alert.alert(
-            'Delete failed',
-            'Could not delete wave right now. Please try again later.',
-          );
+          if (!silent) {
+            Alert.alert(
+              'Delete failed',
+              'Could not delete wave right now. Please try again later.',
+            );
+          }
         }
       }
     };
+    if (options?.skipConfirm) {
+      setDeletingWaveIds(prev => ({ ...prev, [waveId]: true }));
+      return doDelete();
+    }
     Alert.alert('Delete post', 'Are you sure you want to delete this post?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -15428,6 +15544,63 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       },
     ]);
   };
+
+  const refreshManageSentStorageList = useCallback(async () => {
+    if (!myUid) {
+      setManageSentStorageList([]);
+      return;
+    }
+    setManageSentStorageBusy(true);
+    try {
+      let firestoreMod: any = null;
+      try {
+        firestoreMod = require('@react-native-firebase/firestore').default;
+      } catch {}
+      if (!firestoreMod) {
+        setManageSentStorageList([]);
+        return;
+      }
+      const snap = await firestoreMod()
+        .collection('waves')
+        .where('ownerUid', '==', myUid)
+        .limit(250)
+        .get();
+      const rows: Vibe[] = [];
+      snap.forEach((doc: any) => {
+        const data = doc.data() || {};
+        rows.push({
+          id: doc.id,
+          captionText: String(data.mediaCaption || data.text || '').trim(),
+          postType: data.postType || null,
+          media: null,
+          audio: data.audioUrl ? { uri: String(data.audioUrl) } : null,
+          ownerUid: myUid,
+          createdAt: data.createdAt || null,
+          counts: {
+            splashes: Number(data?.counts?.splashes || 0),
+            echoes: Number(data?.counts?.echoes || 0),
+          },
+        } as Vibe);
+      });
+      const seen = new Set(rows.map(r => r.id));
+      vibesFeed.forEach(w => {
+        if (!w?.id || w.ownerUid !== myUid) return;
+        if (seen.has(w.id)) return;
+        seen.add(w.id);
+        rows.push(w);
+      });
+      rows.sort(
+        (a, b) =>
+          toJSDate(b.createdAt).getTime() - toJSDate(a.createdAt).getTime(),
+      );
+      setManageSentStorageList(rows);
+    } catch (e) {
+      console.warn('manage storage load failed', e);
+      Alert.alert('Storage', t('settings.sentStorageLoadError'));
+    } finally {
+      setManageSentStorageBusy(false);
+    }
+  }, [myUid, t, vibesFeed]);
 
   // Recent splashers for the current wave (third avatar stack)
   useEffect(() => {
@@ -15745,7 +15918,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const initialQuery = firestoreMod()
           .collection('waves')
           .orderBy('createdAt', 'desc')
-          .limit(15);
+          .limit(PUBLIC_FEED_INITIAL_LIMIT);
 
         const snap = await initialQuery.get();
         const docs = (snap?.docs || []).slice();
@@ -15759,9 +15932,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         const countQuery = firestoreMod()
           .collection('waves')
           .orderBy('createdAt', 'desc')
-          .limit(16); // One more than our page size
+          .limit(PUBLIC_FEED_INITIAL_LIMIT + 1);
         const countSnap = await countQuery.get();
-        setHasMoreItems(countSnap.docs.length > 15);
+        const initialHasMore =
+          countSnap.docs.length > PUBLIC_FEED_INITIAL_LIMIT;
+        setHasMoreItems(initialHasMore);
 
         // Process the initial snapshot data
         (async () => {
@@ -15835,6 +16010,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 splashes: Number(data?.counts?.splashes || 0),
                 echoes: Number(data?.counts?.echoes || 0),
               },
+              createdAt: data?.createdAt || null,
             });
           }
           if (!cancelled) {
@@ -16036,6 +16212,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             // Load reach counts for all waves in the feed
             const waveIds = wavesWithUserData.map(wave => wave.id);
             loadReachCounts(waveIds);
+
+            // Prime the next page in the background so normal swiping rarely hits a hard end
+            if (initialHasMore && !cancelled) {
+              setTimeout(() => {
+                try {
+                  void loadMoreFeedItemsRef.current?.();
+                } catch {}
+              }, 400);
+            }
           }
         })(); // End of async processing
       } catch (error) {
@@ -16054,8 +16239,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
 
     paginationInFlightRef.current = true;
-    // Initial load always shows loading, pagination only shows when overwhelmed
-    if (!lastLoadedDoc || isOverwhelmedRef.current) {
+    const feedLenForSpinner =
+      (displayFeedRef.current && displayFeedRef.current.length) || 0;
+    if (
+      feedLenForSpinner >= FEED_VISIBLE_LOADING_MORE_MIN_ITEMS &&
+      isOverwhelmedRef.current
+    ) {
       setIsLoadingMore(true);
     }
     try {
@@ -16074,7 +16263,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       let query = firestoreMod()
         .collection('waves')
         .orderBy('createdAt', 'desc')
-        .limit(lastLoadedDoc ? 10 : 15); // Initial: 15, Pagination: 10
+        .limit(
+          lastLoadedDoc ? PUBLIC_FEED_PAGE_SIZE : PUBLIC_FEED_INITIAL_LIMIT,
+        );
 
       if (lastLoadedDoc) {
         query = query.startAfter(lastLoadedDoc);
@@ -16279,7 +16470,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   wavesWithUserData,
                 );
                 const capped =
-                  combined.length > 120 ? combined.slice(0, 120) : combined;
+                  combined.length > PUBLIC_FEED_LIST_MEMORY_CAP
+                    ? combined.slice(0, PUBLIC_FEED_LIST_MEMORY_CAP)
+                    : combined;
                 return capped;
               });
             } else {
@@ -16369,7 +16562,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     loadPostEchoes,
     loadReachCounts,
     postEchoLists,
-    isOverwhelmed,
+  ]);
+
+  useEffect(() => {
+    loadMoreFeedItemsRef.current = loadMoreFeedItems;
+  }, [loadMoreFeedItems]);
+
+  /** Prefetch older waves before the user hits the physical end of the list */
+  useEffect(() => {
+    if (isOffline) return;
+    if (!hasMoreItems) return;
+    if (currentIndex < 0) return;
+    if (displayFeed.length < 8) return;
+    const distanceFromEnd = displayFeed.length - 1 - currentIndex;
+    if (distanceFromEnd > PUBLIC_FEED_PREFETCH_FROM_END) return;
+    const now = Date.now();
+    if (now - lastFeedBackgroundFetchTsRef.current < 700) return;
+    if (paginationInFlightRef.current) return;
+    lastFeedBackgroundFetchTsRef.current = now;
+    loadMoreFeedItems();
+  }, [
+    currentIndex,
+    displayFeed.length,
+    hasMoreItems,
+    isOffline,
+    loadMoreFeedItems,
   ]);
 
   const onRefresh = useCallback(async () => {
@@ -16390,25 +16607,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   }, [isOffline, loadMoreFeedItems]);
 
-  // Initial load of public feed
-  useEffect(() => {
-    if (
-      !isOffline &&
-      publicFeed.length === 0 &&
-      !isLoadingMore &&
-      !refreshing
-    ) {
-      loadMoreFeedItems();
-    }
-  }, [
-    isOffline,
-    publicFeed.length,
-    isLoadingMore,
-    refreshing,
-    loadMoreFeedItems,
-    isOverwhelmed,
-  ]);
-
   useEffect(() => {
     if (isOffline) return;
     if (!queuedFeedRetryRef.current) return;
@@ -16416,7 +16614,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     if (!isLoadingMore && !refreshing) {
       loadMoreFeedItems();
     }
-  }, [isOffline, isLoadingMore, loadMoreFeedItems, refreshing, isOverwhelmed]);
+  }, [isOffline, isLoadingMore, loadMoreFeedItems, refreshing]);
 
   useEffect(() => {
     if (!isOffline) return;
@@ -26051,11 +26249,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                   data={displayFeed}
                   keyExtractor={item => item.id}
-                  removeClippedSubviews={Platform.OS === 'android'}
-                  maxToRenderPerBatch={4}
-                  windowSize={9}
-                  initialNumToRender={3}
-                  updateCellsBatchingPeriod={40}
+                  removeClippedSubviews={false}
+                  maxToRenderPerBatch={5}
+                  windowSize={12}
+                  initialNumToRender={4}
+                  updateCellsBatchingPeriod={50}
                   pagingEnabled={false}
                   snapToInterval={undefined}
                   decelerationRate={'normal'}
@@ -26068,7 +26266,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     showUiTemporarily(); // Show toggles on swipe
                     showTopBar(); // Reset top bar hibernation timer
                   }}
-                  onScrollEndDrag={() => {
+                  onScrollEndDrag={event => {
                     setIsSwiping(false);
                     // Detect fast scrolling for overwhelmed state
                     const velocity = event?.nativeEvent?.velocity?.y || 0;
@@ -26159,7 +26357,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onViewableItemsChanged={onViewableItemsChanged.current}
                   onEndReached={() => {
                     const now = Date.now();
-                    if (now - lastEndReachedTsRef.current < 1500) return;
+                    if (now - lastEndReachedTsRef.current < 900) return;
                     lastEndReachedTsRef.current = now;
                     if (
                       paginationInFlightRef.current ||
@@ -26167,33 +26365,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       !hasMoreItems
                     )
                       return;
-                    // Only load when truly overwhelmed - user is scrolling very fast
-                    // Never show loading indicator during normal scrolling
-                    if (!isOverwhelmedRef.current) {
-                      // Silent background loading - professional social media style
-                      loadMoreFeedItems();
-                      return;
-                    }
-                    // Only reach here when overwhelmed (fast scrolling)
-                    const minLoadedBeforePaging = 10;
-                    const nearEndThreshold = 8;
-                    if (displayFeed.length < minLoadedBeforePaging) return;
-                    if (currentIndex < displayFeed.length - nearEndThreshold)
-                      return;
-                    if (
-                      lastPaginationTriggerIndexRef.current >= 0 &&
-                      currentIndex - lastPaginationTriggerIndexRef.current < 6
-                    ) {
-                      return;
-                    }
-                    lastPaginationTriggerIndexRef.current = currentIndex;
                     try {
                       loadMoreFeedItems();
                     } catch (error) {
                       console.warn('Error in onEndReached:', error);
                     }
                   }}
-                  onEndReachedThreshold={0.01}
+                  onEndReachedThreshold={0.35}
                   onScrollToIndexFailed={info => {
                     // Fallback when scrollToIndex fails - try to scroll to a nearby index
                     const { index, highestMeasuredFrameIndex } = info;
@@ -26483,7 +26661,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </ErrorBoundary>
 
               {/* Loading indicator - ONLY show when overwhelmed (fast scrolling) */}
-              {isLoadingMore && isOverwhelmed && (
+              {isLoadingMore &&
+                isOverwhelmed &&
+                displayFeed.length >= FEED_VISIBLE_LOADING_MORE_MIN_ITEMS && (
                 <View
                   style={{
                     padding: 20,
@@ -29305,8 +29485,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                     />
                                   </View>
                                 )}
-                              </View>
-                            )}
+                          </View>
                         </Pressable>
                       ))
                     )}
@@ -34317,6 +34496,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           subtitle: t('settings.cacheCurrentsDesc'),
                         },
                         {
+                          id: 'sent_posts_storage',
+                          title: t('settings.sentStorage'),
+                          subtitle: t('settings.sentStorageDesc'),
+                        },
+                        {
                           id: 'my_look',
                           title: t('settings.myLook'),
                           subtitle: t('settings.myLookDesc'),
@@ -34385,7 +34569,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             );
                           }
                           if (commandCentreSection === 'performance') {
-                            return section.id === 'cache_currents';
+                            return (
+                              section.id === 'cache_currents' ||
+                              section.id === 'sent_posts_storage'
+                            );
                           }
                           if (commandCentreSection === 'about') {
                             return section.id === 'tide_patches';
@@ -34409,6 +34596,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             {(section.id === 'captain_identity' ||
                               section.id === 'chat_harbor' ||
                               section.id === 'cache_currents' ||
+                              section.id === 'sent_posts_storage' ||
                               section.id === 'my_look' ||
                               section.id === 'theme_mode' ||
                               section.id === 'feed_layout' ||
@@ -34846,6 +35034,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                       </Text>
                                     </Pressable>
                                   </View>
+                                </View>
+                              )}
+
+                            {section.id === 'sent_posts_storage' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <Text
+                                    style={{
+                                      color: 'rgba(255,255,255,0.55)',
+                                      fontSize: 11,
+                                      marginBottom: 10,
+                                    }}
+                                  >
+                                    {t('settings.sentStorageDesc')}
+                                  </Text>
+                                  <Pressable
+                                    style={styles.bridgeSettingButton}
+                                    onPress={() => {
+                                      setManageSentStorageSelected(new Set());
+                                      setShowManageSentStorage(true);
+                                      void refreshManageSentStorageList();
+                                    }}
+                                  >
+                                    <Text
+                                      style={styles.bridgeSettingButtonText}
+                                    >
+                                      {t('settings.manageSentStorage')}
+                                    </Text>
+                                  </Pressable>
                                 </View>
                               )}
 
@@ -39880,6 +40097,278 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 <Text style={styles.dismissText}>Cancel</Text>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={showManageSentStorage}
+        animationType="slide"
+        transparent
+        onRequestClose={() => {
+          if (!manageSentStorageBusy) setShowManageSentStorage(false);
+        }}
+      >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+            justifyContent: 'flex-end',
+          }}
+        >
+          <View
+            style={{
+              backgroundColor: '#0B1929',
+              borderTopLeftRadius: 18,
+              borderTopRightRadius: 18,
+              maxHeight: '88%',
+              paddingBottom: (insets.bottom || 0) + 12,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingHorizontal: 16,
+                paddingTop: 14,
+              }}
+            >
+              <Text
+                style={{ color: '#FFF', fontSize: 18, fontWeight: '800' }}
+                numberOfLines={1}
+              >
+                {t('settings.manageSentStorage')}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  if (!manageSentStorageBusy) setShowManageSentStorage(false);
+                }}
+                style={{ padding: 8 }}
+              >
+                <Text style={{ color: '#00C2FF', fontWeight: '700' }}>✕</Text>
+              </Pressable>
+            </View>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.65)',
+                fontSize: 12,
+                paddingHorizontal: 16,
+                marginTop: 4,
+              }}
+            >
+              {t('settings.sentStorageSummary', {
+                count: manageSentStorageList.length,
+              })}
+            </Text>
+            <Text
+              style={{
+                color: 'rgba(255,255,255,0.55)',
+                fontSize: 11,
+                paddingHorizontal: 16,
+                marginTop: 4,
+              }}
+            >
+              {t('settings.sentStorageApprox', {
+                size: `${manageSentStorageList
+                  .reduce((sum, w) => sum + estimateRoughWaveMegabytes(w), 0)
+                  .toFixed(1)} MB`,
+              })}
+            </Text>
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                gap: 8,
+                paddingHorizontal: 16,
+                marginTop: 12,
+              }}
+            >
+              <Pressable
+                style={styles.bridgeSettingButton}
+                onPress={() =>
+                  setManageSentStorageSelected(
+                    new Set(manageSentStorageList.map(w => w.id)),
+                  )
+                }
+              >
+                <Text style={styles.bridgeSettingButtonText}>
+                  {t('settings.selectAllSent')}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={styles.bridgeSettingButton}
+                onPress={() => setManageSentStorageSelected(new Set())}
+              >
+                <Text style={styles.bridgeSettingButtonText}>
+                  {t('settings.clearSentSelection')}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.bridgeSettingButton,
+                  { backgroundColor: 'rgba(141,0,0,0.88)' },
+                ]}
+                onPress={() => {
+                  const ids = [...manageSentStorageSelected];
+                  if (!ids.length) return;
+                  Alert.alert(
+                    t('settings.sentStorageBulkConfirmTitle'),
+                    t('settings.sentStorageBulkConfirmBody', {
+                      count: ids.length,
+                    }),
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: async () => {
+                          setManageSentStorageBusy(true);
+                          try {
+                            for (const id of ids) {
+                              await deleteWave(id, {
+                                skipConfirm: true,
+                                silent: true,
+                              });
+                            }
+                            setManageSentStorageSelected(new Set());
+                            await refreshManageSentStorageList();
+                            Alert.alert(
+                              t('alert.successTitle'),
+                              t('settings.sentStorageBulkDone', {
+                                count: ids.length,
+                              }),
+                            );
+                          } finally {
+                            setManageSentStorageBusy(false);
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+              >
+                <Text style={styles.bridgeSettingButtonText}>
+                  {t('settings.deleteSelectedSent')}
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.bridgeSettingButton,
+                  { backgroundColor: 'rgba(141,0,0,0.88)' },
+                ]}
+                onPress={() => {
+                  const ids = manageSentStorageList.map(w => w.id);
+                  if (!ids.length) return;
+                  Alert.alert(
+                    t('settings.sentStorageBulkConfirmTitle'),
+                    t('settings.sentStorageBulkConfirmBody', {
+                      count: ids.length,
+                    }),
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete all',
+                        style: 'destructive',
+                        onPress: async () => {
+                          setManageSentStorageBusy(true);
+                          try {
+                            for (const id of ids) {
+                              await deleteWave(id, {
+                                skipConfirm: true,
+                                silent: true,
+                              });
+                            }
+                            setManageSentStorageSelected(new Set());
+                            await refreshManageSentStorageList();
+                            Alert.alert(
+                              t('alert.successTitle'),
+                              t('settings.sentStorageBulkDone', {
+                                count: ids.length,
+                              }),
+                            );
+                          } finally {
+                            setManageSentStorageBusy(false);
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+              >
+                <Text style={styles.bridgeSettingButtonText}>
+                  {t('settings.deleteAllSent')}
+                </Text>
+              </Pressable>
+            </View>
+            {manageSentStorageBusy ? (
+              <View style={{ padding: 24, alignItems: 'center' }}>
+                <ActivityIndicator color="#00C2FF" />
+              </View>
+            ) : (
+              <ScrollView
+                style={{ marginTop: 8, maxHeight: 420 }}
+                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
+              >
+                {manageSentStorageList.length === 0 ? (
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.45)',
+                      fontSize: 13,
+                      paddingVertical: 16,
+                    }}
+                  >
+                    {t('settings.sentStorageEmpty')}
+                  </Text>
+                ) : (
+                  manageSentStorageList.map(wave => {
+                    const checked = manageSentStorageSelected.has(wave.id);
+                    return (
+                      <Pressable
+                        key={`sent-storage-${wave.id}`}
+                        onPress={() =>
+                          setManageSentStorageSelected(prev => {
+                            const next = new Set(prev);
+                            if (next.has(wave.id)) next.delete(wave.id);
+                            else next.add(wave.id);
+                            return next;
+                          })
+                        }
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingVertical: 10,
+                          borderBottomWidth: 1,
+                          borderBottomColor: 'rgba(255,255,255,0.08)',
+                        }}
+                      >
+                        <Text style={{ color: '#00C2FF', width: 28 }}>
+                          {checked ? '☑' : '☐'}
+                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text
+                            style={{ color: '#FFF', fontSize: 13 }}
+                            numberOfLines={2}
+                          >
+                            {wave.captionText || wave.id}
+                          </Text>
+                          <Text
+                            style={{
+                              color: 'rgba(255,255,255,0.45)',
+                              fontSize: 10,
+                              marginTop: 2,
+                            }}
+                          >
+                            ~{estimateRoughWaveMegabytes(wave).toFixed(1)} MB ·{' '}
+                            {toJSDate(wave.createdAt).toLocaleString()}
+                          </Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </ScrollView>
+            )}
           </View>
         </View>
       </Modal>
