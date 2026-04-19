@@ -11,6 +11,22 @@ service cloud.firestore {
       return isAuthed() && request.auth.uid == ownerUid;
     }
 
+    function isAppAdmin() {
+      return isAuthed() && (
+        request.auth.token.appRole == 'admin' ||
+        request.auth.token.appRole == 'owner' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.appRole in ['admin', 'owner'] ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.appAdmin == true
+      );
+    }
+
+    function isAppOwner() {
+      return isAuthed() && (
+        request.auth.token.appRole == 'owner' ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.appRole == 'owner'
+      );
+    }
+
     function isPremiumHost() {
       return isAuthed()
         && (
@@ -116,8 +132,9 @@ service cloud.firestore {
         isLegitEngagementUpdate()
       );
 
+      // Owner or admin can delete
       allow delete: if isAuthed()
-                    && resource.data.ownerUid == request.auth.uid;
+                    && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
 
       // waves/{waveId}/splashes/{uid}
       match /splashes/{uid} {
@@ -177,7 +194,9 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if isAuthed();
       allow create: if isAuthed() && request.auth.uid == uid;
-      allow update, delete: if isOwner(uid);
+      // Owner can update their profile; admins can update other users for moderation
+      allow update: if isOwner(uid) || isAppAdmin();
+      allow delete: if isAppOwner();
 
       match /pings/{pingId} {
         allow read, create, update, delete: if isAuthed();

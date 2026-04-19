@@ -1,0 +1,79 @@
+[debug] [2026-04-19T03:39:43.014Z] ----------------------------------------------------------------------
+[debug] [2026-04-19T03:39:43.023Z] Command:       C:\nvm4w\nodejs\node.exe C:\nvm4w\nodejs\node_modules\firebase-tools\lib\bin\firebase.js deploy --only firestore:rules --project aqualink-bf57c
+[debug] [2026-04-19T03:39:43.025Z] CLI Version:   15.4.0
+[debug] [2026-04-19T03:39:43.025Z] Platform:      win32
+[debug] [2026-04-19T03:39:43.025Z] Node Version:  v20.19.5
+[debug] [2026-04-19T03:39:43.025Z] Time:          Sun Apr 19 2026 06:39:43 GMT+0300 (East Africa Time)
+[debug] [2026-04-19T03:39:43.026Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-04-19T03:39:43.032Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[debug] [2026-04-19T03:39:50.052Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-04-19T03:39:50.054Z] > authorizing via signed-in user (mukuemrambidzi@gmail.com)
+[debug] [2026-04-19T03:39:50.055Z] [iam] checking project aqualink-bf57c for permissions ["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]
+[debug] [2026-04-19T03:39:50.057Z] Checked if tokens are valid: false, expires at: 1776378489274
+[debug] [2026-04-19T03:39:50.058Z] Checked if tokens are valid: false, expires at: 1776378489274
+[debug] [2026-04-19T03:39:50.059Z] > refreshing access token with scopes: []
+[debug] [2026-04-19T03:39:50.064Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-04-19T03:39:50.065Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-04-19T03:39:50.452Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-04-19T03:39:50.453Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-04-19T03:39:50.470Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/aqualink-bf57c:testIamPermissions [none]
+[debug] [2026-04-19T03:39:50.470Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/aqualink-bf57c:testIamPermissions x-goog-quota-user=projects/aqualink-bf57c
+[debug] [2026-04-19T03:39:50.470Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/aqualink-bf57c:testIamPermissions {"permissions":["datastore.indexes.create","datastore.indexes.delete","datastore.indexes.list","datastore.indexes.update","firebase.projects.get"]}
+[debug] [2026-04-19T03:39:50.784Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-04-19T03:39:50.784Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}
+[debug] [2026-04-19T03:39:52.373Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/aqualink-bf57c:testIamPermissions 200
+[debug] [2026-04-19T03:39:52.374Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/aqualink-bf57c:testIamPermissions {}
+[debug] [2026-04-19T03:39:52.374Z] [iam] error while checking permissions, command may fail: Authorization failed. This account is missing the following required permissions on project aqualink-bf57c:
+
+  datastore.indexes.create
+  datastore.indexes.delete
+  datastore.indexes.list
+  datastore.indexes.update
+  firebase.projects.get
+[info] 
+[info] === Deploying to 'aqualink-bf57c'...
+[info] 
+[info] i  deploying firestore 
+[info] i  firestore: ensuring required API firestore.googleapis.com is enabled... 
+[debug] [2026-04-19T03:39:52.384Z] Checked if tokens are valid: true, expires at: 1776573589453
+[debug] [2026-04-19T03:39:52.385Z] Checked if tokens are valid: true, expires at: 1776573589453
+[debug] [2026-04-19T03:39:52.385Z] >>> [apiv2][query] GET https://serviceusage.googleapis.com/v1/projects/aqualink-bf57c/services/firestore.googleapis.com [none]
+[debug] [2026-04-19T03:39:52.385Z] >>> [apiv2][(partial)header] GET https://serviceusage.googleapis.com/v1/projects/aqualink-bf57c/services/firestore.googleapis.com x-goog-quota-user=projects/aqualink-bf57c
+[debug] [2026-04-19T03:39:54.136Z] <<< [apiv2][status] GET https://serviceusage.googleapis.com/v1/projects/aqualink-bf57c/services/firestore.googleapis.com 403
+[debug] [2026-04-19T03:39:54.137Z] <<< [apiv2][body] GET https://serviceusage.googleapis.com/v1/projects/aqualink-bf57c/services/firestore.googleapis.com [omitted]
+[error] 
+[error] Error: Request to https://serviceusage.googleapis.com/v1/projects/aqualink-bf57c/services/firestore.googleapis.com had HTTP Error: 403, Project 'aqualink-bf57c' not found or permission denied.
+Help Token: AVnrbfnNsJVF0E2SjC1Sr095I2hWf8V94PTSs09CetTGRlVGPQ1Y_68OiLYS5Tcw5CecBMCWsyMWAbo67WKib-mBTInANPZRvwouGjI5r3y6eTVs
+[debug] [2026-04-19T03:39:54.471Z] Error Context: {
+  "body": {
+    "error": {
+      "code": 403,
+      "message": "Project 'aqualink-bf57c' not found or permission denied.\nHelp Token: AVnrbfnNsJVF0E2SjC1Sr095I2hWf8V94PTSs09CetTGRlVGPQ1Y_68OiLYS5Tcw5CecBMCWsyMWAbo67WKib-mBTInANPZRvwouGjI5r3y6eTVs",
+      "status": "PERMISSION_DENIED",
+      "details": [
+        {
+          "@type": "type.googleapis.com/google.rpc.PreconditionFailure",
+          "violations": [
+            {
+              "type": "googleapis.com",
+              "subject": "?error_code=210002&type=Project&resource_id=aqualink-bf57c"
+            }
+          ]
+        },
+        {
+          "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+          "reason": "RESOURCES_NOT_FOUND",
+          "domain": "serviceusage.googleapis.com",
+          "metadata": {
+            "type": "Project",
+            "resource_id": "aqualink-bf57c"
+          }
+        }
+      ]
+    }
+  },
+  "response": {
+    "statusCode": 403
+  }
+}
