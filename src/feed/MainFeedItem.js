@@ -984,7 +984,7 @@ var MainFeedItem = (0, react_1.memo)(function (_a) {
                     pressed && { opacity: 0.7 },
                 ];
             }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                    <react_native_1.Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 15 }}>Fleet Deck</react_native_1.Text>
+                    <react_native_1.Text style={{ color: '#B91C1C', fontWeight: '900', fontSize: 15 }}>FLEET DECKS</react_native_1.Text>
                     {fleetDeckBadgeCount > 0 ? (<react_native_1.View style={{
                     position: 'absolute',
                     top: -8,

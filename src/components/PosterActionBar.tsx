@@ -1,6 +1,6 @@
 // Import necessary components and hooks
-import React, { useState, useEffect, memo } from 'react';
-import { View, Text, StyleSheet, Alert, ScrollView, Pressable, Modal, FlatList } from 'react-native';
+import React, { useState, useEffect, memo, useRef } from 'react';
+import { View, Text, StyleSheet, Alert, Pressable, Modal, FlatList } from 'react-native';
 import firestore from '@react-native-firebase/firestore';
 import NetInfo from '@react-native-community/netinfo';
 import { offlineQueueService } from '../services/offlineQueueService';
@@ -79,6 +79,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
   // Connectivity state
   const [isOnline, setIsOnline] = useState(true);
+  const lastHugAtRef = useRef(0);
 
   // Monitor connectivity
   useEffect(() => {
@@ -129,6 +130,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   }, [echoesCount]);
 
   const handleHug = () => {
+    const now = Date.now();
+    if (now - lastHugAtRef.current < 280) {
+      return;
+    }
+    lastHugAtRef.current = now;
     // Immediate visual feedback - no blocking
     const newHasHugged = !hasHugged;
     setHasHugged(newHasHugged);
@@ -233,24 +239,18 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   return (
 
     <>
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.textButtonsBar}
-      keyboardShouldPersistTaps="handled"
-      scrollEnabled={true}
-      contentContainerStyle={{ flexDirection: 'row' }}
-    >
+    <View style={[styles.textButtonsBar, { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center' }]}>
       {/* Hugs Button (with icon and count) */}
       <Pressable
         onPress={handleHugAction}
+        delayPressIn={0}
         style={({ pressed }) => [
           styles.textButton,
           
           pressed && styles.pressedButton
         ]}
         accessibilityRole="button"
-        accessibilityLabel={(hasHugged && Math.max(0, splashesCount) > 0)
+        accessibilityLabel={(hasHugged && Math.max(0, localHugsCount) > 0)
           ? translate('feed.removeHug')
           : translate('feed.hugThisPost')}
         hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
@@ -375,7 +375,7 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
         </Pressable>
       )}
 
-      </ScrollView>
+    </View>
 
     {/* Huggers Dropdown Modal */}
     <Modal

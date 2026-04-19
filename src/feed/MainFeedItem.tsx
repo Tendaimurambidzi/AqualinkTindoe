@@ -7,6 +7,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import ProfileAvatarWithCrew from '../components/ProfileAvatarWithCrew';
 import PosterActionBar from '../components/PosterActionBar';
 import VideoWithTapControls from '../components/VideoWithTapControls';
+import FeedPdfCard from '../components/FeedPdfCard';
 import ClickableTextWithLinks from '../components/ClickableTextWithLinks';
 import OnlineUsersList from '../components/OnlineUsersList';
 import ProfilePreviewModal from '../components/ProfilePreviewModal';
@@ -469,9 +470,15 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     return item.media?.uri ? [item.media] : [];
   }, [item.media, item.mediaItems, (item as any).galleryItems]);
 
+  const hasMultiMediaGrid = galleryMediaItems.length > 1;
+  const hugCountBase = Math.max(
+    0,
+    Number(item.counts?.hugs ?? item.counts?.splashes ?? 0),
+  );
+
   useEffect(() => {
     const mediaLength = Math.max(1, galleryMediaItems.length);
-    const initialSplashes = Math.max(0, Number(item.counts?.splashes || 0));
+    const initialSplashes = hugCountBase;
     const initialEchoes = Math.max(0, Number(item.counts?.echoes || 0));
     const next: Record<number, { splashes: number; echoes: number }> = {};
     for (let i = 0; i < mediaLength; i += 1) {
@@ -479,7 +486,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     }
     setMediaActionCounts(next);
     setActiveGridMediaIndex(0);
-  }, [item.id, item.counts?.splashes, item.counts?.echoes, galleryMediaItems.length]);
+  }, [item.id, hugCountBase, item.counts?.echoes, galleryMediaItems.length]);
 
   const selectedMediaIndex = useMemo(() => {
     if (!hasMultiMediaGrid) return 0;
@@ -493,7 +500,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const primaryMedia = (galleryMediaItems[0] || item.media || null) as Asset | null;
   const mediaUri = String(primaryMedia?.uri || '').trim();
   const mediaType = String(primaryMedia?.type || '').toLowerCase();
-  const hasMultiMediaGrid = galleryMediaItems.length > 1;
   const previewGridItems = galleryMediaItems.slice(0, 6);
   const hiddenGridCount = Math.max(0, galleryMediaItems.length - 6);
   const latestGridVideoIndex = useMemo(
@@ -526,6 +532,12 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const hasImageMedia =
     mediaUri.length > 0 &&
     (isExplicitImage || isImageAsset(primaryMedia) || (!hasVideoMedia && mediaType.startsWith('image/')));
+  const isPdfDocument =
+    (explicitPostType === 'document' &&
+      (mediaType.includes('pdf') || /\.pdf($|\?)/i.test(mediaUri))) ||
+    mediaType === 'application/pdf' ||
+    /\.pdf($|\?)/i.test(mediaUri);
+  const hasPdfMedia = !!mediaUri && isPdfDocument;
   const audioOnlyPost =
     (isExplicitAudio ||
       (!item.playbackUrl && !!item.audio?.uri && !hasVideoMedia && !hasImageMedia) ||
@@ -553,8 +565,14 @@ const MainFeedItem = memo<MainFeedItemProps>(({
   const near = Math.abs(index - currentIndex) <= 1;
   const isGridPostInFocus = shouldPlay && index === currentIndex;
   const hasUnknownMediaFile =
-    !!primaryMedia && mediaUri.length > 0 && !hasVideoMedia && !hasImageMedia && !audioOnlyPost;
-  const hasRenderableMedia = hasVideoMedia || audioOnlyPost || hasImageMedia || hasUnknownMediaFile;
+    !!primaryMedia &&
+    mediaUri.length > 0 &&
+    !hasVideoMedia &&
+    !hasImageMedia &&
+    !audioOnlyPost &&
+    !hasPdfMedia;
+  const hasRenderableMedia =
+    hasVideoMedia || audioOnlyPost || hasImageMedia || hasUnknownMediaFile || hasPdfMedia;
   const textOnlyStory = !primaryMedia && !item.image && !item.audio?.uri;
   const mediaEdits = item.mediaEdits || null;
   const fallbackAwayText = (() => {
@@ -777,7 +795,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     setSplashSyncStatus('saving');
     // IMMEDIATE UI UPDATE - no delay
     const updateFeeds = (feed: Vibe[]) =>
-      feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v);
+      feed.map(v => {
+        if (v.id !== item.id) return v;
+        const n = Math.max(0, Number(v.counts?.hugs ?? v.counts?.splashes ?? 0)) + 1;
+        return { ...v, counts: { ...v.counts, hugs: n, splashes: n } };
+      });
 
     setWavesFeed(updateFeeds);
     setVibesFeed(updateFeeds);
@@ -793,7 +815,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         console.error('Error adding splash:', error);
         // Revert UI on error
         const revertFeeds = (feed: Vibe[]) =>
-          feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v);
+          feed.map(v => {
+            if (v.id !== item.id) return v;
+            const n = Math.max(0, Number(v.counts?.hugs ?? v.counts?.splashes ?? 0) - 1);
+            return { ...v, counts: { ...v.counts, hugs: n, splashes: n } };
+          });
 
         setWavesFeed(revertFeeds);
         setVibesFeed(revertFeeds);
@@ -808,7 +834,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
     setSplashSyncStatus('saving');
     // IMMEDIATE UI UPDATE - no delay
     const updateFeeds = (feed: Vibe[]) =>
-      feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: Math.max(0, (v.counts?.splashes || 0) - 1) } } : v);
+      feed.map(v => {
+        if (v.id !== item.id) return v;
+        const n = Math.max(0, Number(v.counts?.hugs ?? v.counts?.splashes ?? 0) - 1);
+        return { ...v, counts: { ...v.counts, hugs: n, splashes: n } };
+      });
 
     setWavesFeed(updateFeeds);
     setVibesFeed(updateFeeds);
@@ -824,7 +854,11 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         console.error('Error removing splash:', error);
         // Revert UI on error
         const revertFeeds = (feed: Vibe[]) =>
-          feed.map(v => v.id === item.id ? { ...v, counts: { ...v.counts, splashes: (v.counts?.splashes || 0) + 1 } } : v);
+          feed.map(v => {
+            if (v.id !== item.id) return v;
+            const n = Math.max(0, Number(v.counts?.hugs ?? v.counts?.splashes ?? 0)) + 1;
+            return { ...v, counts: { ...v.counts, hugs: n, splashes: n } };
+          });
 
         setWavesFeed(revertFeeds);
         setVibesFeed(revertFeeds);
@@ -1197,22 +1231,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                      onPressOut={() => {
                        if (fleetProcessing) return;
                        HapticWaveFeedback.selection();
-                       // Flickering effect: rapid color changes
-                       const flickerAnim = Animated.loop(
-                         Animated.sequence([
-                           Animated.timing(fleetScaleAnim, { toValue: 1.02, duration: 50, useNativeDriver: true }),
-                           Animated.timing(fleetScaleAnim, { toValue: 1, duration: 50, useNativeDriver: true }),
-                         ]),
-                         { iterations: 6 }
-                       );
-                       flickerAnim.start(() => {
-                         Animated.timing(fleetScaleAnim, { toValue: 1, duration: 100, useNativeDriver: true }).start();
-                       });
-                     }}
-                     onPressOut={() => {
-                       if (fleetProcessing) return;
-                       HapticWaveFeedback.selection();
-                       // Flickering effect: rapid color changes
                        const flickerAnim = Animated.loop(
                          Animated.sequence([
                            Animated.timing(fleetScaleAnim, { toValue: 1.02, duration: 50, useNativeDriver: true }),
@@ -1237,7 +1255,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                     disabled={fleetProcessing}
                     style={({ pressed }) => [
                       {
-                       backgroundColor: fleetProcessing ? '#FF4444' : '#00C2FF',
+                       backgroundColor: fleetProcessing ? '#FF4444' : 'rgba(255,255,255,0.96)',
                       borderRadius: 18,
                       paddingHorizontal: 14,
                       paddingVertical: 8,
@@ -1410,49 +1428,6 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
           {/* Post Content - Text or Media */}
           {hasRenderableMedia ? (
-            // ...existing media rendering code...
-            <></>
-          ) : (
-            /* Text-only posts */
-            <Pressable
-              onPress={handleTextPostPress}
-              style={[
-                styles.textStoryWrap,
-                expandedPosts[item.id] ? styles.textStoryWrapExpanded : null,
-              ]}
-              onLayout={() => {
-                if (recordTextReach) {
-                  recordTextReach(item.id).catch(error => {
-                    console.log('Text reach recording failed:', error?.message || error);
-                  });
-                }
-              }}
-            >
-              <LinearGradient
-                colors={storyTheme.colors}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.textStoryCard}
-              >
-                {/* MoMo badge removed */}
-                <ClickableTextWithLinks
-                  text={
-                    expandedPosts[item.id]
-                      ? item.captionText
-                      : item.captionText.length > 500
-                      ? item.captionText.substring(0, 500) + '...'
-                      : item.captionText
-                  }
-                  style={styles.textStoryBody}
-                />
-                {item.captionText && item.captionText.length > 500 && !expandedPosts[item.id] ? (
-                  <Pressable onPress={handleReadMore}>
-                    <Text style={[styles.textStoryMore, { color: storyTheme.accent }]}>Read More</Text>
-                  </Pressable>
-                ) : null}
-              </LinearGradient>
-            </Pressable>
-          )}
             <>
               {/* Post Text (if any) */}
               {item.captionText && (
@@ -1643,6 +1618,10 @@ const MainFeedItem = memo<MainFeedItemProps>(({
                       );
                     })}
                   </View>
+                </View>
+              ) : hasPdfMedia ? (
+                <View style={{ marginHorizontal: 0, width: SCREEN_WIDTH, backgroundColor: '#0b1220' }}>
+                  <FeedPdfCard uri={mediaUri} height={Math.min(SCREEN_HEIGHT * 0.68, 520)} />
                 </View>
               ) : hasVideoMedia ? (
                 <View style={{ marginHorizontal: 0, position: 'relative', backgroundColor: '#000' }}>
@@ -2013,17 +1992,26 @@ const MainFeedItem = memo<MainFeedItemProps>(({
 
           {bufferingMap[item.id] && shouldPlay && (
             <View
+              pointerEvents="none"
               style={{
                 position: 'absolute',
                 left: 0,
                 right: 0,
-                top: 0,
-                bottom: 0,
+                bottom: 12,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <ActivityIndicator size="large" color="#00C2FF" />
+              <View
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: 'rgba(0,0,0,0.45)',
+                }}
+              >
+                <ActivityIndicator size="small" color="#7dd3fc" />
+              </View>
             </View>
           )}
 
@@ -2039,7 +2027,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
           <PosterActionBar
             waveId={item.id}
             currentUserId={myUid || ''}
-            splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : item.counts?.splashes || 0}
+            splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : hugCountBase}
             echoesCount={hasMultiMediaGrid ? selectedMediaCounts.echoes : item.counts?.echoes || 0}
             pearlsCount={0}
             isAnchored={false}
@@ -2226,7 +2214,7 @@ const MainFeedItem = memo<MainFeedItemProps>(({
               <PosterActionBar
                 waveId={item.id}
                 currentUserId={myUid || ''}
-                splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : item.counts?.splashes || 0}
+                splashesCount={hasMultiMediaGrid ? selectedMediaCounts.splashes : hugCountBase}
                 echoesCount={hasMultiMediaGrid ? selectedMediaCounts.echoes : item.counts?.echoes || 0}
                 pearlsCount={0}
                 isAnchored={false}
@@ -2262,18 +2250,83 @@ const MainFeedItem = memo<MainFeedItemProps>(({
         </ScrollView>
 
         {(postEchoLists[item.id] && postEchoLists[item.id].length > 0) ? (
-        <View style={styles.echoSection}>
-          {/* Echoes Section */}
-          {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
-            <View style={{ marginTop: 10 }}>
-              {expandedEchoes[item.id] ? (
-                (() => {
-                  // Use PosterActionBar logic for echo hug/echo actions for full consistency
-                  // ...existing code for rendering echo item...
-                  // Replace all local hug/echo logic with calls to PosterActionBar's logic and UI
-                  // This ensures 100% consistent behavior and UI
-                  // ...existing code...
-  },
+          <View style={styles.echoSection}>
+            {postEchoLists[item.id] && postEchoLists[item.id].length > 0 && (
+              <View style={{ marginTop: 10 }}>
+                {expandedEchoes[item.id] ? (
+                  (() => {
+                    const allEchoes = postEchoLists[item.id];
+                    const pageSize = echoesPageSize[item.id] || 5;
+                    const visibleEchoes = allEchoes.slice(0, pageSize);
+                    const hasMoreEchoes = allEchoes.length > pageSize;
+                    return (
+                      <>
+                        {visibleEchoes.map((echo, idx) => renderEchoItem(echo, idx))}
+                        {hasMoreEchoes && (
+                          <Pressable
+                            onPress={handleLoadMoreEchoes}
+                            style={({ pressed }) => [
+                              styles.loadMoreEchoesBtn,
+                              pressed && styles.buttonPressed,
+                            ]}
+                            hitSlop={{ top: 30, bottom: 30, left: 30, right: 30 }}
+                            disabled={echoExpansionInProgress[item.id]}
+                          >
+                            <Text style={styles.loadMoreEchoesText}>
+                              {translate('feed.loadMoreEchoes', {
+                                count: Math.min(5, allEchoes.length - pageSize),
+                              })}
+                            </Text>
+                          </Pressable>
+                        )}
+                      </>
+                    );
+                  })()
+                ) : (
+                  (() => {
+                    const topEcho = [...postEchoLists[item.id]]
+                      .sort((a, b) => {
+                        const hugDiff = Number(b?.hugs || 0) - Number(a?.hugs || 0);
+                        if (hugDiff !== 0) return hugDiff;
+                        const bTime =
+                          typeof b?.createdAt?.toMillis === 'function'
+                            ? b.createdAt.toMillis()
+                            : Number(new Date(b?.createdAt || 0).getTime()) || 0;
+                        const aTime =
+                          typeof a?.createdAt?.toMillis === 'function'
+                            ? a.createdAt.toMillis()
+                            : Number(new Date(a?.createdAt || 0).getTime()) || 0;
+                        return bTime - aTime;
+                      })[0];
+                    return topEcho ? renderEchoItem(topEcho, 0) : null;
+                  })()
+                )}
+                {postEchoLists[item.id].length > 1 && (
+                  <Pressable
+                    onPress={handleEchoToggle}
+                    style={({ pressed }) => [styles.echoToggleBtn, pressed && styles.buttonPressed]}
+                    hitSlop={{ top: 40, bottom: 40, left: 40, right: 40 }}
+                    disabled={echoExpansionInProgress[item.id]}
+                  >
+                    <Text style={styles.echoToggleText}>
+                      {expandedEchoes[item.id]
+                        ? translate('feed.viewLessEchoes')
+                        : translate('feed.viewAllEchoes', {
+                            count: postEchoLists[item.id].length,
+                          })}
+                    </Text>
+                  </Pressable>
+                )}
+              </View>
+            )}
+          </View>
+        ) : null}
+      </View>
+    </Pressable>
+  );
+});
+
+const styles = StyleSheet.create({
   postHeader: {
     position: 'relative',
     alignItems: 'center',

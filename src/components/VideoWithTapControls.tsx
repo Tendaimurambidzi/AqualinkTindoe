@@ -39,11 +39,11 @@ type Props = {
   useTextureView?: boolean;
   progressUpdateInterval?: number;
   poster?: string;
-  posterResizeMode?: string;
+  posterResizeMode?: 'contain' | 'cover' | 'stretch' | 'repeat' | 'center';
   disableFocus?: boolean;
   playInBackground?: boolean;
   playWhenInactive?: boolean;
-  ignoreSilentSwitch?: string;
+  ignoreSilentSwitch?: 'inherit' | 'ignore' | 'obey';
   controls?: boolean;
   onLoad?: (data: any) => void;
   onBuffer?: (data: any) => void;
@@ -53,7 +53,7 @@ type Props = {
   muted?: boolean;
   playbackRate?: number;
   audioVolume?: number;
-  resizeMode?: string;
+  resizeMode?: 'contain' | 'cover' | 'stretch' | 'repeat' | 'center';
   isActive?: boolean;
   onTap?: () => void;
   onMaximize?: () => void; // Reserved for maximize action
@@ -93,8 +93,8 @@ const VideoWithTapControls: React.FC<Props> = ({
   videoId,
   shouldPreload = false,
 }) => {
-  const videoRef = useRef<Video | null>(null);
-  const [internalPaused, setInternalPaused] = useState<boolean>(true); // Start with videos paused
+  const videoRef = useRef<any>(null);
+  const [internalPaused, setInternalPaused] = useState<boolean>(false); // Start with videos ready to play
   const [controlsVisible, setControlsVisible] = useState<boolean>(false);
   const controlsOpacity = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<NodeJS.Timeout | null>(null);
@@ -175,52 +175,34 @@ const VideoWithTapControls: React.FC<Props> = ({
     }
   }, [duration]);
 
-  // Autoplay on entry to active view only.
-  // If a video reached end, keep replay state while active; reset only after leaving and returning.
+  // Simplified autoplay logic - play when active and not paused
   useEffect(() => {
     const becameActive = isActive && !wasActiveRef.current;
     wasActiveRef.current = isActive;
 
-    if (isActive && !paused) {
-      if (manualPauseRequested) {
-        setInternalPaused(true);
-        return;
-      }
-      // Keep video paused on the same active item after completion/reset.
-      // Once user leaves and comes back (becameActive), autoplay again.
-      if (suppressAutoPlayUntilInactive) {
-        if (becameActive) {
-          setSuppressAutoPlayUntilInactive(false);
-        } else {
-          setInternalPaused(true);
-          return;
-        }
-      }
-      if (becameActive || internalPaused) {
-        if (videoCompleted) {
-          safeSeek(0);
-          setVideoCompleted(false);
-        }
+    if (isActive && !paused && !manualPauseRequested) {
+      // Auto-play when becoming active
+      if (videoCompleted && becameActive) {
+        safeSeek(0);
+        setVideoCompleted(false);
         hasCalledOnPlay.current = false;
-        setInternalPaused(false);
       }
-      return;
+      setInternalPaused(false);
+    } else {
+      // Pause when not active or when externally paused
+      setInternalPaused(true);
+      if (!isActive) {
+        setManualPauseRequested(false);
+      }
+      hideControls();
     }
-    setInternalPaused(true);
-    setIsMuted(true);
-    if (!isActive) {
-      setManualPauseRequested(false);
-    }
-    hideControls();
   }, [
-    manualPauseRequested,
     isActive,
     paused,
-    internalPaused,
+    manualPauseRequested,
     videoCompleted,
     safeSeek,
     hideControls,
-    suppressAutoPlayUntilInactive,
   ]);
 
   const onVideoTap = useCallback((event: any) => {
@@ -441,22 +423,21 @@ const VideoWithTapControls: React.FC<Props> = ({
         source={resolvedSource}
         style={StyleSheet.absoluteFill}
         paused={internalPaused}
-        resizeMode={resizeMode}
+        resizeMode={resizeMode as any}
         maxBitRate={maxBitRate}
         bufferConfig={bufferConfig}
         useTextureView={useTextureView}
         progressUpdateInterval={progressUpdateInterval}
         poster={initialPoster || fetchedPoster}
-        posterResizeMode={posterResizeMode}
+        posterResizeMode={posterResizeMode as any}
         disableFocus={disableFocus}
         playInBackground={playInBackground}
         playWhenInactive={playWhenInactive}
-        ignoreSilentSwitch={ignoreSilentSwitch}
+        ignoreSilentSwitch={ignoreSilentSwitch as any}
         controls={controls}
         muted={isMuted}
         rate={playbackRate}
         volume={audioVolume}
-        preload="auto"
         onLoad={handleLoad}
         onProgress={handleProgress}
         onBuffer={handleBuffer}
@@ -477,7 +458,7 @@ const VideoWithTapControls: React.FC<Props> = ({
           <Image
             source={{ uri: posterUri }}
             style={styles.posterImage}
-            resizeMode={posterResizeMode || 'contain'}
+            resizeMode={(posterResizeMode || 'contain') as any}
           />
         </View>
       ) : null}
@@ -495,9 +476,6 @@ const VideoWithTapControls: React.FC<Props> = ({
             ]}
             hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
             pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            delayPressIn={0}
-            delayPressOut={0}
-            activeOpacity={0.7}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.replaySymbol}>↺</Text>
@@ -521,9 +499,6 @@ const VideoWithTapControls: React.FC<Props> = ({
             ]}
             hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
             pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            delayPressIn={0}
-            delayPressOut={0}
-            activeOpacity={0.7}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.seekCircle}>
@@ -544,9 +519,6 @@ const VideoWithTapControls: React.FC<Props> = ({
             ]}
             hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
             pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            delayPressIn={0}
-            delayPressOut={0}
-            activeOpacity={0.7}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.playCircle}>
@@ -568,9 +540,6 @@ const VideoWithTapControls: React.FC<Props> = ({
             ]}
             hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
             pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            delayPressIn={0}
-            delayPressOut={0}
-            activeOpacity={0.7}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <View style={styles.seekCircle}>
@@ -591,9 +560,6 @@ const VideoWithTapControls: React.FC<Props> = ({
             ]}
             hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
             pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            delayPressIn={0}
-            delayPressOut={0}
-            activeOpacity={0.7}
             android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
           >
             <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
