@@ -9580,14 +9580,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             );
             break;
           case 'delete_recent_posts': {
+            setPostSelectorTarget({
+              uid: target.uid,
+              displayName: target.displayName || 'User',
+            });
+            setSelectedPostsToDelete(new Set());
             const postSnap = await firestore()
               .collection('waves')
               .where('ownerUid', '==', target.uid)
-              .limit(30)
+              .orderBy('createdAt', 'desc')
+              .limit(100)
               .get();
-            const batch = firestore().batch();
-            postSnap.docs.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
+            setPostSelectorPosts(
+              postSnap.docs.map(d => ({ id: d.id, ...d.data() })),
+            );
+            setShowPostSelector(true);
             break;
           }
           default:
@@ -10825,6 +10832,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   >(new Set());
   const [isDeleteMode, setIsDeleteMode] = useState(false);
 
+  // Admin post selector for deletion
+  const [showPostSelector, setShowPostSelector] = useState(false);
+  const [postSelectorTarget, setPostSelectorTarget] = useState<{
+    uid: string;
+    displayName: string;
+  } | null>(null);
+  const [postSelectorPosts, setPostSelectorPosts] = useState<any[]>([]);
+  const [selectedPostsToDelete, setSelectedPostsToDelete] = useState<
+    Set<string>
+  >(new Set());
+
   // Thread message selection state
   const [selectedThreadMessages, setSelectedThreadMessages] = useState<
     Set<string>
@@ -10839,7 +10857,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [selectedThread, setSelectedThread] =
     useState<SelectedInboxThread | null>(null);
   const [showMediaViewer, setShowMediaViewer] = useState(false);
-  const [selectedMediaViewer, setSelectedMediaViewer] = useState<{uri: string; type: 'image' | 'video'} | null>(null);
+  const [selectedMediaViewer, setSelectedMediaViewer] = useState<{
+    uri: string;
+    type: 'image' | 'video';
+  } | null>(null);
   const [incomingDirectCall, setIncomingDirectCall] =
     useState<DirectCallSession | null>(null);
   const [outgoingDirectCall, setOutgoingDirectCall] =
@@ -26664,19 +26685,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               {isLoadingMore &&
                 isOverwhelmed &&
                 displayFeed.length >= FEED_VISIBLE_LOADING_MORE_MIN_ITEMS && (
-                <View
-                  style={{
-                    padding: 20,
-                    alignItems: 'center',
-                    backgroundColor: '#f0f2f5',
-                  }}
-                >
-                  <ActivityIndicator size="large" color="#00C2FF" />
-                  <Text style={{ marginTop: 10, color: '#666', fontSize: 14 }}>
-                    {t('feed.loadingMoreWaves')}
-                  </Text>
-                </View>
-              )}
+                  <View
+                    style={{
+                      padding: 20,
+                      alignItems: 'center',
+                      backgroundColor: '#f0f2f5',
+                    }}
+                  >
+                    <ActivityIndicator size="large" color="#00C2FF" />
+                    <Text
+                      style={{ marginTop: 10, color: '#666', fontSize: 14 }}
+                    >
+                      {t('feed.loadingMoreWaves')}
+                    </Text>
+                  </View>
+                )}
 
               {/* End of feed message */}
               {!isLoadingMore && !hasMoreItems && displayFeed.length > 0 && (
@@ -27971,28 +27994,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       >
         <View style={{ flex: 1, backgroundColor: '#000' }}>
           {/* Header */}
-          <View style={{ 
-            flexDirection: 'row', 
-            alignItems: 'center', 
-            paddingTop: 50, 
-            paddingBottom: 12, 
-            paddingHorizontal: 16,
-            backgroundColor: '#0F4C81',
-          }}>
-            <Pressable onPress={() => {
-              if (selectedThread) {
-                resetInboxView();
-              } else {
-                closeInboxModal();
-              }
-            }} style={{ paddingRight: 16 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingTop: 50,
+              paddingBottom: 12,
+              paddingHorizontal: 16,
+              backgroundColor: '#0F4C81',
+            }}
+          >
+            <Pressable
+              onPress={() => {
+                if (selectedThread) {
+                  resetInboxView();
+                } else {
+                  closeInboxModal();
+                }
+              }}
+              style={{ paddingRight: 16 }}
+            >
               <Text style={{ color: '#FFF', fontSize: 20 }}>←</Text>
             </Pressable>
-            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700', flex: 1 }}>
-              {selectedThread ? 
-                (selectedThread.kind === 'fleet' ? selectedThread.fleetName || 'Fleet' : selectedThread.senderName || 'Chat') 
-                : t('inbox.title')
-              }
+            <Text
+              style={{
+                color: '#FFF',
+                fontSize: 18,
+                fontWeight: '700',
+                flex: 1,
+              }}
+            >
+              {selectedThread
+                ? selectedThread.kind === 'fleet'
+                  ? selectedThread.fleetName || 'Fleet'
+                  : selectedThread.senderName || 'Chat'
+                : t('inbox.title')}
             </Text>
             {!selectedThread && (
               <Pressable onPress={() => setShowInbox(false)}>
@@ -28001,2046 +28037,2040 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             )}
           </View>
 
-              {!selectedThread ? (
-                // Unified notifications view
-                (() => {
-                  const getActivityCategoryLabel = (notification: any) => {
-                    const notificationType = String(
-                      notification?.type || '',
-                    ).toLowerCase();
-                    if (notificationType.startsWith('call_'))
-                      return t('inbox.callAlert');
-                    if (
-                      notificationType === 'follow' ||
-                      notificationType === 'connect_vibe' ||
-                      notificationType === 'joined_tide' ||
-                      notificationType === 'left_crew'
-                    ) {
-                      return t('inbox.crewUpdate');
-                    }
-                    if (
-                      notificationType === 'echo' ||
-                      notificationType === 'splash' ||
-                      notificationType === 'octopus_hug' ||
-                      notificationType === 'post'
-                    ) {
-                      return t('inbox.postActivity');
-                    }
-                    return t('inbox.activity');
-                  };
-                  // Define system notification types that should show with letter avatars
-                  const systemNotificationTypes = [
-                    'hug',
-                    'echo',
-                    'joined_tide',
-                    'left_crew',
-                    'post',
-                    'splash',
-                    'octopus_hug',
-                    'follow',
-                    'CONNECT_VIBE',
-                    'call_missed',
-                    'call_invite',
-                    'call_declined',
-                  ];
+          {!selectedThread ? (
+            // Unified notifications view
+            (() => {
+              const getActivityCategoryLabel = (notification: any) => {
+                const notificationType = String(
+                  notification?.type || '',
+                ).toLowerCase();
+                if (notificationType.startsWith('call_'))
+                  return t('inbox.callAlert');
+                if (
+                  notificationType === 'follow' ||
+                  notificationType === 'connect_vibe' ||
+                  notificationType === 'joined_tide' ||
+                  notificationType === 'left_crew'
+                ) {
+                  return t('inbox.crewUpdate');
+                }
+                if (
+                  notificationType === 'echo' ||
+                  notificationType === 'splash' ||
+                  notificationType === 'octopus_hug' ||
+                  notificationType === 'post'
+                ) {
+                  return t('inbox.postActivity');
+                }
+                return t('inbox.activity');
+              };
+              // Define system notification types that should show with letter avatars
+              const systemNotificationTypes = [
+                'hug',
+                'echo',
+                'joined_tide',
+                'left_crew',
+                'post',
+                'splash',
+                'octopus_hug',
+                'follow',
+                'CONNECT_VIBE',
+                'call_missed',
+                'call_invite',
+                'call_declined',
+              ];
 
-                  // Separate notifications into system notifications and individual messages
-                  const systemNotifications = notifications.filter(
-                    notification =>
-                      systemNotificationTypes.includes(notification.type),
+              // Separate notifications into system notifications and individual messages
+              const systemNotifications = notifications.filter(notification =>
+                systemNotificationTypes.includes(notification.type),
+              );
+
+              const individualMessages = notifications.filter(
+                notification =>
+                  !systemNotificationTypes.includes(notification.type),
+              );
+
+              // Convert individual messages to thread format
+              const messageThreadsFromNotifications = individualMessages
+                .filter(notification => {
+                  // Filter out notifications with unknown/placeholder usernames
+                  const senderName =
+                    notification.fromUserHandle || 'Unknown User';
+                  return (
+                    senderName !== 'Unknown User' &&
+                    senderName !== 'unknown' &&
+                    senderName !== 'Unknown'
                   );
-
-                  const individualMessages = notifications.filter(
-                    notification =>
-                      !systemNotificationTypes.includes(notification.type),
-                  );
-
-                  // Convert individual messages to thread format
-                  const messageThreadsFromNotifications = individualMessages
-                    .filter(notification => {
-                      // Filter out notifications with unknown/placeholder usernames
-                      const senderName =
-                        notification.fromUserHandle || 'Unknown User';
-                      return (
-                        senderName !== 'Unknown User' &&
-                        senderName !== 'unknown' &&
-                        senderName !== 'Unknown'
-                      );
-                    })
-                    .map(notification => ({
-                      senderUid: notification.fromUid || 'unknown',
-                      senderName: notification.fromUserHandle || 'Unknown User',
-                      senderAvatar: null, // Will be handled by avatar logic
-                      lastMessage: notification.message,
-                      lastMessageTime: notification.createdAt,
-                      unreadCount: notification.read ? 0 : 1,
-                      messages: [
-                        {
-                          id: notification.id,
-                          text: notification.message,
-                          fromUid: notification.fromUid || 'unknown',
-                          createdAt: notification.createdAt,
-                          attachmentUrl: null,
-                          attachmentType: null,
-                          attachmentName: null,
-                        },
-                      ],
-                    }));
-
-                  const unifiedNotifications = [
-                    ...fleetThreads.map(thread => ({
-                      id: `fleet_${thread.fleetId}`,
-                      type: 'fleet' as const,
-                      senderName: thread.fleetName,
-                      senderAvatar: {
-                        text: thread.moodEmoji,
-                        backgroundColor: '#0F4C81',
-                        color: '#FFFFFF',
-                      },
-                      message: thread.lastMessage,
-                      timestamp: thread.lastMessageTime,
-                      unread: thread.unreadCount > 0,
-                      fleetData: thread,
-                    })),
-                    ...messageThreads.map(thread => ({
-                      id: `thread_${thread.senderUid}`,
-                      type: 'thread' as const,
-                      senderName: thread.senderName,
-                      senderAvatar: thread.senderAvatar,
-                      message: thread.lastMessage,
-                      timestamp: thread.lastMessageTime,
-                      unread: thread.unreadCount > 0,
-                      threadData: thread,
-                    })),
-                    ...messageThreadsFromNotifications.map(thread => ({
-                      id: `thread_from_notification_${thread.senderUid}_${Date.now()}`,
-                      type: 'thread' as const,
-                      senderName: thread.senderName,
-                      senderAvatar: null,
-                      message: thread.lastMessage,
-                      timestamp: thread.lastMessageTime,
-                      unread: thread.unreadCount > 0,
-                      threadData: thread,
-                    })),
-                    ...systemNotifications
-                      .filter(notification => {
-                        const actorName =
-                          notification.fromName ||
-                          notification.fromUserHandle ||
-                          'Activity';
-                        const senderName = String(actorName);
-                        return (
-                          senderName !== 'unknown' && senderName !== 'Unknown'
-                        );
-                      })
-                      .map(notification => ({
-                        id: `notification_${notification.id}`,
-                        type: 'notification' as const,
-                        senderName: getActivityCategoryLabel(notification),
-                        senderAvatar: null, // Will use letter avatar
-                        message: notification.message,
-                        timestamp: notification.createdAt,
-                        unread: !notification.read,
-                        notificationData: notification,
-                      })),
-                    ...callHistory.map(entry => {
-                      const callStatus =
-                        entry.status === 'missed'
-                          ? 'missed'
-                          : entry.status === 'declined'
-                            ? 'declined'
-                            : entry.status === 'accepted'
-                              ? 'accepted'
-                              : entry.status === 'ended'
-                                ? 'ended'
-                                : 'ringing';
-                      const directionLabel =
-                        entry.direction === 'incoming'
-                          ? 'Incoming'
-                          : 'Outgoing';
-                      const callTypeLabel =
-                        entry.callType === 'video' ? 'video' : 'audio';
-                      return {
-                        id: `call_${entry.id}`,
-                        type: 'call' as const,
-                        senderName: entry.peerName || 'User',
-                        senderAvatar: null,
-                        message: `${directionLabel} ${callTypeLabel} call • ${callStatus}`,
-                        timestamp:
-                          entry.updatedAt || entry.createdAt || new Date(),
-                        unread: entry.status === 'missed',
-                        callData: entry,
-                      };
-                    }),
-                  ].sort((a, b) => {
-                    const timeA = a.timestamp?.toDate
-                      ? a.timestamp.toDate()
-                      : new Date(a.timestamp);
-                    const timeB = b.timestamp?.toDate
-                      ? b.timestamp.toDate()
-                      : new Date(b.timestamp);
-                    return timeB.getTime() - timeA.getTime(); // Most recent first
-                  });
-
-                  const messageCount = unifiedNotifications.filter(
-                    item => item.type === 'thread' || item.type === 'fleet',
-                  ).length;
-                  const fleetCount = unifiedNotifications.filter(
-                    item => item.type === 'fleet',
-                  ).length;
-                  const activityCount = unifiedNotifications.filter(
-                    item => item.type === 'notification',
-                  ).length;
-                  const query = inboxSearchQuery.trim().toLowerCase();
-                  const filteredNotifications = unifiedNotifications.filter(
-                    item => {
-                      const matchesFilter =
-                        inboxFilter === 'all' ||
-                        (inboxFilter === 'messages' &&
-                          (item.type === 'thread' || item.type === 'fleet')) ||
-                        (inboxFilter === 'fleets' && item.type === 'fleet') ||
-                        (inboxFilter === 'activity' &&
-                          item.type === 'notification') ||
-                        (inboxFilter === 'calls' && item.type === 'call');
-                      if (!matchesFilter) return false;
-
-                      if (!query) return true;
-                      const sender = String(
-                        item.senderName || '',
-                      ).toLowerCase();
-                      const message = String(item.message || '').toLowerCase();
-                      return sender.includes(query) || message.includes(query);
+                })
+                .map(notification => ({
+                  senderUid: notification.fromUid || 'unknown',
+                  senderName: notification.fromUserHandle || 'Unknown User',
+                  senderAvatar: null, // Will be handled by avatar logic
+                  lastMessage: notification.message,
+                  lastMessageTime: notification.createdAt,
+                  unreadCount: notification.read ? 0 : 1,
+                  messages: [
+                    {
+                      id: notification.id,
+                      text: notification.message,
+                      fromUid: notification.fromUid || 'unknown',
+                      createdAt: notification.createdAt,
+                      attachmentUrl: null,
+                      attachmentType: null,
+                      attachmentName: null,
                     },
-                  );
+                  ],
+                }));
 
-                  if (unifiedNotifications.length === 0) {
-                    return (
+              const unifiedNotifications = [
+                ...fleetThreads.map(thread => ({
+                  id: `fleet_${thread.fleetId}`,
+                  type: 'fleet' as const,
+                  senderName: thread.fleetName,
+                  senderAvatar: {
+                    text: thread.moodEmoji,
+                    backgroundColor: '#0F4C81',
+                    color: '#FFFFFF',
+                  },
+                  message: thread.lastMessage,
+                  timestamp: thread.lastMessageTime,
+                  unread: thread.unreadCount > 0,
+                  fleetData: thread,
+                })),
+                ...messageThreads.map(thread => ({
+                  id: `thread_${thread.senderUid}`,
+                  type: 'thread' as const,
+                  senderName: thread.senderName,
+                  senderAvatar: thread.senderAvatar,
+                  message: thread.lastMessage,
+                  timestamp: thread.lastMessageTime,
+                  unread: thread.unreadCount > 0,
+                  threadData: thread,
+                })),
+                ...messageThreadsFromNotifications.map(thread => ({
+                  id: `thread_from_notification_${thread.senderUid}_${Date.now()}`,
+                  type: 'thread' as const,
+                  senderName: thread.senderName,
+                  senderAvatar: null,
+                  message: thread.lastMessage,
+                  timestamp: thread.lastMessageTime,
+                  unread: thread.unreadCount > 0,
+                  threadData: thread,
+                })),
+                ...systemNotifications
+                  .filter(notification => {
+                    const actorName =
+                      notification.fromName ||
+                      notification.fromUserHandle ||
+                      'Activity';
+                    const senderName = String(actorName);
+                    return senderName !== 'unknown' && senderName !== 'Unknown';
+                  })
+                  .map(notification => ({
+                    id: `notification_${notification.id}`,
+                    type: 'notification' as const,
+                    senderName: getActivityCategoryLabel(notification),
+                    senderAvatar: null, // Will use letter avatar
+                    message: notification.message,
+                    timestamp: notification.createdAt,
+                    unread: !notification.read,
+                    notificationData: notification,
+                  })),
+                ...callHistory.map(entry => {
+                  const callStatus =
+                    entry.status === 'missed'
+                      ? 'missed'
+                      : entry.status === 'declined'
+                        ? 'declined'
+                        : entry.status === 'accepted'
+                          ? 'accepted'
+                          : entry.status === 'ended'
+                            ? 'ended'
+                            : 'ringing';
+                  const directionLabel =
+                    entry.direction === 'incoming' ? 'Incoming' : 'Outgoing';
+                  const callTypeLabel =
+                    entry.callType === 'video' ? 'video' : 'audio';
+                  return {
+                    id: `call_${entry.id}`,
+                    type: 'call' as const,
+                    senderName: entry.peerName || 'User',
+                    senderAvatar: null,
+                    message: `${directionLabel} ${callTypeLabel} call • ${callStatus}`,
+                    timestamp: entry.updatedAt || entry.createdAt || new Date(),
+                    unread: entry.status === 'missed',
+                    callData: entry,
+                  };
+                }),
+              ].sort((a, b) => {
+                const timeA = a.timestamp?.toDate
+                  ? a.timestamp.toDate()
+                  : new Date(a.timestamp);
+                const timeB = b.timestamp?.toDate
+                  ? b.timestamp.toDate()
+                  : new Date(b.timestamp);
+                return timeB.getTime() - timeA.getTime(); // Most recent first
+              });
+
+              const messageCount = unifiedNotifications.filter(
+                item => item.type === 'thread' || item.type === 'fleet',
+              ).length;
+              const fleetCount = unifiedNotifications.filter(
+                item => item.type === 'fleet',
+              ).length;
+              const activityCount = unifiedNotifications.filter(
+                item => item.type === 'notification',
+              ).length;
+              const query = inboxSearchQuery.trim().toLowerCase();
+              const filteredNotifications = unifiedNotifications.filter(
+                item => {
+                  const matchesFilter =
+                    inboxFilter === 'all' ||
+                    (inboxFilter === 'messages' &&
+                      (item.type === 'thread' || item.type === 'fleet')) ||
+                    (inboxFilter === 'fleets' && item.type === 'fleet') ||
+                    (inboxFilter === 'activity' &&
+                      item.type === 'notification') ||
+                    (inboxFilter === 'calls' && item.type === 'call');
+                  if (!matchesFilter) return false;
+
+                  if (!query) return true;
+                  const sender = String(item.senderName || '').toLowerCase();
+                  const message = String(item.message || '').toLowerCase();
+                  return sender.includes(query) || message.includes(query);
+                },
+              );
+
+              if (unifiedNotifications.length === 0) {
+                return (
+                  <View
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: 'white',
+                        fontSize: 16,
+                        textAlign: 'center',
+                      }}
+                    >
+                      {t('inbox.noNotifications')}
+                    </Text>
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.6)',
+                        fontSize: 14,
+                        textAlign: 'center',
+                        marginTop: 8,
+                      }}
+                    >
+                      {t('inbox.noNotificationsBody')}
+                    </Text>
+                  </View>
+                );
+              }
+
+              return (
+                <>
+                  <View style={{ marginBottom: 12 }}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={{
+                        flexDirection: 'row',
+                        gap: 8,
+                        paddingRight: 8,
+                      }}
+                      style={{ marginBottom: 10 }}
+                    >
+                      <Pressable
+                        onPress={() => setInboxFilter('all')}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 14,
+                          backgroundColor:
+                            inboxFilter === 'all'
+                              ? '#0EA5D9'
+                              : 'rgba(14,165,217,0.28)',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'white',
+                            fontSize: 12,
+                            fontWeight: '700',
+                          }}
+                        >
+                          {t('inbox.filterAll')} ({unifiedNotifications.length})
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setInboxFilter('messages')}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 14,
+                          backgroundColor: '#8D0000',
+                          borderWidth: 1,
+                          borderColor: '#8D0000',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'white',
+                            fontSize: 12,
+                            fontWeight: '700',
+                          }}
+                        >
+                          {t('inbox.filterMessages')} ({messageCount})
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setInboxFilter('fleets')}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 14,
+                          backgroundColor:
+                            inboxFilter === 'fleets'
+                              ? '#0F4C81'
+                              : 'rgba(15,76,129,0.28)',
+                          borderWidth: 1,
+                          borderColor: '#38BDF8',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'white',
+                            fontSize: 12,
+                            fontWeight: '700',
+                          }}
+                        >
+                          Fleet ({fleetCount})
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setInboxFilter('activity')}
+                        style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 14,
+                          backgroundColor:
+                            inboxFilter === 'activity'
+                              ? '#0EA5D9'
+                              : 'rgba(14,165,217,0.28)',
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'white',
+                            fontSize: 12,
+                            fontWeight: '700',
+                          }}
+                        >
+                          {t('inbox.filterActivity')} ({activityCount})
+                        </Text>
+                      </Pressable>
+                    </ScrollView>
+                    <TextInput
+                      value={inboxSearchQuery}
+                      onChangeText={setInboxSearchQuery}
+                      placeholder={t('inbox.searchPlaceholder')}
+                      placeholderTextColor="rgba(255,255,255,0.45)"
+                      style={{
+                        color: 'white',
+                        borderWidth: 1,
+                        borderColor: 'rgba(255,255,255,0.2)',
+                        borderRadius: 8,
+                        paddingHorizontal: 12,
+                        paddingVertical: 9,
+                        backgroundColor: 'rgba(255,255,255,0.06)',
+                      }}
+                    />
+                  </View>
+                  {filteredNotifications.length === 0 ? (
+                    <View style={{ paddingVertical: 28, alignItems: 'center' }}>
+                      <Text
+                        style={{
+                          color: 'white',
+                          fontSize: 15,
+                          fontWeight: '700',
+                        }}
+                      >
+                        {t('inbox.noMatches')}
+                      </Text>
+                      <Text
+                        style={{
+                          color: 'rgba(255,255,255,0.65)',
+                          fontSize: 13,
+                          marginTop: 6,
+                          textAlign: 'center',
+                        }}
+                      >
+                        {t('inbox.noMatchesBody')}
+                      </Text>
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={filteredNotifications}
+                      keyExtractor={item => item.id}
+                      renderItem={({ item }) => {
+                        const getAvatarLetter = (name: string) => {
+                          if (!name || name.trim() === '') return '?';
+                          const cleanName = name.trim();
+                          const parts = cleanName.split(/\s+/); // Split on any whitespace
+
+                          if (parts.length >= 2) {
+                            // Use first letter of first name + first letter of last name
+                            const firstInitial = parts[0]
+                              .charAt(0)
+                              .toUpperCase();
+                            const lastInitial = parts[parts.length - 1]
+                              .charAt(0)
+                              .toUpperCase();
+                            return firstInitial + lastInitial;
+                          } else if (
+                            parts.length === 1 &&
+                            parts[0].length >= 2
+                          ) {
+                            // Single word name with at least 2 characters
+                            return parts[0].substring(0, 2).toUpperCase();
+                          } else if (
+                            parts.length === 1 &&
+                            parts[0].length === 1
+                          ) {
+                            // Single character name
+                            return (
+                              parts[0].charAt(0).toUpperCase() +
+                              parts[0].charAt(0).toUpperCase()
+                            );
+                          } else {
+                            return '?';
+                          }
+                        };
+
+                        const getAvatarColor = (name: string) => {
+                          const colors = [
+                            '#FF6B6B',
+                            '#4ECDC4',
+                            '#45B7D1',
+                            '#96CEB4',
+                            '#FFEAA7',
+                            '#DDA0DD',
+                            '#98D8C8',
+                          ];
+                          const index = name.length % colors.length;
+                          return colors[index];
+                        };
+
+                        return (
+                          <Pressable
+                            style={{
+                              backgroundColor:
+                                isDeleteMode &&
+                                selectedNotifications.has(item.id)
+                                  ? 'rgba(255,215,0,0.3)'
+                                  : item.unread
+                                    ? 'rgba(255,215,0,0.1)'
+                                    : 'rgba(255,255,255,0.05)',
+                              borderRadius: 6,
+                              padding: 12,
+                              marginBottom: 8,
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              borderLeftWidth: item.unread ? 3 : 0,
+                              borderLeftColor: '#FFD700',
+                              borderWidth:
+                                isDeleteMode &&
+                                selectedNotifications.has(item.id)
+                                  ? 2
+                                  : 0,
+                              borderColor: '#FFD700',
+                            }}
+                            hitSlop={{
+                              top: 10,
+                              bottom: 10,
+                              left: 10,
+                              right: 10,
+                            }}
+                            delayPressIn={0}
+                            delayPressOut={0}
+                            activeOpacity={0.8}
+                            android_ripple={{
+                              color: 'rgba(255, 215, 0, 0.2)',
+                              borderless: false,
+                            }}
+                            onLongPress={() => {
+                              if (!isDeleteMode) {
+                                setIsDeleteMode(true);
+                                setSelectedNotifications(new Set([item.id]));
+                              }
+                            }}
+                            onPress={() => {
+                              if (isDeleteMode) {
+                                // Multiple selection - toggle selection
+                                const newSelected = new Set(
+                                  selectedNotifications,
+                                );
+                                if (newSelected.has(item.id)) {
+                                  newSelected.delete(item.id);
+                                  if (newSelected.size === 0) {
+                                    setIsDeleteMode(false);
+                                  }
+                                } else {
+                                  newSelected.add(item.id);
+                                }
+                                setSelectedNotifications(newSelected);
+                              } else {
+                                if (item.type === 'fleet') {
+                                  openFleetThread(item.fleetData);
+                                } else if (item.type === 'thread') {
+                                  setSelectedThread({
+                                    kind: 'direct',
+                                    senderUid: item.threadData.senderUid,
+                                    senderName: item.threadData.senderName,
+                                    senderAvatar: item.threadData.senderAvatar,
+                                    messages: item.threadData.messages,
+                                  });
+                                } else if (
+                                  item.type === 'call' &&
+                                  item.callData
+                                ) {
+                                  const entry =
+                                    item.callData as CallHistoryEntry;
+                                  const peerUid = String(
+                                    entry.peerUid || '',
+                                  ).trim();
+                                  if (!peerUid) return;
+                                  Alert.alert(
+                                    'Call options',
+                                    `${entry.peerName || 'User'}\n${item.message}`,
+                                    [
+                                      {
+                                        text: 'Call back (audio)',
+                                        onPress: () =>
+                                          startDirectCall('audio', {
+                                            uid: peerUid,
+                                            name: entry.peerName || 'User',
+                                          }),
+                                      },
+                                      {
+                                        text: 'Call back (video)',
+                                        onPress: () =>
+                                          startDirectCall('video', {
+                                            uid: peerUid,
+                                            name: entry.peerName || 'User',
+                                          }),
+                                      },
+                                      { text: 'Cancel', style: 'cancel' },
+                                    ],
+                                  );
+                                } else {
+                                  if (!item.notificationData.read) {
+                                    markNotificationAsRead(
+                                      item.notificationData.id,
+                                    );
+                                  }
+                                  const notificationType = String(
+                                    item.notificationData.type || '',
+                                  ).toLowerCase();
+                                  const actorName = String(
+                                    item.notificationData.fromName ||
+                                      item.notificationData.fromUserHandle ||
+                                      'User',
+                                  );
+                                  const actorUid = String(
+                                    item.notificationData.fromUid || '',
+                                  ).trim();
+                                  const waveId = String(
+                                    item.notificationData.waveId || '',
+                                  ).trim();
+                                  if (
+                                    (notificationType === 'call_missed' ||
+                                      notificationType === 'call_declined' ||
+                                      notificationType === 'call_invite') &&
+                                    actorUid
+                                  ) {
+                                    Alert.alert(
+                                      'Call Alert',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [
+                                        {
+                                          text: 'Call back (audio)',
+                                          onPress: () =>
+                                            startDirectCall('audio', {
+                                              uid: actorUid,
+                                              name: actorName,
+                                            }),
+                                        },
+                                        {
+                                          text: 'Call back (video)',
+                                          onPress: () =>
+                                            startDirectCall('video', {
+                                              uid: actorUid,
+                                              name: actorName,
+                                            }),
+                                        },
+                                        {
+                                          text: 'Dismiss',
+                                          style: 'cancel',
+                                        },
+                                      ],
+                                    );
+                                  } else if (waveId) {
+                                    Alert.alert(
+                                      'Activity',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [
+                                        {
+                                          text: 'Open post',
+                                          onPress: () =>
+                                            void focusWaveInFeed(
+                                              String(waveId),
+                                              {
+                                                closeInbox: true,
+                                              },
+                                            ),
+                                        },
+                                        {
+                                          text: 'Dismiss',
+                                          style: 'cancel',
+                                        },
+                                      ],
+                                    );
+                                  } else if (actorUid) {
+                                    Alert.alert(
+                                      'Activity',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [
+                                        {
+                                          text: 'Message user',
+                                          onPress: () => {
+                                            setShowInbox(false);
+                                            openMessageThread(
+                                              actorUid,
+                                              actorName,
+                                            );
+                                          },
+                                        },
+                                        {
+                                          text: 'Dismiss',
+                                          style: 'cancel',
+                                        },
+                                      ],
+                                    );
+                                  } else {
+                                    Alert.alert(
+                                      'Activity',
+                                      formatNotificationMessage(
+                                        item.notificationData,
+                                        userData || {},
+                                      ),
+                                      [{ text: 'OK' }],
+                                    );
+                                  }
+                                }
+                              }
+                            }}
+                          >
+                            {/* Avatar */}
+                            {item.type === 'thread' && item.senderAvatar ? (
+                              typeof item.senderAvatar === 'object' &&
+                              'text' in item.senderAvatar ? (
+                                // Text-based avatar (initials)
+                                <View
+                                  style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 20,
+                                    backgroundColor:
+                                      item.senderAvatar.backgroundColor,
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    marginRight: 12,
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.2)',
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      fontSize: 16,
+                                      fontWeight: 'bold',
+                                      color: item.senderAvatar.color,
+                                    }}
+                                  >
+                                    {item.senderAvatar.text}
+                                  </Text>
+                                </View>
+                              ) : (
+                                // Image-based avatar
+                                <Image
+                                  source={item.senderAvatar}
+                                  style={{
+                                    width: 40,
+                                    height: 40,
+                                    borderRadius: 20,
+                                    marginRight: 12,
+                                    borderWidth: 1,
+                                    borderColor: 'rgba(255,255,255,0.2)',
+                                  }}
+                                />
+                              )
+                            ) : (
+                              // Letter avatar for notifications or missing avatars
+                              <View
+                                style={{
+                                  width: 40,
+                                  height: 40,
+                                  borderRadius: 20,
+                                  backgroundColor: getAvatarColor(
+                                    item.senderName,
+                                  ),
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                  marginRight: 12,
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(255,255,255,0.2)',
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    fontSize: 16,
+                                    fontWeight: 'bold',
+                                    color: 'white',
+                                  }}
+                                >
+                                  {getAvatarLetter(item.senderName)}
+                                </Text>
+                              </View>
+                            )}
+
+                            {/* Selection Checkbox */}
+                            {isDeleteMode && (
+                              <View
+                                style={{
+                                  width: 24,
+                                  height: 24,
+                                  borderRadius: 4,
+                                  borderWidth: 2,
+                                  borderColor: selectedNotifications.has(
+                                    item.id,
+                                  )
+                                    ? '#FFD700'
+                                    : 'rgba(255,255,255,0.5)',
+                                  backgroundColor: selectedNotifications.has(
+                                    item.id,
+                                  )
+                                    ? '#FFD700'
+                                    : 'transparent',
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
+                                  marginRight: 12,
+                                }}
+                              >
+                                {selectedNotifications.has(item.id) && (
+                                  <Text
+                                    style={{
+                                      color: 'black',
+                                      fontSize: 16,
+                                      fontWeight: 'bold',
+                                    }}
+                                  >
+                                    ✓
+                                  </Text>
+                                )}
+                              </View>
+                            )}
+
+                            <View style={{ flex: 1 }}>
+                              <View
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  marginBottom: 2,
+                                }}
+                              >
+                                <Text
+                                  style={{
+                                    color: 'white',
+                                    fontSize: 16,
+                                    fontWeight: item.unread ? 'bold' : 'normal',
+                                  }}
+                                >
+                                  {item.senderName}
+                                </Text>
+                              </View>
+                              <Text
+                                style={{
+                                  color: 'rgba(255,255,255,0.7)',
+                                  fontSize: 14,
+                                  numberOfLines: 1,
+                                }}
+                              >
+                                {item.message}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        );
+                      }}
+                      showsVerticalScrollIndicator={false}
+                    />
+                  )}
+
+                  {/* Selection Action Bar */}
+                  {isDeleteMode && (
+                    <View
+                      style={{
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        borderRadius: 8,
+                        padding: 16,
+                        marginTop: 16,
+                      }}
+                    >
                       <View
                         style={{
-                          flex: 1,
-                          justifyContent: 'center',
+                          flexDirection: 'row',
                           alignItems: 'center',
+                          marginBottom: 12,
                         }}
                       >
                         <Text
                           style={{
                             color: 'white',
                             fontSize: 16,
-                            textAlign: 'center',
+                            fontWeight: 'bold',
                           }}
                         >
-                          {t('inbox.noNotifications')}
-                        </Text>
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.6)',
-                            fontSize: 14,
-                            textAlign: 'center',
-                            marginTop: 8,
-                          }}
-                        >
-                          {t('inbox.noNotificationsBody')}
+                          {t('inbox.selectedCount', {
+                            count: selectedNotifications.size,
+                          })}
                         </Text>
                       </View>
-                    );
-                  }
 
-                  return (
-                    <>
-                      <View style={{ marginBottom: 12 }}>
-                        <ScrollView
-                          horizontal
-                          showsHorizontalScrollIndicator={false}
-                          contentContainerStyle={{
-                            flexDirection: 'row',
-                            gap: 8,
-                            paddingRight: 8,
-                          }}
-                          style={{ marginBottom: 10 }}
-                        >
-                          <Pressable
-                            onPress={() => setInboxFilter('all')}
-                            style={{
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              borderRadius: 14,
-                              backgroundColor:
-                                inboxFilter === 'all'
-                                  ? '#0EA5D9'
-                                  : 'rgba(14,165,217,0.28)',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 12,
-                                fontWeight: '700',
-                              }}
-                            >
-                              {t('inbox.filterAll')} (
-                              {unifiedNotifications.length})
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => setInboxFilter('messages')}
-                            style={{
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              borderRadius: 14,
-                              backgroundColor: '#8D0000',
-                              borderWidth: 1,
-                              borderColor: '#8D0000',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 12,
-                                fontWeight: '700',
-                              }}
-                            >
-                              {t('inbox.filterMessages')} ({messageCount})
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => setInboxFilter('fleets')}
-                            style={{
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              borderRadius: 14,
-                              backgroundColor:
-                                inboxFilter === 'fleets'
-                                  ? '#0F4C81'
-                                  : 'rgba(15,76,129,0.28)',
-                              borderWidth: 1,
-                              borderColor: '#38BDF8',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 12,
-                                fontWeight: '700',
-                              }}
-                            >
-                              Fleet ({fleetCount})
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            onPress={() => setInboxFilter('activity')}
-                            style={{
-                              paddingHorizontal: 10,
-                              paddingVertical: 6,
-                              borderRadius: 14,
-                              backgroundColor:
-                                inboxFilter === 'activity'
-                                  ? '#0EA5D9'
-                                  : 'rgba(14,165,217,0.28)',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 12,
-                                fontWeight: '700',
-                              }}
-                            >
-                              {t('inbox.filterActivity')} ({activityCount})
-                            </Text>
-                          </Pressable>
-                        </ScrollView>
-                        <TextInput
-                          value={inboxSearchQuery}
-                          onChangeText={setInboxSearchQuery}
-                          placeholder={t('inbox.searchPlaceholder')}
-                          placeholderTextColor="rgba(255,255,255,0.45)"
-                          style={{
-                            color: 'white',
-                            borderWidth: 1,
-                            borderColor: 'rgba(255,255,255,0.2)',
-                            borderRadius: 8,
-                            paddingHorizontal: 12,
-                            paddingVertical: 9,
-                            backgroundColor: 'rgba(255,255,255,0.06)',
-                          }}
-                        />
-                      </View>
-                      {filteredNotifications.length === 0 ? (
-                        <View
-                          style={{ paddingVertical: 28, alignItems: 'center' }}
-                        >
-                          <Text
-                            style={{
-                              color: 'white',
-                              fontSize: 15,
-                              fontWeight: '700',
-                            }}
-                          >
-                            {t('inbox.noMatches')}
-                          </Text>
-                          <Text
-                            style={{
-                              color: 'rgba(255,255,255,0.65)',
-                              fontSize: 13,
-                              marginTop: 6,
-                              textAlign: 'center',
-                            }}
-                          >
-                            {t('inbox.noMatchesBody')}
-                          </Text>
-                        </View>
-                      ) : (
-                        <FlatList
-                          data={filteredNotifications}
-                          keyExtractor={item => item.id}
-                          renderItem={({ item }) => {
-                            const getAvatarLetter = (name: string) => {
-                              if (!name || name.trim() === '') return '?';
-                              const cleanName = name.trim();
-                              const parts = cleanName.split(/\s+/); // Split on any whitespace
-
-                              if (parts.length >= 2) {
-                                // Use first letter of first name + first letter of last name
-                                const firstInitial = parts[0]
-                                  .charAt(0)
-                                  .toUpperCase();
-                                const lastInitial = parts[parts.length - 1]
-                                  .charAt(0)
-                                  .toUpperCase();
-                                return firstInitial + lastInitial;
-                              } else if (
-                                parts.length === 1 &&
-                                parts[0].length >= 2
-                              ) {
-                                // Single word name with at least 2 characters
-                                return parts[0].substring(0, 2).toUpperCase();
-                              } else if (
-                                parts.length === 1 &&
-                                parts[0].length === 1
-                              ) {
-                                // Single character name
-                                return (
-                                  parts[0].charAt(0).toUpperCase() +
-                                  parts[0].charAt(0).toUpperCase()
-                                );
-                              } else {
-                                return '?';
-                              }
-                            };
-
-                            const getAvatarColor = (name: string) => {
-                              const colors = [
-                                '#FF6B6B',
-                                '#4ECDC4',
-                                '#45B7D1',
-                                '#96CEB4',
-                                '#FFEAA7',
-                                '#DDA0DD',
-                                '#98D8C8',
-                              ];
-                              const index = name.length % colors.length;
-                              return colors[index];
-                            };
-
-                            return (
-                              <Pressable
-                                style={{
-                                  backgroundColor:
-                                    isDeleteMode &&
-                                    selectedNotifications.has(item.id)
-                                      ? 'rgba(255,215,0,0.3)'
-                                      : item.unread
-                                        ? 'rgba(255,215,0,0.1)'
-                                        : 'rgba(255,255,255,0.05)',
-                                  borderRadius: 6,
-                                  padding: 12,
-                                  marginBottom: 8,
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  borderLeftWidth: item.unread ? 3 : 0,
-                                  borderLeftColor: '#FFD700',
-                                  borderWidth:
-                                    isDeleteMode &&
-                                    selectedNotifications.has(item.id)
-                                      ? 2
-                                      : 0,
-                                  borderColor: '#FFD700',
-                                }}
-                                hitSlop={{
-                                  top: 10,
-                                  bottom: 10,
-                                  left: 10,
-                                  right: 10,
-                                }}
-                                delayPressIn={0}
-                                delayPressOut={0}
-                                activeOpacity={0.8}
-                                android_ripple={{
-                                  color: 'rgba(255, 215, 0, 0.2)',
-                                  borderless: false,
-                                }}
-                                onLongPress={() => {
-                                  if (!isDeleteMode) {
-                                    setIsDeleteMode(true);
-                                    setSelectedNotifications(
-                                      new Set([item.id]),
-                                    );
-                                  }
-                                }}
-                                onPress={() => {
-                                  if (isDeleteMode) {
-                                    // Multiple selection - toggle selection
-                                    const newSelected = new Set(
-                                      selectedNotifications,
-                                    );
-                                    if (newSelected.has(item.id)) {
-                                      newSelected.delete(item.id);
-                                      if (newSelected.size === 0) {
-                                        setIsDeleteMode(false);
-                                      }
-                                    } else {
-                                      newSelected.add(item.id);
-                                    }
-                                    setSelectedNotifications(newSelected);
-                                  } else {
-                                    if (item.type === 'fleet') {
-                                      openFleetThread(item.fleetData);
-                                    } else if (item.type === 'thread') {
-                                      setSelectedThread({
-                                        kind: 'direct',
-                                        senderUid: item.threadData.senderUid,
-                                        senderName: item.threadData.senderName,
-                                        senderAvatar:
-                                          item.threadData.senderAvatar,
-                                        messages: item.threadData.messages,
-                                      });
-                                    } else if (
-                                      item.type === 'call' &&
-                                      item.callData
-                                    ) {
-                                      const entry =
-                                        item.callData as CallHistoryEntry;
-                                      const peerUid = String(
-                                        entry.peerUid || '',
-                                      ).trim();
-                                      if (!peerUid) return;
-                                      Alert.alert(
-                                        'Call options',
-                                        `${entry.peerName || 'User'}\n${item.message}`,
-                                        [
-                                          {
-                                            text: 'Call back (audio)',
-                                            onPress: () =>
-                                              startDirectCall('audio', {
-                                                uid: peerUid,
-                                                name: entry.peerName || 'User',
-                                              }),
-                                          },
-                                          {
-                                            text: 'Call back (video)',
-                                            onPress: () =>
-                                              startDirectCall('video', {
-                                                uid: peerUid,
-                                                name: entry.peerName || 'User',
-                                              }),
-                                          },
-                                          { text: 'Cancel', style: 'cancel' },
-                                        ],
-                                      );
-                                    } else {
-                                      if (!item.notificationData.read) {
-                                        markNotificationAsRead(
-                                          item.notificationData.id,
-                                        );
-                                      }
-                                      const notificationType = String(
-                                        item.notificationData.type || '',
-                                      ).toLowerCase();
-                                      const actorName = String(
-                                        item.notificationData.fromName ||
-                                          item.notificationData
-                                            .fromUserHandle ||
-                                          'User',
-                                      );
-                                      const actorUid = String(
-                                        item.notificationData.fromUid || '',
-                                      ).trim();
-                                      const waveId = String(
-                                        item.notificationData.waveId || '',
-                                      ).trim();
-                                      if (
-                                        (notificationType === 'call_missed' ||
-                                          notificationType ===
-                                            'call_declined' ||
-                                          notificationType === 'call_invite') &&
-                                        actorUid
-                                      ) {
-                                        Alert.alert(
-                                          'Call Alert',
-                                          formatNotificationMessage(
-                                            item.notificationData,
-                                            userData || {},
-                                          ),
-                                          [
-                                            {
-                                              text: 'Call back (audio)',
-                                              onPress: () =>
-                                                startDirectCall('audio', {
-                                                  uid: actorUid,
-                                                  name: actorName,
-                                                }),
-                                            },
-                                            {
-                                              text: 'Call back (video)',
-                                              onPress: () =>
-                                                startDirectCall('video', {
-                                                  uid: actorUid,
-                                                  name: actorName,
-                                                }),
-                                            },
-                                            {
-                                              text: 'Dismiss',
-                                              style: 'cancel',
-                                            },
-                                          ],
-                                        );
-                                      } else if (waveId) {
-                                        Alert.alert(
-                                          'Activity',
-                                          formatNotificationMessage(
-                                            item.notificationData,
-                                            userData || {},
-                                          ),
-                                          [
-                                            {
-                                              text: 'Open post',
-                                              onPress: () =>
-                                                void focusWaveInFeed(
-                                                  String(waveId),
-                                                  {
-                                                    closeInbox: true,
-                                                  },
-                                                ),
-                                            },
-                                            {
-                                              text: 'Dismiss',
-                                              style: 'cancel',
-                                            },
-                                          ],
-                                        );
-                                      } else if (actorUid) {
-                                        Alert.alert(
-                                          'Activity',
-                                          formatNotificationMessage(
-                                            item.notificationData,
-                                            userData || {},
-                                          ),
-                                          [
-                                            {
-                                              text: 'Message user',
-                                              onPress: () => {
-                                                setShowInbox(false);
-                                                openMessageThread(
-                                                  actorUid,
-                                                  actorName,
-                                                );
-                                              },
-                                            },
-                                            {
-                                              text: 'Dismiss',
-                                              style: 'cancel',
-                                            },
-                                          ],
-                                        );
-                                      } else {
-                                        Alert.alert(
-                                          'Activity',
-                                          formatNotificationMessage(
-                                            item.notificationData,
-                                            userData || {},
-                                          ),
-                                          [{ text: 'OK' }],
-                                        );
-                                      }
-                                    }
-                                  }
-                                }}
-                              >
-                                {/* Avatar */}
-                                {item.type === 'thread' && item.senderAvatar ? (
-                                  typeof item.senderAvatar === 'object' &&
-                                  'text' in item.senderAvatar ? (
-                                    // Text-based avatar (initials)
-                                    <View
-                                      style={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: 20,
-                                        backgroundColor:
-                                          item.senderAvatar.backgroundColor,
-                                        justifyContent: 'center',
-                                        alignItems: 'center',
-                                        marginRight: 12,
-                                        borderWidth: 1,
-                                        borderColor: 'rgba(255,255,255,0.2)',
-                                      }}
-                                    >
-                                      <Text
-                                        style={{
-                                          fontSize: 16,
-                                          fontWeight: 'bold',
-                                          color: item.senderAvatar.color,
-                                        }}
-                                      >
-                                        {item.senderAvatar.text}
-                                      </Text>
-                                    </View>
-                                  ) : (
-                                    // Image-based avatar
-                                    <Image
-                                      source={item.senderAvatar}
-                                      style={{
-                                        width: 40,
-                                        height: 40,
-                                        borderRadius: 20,
-                                        marginRight: 12,
-                                        borderWidth: 1,
-                                        borderColor: 'rgba(255,255,255,0.2)',
-                                      }}
-                                    />
-                                  )
-                                ) : (
-                                  // Letter avatar for notifications or missing avatars
-                                  <View
-                                    style={{
-                                      width: 40,
-                                      height: 40,
-                                      borderRadius: 20,
-                                      backgroundColor: getAvatarColor(
-                                        item.senderName,
-                                      ),
-                                      justifyContent: 'center',
-                                      alignItems: 'center',
-                                      marginRight: 12,
-                                      borderWidth: 1,
-                                      borderColor: 'rgba(255,255,255,0.2)',
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        fontSize: 16,
-                                        fontWeight: 'bold',
-                                        color: 'white',
-                                      }}
-                                    >
-                                      {getAvatarLetter(item.senderName)}
-                                    </Text>
-                                  </View>
-                                )}
-
-                                {/* Selection Checkbox */}
-                                {isDeleteMode && (
-                                  <View
-                                    style={{
-                                      width: 24,
-                                      height: 24,
-                                      borderRadius: 4,
-                                      borderWidth: 2,
-                                      borderColor: selectedNotifications.has(
-                                        item.id,
-                                      )
-                                        ? '#FFD700'
-                                        : 'rgba(255,255,255,0.5)',
-                                      backgroundColor:
-                                        selectedNotifications.has(item.id)
-                                          ? '#FFD700'
-                                          : 'transparent',
-                                      justifyContent: 'center',
-                                      alignItems: 'center',
-                                      marginRight: 12,
-                                    }}
-                                  >
-                                    {selectedNotifications.has(item.id) && (
-                                      <Text
-                                        style={{
-                                          color: 'black',
-                                          fontSize: 16,
-                                          fontWeight: 'bold',
-                                        }}
-                                      >
-                                        ✓
-                                      </Text>
-                                    )}
-                                  </View>
-                                )}
-
-                                <View style={{ flex: 1 }}>
-                                  <View
-                                    style={{
-                                      flexDirection: 'row',
-                                      alignItems: 'center',
-                                      marginBottom: 2,
-                                    }}
-                                  >
-                                    <Text
-                                      style={{
-                                        color: 'white',
-                                        fontSize: 16,
-                                        fontWeight: item.unread
-                                          ? 'bold'
-                                          : 'normal',
-                                      }}
-                                    >
-                                      {item.senderName}
-                                    </Text>
-                                  </View>
-                                  <Text
-                                    style={{
-                                      color: 'rgba(255,255,255,0.7)',
-                                      fontSize: 14,
-                                      numberOfLines: 1,
-                                    }}
-                                  >
-                                    {item.message}
-                                  </Text>
-                                </View>
-                              </Pressable>
-                            );
-                          }}
-                          showsVerticalScrollIndicator={false}
-                        />
-                      )}
-
-                      {/* Selection Action Bar */}
-                      {isDeleteMode && (
-                        <View
-                          style={{
-                            backgroundColor: 'rgba(255,255,255,0.1)',
-                            borderRadius: 8,
-                            padding: 16,
-                            marginTop: 16,
-                          }}
-                        >
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              marginBottom: 12,
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 16,
-                                fontWeight: 'bold',
-                              }}
-                            >
-                              {t('inbox.selectedCount', {
-                                count: selectedNotifications.size,
-                              })}
-                            </Text>
-                          </View>
-
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              justifyContent: 'space-between',
-                              alignItems: 'center',
-                              gap: 8,
-                            }}
-                          >
-                            {/* Cancel */}
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,255,255,0.2)',
-                                borderRadius: 6,
-                                paddingHorizontal: 10,
-                                paddingVertical: 6,
-                                flex: 1,
-                                alignItems: 'center',
-                              }}
-                              onPress={() => {
-                                setIsDeleteMode(false);
-                                setSelectedNotifications(new Set());
-                              }}
-                              hitSlop={{
-                                top: 10,
-                                bottom: 10,
-                                left: 10,
-                                right: 10,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: 'white',
-                                  fontSize: 11,
-                                  fontWeight: 'bold',
-                                }}
-                              >
-                                {t('common.cancel')}
-                              </Text>
-                            </Pressable>
-
-                            {/* Mark as Read/Unread */}
-                            <Pressable
-                              style={{
-                                backgroundColor: 'rgba(255,215,0,0.8)',
-                                borderRadius: 6,
-                                paddingHorizontal: 10,
-                                paddingVertical: 6,
-                                flex: 1,
-                                alignItems: 'center',
-                              }}
-                              onPress={async () => {
-                                const selectedItems =
-                                  unifiedNotifications.filter(item =>
-                                    selectedNotifications.has(item.id),
-                                  );
-
-                                for (const selectedItem of selectedItems) {
-                                  if (
-                                    selectedItem.type === 'notification' &&
-                                    selectedItem.notificationData
-                                  ) {
-                                    if (selectedItem.notificationData.read) {
-                                      // Mark as unread (if function exists)
-                                      // For now, we'll just mark as read if unread
-                                    } else {
-                                      await markNotificationAsRead(
-                                        selectedItem.notificationData.id,
-                                      );
-                                    }
-                                  }
-                                }
-
-                                setSelectedNotifications(new Set());
-                                setIsDeleteMode(false);
-                              }}
-                              hitSlop={{
-                                top: 10,
-                                bottom: 10,
-                                left: 10,
-                                right: 10,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: 'black',
-                                  fontSize: 11,
-                                  fontWeight: 'bold',
-                                }}
-                              >
-                                {t('inbox.markRead')}
-                              </Text>
-                            </Pressable>
-
-                            {/* Delete */}
-                            <Pressable
-                              style={{
-                                backgroundColor: '#8D0000',
-                                borderRadius: 6,
-                                paddingHorizontal: 10,
-                                paddingVertical: 6,
-                                flex: 1,
-                                alignItems: 'center',
-                              }}
-                              onPress={() => {
-                                Alert.alert(
-                                  t('inbox.deleteMessagesTitle'),
-                                  t('inbox.deleteMessagesBody', {
-                                    count: selectedNotifications.size,
-                                    suffix:
-                                      selectedNotifications.size > 1 ? 's' : '',
-                                  }),
-                                  [
-                                    {
-                                      text: t('common.cancel'),
-                                      style: 'cancel',
-                                    },
-                                    {
-                                      text: t('common.delete'),
-                                      style: 'destructive',
-                                      onPress: async () => {
-                                        await deleteSelectedNotifications();
-                                        setIsDeleteMode(false);
-                                      },
-                                    },
-                                  ],
-                                );
-                              }}
-                              hitSlop={{
-                                top: 10,
-                                bottom: 10,
-                                left: 10,
-                                right: 10,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: 'white',
-                                  fontSize: 11,
-                                  fontWeight: 'bold',
-                                }}
-                              >
-                                {t('common.delete')}
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      )}
-                    </>
-                  );
-                })()
-              ) : (
-                // Thread view - individual conversation
-                <>
-                  <View style={styles.threadHeaderCard}>
-                    <View style={styles.threadHeaderTopRow}>
-                      <Text style={styles.threadHeaderTitle}>
-                        {String(selectedThread.senderName || '')}
-                      </Text>
-                      {selectedThread.kind === 'fleet' ? (
-                        <View style={styles.threadCallActionRow}>
-                          <Pressable
-                            style={[
-                              styles.threadCallIconBtn,
-                              styles.threadCallAudioBtn,
-                            ]}
-                            onPress={() => {
-                              const fleet =
-                                myFleets.find(
-                                  item => item.id === selectedThread.fleetId,
-                                ) || selectedFleetMeta;
-                              if (fleet) void openFleetWaves(fleet);
-                            }}
-                          >
-                            <Text style={styles.threadCallIconText}>🌊</Text>
-                          </Pressable>
-                          <Pressable
-                            style={[
-                              styles.threadCallIconBtn,
-                              styles.threadCallVideoBtn,
-                            ]}
-                            onPress={() => {
-                              if (!selectedThread.fleetId) return;
-                              openFleetComposer({
-                                fleetId: selectedThread.fleetId,
-                                fleetName: selectedThread.senderName,
-                                moodEmoji:
-                                  selectedThread.fleetMoodEmoji || '🦈',
-                                crewCount: selectedThread.fleetCrewCount || 0,
-                                role: selectedThread.fleetRole || 'crew',
-                                lastMessage: '',
-                                lastMessageTime: new Date(),
-                                unreadCount: 0,
-                                messages: [],
-                              });
-                            }}
-                          >
-                            <Text style={styles.threadCallIconText}>📝</Text>
-                          </Pressable>
-                        </View>
-                      ) : (
-                        <View style={styles.threadCallActionRow}>
-                          <Pressable
-                            style={[
-                              styles.threadCallIconBtn,
-                              styles.threadCallAudioBtn,
-                            ]}
-                            disabled={
-                              !!outgoingDirectCall || !!activeDirectCall
-                            }
-                            onPress={() => startDirectCall('audio')}
-                          >
-                            <Text style={styles.threadCallIconText}>📞</Text>
-                          </Pressable>
-                          <Pressable
-                            style={[
-                              styles.threadCallIconBtn,
-                              styles.threadCallVideoBtn,
-                            ]}
-                            disabled={
-                              !!outgoingDirectCall || !!activeDirectCall
-                            }
-                            onPress={() => startDirectCall('video')}
-                          >
-                            <Text style={styles.threadCallIconText}>🎥</Text>
-                          </Pressable>
-                        </View>
-                      )}
-                    </View>
-                    {selectedThread.kind === 'fleet' ? (
-                      <Text
-                        style={{
-                          color: 'rgba(255,255,255,0.72)',
-                          fontSize: 12,
-                          marginTop: 6,
-                        }}
-                      >
-                        {`${selectedThread.fleetMoodEmoji || '🦈'} ${selectedThread.fleetCrewCount || 0} crew • ${String(selectedThread.fleetRole || 'crew').replace(/_/g, ' ')}`}
-                      </Text>
-                    ) : null}
-                    {selectedThread.kind === 'direct' && directTypingName ? (
-                      <Text
-                        style={{
-                          color: '#FCA5A5',
-                          fontSize: 12,
-                          fontWeight: '700',
-                          marginTop: 6,
-                        }}
-                      >
-                        {`${directTypingName} is sending ripples...`}
-                      </Text>
-                    ) : null}
-                    {selectedThread.kind === 'fleet' &&
-                    describeFleetTyping(fleetTypingMembers) ? (
-                      <Text
-                        style={{
-                          color: '#FCA5A5',
-                          fontSize: 12,
-                          fontWeight: '700',
-                          marginTop: 6,
-                        }}
-                      >
-                        {describeFleetTyping(fleetTypingMembers)}
-                      </Text>
-                    ) : null}
-                    {!!outgoingDirectCall && !activeDirectCall && (
-                      <View style={styles.threadRingingInline}>
-                        <Text style={styles.threadCallStatusTitle}>
-                          Calling...
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <ScrollView style={{ flex: 1 }}>
-                    {selectedThread.messages.length === 0 ? (
                       <View
                         style={{
-                          marginTop: 24,
-                          padding: 16,
-                          borderRadius: 8,
-                          backgroundColor: 'rgba(255,255,255,0.06)',
+                          flexDirection: 'row',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 8,
                         }}
                       >
-                        <Text
-                          style={{
-                            color: 'white',
-                            fontSize: 15,
-                            fontWeight: '700',
-                            marginBottom: 6,
-                          }}
-                        >
-                          {t('thread.noMessages')}
-                        </Text>
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.7)',
-                            fontSize: 13,
-                          }}
-                        >
-                          {t('thread.noMessagesBody')}
-                        </Text>
-                      </View>
-                    ) : (
-                      selectedThread.messages.map((message, index) => (
+                        {/* Cancel */}
                         <Pressable
-                          key={message.id || index}
                           style={{
-                            flexDirection: 'row',
-                            marginBottom: 12,
-                            alignItems: 'flex-start',
-                            padding: 8,
-                            backgroundColor:
-                              isThreadSelectionMode &&
-                              selectedThreadMessages.has(
-                                message.id || `msg_${index}`,
-                              )
-                                ? 'rgba(255,215,0,0.3)'
-                                : selectedMessageForReply === message
-                                  ? 'rgba(255,215,0,0.1)'
-                                  : index < selectedThread.messages.length - 1
-                                    ? 'rgba(255,255,255,0.02)'
-                                    : 'transparent',
+                            backgroundColor: 'rgba(255,255,255,0.2)',
                             borderRadius: 6,
-                            borderWidth:
-                              (isThreadSelectionMode &&
-                                selectedThreadMessages.has(
-                                  message.id || `msg_${index}`,
-                                )) ||
-                              selectedMessageForReply === message
-                                ? 2
-                                : 0,
-                            borderColor: '#FFD700',
-                          }}
-                          onLongPress={() => {
-                            const msgStatus = message.status || 'sent';
-                            const statusLabel = msgStatus === 'sending' ? 'Sending' :
-                                              msgStatus === 'sent' ? 'Sent' :
-                                              msgStatus === 'delivered' ? 'Delivered' : 'Seen';
-                            const timeStr = message.createdAt?.toDate 
-                              ? formatDefiniteTime(message.createdAt.toDate()) 
-                              : 'Unknown';
-                            Alert.alert(
-                              `Message Info`,
-                              `Status: ${statusLabel}\nReceived: ${timeStr}`,
-                              [
-                                { text: 'OK' },
-                              ],
-                            );
-                            if (!isThreadSelectionMode) {
-                              setIsThreadSelectionMode(true);
-                              setSelectedThreadMessages(
-                                new Set([message.id || `msg_${index}`]),
-                              );
-                              setSelectedMessageForReply(null);
-                            }
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
                           }}
                           onPress={() => {
-                            if (isThreadSelectionMode) {
-                              // Toggle selection
-                              const messageId = message.id || `msg_${index}`;
-                              const newSelected = new Set(
-                                selectedThreadMessages,
-                              );
-                              if (newSelected.has(messageId)) {
-                                newSelected.delete(messageId);
-                                if (newSelected.size === 0) {
-                                  setIsThreadSelectionMode(false);
-                                }
-                              } else {
-                                newSelected.add(messageId);
-                              }
-                              setSelectedThreadMessages(newSelected);
-                            } else {
-                              // Select message for reply
-                              setSelectedMessageForReply(message);
-                              setQuickReplyText('');
-                            }
+                            setIsDeleteMode(false);
+                            setSelectedNotifications(new Set());
                           }}
-                        >
-                          {/* Read/Unread indicator */}
-                          <View
-                            style={{
-                              width: 8,
-                              height: 8,
-                              borderRadius: 4,
-                              backgroundColor:
-                                index < selectedThread.messages.length - 1
-                                  ? 'rgba(255,255,255,0.3)'
-                                  : '#FFD700',
-                              marginRight: 8,
-                              marginTop: 4,
-                            }}
-                          />
-
-                          {/* Selection Checkbox */}
-                          {isThreadSelectionMode && (
-                            <View
-                              style={{
-                                width: 20,
-                                height: 20,
-                                borderRadius: 4,
-                                borderWidth: 2,
-                                borderColor: selectedThreadMessages.has(
-                                  message.id || `msg_${index}`,
-                                )
-                                  ? '#FFD700'
-                                  : 'rgba(255,255,255,0.5)',
-                                backgroundColor: selectedThreadMessages.has(
-                                  message.id || `msg_${index}`,
-                                )
-                                  ? '#FFD700'
-                                  : 'transparent',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                marginRight: 8,
-                                marginTop: 2,
-                              }}
-                            >
-                              {selectedThreadMessages.has(
-                                message.id || `msg_${index}`,
-                              ) && (
-                                <Text
-                                  style={{
-                                    color: 'black',
-                                    fontSize: 14,
-                                    fontWeight: 'bold',
-                                  }}
-                                >
-                                  ✓
-                                </Text>
-                              )}
-                            </View>
-                          )}
-
-                          {/* Avatar */}
-                          {selectedThread.senderAvatar ? (
-                            typeof selectedThread.senderAvatar === 'object' &&
-                            'text' in selectedThread.senderAvatar ? (
-                              // Text-based avatar (initials)
-                              <View
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 16,
-                                  backgroundColor:
-                                    selectedThread.senderAvatar.backgroundColor,
-                                  justifyContent: 'center',
-                                  alignItems: 'center',
-                                  marginRight: 8,
-                                  borderWidth: 1,
-                                  borderColor: 'rgba(255,255,255,0.2)',
-                                }}
-                              >
-                                <Text
-                                  style={{
-                                    fontSize: 12,
-                                    fontWeight: 'bold',
-                                    color: selectedThread.senderAvatar.color,
-                                  }}
-                                >
-                                  {selectedThread.senderAvatar.text}
-                                </Text>
-                              </View>
-                            ) : (
-                              // Image-based avatar
-                              <Image
-                                source={selectedThread.senderAvatar}
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: 16,
-                                  marginRight: 8,
-                                  borderWidth: 1,
-                                  borderColor: 'rgba(255,255,255,0.2)',
-                                }}
-                              />
-                            )
-                          ) : (
-                            <View
-                              style={{
-                                width: 32,
-                                height: 32,
-                                borderRadius: 16,
-                                backgroundColor: 'rgba(255,255,255,0.2)',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                marginRight: 8,
-                              }}
-                            >
-                              <Text style={{ fontSize: 12, color: 'white' }}>
-                                👤
-                              </Text>
-                            </View>
-                          )}
-
-                          <View style={{ flex: 1 }}>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                justifyContent: 'flex-end',
-                                alignItems: 'center',
-                                marginBottom: 2,
-                              }}
-                            >
-                              <Text
-                                style={{
-                                  color: 'rgba(255,255,255,0.6)',
-                                  fontSize: 10,
-                                }}
-                              >
-                                {message.createdAt?.toDate
-                                  ? formatDefiniteTime(
-                                      message.createdAt.toDate(),
-                                    )
-                                  : 'Unknown time'}
-                              </Text>
-                              {message.fromUid === myUid && (
-                                <Text style={{ marginLeft: 4, fontSize: 10, color: message.status === 'seen' ? '#00C2FF' : 'rgba(255,255,255,0.6)' }}>
-                                  {message.status === 'sending' ? '⏳' :
-                                   message.status === 'sent' ? '⚡' :
-                                   message.status === 'delivered' ? '⚡⚡' :
-                                   message.status === 'seen' ? '⚡⚡' :
-                                   '⚡'}
-                                </Text>
-                              )}
-                            </View>
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 13,
-                                lineHeight: 18,
-                              }}
-                            >
-                              {getMessagePreviewText(message)}
-                            </Text>
-                            {message.attachmentUrl && (
-                              (() => {
-                                const attachmentType = String(message.attachmentType || '');
-                                const isImage = attachmentType.startsWith('image/');
-                                const isVideo = attachmentType.startsWith('video/');
-                                const isMedia = isImage || isVideo;
-                                
-                                if (isMedia) {
-                                  return (
-                                    <Pressable
-                                      onPress={() => {
-                                        setSelectedMediaViewer({
-                                          uri: String(message.attachmentUrl),
-                                          type: isVideo ? 'video' : 'image',
-                                        });
-                                        setShowMediaViewer(true);
-                                      }}
-                                    >
-                                      <Image
-                                        source={{ uri: String(message.attachmentUrl) }}
-                                        style={{
-                                          width: 220,
-                                          height: 180,
-                                          borderRadius: 12,
-                                          marginTop: 8,
-                                          marginRight: 40,
-                                        }}
-                                        resizeMode="cover"
-                                      />
-                                      {isVideo && (
-                                        <View style={{
-                                          position: 'absolute',
-                                          top: 8,
-                                          left: 8,
-                                          backgroundColor: 'rgba(0,0,0,0.6)',
-                                          borderRadius: 4,
-                                          padding: 4,
-                                        }}>
-                                          <Text style={{ color: 'white', fontSize: 12 }}>▶ Video</Text>
-                                        </View>
-                                      )}
-                                    </Pressable>
-                                  );
-                                }
-                                
-                                return (
-                                  <Pressable
-                                    style={styles.messageAttachmentActionBtn}
-                                    onPress={() => {
-                                      Linking.openURL(
-                                        String(message.attachmentUrl),
-                                      ).catch(() => {});
-                                    }}
-                                  >
-                                    <Text
-                                      style={styles.messageAttachmentActionText}
-                                    >
-                                      📎 {message.attachmentName || 'Open attachment'}
-                                    </Text>
-                                  </Pressable>
-                                );
-                              })()
-                            )}
-                            {message.attachmentUrl && (() => {
-                              const downloadKey = `thread-${message.id || String(message.attachmentUrl)}`;
-                              const isDownloading = !!activeAttachmentDownloads[downloadKey];
-                              const progress = attachmentDownloadProgress[downloadKey];
-                              return (
-                                <Pressable
-                                  style={[
-                                    styles.messageAttachmentDownloadBtn,
-                                    isDownloading && styles.messageAttachmentDownloadBtnActive,
-                                  ]}
-                                  disabled={isDownloading}
-                                  onPress={() => downloadMessageAttachment(
-                                    String(message.attachmentUrl),
-                                    String(message.attachmentName || ''),
-                                    downloadKey,
-                                  )}
-                                >
-                                  <Text style={styles.messageAttachmentDownloadText}>
-                                    {isDownloading ? `⬇ Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim() : '⬇ Download'}
-                                  </Text>
-                                </Pressable>
-                              );
-                            })()}
-                            {!!activeAttachmentDownloads[`thread-${message.id || String(message.attachmentUrl)}`] && (
-                                  <View
-                                    style={
-                                      styles.messageAttachmentProgressTrack
-                                    }
-                                  >
-                                    <View
-                                      style={[
-                                        styles.messageAttachmentProgressFill,
-                                        {
-                                          width: `${Math.max(
-                                            6,
-                                            Math.min(
-                                              100,
-                                              attachmentDownloadProgress[
-                                                `thread-${message.id || String(message.attachmentUrl)}`
-                                              ] || 6,
-                                            ),
-                                          )}%`,
-                                        },
-                                      ]}
-                                    />
-                                  </View>
-                                )}
-                          </View>
-                        </Pressable>
-                      ))
-                    )}
-
-                    {/* Thread Message Selection Action Bar */}
-                    {isThreadSelectionMode && (
-                      <View
-                        style={{
-                          backgroundColor: 'rgba(255,255,255,0.1)',
-                          borderRadius: 8,
-                          padding: 12,
-                          marginTop: 16,
-                        }}
-                      >
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            marginBottom: 8,
+                          hitSlop={{
+                            top: 10,
+                            bottom: 10,
+                            left: 10,
+                            right: 10,
                           }}
                         >
                           <Text
                             style={{
                               color: 'white',
-                              fontSize: 14,
+                              fontSize: 11,
                               fontWeight: 'bold',
                             }}
                           >
-                            {t('inbox.selectedCount', {
-                              count: selectedThreadMessages.size,
-                            })}
+                            {t('common.cancel')}
                           </Text>
-                        </View>
+                        </Pressable>
 
-                        <View
+                        {/* Mark as Read/Unread */}
+                        <Pressable
                           style={{
-                            flexDirection: 'row',
-                            justifyContent: 'space-between',
+                            backgroundColor: 'rgba(255,215,0,0.8)',
+                            borderRadius: 6,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            flex: 1,
                             alignItems: 'center',
-                            gap: 6,
+                          }}
+                          onPress={async () => {
+                            const selectedItems = unifiedNotifications.filter(
+                              item => selectedNotifications.has(item.id),
+                            );
+
+                            for (const selectedItem of selectedItems) {
+                              if (
+                                selectedItem.type === 'notification' &&
+                                selectedItem.notificationData
+                              ) {
+                                if (selectedItem.notificationData.read) {
+                                  // Mark as unread (if function exists)
+                                  // For now, we'll just mark as read if unread
+                                } else {
+                                  await markNotificationAsRead(
+                                    selectedItem.notificationData.id,
+                                  );
+                                }
+                              }
+                            }
+
+                            setSelectedNotifications(new Set());
+                            setIsDeleteMode(false);
+                          }}
+                          hitSlop={{
+                            top: 10,
+                            bottom: 10,
+                            left: 10,
+                            right: 10,
                           }}
                         >
-                          {/* Cancel */}
-                          <Pressable
+                          <Text
                             style={{
-                              backgroundColor: 'rgba(255,255,255,0.2)',
-                              borderRadius: 6,
-                              paddingHorizontal: 8,
-                              paddingVertical: 6,
-                              flex: 1,
-                              alignItems: 'center',
-                            }}
-                            onPress={() => {
-                              setIsThreadSelectionMode(false);
-                              setSelectedThreadMessages(new Set());
-                            }}
-                            hitSlop={{
-                              top: 10,
-                              bottom: 10,
-                              left: 10,
-                              right: 10,
+                              color: 'black',
+                              fontSize: 11,
+                              fontWeight: 'bold',
                             }}
                           >
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 11,
-                                fontWeight: 'bold',
-                              }}
-                            >
-                              {t('common.cancel')}
-                            </Text>
-                          </Pressable>
+                            {t('inbox.markRead')}
+                          </Text>
+                        </Pressable>
 
-                          {/* Copy */}
-                          <Pressable
+                        {/* Delete */}
+                        <Pressable
+                          style={{
+                            backgroundColor: '#8D0000',
+                            borderRadius: 6,
+                            paddingHorizontal: 10,
+                            paddingVertical: 6,
+                            flex: 1,
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            Alert.alert(
+                              t('inbox.deleteMessagesTitle'),
+                              t('inbox.deleteMessagesBody', {
+                                count: selectedNotifications.size,
+                                suffix:
+                                  selectedNotifications.size > 1 ? 's' : '',
+                              }),
+                              [
+                                {
+                                  text: t('common.cancel'),
+                                  style: 'cancel',
+                                },
+                                {
+                                  text: t('common.delete'),
+                                  style: 'destructive',
+                                  onPress: async () => {
+                                    await deleteSelectedNotifications();
+                                    setIsDeleteMode(false);
+                                  },
+                                },
+                              ],
+                            );
+                          }}
+                          hitSlop={{
+                            top: 10,
+                            bottom: 10,
+                            left: 10,
+                            right: 10,
+                          }}
+                        >
+                          <Text
                             style={{
-                              backgroundColor: 'rgba(0,150,255,0.8)',
-                              borderRadius: 6,
-                              paddingHorizontal: 8,
-                              paddingVertical: 6,
-                              flex: 1,
-                              alignItems: 'center',
-                            }}
-                            onPress={() => {
-                              const selectedMessages =
-                                selectedThread.messages.filter((_, index) =>
-                                  selectedThreadMessages.has(`msg_${index}`),
-                                );
-                              const textToCopy = selectedMessages
-                                .map(msg => msg.text)
-                                .join('\n\n');
-                              // Note: Clipboard.setString would be used in a real implementation
-                              Alert.alert(
-                                t('common.copied'),
-                                t('thread.copyBody'),
-                              );
-                              setIsThreadSelectionMode(false);
-                              setSelectedThreadMessages(new Set());
-                            }}
-                            hitSlop={{
-                              top: 10,
-                              bottom: 10,
-                              left: 10,
-                              right: 10,
+                              color: 'white',
+                              fontSize: 11,
+                              fontWeight: 'bold',
                             }}
                           >
-                            <Text
-                              style={{
-                                color: 'white',
-                                fontSize: 11,
-                                fontWeight: 'bold',
-                              }}
-                            >
-                              {t('thread.copy')}
-                            </Text>
-                          </Pressable>
+                            {t('common.delete')}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  )}
+                </>
+              );
+            })()
+          ) : (
+            // Thread view - individual conversation
+            <>
+              <View style={styles.threadHeaderCard}>
+                <View style={styles.threadHeaderTopRow}>
+                  <Text style={styles.threadHeaderTitle}>
+                    {String(selectedThread.senderName || '')}
+                  </Text>
+                  {selectedThread.kind === 'fleet' ? (
+                    <View style={styles.threadCallActionRow}>
+                      <Pressable
+                        style={[
+                          styles.threadCallIconBtn,
+                          styles.threadCallAudioBtn,
+                        ]}
+                        onPress={() => {
+                          const fleet =
+                            myFleets.find(
+                              item => item.id === selectedThread.fleetId,
+                            ) || selectedFleetMeta;
+                          if (fleet) void openFleetWaves(fleet);
+                        }}
+                      >
+                        <Text style={styles.threadCallIconText}>🌊</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.threadCallIconBtn,
+                          styles.threadCallVideoBtn,
+                        ]}
+                        onPress={() => {
+                          if (!selectedThread.fleetId) return;
+                          openFleetComposer({
+                            fleetId: selectedThread.fleetId,
+                            fleetName: selectedThread.senderName,
+                            moodEmoji: selectedThread.fleetMoodEmoji || '🦈',
+                            crewCount: selectedThread.fleetCrewCount || 0,
+                            role: selectedThread.fleetRole || 'crew',
+                            lastMessage: '',
+                            lastMessageTime: new Date(),
+                            unreadCount: 0,
+                            messages: [],
+                          });
+                        }}
+                      >
+                        <Text style={styles.threadCallIconText}>📝</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <View style={styles.threadCallActionRow}>
+                      <Pressable
+                        style={[
+                          styles.threadCallIconBtn,
+                          styles.threadCallAudioBtn,
+                        ]}
+                        disabled={!!outgoingDirectCall || !!activeDirectCall}
+                        onPress={() => startDirectCall('audio')}
+                      >
+                        <Text style={styles.threadCallIconText}>📞</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.threadCallIconBtn,
+                          styles.threadCallVideoBtn,
+                        ]}
+                        disabled={!!outgoingDirectCall || !!activeDirectCall}
+                        onPress={() => startDirectCall('video')}
+                      >
+                        <Text style={styles.threadCallIconText}>🎥</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+                {selectedThread.kind === 'fleet' ? (
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.72)',
+                      fontSize: 12,
+                      marginTop: 6,
+                    }}
+                  >
+                    {`${selectedThread.fleetMoodEmoji || '🦈'} ${selectedThread.fleetCrewCount || 0} crew • ${String(selectedThread.fleetRole || 'crew').replace(/_/g, ' ')}`}
+                  </Text>
+                ) : null}
+                {selectedThread.kind === 'direct' && directTypingName ? (
+                  <Text
+                    style={{
+                      color: '#FCA5A5',
+                      fontSize: 12,
+                      fontWeight: '700',
+                      marginTop: 6,
+                    }}
+                  >
+                    {`${directTypingName} is sending ripples...`}
+                  </Text>
+                ) : null}
+                {selectedThread.kind === 'fleet' &&
+                describeFleetTyping(fleetTypingMembers) ? (
+                  <Text
+                    style={{
+                      color: '#FCA5A5',
+                      fontSize: 12,
+                      fontWeight: '700',
+                      marginTop: 6,
+                    }}
+                  >
+                    {describeFleetTyping(fleetTypingMembers)}
+                  </Text>
+                ) : null}
+                {!!outgoingDirectCall && !activeDirectCall && (
+                  <View style={styles.threadRingingInline}>
+                    <Text style={styles.threadCallStatusTitle}>Calling...</Text>
+                  </View>
+                )}
+              </View>
+              <ScrollView style={{ flex: 1 }}>
+                {selectedThread.messages.length === 0 ? (
+                  <View
+                    style={{
+                      marginTop: 24,
+                      padding: 16,
+                      borderRadius: 8,
+                      backgroundColor: 'rgba(255,255,255,0.06)',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: 'white',
+                        fontSize: 15,
+                        fontWeight: '700',
+                        marginBottom: 6,
+                      }}
+                    >
+                      {t('thread.noMessages')}
+                    </Text>
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.7)',
+                        fontSize: 13,
+                      }}
+                    >
+                      {t('thread.noMessagesBody')}
+                    </Text>
+                  </View>
+                ) : (
+                  selectedThread.messages.map((message, index) => (
+                    <Pressable
+                      key={message.id || index}
+                      style={{
+                        flexDirection: 'row',
+                        marginBottom: 12,
+                        alignItems: 'flex-start',
+                        padding: 8,
+                        backgroundColor:
+                          isThreadSelectionMode &&
+                          selectedThreadMessages.has(
+                            message.id || `msg_${index}`,
+                          )
+                            ? 'rgba(255,215,0,0.3)'
+                            : selectedMessageForReply === message
+                              ? 'rgba(255,215,0,0.1)'
+                              : index < selectedThread.messages.length - 1
+                                ? 'rgba(255,255,255,0.02)'
+                                : 'transparent',
+                        borderRadius: 6,
+                        borderWidth:
+                          (isThreadSelectionMode &&
+                            selectedThreadMessages.has(
+                              message.id || `msg_${index}`,
+                            )) ||
+                          selectedMessageForReply === message
+                            ? 2
+                            : 0,
+                        borderColor: '#FFD700',
+                      }}
+                      onLongPress={() => {
+                        const msgStatus = message.status || 'sent';
+                        const statusLabel =
+                          msgStatus === 'sending'
+                            ? 'Sending'
+                            : msgStatus === 'sent'
+                              ? 'Sent'
+                              : msgStatus === 'delivered'
+                                ? 'Delivered'
+                                : 'Seen';
+                        const timeStr = message.createdAt?.toDate
+                          ? formatDefiniteTime(message.createdAt.toDate())
+                          : 'Unknown';
+                        Alert.alert(
+                          `Message Info`,
+                          `Status: ${statusLabel}\nReceived: ${timeStr}`,
+                          [{ text: 'OK' }],
+                        );
+                        if (!isThreadSelectionMode) {
+                          setIsThreadSelectionMode(true);
+                          setSelectedThreadMessages(
+                            new Set([message.id || `msg_${index}`]),
+                          );
+                          setSelectedMessageForReply(null);
+                        }
+                      }}
+                      onPress={() => {
+                        if (isThreadSelectionMode) {
+                          // Toggle selection
+                          const messageId = message.id || `msg_${index}`;
+                          const newSelected = new Set(selectedThreadMessages);
+                          if (newSelected.has(messageId)) {
+                            newSelected.delete(messageId);
+                            if (newSelected.size === 0) {
+                              setIsThreadSelectionMode(false);
+                            }
+                          } else {
+                            newSelected.add(messageId);
+                          }
+                          setSelectedThreadMessages(newSelected);
+                        } else {
+                          // Select message for reply
+                          setSelectedMessageForReply(message);
+                          setQuickReplyText('');
+                        }
+                      }}
+                    >
+                      {/* Read/Unread indicator */}
+                      <View
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: 4,
+                          backgroundColor:
+                            index < selectedThread.messages.length - 1
+                              ? 'rgba(255,255,255,0.3)'
+                              : '#FFD700',
+                          marginRight: 8,
+                          marginTop: 4,
+                        }}
+                      />
 
-                          {/* Forward */}
-                          <Pressable
-                            style={{
-                              backgroundColor: 'rgba(255,215,0,0.8)',
-                              borderRadius: 6,
-                              paddingHorizontal: 8,
-                              paddingVertical: 6,
-                              flex: 1,
-                              alignItems: 'center',
-                            }}
-                            onPress={() => {
-                              Alert.alert(
-                                t('thread.forward'),
-                                t('thread.forwardBody'),
-                              );
-                              setIsThreadSelectionMode(false);
-                              setSelectedThreadMessages(new Set());
-                            }}
-                            hitSlop={{
-                              top: 10,
-                              bottom: 10,
-                              left: 10,
-                              right: 10,
-                            }}
-                          >
+                      {/* Selection Checkbox */}
+                      {isThreadSelectionMode && (
+                        <View
+                          style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: 4,
+                            borderWidth: 2,
+                            borderColor: selectedThreadMessages.has(
+                              message.id || `msg_${index}`,
+                            )
+                              ? '#FFD700'
+                              : 'rgba(255,255,255,0.5)',
+                            backgroundColor: selectedThreadMessages.has(
+                              message.id || `msg_${index}`,
+                            )
+                              ? '#FFD700'
+                              : 'transparent',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 8,
+                            marginTop: 2,
+                          }}
+                        >
+                          {selectedThreadMessages.has(
+                            message.id || `msg_${index}`,
+                          ) && (
                             <Text
                               style={{
                                 color: 'black',
-                                fontSize: 11,
+                                fontSize: 14,
                                 fontWeight: 'bold',
                               }}
                             >
-                              {t('thread.forward')}
+                              ✓
                             </Text>
-                          </Pressable>
+                          )}
+                        </View>
+                      )}
 
-                          {/* Hide */}
-                          <Pressable
+                      {/* Avatar */}
+                      {selectedThread.senderAvatar ? (
+                        typeof selectedThread.senderAvatar === 'object' &&
+                        'text' in selectedThread.senderAvatar ? (
+                          // Text-based avatar (initials)
+                          <View
                             style={{
-                              backgroundColor: 'rgba(150,150,150,0.8)',
-                              borderRadius: 6,
-                              paddingHorizontal: 8,
-                              paddingVertical: 6,
-                              flex: 1,
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              backgroundColor:
+                                selectedThread.senderAvatar.backgroundColor,
+                              justifyContent: 'center',
                               alignItems: 'center',
-                            }}
-                            onPress={() => {
-                              Alert.alert(
-                                t('thread.hide'),
-                                t('thread.hideBody'),
-                              );
-                              setIsThreadSelectionMode(false);
-                              setSelectedThreadMessages(new Set());
-                            }}
-                            hitSlop={{
-                              top: 10,
-                              bottom: 10,
-                              left: 10,
-                              right: 10,
+                              marginRight: 8,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.2)',
                             }}
                           >
                             <Text
                               style={{
-                                color: 'white',
-                                fontSize: 11,
+                                fontSize: 12,
                                 fontWeight: 'bold',
+                                color: selectedThread.senderAvatar.color,
                               }}
                             >
-                              {t('thread.hide')}
+                              {selectedThread.senderAvatar.text}
                             </Text>
-                          </Pressable>
+                          </View>
+                        ) : (
+                          // Image-based avatar
+                          <Image
+                            source={selectedThread.senderAvatar}
+                            style={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: 16,
+                              marginRight: 8,
+                              borderWidth: 1,
+                              borderColor: 'rgba(255,255,255,0.2)',
+                            }}
+                          />
+                        )
+                      ) : (
+                        <View
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: 'rgba(255,255,255,0.2)',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 8,
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, color: 'white' }}>
+                            👤
+                          </Text>
                         </View>
-                      </View>
-                    )}
+                      )}
 
+                      <View style={{ flex: 1 }}>
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            justifyContent: 'flex-end',
+                            alignItems: 'center',
+                            marginBottom: 2,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: 'rgba(255,255,255,0.6)',
+                              fontSize: 10,
+                            }}
+                          >
+                            {message.createdAt?.toDate
+                              ? formatDefiniteTime(message.createdAt.toDate())
+                              : 'Unknown time'}
+                          </Text>
+                          {message.fromUid === myUid && (
+                            <Text
+                              style={{
+                                marginLeft: 4,
+                                fontSize: 10,
+                                color:
+                                  message.status === 'seen'
+                                    ? '#00C2FF'
+                                    : 'rgba(255,255,255,0.6)',
+                              }}
+                            >
+                              {message.status === 'sending'
+                                ? '⏳'
+                                : message.status === 'sent'
+                                  ? '⚡'
+                                  : message.status === 'delivered'
+                                    ? '⚡⚡'
+                                    : message.status === 'seen'
+                                      ? '⚡⚡'
+                                      : '⚡'}
+                            </Text>
+                          )}
+                        </View>
+                        <Text
+                          style={{
+                            color: 'white',
+                            fontSize: 13,
+                            lineHeight: 18,
+                          }}
+                        >
+                          {getMessagePreviewText(message)}
+                        </Text>
+                        {message.attachmentUrl &&
+                          (() => {
+                            const attachmentType = String(
+                              message.attachmentType || '',
+                            );
+                            const isImage = attachmentType.startsWith('image/');
+                            const isVideo = attachmentType.startsWith('video/');
+                            const isMedia = isImage || isVideo;
+
+                            if (isMedia) {
+                              return (
+                                <Pressable
+                                  onPress={() => {
+                                    setSelectedMediaViewer({
+                                      uri: String(message.attachmentUrl),
+                                      type: isVideo ? 'video' : 'image',
+                                    });
+                                    setShowMediaViewer(true);
+                                  }}
+                                >
+                                  <Image
+                                    source={{
+                                      uri: String(message.attachmentUrl),
+                                    }}
+                                    style={{
+                                      width: 220,
+                                      height: 180,
+                                      borderRadius: 12,
+                                      marginTop: 8,
+                                      marginRight: 40,
+                                    }}
+                                    resizeMode="cover"
+                                  />
+                                  {isVideo && (
+                                    <View
+                                      style={{
+                                        position: 'absolute',
+                                        top: 8,
+                                        left: 8,
+                                        backgroundColor: 'rgba(0,0,0,0.6)',
+                                        borderRadius: 4,
+                                        padding: 4,
+                                      }}
+                                    >
+                                      <Text
+                                        style={{ color: 'white', fontSize: 12 }}
+                                      >
+                                        ▶ Video
+                                      </Text>
+                                    </View>
+                                  )}
+                                </Pressable>
+                              );
+                            }
+
+                            return (
+                              <Pressable
+                                style={styles.messageAttachmentActionBtn}
+                                onPress={() => {
+                                  Linking.openURL(
+                                    String(message.attachmentUrl),
+                                  ).catch(() => {});
+                                }}
+                              >
+                                <Text
+                                  style={styles.messageAttachmentActionText}
+                                >
+                                  📎{' '}
+                                  {message.attachmentName || 'Open attachment'}
+                                </Text>
+                              </Pressable>
+                            );
+                          })()}
+                        {message.attachmentUrl &&
+                          (() => {
+                            const downloadKey = `thread-${message.id || String(message.attachmentUrl)}`;
+                            const isDownloading =
+                              !!activeAttachmentDownloads[downloadKey];
+                            const progress =
+                              attachmentDownloadProgress[downloadKey];
+                            return (
+                              <Pressable
+                                style={[
+                                  styles.messageAttachmentDownloadBtn,
+                                  isDownloading &&
+                                    styles.messageAttachmentDownloadBtnActive,
+                                ]}
+                                disabled={isDownloading}
+                                onPress={() =>
+                                  downloadMessageAttachment(
+                                    String(message.attachmentUrl),
+                                    String(message.attachmentName || ''),
+                                    downloadKey,
+                                  )
+                                }
+                              >
+                                <Text
+                                  style={styles.messageAttachmentDownloadText}
+                                >
+                                  {isDownloading
+                                    ? `⬇ Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
+                                    : '⬇ Download'}
+                                </Text>
+                              </Pressable>
+                            );
+                          })()}
+                        {!!activeAttachmentDownloads[
+                          `thread-${message.id || String(message.attachmentUrl)}`
+                        ] && (
+                          <View style={styles.messageAttachmentProgressTrack}>
+                            <View
+                              style={[
+                                styles.messageAttachmentProgressFill,
+                                {
+                                  width: `${Math.max(
+                                    6,
+                                    Math.min(
+                                      100,
+                                      attachmentDownloadProgress[
+                                        `thread-${message.id || String(message.attachmentUrl)}`
+                                      ] || 6,
+                                    ),
+                                  )}%`,
+                                },
+                              ]}
+                            />
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+                  ))
+                )}
+
+                {/* Thread Message Selection Action Bar */}
+                {isThreadSelectionMode && (
+                  <View
+                    style={{
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      borderRadius: 8,
+                      padding: 12,
+                      marginTop: 16,
+                    }}
+                  >
                     <View
                       style={{
-                        marginTop: 16,
-                        backgroundColor: 'rgba(255,255,255,0.05)',
-                        borderRadius: 8,
-                        padding: 12,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        marginBottom: 8,
                       }}
                     >
                       <Text
                         style={{
-                          color: 'rgba(255,255,255,0.8)',
-                          fontSize: 12,
-                          marginBottom: 8,
+                          color: 'white',
+                          fontSize: 14,
                           fontWeight: 'bold',
                         }}
                       >
-                        {selectedMessageForReply
-                          ? t('thread.replyTo', {
-                              name: String(selectedThread.senderName || ''),
-                            })
-                          : selectedThread.kind === 'fleet'
-                            ? `Message ${String(selectedThread.senderName || 'Fleet')}`
-                            : t('thread.messageUser', {
-                                name: String(selectedThread.senderName || ''),
-                              })}
+                        {t('inbox.selectedCount', {
+                          count: selectedThreadMessages.size,
+                        })}
                       </Text>
-                      <Text
+                    </View>
+
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      {/* Cancel */}
+                      <Pressable
                         style={{
-                          color: 'rgba(255,255,255,0.55)',
-                          fontSize: 11,
-                          marginBottom: 8,
-                          textAlign: 'right',
+                          backgroundColor: 'rgba(255,255,255,0.2)',
+                          borderRadius: 6,
+                          paddingHorizontal: 8,
+                          paddingVertical: 6,
+                          flex: 1,
+                          alignItems: 'center',
+                        }}
+                        onPress={() => {
+                          setIsThreadSelectionMode(false);
+                          setSelectedThreadMessages(new Set());
+                        }}
+                        hitSlop={{
+                          top: 10,
+                          bottom: 10,
+                          left: 10,
+                          right: 10,
                         }}
                       >
-                        {quickReplyText.length}/500
-                      </Text>
-                      <View
-                        style={{ flexDirection: 'row', alignItems: 'center' }}
-                      >
-                        {/* Attachment + Button */}
-                        <Pressable
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 20,
-                            backgroundColor: 'rgba(255,255,255,0.1)',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            marginRight: 8,
-                          }}
-                          onPress={() => {
-                            Alert.alert(
-                              'Attach',
-                              'Choose attachment type',
-                              [
-                                {
-                                  text: 'Photo/Video',
-                                  onPress: async () => {
-                                    try {
-                                      const result = await launchImageLibrary({
-                                        mediaType: 'mixed',
-                                        selectionLimit: 1,
-                                        presentationStyle: 'fullScreen',
-                                      });
-                                      if (result.assets?.[0]) {
-                                        setThreadMessageAttachment(result.assets[0]);
-                                      }
-                                    } catch (error) {
-                                      console.error('Attachment error:', error);
-                                    }
-                                  },
-                                },
-                                {
-                                  text: 'Audio',
-                                  onPress: async () => {
-                                    const picked = await pickAttachmentFromSDCard();
-                                    if (picked) setThreadMessageAttachment(picked);
-                                  },
-                                },
-                                {
-                                  text: 'Document',
-                                  onPress: async () => {
-                                    const picked = await pickAttachmentFromSDCard();
-                                    if (picked) setThreadMessageAttachment(picked);
-                                  },
-                                },
-                                { text: 'Cancel', style: 'cancel' },
-                              ],
-                              { cancelable: true },
-                            );
-                          }}
-                        >
-                          <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '300' }}>+</Text>
-                        </Pressable>
-                        <TextInput
-                          ref={replyInputRef}
-                          style={{
-                            flex: 1,
-                            backgroundColor: 'rgba(255,255,255,0.1)',
-                            borderRadius: 6,
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            color: 'white',
-                            fontSize: 14,
-                            marginRight: 8,
-                          }}
-                          placeholder={t('thread.typeMessage')}
-                          placeholderTextColor="rgba(255,255,255,0.5)"
-                          value={quickReplyText}
-                          onChangeText={setQuickReplyText}
-                          multiline
-                          maxLength={500}
-                          autoFocus={!!selectedMessageForReply}
-                          editable={!isThreadSending}
-                        />
-                        <Pressable
-                          style={{
-                            backgroundColor:
-                              (quickReplyText.trim() ||
-                                threadMessageAttachment) &&
-                              !isThreadSending
-                                ? '#00C2FF'
-                                : 'rgba(255,255,255,0.2)',
-                            borderRadius: 6,
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                          }}
-                          onPress={async () => {
-                            if (
-                              (!quickReplyText.trim() &&
-                                !threadMessageAttachment) ||
-                              isThreadSending
-                            )
-                              return;
-
-                            try {
-                              setIsThreadSending(true);
-                              const outgoingText = quickReplyText.trim();
-                              const sendResult =
-                                selectedThread.kind === 'fleet'
-                                  ? (await sendFleetMessage(
-                                      String(selectedThread.fleetId || ''),
-                                      outgoingText,
-                                    ),
-                                    {
-                                      attachmentUrl: null,
-                                      attachmentType: null,
-                                      attachmentName: null,
-                                    })
-                                  : await sendMessage(
-                                      selectedThread.senderUid || '',
-                                      outgoingText,
-                                      threadMessageAttachment,
-                                    );
-                              if (
-                                selectedThread.kind === 'fleet' &&
-                                selectedThread.fleetId
-                              ) {
-                                void writeFleetTyping(
-                                  String(selectedThread.fleetId),
-                                  '',
-                                );
-                              }
-                              if (
-                                selectedThread.kind === 'direct' &&
-                                selectedThread.senderUid
-                              ) {
-                                void writeDirectTyping(
-                                  String(selectedThread.senderUid),
-                                  '',
-                                );
-                              }
-
-                              const messageData = {
-                                id: `local_${Date.now()}`,
-                                text: outgoingText,
-                                fromUid: auth().currentUser?.uid || '',
-                                createdAt: { toDate: () => new Date() },
-                                attachmentUrl:
-                                  sendResult?.attachmentUrl || null,
-                                attachmentType:
-                                  sendResult?.attachmentType || null,
-                                attachmentName:
-                                  sendResult?.attachmentName || null,
-                              };
-
-                              const updatedThread = {
-                                ...selectedThread,
-                                messages: [
-                                  ...selectedThread.messages,
-                                  messageData,
-                                ],
-                              };
-                              setSelectedThread(updatedThread);
-
-                              setMessageThreads(prev => {
-                                if (selectedThread.kind === 'fleet') {
-                                  return prev;
-                                }
-                                const idx = prev.findIndex(
-                                  thread =>
-                                    thread.senderUid ===
-                                    selectedThread.senderUid,
-                                );
-                                if (idx >= 0) {
-                                  const next = [...prev];
-                                  next[idx] = {
-                                    ...next[idx],
-                                    lastMessage: outgoingText,
-                                    lastMessageTime: {
-                                      toDate: () => new Date(),
-                                    },
-                                    messages: updatedThread.messages,
-                                  };
-                                  return next;
-                                }
-                                return [
-                                  {
-                                    senderUid: selectedThread.senderUid,
-                                    senderName: selectedThread.senderName,
-                                    senderAvatar: selectedThread.senderAvatar,
-                                    lastMessage: outgoingText,
-                                    lastMessageTime: {
-                                      toDate: () => new Date(),
-                                    },
-                                    unreadCount: 0,
-                                    messages: updatedThread.messages,
-                                  },
-                                  ...prev,
-                                ];
-                              });
-
-                              if (
-                                selectedThread.kind === 'fleet' &&
-                                selectedThread.fleetId
-                              ) {
-                                setFleetThreads(prev => {
-                                  const idx = prev.findIndex(
-                                    thread =>
-                                      thread.fleetId === selectedThread.fleetId,
-                                  );
-                                  if (idx >= 0) {
-                                    const next = [...prev];
-                                    next[idx] = {
-                                      ...next[idx],
-                                      lastMessage: outgoingText,
-                                      lastMessageTime: {
-                                        toDate: () => new Date(),
-                                      },
-                                      messages: updatedThread.messages,
-                                    };
-                                    return next;
-                                  }
-                                  return prev;
-                                });
-                              }
-
-                              setQuickReplyText('');
-                              setThreadMessageAttachment(null);
-                              setSelectedMessageForReply(null);
-                            } catch (error) {
-                              console.error(
-                                'Error sending quick reply:',
-                                error,
-                              );
-                              const errMsg =
-                                (error as any)?.message ||
-                                (typeof error === 'string'
-                                  ? error
-                                  : 'Please try again.');
-                              Alert.alert(
-                                'Error',
-                                `Failed to send message. ${errMsg}`,
-                              );
-                            } finally {
-                              setIsThreadSending(false);
-                            }
-                          }}
-                          disabled={
-                            (!quickReplyText.trim() &&
-                              !threadMessageAttachment) ||
-                            isThreadSending
-                          }
-                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                          delayPressIn={0}
-                          delayPressOut={0}
-                          activeOpacity={0.7}
-                          android_ripple={{
-                            color: 'rgba(255, 215, 0, 0.3)',
-                            borderless: false,
-                          }}
-                        >
-                          <Text
-                            style={{
-                              color:
-                                (quickReplyText.trim() ||
-                                  threadMessageAttachment) &&
-                                !isThreadSending
-                                  ? '#000'
-                                  : 'rgba(255,255,255,0.5)',
-                              fontSize: 12,
-                              fontWeight: 'bold',
-                            }}
-                          >
-                            {isThreadSending
-                              ? t('thread.sending')
-                              : t('thread.send')}
-                          </Text>
-                        </Pressable>
-                      </View>
-                      {threadMessageAttachment &&
-                      selectedThread.kind !== 'fleet' ? (
-                        <View
-                          style={{
-                            marginTop: 10,
-                            padding: 8,
-                            borderRadius: 8,
-                            backgroundColor: 'rgba(255,255,255,0.08)',
-                          }}
-                        >
-                          <Text style={{ color: 'white', fontSize: 12 }}>
-                            📎{' '}
-                            {threadMessageAttachment.fileName ||
-                              threadMessageAttachment.uri}
-                          </Text>
-                          <Pressable
-                            onPress={() => setThreadMessageAttachment(null)}
-                            style={{ marginTop: 6 }}
-                          >
-                            <Text
-                              style={{
-                                color: '#9ED8FF',
-                                fontSize: 12,
-                                fontWeight: '700',
-                              }}
-                            >
-                              {t('thread.removeAttachment')}
-                            </Text>
-                          </Pressable>
-                        </View>
-                      ) : null}
-                      {selectedThread.kind !== 'fleet' ? (
-                        <View style={{ height: 0, overflow: 'hidden' }}>
-                        </View>
-                      ) : (
                         <Text
                           style={{
-                            color: 'rgba(255,255,255,0.55)',
+                            color: 'white',
                             fontSize: 11,
-                            marginTop: 10,
+                            fontWeight: 'bold',
                           }}
                         >
-                          Fleet chat is live for text right now. Use Fleet Waves
-                          to drop media to your crew.
+                          {t('common.cancel')}
                         </Text>
-                      )}
+                      </Pressable>
+
+                      {/* Copy */}
+                      <Pressable
+                        style={{
+                          backgroundColor: 'rgba(0,150,255,0.8)',
+                          borderRadius: 6,
+                          paddingHorizontal: 8,
+                          paddingVertical: 6,
+                          flex: 1,
+                          alignItems: 'center',
+                        }}
+                        onPress={() => {
+                          const selectedMessages =
+                            selectedThread.messages.filter((_, index) =>
+                              selectedThreadMessages.has(`msg_${index}`),
+                            );
+                          const textToCopy = selectedMessages
+                            .map(msg => msg.text)
+                            .join('\n\n');
+                          // Note: Clipboard.setString would be used in a real implementation
+                          Alert.alert(t('common.copied'), t('thread.copyBody'));
+                          setIsThreadSelectionMode(false);
+                          setSelectedThreadMessages(new Set());
+                        }}
+                        hitSlop={{
+                          top: 10,
+                          bottom: 10,
+                          left: 10,
+                          right: 10,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'white',
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          {t('thread.copy')}
+                        </Text>
+                      </Pressable>
+
+                      {/* Forward */}
+                      <Pressable
+                        style={{
+                          backgroundColor: 'rgba(255,215,0,0.8)',
+                          borderRadius: 6,
+                          paddingHorizontal: 8,
+                          paddingVertical: 6,
+                          flex: 1,
+                          alignItems: 'center',
+                        }}
+                        onPress={() => {
+                          Alert.alert(
+                            t('thread.forward'),
+                            t('thread.forwardBody'),
+                          );
+                          setIsThreadSelectionMode(false);
+                          setSelectedThreadMessages(new Set());
+                        }}
+                        hitSlop={{
+                          top: 10,
+                          bottom: 10,
+                          left: 10,
+                          right: 10,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'black',
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          {t('thread.forward')}
+                        </Text>
+                      </Pressable>
+
+                      {/* Hide */}
+                      <Pressable
+                        style={{
+                          backgroundColor: 'rgba(150,150,150,0.8)',
+                          borderRadius: 6,
+                          paddingHorizontal: 8,
+                          paddingVertical: 6,
+                          flex: 1,
+                          alignItems: 'center',
+                        }}
+                        onPress={() => {
+                          Alert.alert(t('thread.hide'), t('thread.hideBody'));
+                          setIsThreadSelectionMode(false);
+                          setSelectedThreadMessages(new Set());
+                        }}
+                        hitSlop={{
+                          top: 10,
+                          bottom: 10,
+                          left: 10,
+                          right: 10,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            color: 'white',
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                          }}
+                        >
+                          {t('thread.hide')}
+                        </Text>
+                      </Pressable>
                     </View>
-                  </ScrollView>
-                </>
-              )}
+                  </View>
+                )}
+
+                <View
+                  style={{
+                    marginTop: 16,
+                    backgroundColor: 'rgba(255,255,255,0.05)',
+                    borderRadius: 8,
+                    padding: 12,
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.8)',
+                      fontSize: 12,
+                      marginBottom: 8,
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    {selectedMessageForReply
+                      ? t('thread.replyTo', {
+                          name: String(selectedThread.senderName || ''),
+                        })
+                      : selectedThread.kind === 'fleet'
+                        ? `Message ${String(selectedThread.senderName || 'Fleet')}`
+                        : t('thread.messageUser', {
+                            name: String(selectedThread.senderName || ''),
+                          })}
+                  </Text>
+                  <Text
+                    style={{
+                      color: 'rgba(255,255,255,0.55)',
+                      fontSize: 11,
+                      marginBottom: 8,
+                      textAlign: 'right',
+                    }}
+                  >
+                    {quickReplyText.length}/500
+                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    {/* Attachment + Button */}
+                    <Pressable
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 20,
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                        marginRight: 8,
+                      }}
+                      onPress={() => {
+                        Alert.alert(
+                          'Attach',
+                          'Choose attachment type',
+                          [
+                            {
+                              text: 'Photo/Video',
+                              onPress: async () => {
+                                try {
+                                  const result = await launchImageLibrary({
+                                    mediaType: 'mixed',
+                                    selectionLimit: 1,
+                                    presentationStyle: 'fullScreen',
+                                  });
+                                  if (result.assets?.[0]) {
+                                    setThreadMessageAttachment(
+                                      result.assets[0],
+                                    );
+                                  }
+                                } catch (error) {
+                                  console.error('Attachment error:', error);
+                                }
+                              },
+                            },
+                            {
+                              text: 'Audio',
+                              onPress: async () => {
+                                const picked = await pickAttachmentFromSDCard();
+                                if (picked) setThreadMessageAttachment(picked);
+                              },
+                            },
+                            {
+                              text: 'Document',
+                              onPress: async () => {
+                                const picked = await pickAttachmentFromSDCard();
+                                if (picked) setThreadMessageAttachment(picked);
+                              },
+                            },
+                            { text: 'Cancel', style: 'cancel' },
+                          ],
+                          { cancelable: true },
+                        );
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color: '#FFF',
+                          fontSize: 22,
+                          fontWeight: '300',
+                        }}
+                      >
+                        +
+                      </Text>
+                    </Pressable>
+                    <TextInput
+                      ref={replyInputRef}
+                      style={{
+                        flex: 1,
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        borderRadius: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        color: 'white',
+                        fontSize: 14,
+                        marginRight: 8,
+                      }}
+                      placeholder={t('thread.typeMessage')}
+                      placeholderTextColor="rgba(255,255,255,0.5)"
+                      value={quickReplyText}
+                      onChangeText={setQuickReplyText}
+                      multiline
+                      maxLength={500}
+                      autoFocus={!!selectedMessageForReply}
+                      editable={!isThreadSending}
+                    />
+                    <Pressable
+                      style={{
+                        backgroundColor:
+                          (quickReplyText.trim() || threadMessageAttachment) &&
+                          !isThreadSending
+                            ? '#00C2FF'
+                            : 'rgba(255,255,255,0.2)',
+                        borderRadius: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 8,
+                        justifyContent: 'center',
+                        alignItems: 'center',
+                      }}
+                      onPress={async () => {
+                        if (
+                          (!quickReplyText.trim() &&
+                            !threadMessageAttachment) ||
+                          isThreadSending
+                        )
+                          return;
+
+                        try {
+                          setIsThreadSending(true);
+                          const outgoingText = quickReplyText.trim();
+                          const sendResult =
+                            selectedThread.kind === 'fleet'
+                              ? (await sendFleetMessage(
+                                  String(selectedThread.fleetId || ''),
+                                  outgoingText,
+                                ),
+                                {
+                                  attachmentUrl: null,
+                                  attachmentType: null,
+                                  attachmentName: null,
+                                })
+                              : await sendMessage(
+                                  selectedThread.senderUid || '',
+                                  outgoingText,
+                                  threadMessageAttachment,
+                                );
+                          if (
+                            selectedThread.kind === 'fleet' &&
+                            selectedThread.fleetId
+                          ) {
+                            void writeFleetTyping(
+                              String(selectedThread.fleetId),
+                              '',
+                            );
+                          }
+                          if (
+                            selectedThread.kind === 'direct' &&
+                            selectedThread.senderUid
+                          ) {
+                            void writeDirectTyping(
+                              String(selectedThread.senderUid),
+                              '',
+                            );
+                          }
+
+                          const messageData = {
+                            id: `local_${Date.now()}`,
+                            text: outgoingText,
+                            fromUid: auth().currentUser?.uid || '',
+                            createdAt: { toDate: () => new Date() },
+                            attachmentUrl: sendResult?.attachmentUrl || null,
+                            attachmentType: sendResult?.attachmentType || null,
+                            attachmentName: sendResult?.attachmentName || null,
+                          };
+
+                          const updatedThread = {
+                            ...selectedThread,
+                            messages: [...selectedThread.messages, messageData],
+                          };
+                          setSelectedThread(updatedThread);
+
+                          setMessageThreads(prev => {
+                            if (selectedThread.kind === 'fleet') {
+                              return prev;
+                            }
+                            const idx = prev.findIndex(
+                              thread =>
+                                thread.senderUid === selectedThread.senderUid,
+                            );
+                            if (idx >= 0) {
+                              const next = [...prev];
+                              next[idx] = {
+                                ...next[idx],
+                                lastMessage: outgoingText,
+                                lastMessageTime: {
+                                  toDate: () => new Date(),
+                                },
+                                messages: updatedThread.messages,
+                              };
+                              return next;
+                            }
+                            return [
+                              {
+                                senderUid: selectedThread.senderUid,
+                                senderName: selectedThread.senderName,
+                                senderAvatar: selectedThread.senderAvatar,
+                                lastMessage: outgoingText,
+                                lastMessageTime: {
+                                  toDate: () => new Date(),
+                                },
+                                unreadCount: 0,
+                                messages: updatedThread.messages,
+                              },
+                              ...prev,
+                            ];
+                          });
+
+                          if (
+                            selectedThread.kind === 'fleet' &&
+                            selectedThread.fleetId
+                          ) {
+                            setFleetThreads(prev => {
+                              const idx = prev.findIndex(
+                                thread =>
+                                  thread.fleetId === selectedThread.fleetId,
+                              );
+                              if (idx >= 0) {
+                                const next = [...prev];
+                                next[idx] = {
+                                  ...next[idx],
+                                  lastMessage: outgoingText,
+                                  lastMessageTime: {
+                                    toDate: () => new Date(),
+                                  },
+                                  messages: updatedThread.messages,
+                                };
+                                return next;
+                              }
+                              return prev;
+                            });
+                          }
+
+                          setQuickReplyText('');
+                          setThreadMessageAttachment(null);
+                          setSelectedMessageForReply(null);
+                        } catch (error) {
+                          console.error('Error sending quick reply:', error);
+                          const errMsg =
+                            (error as any)?.message ||
+                            (typeof error === 'string'
+                              ? error
+                              : 'Please try again.');
+                          Alert.alert(
+                            'Error',
+                            `Failed to send message. ${errMsg}`,
+                          );
+                        } finally {
+                          setIsThreadSending(false);
+                        }
+                      }}
+                      disabled={
+                        (!quickReplyText.trim() && !threadMessageAttachment) ||
+                        isThreadSending
+                      }
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      delayPressIn={0}
+                      delayPressOut={0}
+                      activeOpacity={0.7}
+                      android_ripple={{
+                        color: 'rgba(255, 215, 0, 0.3)',
+                        borderless: false,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          color:
+                            (quickReplyText.trim() ||
+                              threadMessageAttachment) &&
+                            !isThreadSending
+                              ? '#000'
+                              : 'rgba(255,255,255,0.5)',
+                          fontSize: 12,
+                          fontWeight: 'bold',
+                        }}
+                      >
+                        {isThreadSending
+                          ? t('thread.sending')
+                          : t('thread.send')}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  {threadMessageAttachment &&
+                  selectedThread.kind !== 'fleet' ? (
+                    <View
+                      style={{
+                        marginTop: 10,
+                        padding: 8,
+                        borderRadius: 8,
+                        backgroundColor: 'rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <Text style={{ color: 'white', fontSize: 12 }}>
+                        📎{' '}
+                        {threadMessageAttachment.fileName ||
+                          threadMessageAttachment.uri}
+                      </Text>
+                      <Pressable
+                        onPress={() => setThreadMessageAttachment(null)}
+                        style={{ marginTop: 6 }}
+                      >
+                        <Text
+                          style={{
+                            color: '#9ED8FF',
+                            fontSize: 12,
+                            fontWeight: '700',
+                          }}
+                        >
+                          {t('thread.removeAttachment')}
+                        </Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  {selectedThread.kind !== 'fleet' ? (
+                    <View style={{ height: 0, overflow: 'hidden' }}></View>
+                  ) : (
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.55)',
+                        fontSize: 11,
+                        marginTop: 10,
+                      }}
+                    >
+                      Fleet chat is live for text right now. Use Fleet Waves to
+                      drop media to your crew.
+                    </Text>
+                  )}
+                </View>
+              </ScrollView>
+            </>
+          )}
           <Pressable
             style={styles.dismissBtn}
             onPress={() => {
@@ -30085,14 +30115,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   isLooping
                 />
               ) : (
-                <View style={{
-                  width: SCREEN_WIDTH,
-                  height: SCREEN_HEIGHT * 0.7,
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  backgroundColor: 'rgba(255,255,255,0.1)',
-                }}>
-                  <Text style={{ color: 'white', fontSize: 16 }}>Video: {selectedMediaViewer?.uri}</Text>
+                <View
+                  style={{
+                    width: SCREEN_WIDTH,
+                    height: SCREEN_HEIGHT * 0.7,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                  }}
+                >
+                  <Text style={{ color: 'white', fontSize: 16 }}>
+                    Video: {selectedMediaViewer?.uri}
+                  </Text>
                 </View>
               );
             })()
@@ -31403,83 +31437,81 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             },
           ]}
         >
-<Pressable
-                          style={{
-                            width: 36,
-                            height: 36,
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                          }}
-                          onPress={() => {
-                            Alert.alert(
-                              'Attach Media',
-                              'Choose attachment type:',
-                              [
-                                {
-                                  text: 'Photo/Video',
-                                  onPress: async () => {
-                                    try {
-                                      const result = await launchImageLibrary({
-                                        mediaType: 'mixed',
-                                        selectionLimit: 1,
-                                        presentationStyle: 'fullScreen',
-                                      });
-                                      if (result.assets?.[0]) {
-                                        setThreadMessageAttachment(result.assets[0]);
-                                      }
-                                    } catch (error) {
-                                      console.error('Thread phone attachment error:', error);
-                                    }
-                                  },
-                                },
-                                {
-                                  text: 'Audio',
-                                  onPress: async () => {
-                                    try {
-                                      const result = await AudioPicker.pickAudio();
-                                      if (result && result.uri) {
-                                        const audioAsset = {
-                                          uri: result.uri,
-                                          type: 'audio/mpeg',
-                                          fileName: result.name || 'audio',
-                                        };
-                                        setThreadMessageAttachment(audioAsset);
-                                      }
-                                    } catch (error) {
-                                      console.error('Audio picker error:', error);
-                                    }
-                                  },
-                                },
-                                {
-                                  text: 'File',
-                                  onPress: async () => {
-                                    try {
-                                      const result = AudioPicker.pickFiles
-                                        ? await AudioPicker.pickFiles()
-                                        : [await AudioPicker.pickAudio()];
-                                      if (result?.[0]) {
-                                        const fileAsset = {
-                                          uri: result[0].uri,
-                                          type: result[0].type || 'application/octet-stream',
-                                          fileName: result[0].name,
-                                        };
-                                        setThreadMessageAttachment(fileAsset);
-                                      }
-                                    } catch (error) {
-                                      console.error('File picker error:', error);
-                                    }
-                                  },
-                                },
-                                {
-                                  text: 'Cancel',
-                                  style: 'cancel',
-                                },
-                              ],
-                            );
-                          }}
-                        >
-                          <Text style={{ color: '#00C2FF', fontSize: 28, fontWeight: '300' }}>+</Text>
-                        </Pressable>
+          <Pressable
+            style={{
+              width: 36,
+              height: 36,
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+            onPress={() => {
+              Alert.alert('Attach Media', 'Choose attachment type:', [
+                {
+                  text: 'Photo/Video',
+                  onPress: async () => {
+                    try {
+                      const result = await launchImageLibrary({
+                        mediaType: 'mixed',
+                        selectionLimit: 1,
+                        presentationStyle: 'fullScreen',
+                      });
+                      if (result.assets?.[0]) {
+                        setThreadMessageAttachment(result.assets[0]);
+                      }
+                    } catch (error) {
+                      console.error('Thread phone attachment error:', error);
+                    }
+                  },
+                },
+                {
+                  text: 'Audio',
+                  onPress: async () => {
+                    try {
+                      const result = await AudioPicker.pickAudio();
+                      if (result && result.uri) {
+                        const audioAsset = {
+                          uri: result.uri,
+                          type: 'audio/mpeg',
+                          fileName: result.name || 'audio',
+                        };
+                        setThreadMessageAttachment(audioAsset);
+                      }
+                    } catch (error) {
+                      console.error('Audio picker error:', error);
+                    }
+                  },
+                },
+                {
+                  text: 'File',
+                  onPress: async () => {
+                    try {
+                      const result = AudioPicker.pickFiles
+                        ? await AudioPicker.pickFiles()
+                        : [await AudioPicker.pickAudio()];
+                      if (result?.[0]) {
+                        const fileAsset = {
+                          uri: result[0].uri,
+                          type: result[0].type || 'application/octet-stream',
+                          fileName: result[0].name,
+                        };
+                        setThreadMessageAttachment(fileAsset);
+                      }
+                    } catch (error) {
+                      console.error('File picker error:', error);
+                    }
+                  },
+                },
+                {
+                  text: 'Cancel',
+                  style: 'cancel',
+                },
+              ]);
+            }}
+          >
+            <Text style={{ color: '#00C2FF', fontSize: 28, fontWeight: '300' }}>
+              +
+            </Text>
+          </Pressable>
           <Pressable
             style={[
               styles.dismissBtn,
@@ -34620,7 +34652,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   ? t('settings.profileAccess')
                                   : section.id === 'chat_harbor'
                                     ? t('settings.interaction')
-                                    : section.id === 'my_look' || section.id === 'theme_mode' || section.id === 'feed_layout' || section.id === 'font_size' || section.id === 'accent_color'
+                                    : section.id === 'my_look' ||
+                                        section.id === 'theme_mode' ||
+                                        section.id === 'feed_layout' ||
+                                        section.id === 'font_size' ||
+                                        section.id === 'accent_color'
                                       ? t('settings.myLook')
                                       : t('settings.system')}
                               </Text>
@@ -35073,7 +35109,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                     <Text style={styles.logbookActionText}>
                                       {t('settings.myLook')}
                                     </Text>
-                                    <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>
+                                    <Text
+                                      style={{
+                                        color: 'rgba(255,255,255,0.55)',
+                                        fontSize: 12,
+                                      }}
+                                    >
                                       Customize how XapXap looks
                                     </Text>
                                   </View>
@@ -35084,24 +35125,55 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               appSettingsSectionsExpanded[section.id] && (
                                 <View style={{ marginTop: 4 }}>
                                   <View style={styles.logbookAction}>
-                                    <Text style={styles.logbookActionText}>{t('settings.themeMode')}</Text>
-                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                                      {['dark', 'light', 'blueNeon'].map(mode => (
-                                        <Pressable
-                                          key={mode}
-                                          style={{
-                                            backgroundColor: harborSettings.themeMode === mode ? '#00C2FF' : 'rgba(255,255,255,0.1)',
-                                            paddingHorizontal: 12,
-                                            paddingVertical: 6,
-                                            borderRadius: 6,
-                                          }}
-                                          onPress={() => saveHarborSettings({ themeMode: mode as any })}
-                                        >
-                                          <Text style={{ color: harborSettings.themeMode === mode ? '#000' : '#FFF', fontSize: 12 }}>
-                                            {mode === 'dark' ? '🌑 Dark' : mode === 'light' ? '☀️ Light' : '🔵 Blue'}
-                                          </Text>
-                                        </Pressable>
-                                      ))}
+                                    <Text style={styles.logbookActionText}>
+                                      {t('settings.themeMode')}
+                                    </Text>
+                                    <View
+                                      style={{
+                                        flexDirection: 'row',
+                                        gap: 8,
+                                        marginTop: 8,
+                                      }}
+                                    >
+                                      {['dark', 'light', 'blueNeon'].map(
+                                        mode => (
+                                          <Pressable
+                                            key={mode}
+                                            style={{
+                                              backgroundColor:
+                                                harborSettings.themeMode ===
+                                                mode
+                                                  ? '#00C2FF'
+                                                  : 'rgba(255,255,255,0.1)',
+                                              paddingHorizontal: 12,
+                                              paddingVertical: 6,
+                                              borderRadius: 6,
+                                            }}
+                                            onPress={() =>
+                                              saveHarborSettings({
+                                                themeMode: mode as any,
+                                              })
+                                            }
+                                          >
+                                            <Text
+                                              style={{
+                                                color:
+                                                  harborSettings.themeMode ===
+                                                  mode
+                                                    ? '#000'
+                                                    : '#FFF',
+                                                fontSize: 12,
+                                              }}
+                                            >
+                                              {mode === 'dark'
+                                                ? '🌑 Dark'
+                                                : mode === 'light'
+                                                  ? '☀️ Light'
+                                                  : '🔵 Blue'}
+                                            </Text>
+                                          </Pressable>
+                                        ),
+                                      )}
                                     </View>
                                   </View>
                                 </View>
@@ -35111,24 +35183,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               appSettingsSectionsExpanded[section.id] && (
                                 <View style={{ marginTop: 4 }}>
                                   <View style={styles.logbookAction}>
-                                    <Text style={styles.logbookActionText}>{t('settings.feedLayout')}</Text>
-                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                                      {['compact', 'standard', 'grid'].map(layout => (
-                                        <Pressable
-                                          key={layout}
-                                          style={{
-                                            backgroundColor: harborSettings.feedLayout === layout ? '#00C2FF' : 'rgba(255,255,255,0.1)',
-                                            paddingHorizontal: 12,
-                                            paddingVertical: 6,
-                                            borderRadius: 6,
-                                          }}
-                                          onPress={() => saveHarborSettings({ feedLayout: layout as any })}
-                                        >
-                                          <Text style={{ color: harborSettings.feedLayout === layout ? '#000' : '#FFF', fontSize: 12 }}>
-                                            {layout.charAt(0).toUpperCase() + layout.slice(1)}
-                                          </Text>
-                                        </Pressable>
-                                      ))}
+                                    <Text style={styles.logbookActionText}>
+                                      {t('settings.feedLayout')}
+                                    </Text>
+                                    <View
+                                      style={{
+                                        flexDirection: 'row',
+                                        gap: 8,
+                                        marginTop: 8,
+                                      }}
+                                    >
+                                      {['compact', 'standard', 'grid'].map(
+                                        layout => (
+                                          <Pressable
+                                            key={layout}
+                                            style={{
+                                              backgroundColor:
+                                                harborSettings.feedLayout ===
+                                                layout
+                                                  ? '#00C2FF'
+                                                  : 'rgba(255,255,255,0.1)',
+                                              paddingHorizontal: 12,
+                                              paddingVertical: 6,
+                                              borderRadius: 6,
+                                            }}
+                                            onPress={() =>
+                                              saveHarborSettings({
+                                                feedLayout: layout as any,
+                                              })
+                                            }
+                                          >
+                                            <Text
+                                              style={{
+                                                color:
+                                                  harborSettings.feedLayout ===
+                                                  layout
+                                                    ? '#000'
+                                                    : '#FFF',
+                                                fontSize: 12,
+                                              }}
+                                            >
+                                              {layout.charAt(0).toUpperCase() +
+                                                layout.slice(1)}
+                                            </Text>
+                                          </Pressable>
+                                        ),
+                                      )}
                                     </View>
                                   </View>
                                 </View>
@@ -35138,24 +35238,51 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               appSettingsSectionsExpanded[section.id] && (
                                 <View style={{ marginTop: 4 }}>
                                   <View style={styles.logbookAction}>
-                                    <Text style={styles.logbookActionText}>{t('settings.fontSize')}</Text>
-                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                                      {['small', 'medium', 'large'].map(size => (
-                                        <Pressable
-                                          key={size}
-                                          style={{
-                                            backgroundColor: harborSettings.fontSize === size ? '#00C2FF' : 'rgba(255,255,255,0.1)',
-                                            paddingHorizontal: 12,
-                                            paddingVertical: 6,
-                                            borderRadius: 6,
-                                          }}
-                                          onPress={() => saveHarborSettings({ fontSize: size as any })}
-                                        >
-                                          <Text style={{ color: harborSettings.fontSize === size ? '#000' : '#FFF', fontSize: 12 }}>
-                                            {size.charAt(0).toUpperCase() + size.slice(1)}
-                                          </Text>
-                                        </Pressable>
-                                      ))}
+                                    <Text style={styles.logbookActionText}>
+                                      {t('settings.fontSize')}
+                                    </Text>
+                                    <View
+                                      style={{
+                                        flexDirection: 'row',
+                                        gap: 8,
+                                        marginTop: 8,
+                                      }}
+                                    >
+                                      {['small', 'medium', 'large'].map(
+                                        size => (
+                                          <Pressable
+                                            key={size}
+                                            style={{
+                                              backgroundColor:
+                                                harborSettings.fontSize === size
+                                                  ? '#00C2FF'
+                                                  : 'rgba(255,255,255,0.1)',
+                                              paddingHorizontal: 12,
+                                              paddingVertical: 6,
+                                              borderRadius: 6,
+                                            }}
+                                            onPress={() =>
+                                              saveHarborSettings({
+                                                fontSize: size as any,
+                                              })
+                                            }
+                                          >
+                                            <Text
+                                              style={{
+                                                color:
+                                                  harborSettings.fontSize ===
+                                                  size
+                                                    ? '#000'
+                                                    : '#FFF',
+                                                fontSize: 12,
+                                              }}
+                                            >
+                                              {size.charAt(0).toUpperCase() +
+                                                size.slice(1)}
+                                            </Text>
+                                          </Pressable>
+                                        ),
+                                      )}
                                     </View>
                                   </View>
                                 </View>
@@ -35165,25 +35292,66 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               appSettingsSectionsExpanded[section.id] && (
                                 <View style={{ marginTop: 4 }}>
                                   <View style={styles.logbookAction}>
-                                    <Text style={styles.logbookActionText}>{t('settings.accentColor')}</Text>
-                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                    <Text style={styles.logbookActionText}>
+                                      {t('settings.accentColor')}
+                                    </Text>
+                                    <View
+                                      style={{
+                                        flexDirection: 'row',
+                                        gap: 8,
+                                        marginTop: 8,
+                                      }}
+                                    >
                                       {[
-                                        { id: 'blue', color: '#00C2FF', label: '🔵 Blue' },
-                                        { id: 'red', color: '#FF4444', label: '🔴 Red' },
-                                        { id: 'purple', color: '#9B59B6', label: '🟣 Purple' },
-                                        { id: 'green', color: '#2ECC71', label: '🟢 Green' },
+                                        {
+                                          id: 'blue',
+                                          color: '#00C2FF',
+                                          label: '🔵 Blue',
+                                        },
+                                        {
+                                          id: 'red',
+                                          color: '#FF4444',
+                                          label: '🔴 Red',
+                                        },
+                                        {
+                                          id: 'purple',
+                                          color: '#9B59B6',
+                                          label: '🟣 Purple',
+                                        },
+                                        {
+                                          id: 'green',
+                                          color: '#2ECC71',
+                                          label: '🟢 Green',
+                                        },
                                       ].map(accent => (
                                         <Pressable
                                           key={accent.id}
                                           style={{
-                                            backgroundColor: harborSettings.accentColor === accent.id ? accent.color : 'rgba(255,255,255,0.1)',
+                                            backgroundColor:
+                                              harborSettings.accentColor ===
+                                              accent.id
+                                                ? accent.color
+                                                : 'rgba(255,255,255,0.1)',
                                             paddingHorizontal: 12,
                                             paddingVertical: 6,
                                             borderRadius: 6,
                                           }}
-                                          onPress={() => saveHarborSettings({ accentColor: accent.id as any })}
+                                          onPress={() =>
+                                            saveHarborSettings({
+                                              accentColor: accent.id as any,
+                                            })
+                                          }
                                         >
-                                          <Text style={{ color: harborSettings.accentColor === accent.id ? '#000' : '#FFF', fontSize: 12 }}>
+                                          <Text
+                                            style={{
+                                              color:
+                                                harborSettings.accentColor ===
+                                                accent.id
+                                                  ? '#000'
+                                                  : '#FFF',
+                                              fontSize: 12,
+                                            }}
+                                          >
                                             {accent.label}
                                           </Text>
                                         </Pressable>
@@ -35197,21 +35365,50 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               appSettingsSectionsExpanded[section.id] && (
                                 <View style={{ marginTop: 4 }}>
                                   <View style={styles.logbookAction}>
-                                    <Text style={styles.logbookActionText}>{t('settings.navigationStyle')}</Text>
-                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                    <Text style={styles.logbookActionText}>
+                                      {t('settings.navigationStyle')}
+                                    </Text>
+                                    <View
+                                      style={{
+                                        flexDirection: 'row',
+                                        gap: 8,
+                                        marginTop: 8,
+                                      }}
+                                    >
                                       {['bottom', 'side', 'fab'].map(style => (
                                         <Pressable
                                           key={style}
                                           style={{
-                                            backgroundColor: harborSettings.navigationStyle === style ? '#00C2FF' : 'rgba(255,255,255,0.1)',
+                                            backgroundColor:
+                                              harborSettings.navigationStyle ===
+                                              style
+                                                ? '#00C2FF'
+                                                : 'rgba(255,255,255,0.1)',
                                             paddingHorizontal: 12,
                                             paddingVertical: 6,
                                             borderRadius: 6,
                                           }}
-                                          onPress={() => saveHarborSettings({ navigationStyle: style as any })}
+                                          onPress={() =>
+                                            saveHarborSettings({
+                                              navigationStyle: style as any,
+                                            })
+                                          }
                                         >
-                                          <Text style={{ color: harborSettings.navigationStyle === style ? '#000' : '#FFF', fontSize: 12 }}>
-                                            {style === 'bottom' ? '⬇ Bottom' : style === 'side' ? '⬅️ Side' : '⚡ FAB'}
+                                          <Text
+                                            style={{
+                                              color:
+                                                harborSettings.navigationStyle ===
+                                                style
+                                                  ? '#000'
+                                                  : '#FFF',
+                                              fontSize: 12,
+                                            }}
+                                          >
+                                            {style === 'bottom'
+                                              ? '⬇ Bottom'
+                                              : style === 'side'
+                                                ? '⬅️ Side'
+                                                : '⚡ FAB'}
                                           </Text>
                                         </Pressable>
                                       ))}
@@ -35224,24 +35421,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               appSettingsSectionsExpanded[section.id] && (
                                 <View style={{ marginTop: 4 }}>
                                   <View style={styles.logbookAction}>
-                                    <Text style={styles.logbookActionText}>{t('settings.animationSettings')}</Text>
-                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                                      {['full', 'smooth', 'minimal'].map(level => (
-                                        <Pressable
-                                          key={level}
-                                          style={{
-                                            backgroundColor: harborSettings.animationLevel === level ? '#00C2FF' : 'rgba(255,255,255,0.1)',
-                                            paddingHorizontal: 12,
-                                            paddingVertical: 6,
-                                            borderRadius: 6,
-                                          }}
-                                          onPress={() => saveHarborSettings({ animationLevel: level as any })}
-                                        >
-                                          <Text style={{ color: harborSettings.animationLevel === level ? '#000' : '#FFF', fontSize: 12 }}>
-                                            {level.charAt(0).toUpperCase() + level.slice(1)}
-                                          </Text>
-                                        </Pressable>
-                                      ))}
+                                    <Text style={styles.logbookActionText}>
+                                      {t('settings.animationSettings')}
+                                    </Text>
+                                    <View
+                                      style={{
+                                        flexDirection: 'row',
+                                        gap: 8,
+                                        marginTop: 8,
+                                      }}
+                                    >
+                                      {['full', 'smooth', 'minimal'].map(
+                                        level => (
+                                          <Pressable
+                                            key={level}
+                                            style={{
+                                              backgroundColor:
+                                                harborSettings.animationLevel ===
+                                                level
+                                                  ? '#00C2FF'
+                                                  : 'rgba(255,255,255,0.1)',
+                                              paddingHorizontal: 12,
+                                              paddingVertical: 6,
+                                              borderRadius: 6,
+                                            }}
+                                            onPress={() =>
+                                              saveHarborSettings({
+                                                animationLevel: level as any,
+                                              })
+                                            }
+                                          >
+                                            <Text
+                                              style={{
+                                                color:
+                                                  harborSettings.animationLevel ===
+                                                  level
+                                                    ? '#000'
+                                                    : '#FFF',
+                                                fontSize: 12,
+                                              }}
+                                            >
+                                              {level.charAt(0).toUpperCase() +
+                                                level.slice(1)}
+                                            </Text>
+                                          </Pressable>
+                                        ),
+                                      )}
                                     </View>
                                   </View>
                                 </View>
@@ -35263,7 +35488,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                       <Pressable
                                         onPress={() =>
                                           saveHarborSettings({
-                                            smartDataSaver: !harborSettings.smartDataSaver,
+                                            smartDataSaver:
+                                              !harborSettings.smartDataSaver,
                                           })
                                         }
                                       >
@@ -35936,10 +36162,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   <View style={{ paddingVertical: 12 }}>
                     {/* Theme Mode */}
                     <View style={{ marginBottom: 20 }}>
-                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          { fontSize: 16, marginBottom: 8 },
+                        ]}
+                      >
                         Theme Mode
                       </Text>
-                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                        }}
+                      >
                         {[
                           { value: 'dark', label: 'Dark 🌑' },
                           { value: 'light', label: 'Light ☀️' },
@@ -35952,19 +36189,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               minWidth: '30%',
                               padding: 12,
                               borderRadius: 8,
-                              backgroundColor: harborSettings.themeMode === opt.value 
-                                ? '#00C2FF' 
-                                : 'rgba(255,255,255,0.08)',
-                              borderWidth: harborSettings.themeMode === opt.value ? 2 : 0,
+                              backgroundColor:
+                                harborSettings.themeMode === opt.value
+                                  ? '#00C2FF'
+                                  : 'rgba(255,255,255,0.08)',
+                              borderWidth:
+                                harborSettings.themeMode === opt.value ? 2 : 0,
                               borderColor: '#00C2FF',
                             }}
-                            onPress={() => saveHarborSettings({ themeMode: opt.value as any })}
+                            onPress={() =>
+                              saveHarborSettings({
+                                themeMode: opt.value as any,
+                              })
+                            }
                           >
-                            <Text style={{ 
-                              color: harborSettings.themeMode === opt.value ? '#000' : '#FFF',
-                              fontWeight: harborSettings.themeMode === opt.value ? '700' : '400',
-                              textAlign: 'center',
-                            }}>
+                            <Text
+                              style={{
+                                color:
+                                  harborSettings.themeMode === opt.value
+                                    ? '#000'
+                                    : '#FFF',
+                                fontWeight:
+                                  harborSettings.themeMode === opt.value
+                                    ? '700'
+                                    : '400',
+                                textAlign: 'center',
+                              }}
+                            >
                               {opt.label}
                             </Text>
                           </Pressable>
@@ -35974,10 +36225,21 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                     {/* Feed Layout */}
                     <View style={{ marginBottom: 20 }}>
-                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          { fontSize: 16, marginBottom: 8 },
+                        ]}
+                      >
                         Feed Layout
                       </Text>
-                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          gap: 8,
+                          flexWrap: 'wrap',
+                        }}
+                      >
                         {[
                           { value: 'compact', label: 'Compact' },
                           { value: 'standard', label: 'Standard' },
@@ -35990,19 +36252,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               minWidth: '30%',
                               padding: 12,
                               borderRadius: 8,
-                              backgroundColor: harborSettings.feedLayout === opt.value 
-                                ? '#00C2FF' 
-                                : 'rgba(255,255,255,0.08)',
-                              borderWidth: harborSettings.feedLayout === opt.value ? 2 : 0,
+                              backgroundColor:
+                                harborSettings.feedLayout === opt.value
+                                  ? '#00C2FF'
+                                  : 'rgba(255,255,255,0.08)',
+                              borderWidth:
+                                harborSettings.feedLayout === opt.value ? 2 : 0,
                               borderColor: '#00C2FF',
                             }}
-                            onPress={() => saveHarborSettings({ feedLayout: opt.value as any })}
+                            onPress={() =>
+                              saveHarborSettings({
+                                feedLayout: opt.value as any,
+                              })
+                            }
                           >
-                            <Text style={{ 
-                              color: harborSettings.feedLayout === opt.value ? '#000' : '#FFF',
-                              fontWeight: harborSettings.feedLayout === opt.value ? '700' : '400',
-                              textAlign: 'center',
-                            }}>
+                            <Text
+                              style={{
+                                color:
+                                  harborSettings.feedLayout === opt.value
+                                    ? '#000'
+                                    : '#FFF',
+                                fontWeight:
+                                  harborSettings.feedLayout === opt.value
+                                    ? '700'
+                                    : '400',
+                                textAlign: 'center',
+                              }}
+                            >
                               {opt.label}
                             </Text>
                           </Pressable>
@@ -36012,7 +36288,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                     {/* Font Size */}
                     <View style={{ marginBottom: 20 }}>
-                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          { fontSize: 16, marginBottom: 8 },
+                        ]}
+                      >
                         Font Size
                       </Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -36027,19 +36308,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               flex: 1,
                               padding: 12,
                               borderRadius: 8,
-                              backgroundColor: harborSettings.fontSize === opt.value 
-                                ? '#00C2FF' 
-                                : 'rgba(255,255,255,0.08)',
-                              borderWidth: harborSettings.fontSize === opt.value ? 2 : 0,
+                              backgroundColor:
+                                harborSettings.fontSize === opt.value
+                                  ? '#00C2FF'
+                                  : 'rgba(255,255,255,0.08)',
+                              borderWidth:
+                                harborSettings.fontSize === opt.value ? 2 : 0,
                               borderColor: '#00C2FF',
                             }}
-                            onPress={() => saveHarborSettings({ fontSize: opt.value as any })}
+                            onPress={() =>
+                              saveHarborSettings({ fontSize: opt.value as any })
+                            }
                           >
-                            <Text style={{ 
-                              color: harborSettings.fontSize === opt.value ? '#000' : '#FFF',
-                              fontWeight: harborSettings.fontSize === opt.value ? '700' : '400',
-                              textAlign: 'center',
-                            }}>
+                            <Text
+                              style={{
+                                color:
+                                  harborSettings.fontSize === opt.value
+                                    ? '#000'
+                                    : '#FFF',
+                                fontWeight:
+                                  harborSettings.fontSize === opt.value
+                                    ? '700'
+                                    : '400',
+                                textAlign: 'center',
+                              }}
+                            >
                               {opt.label}
                             </Text>
                           </Pressable>
@@ -36049,14 +36342,27 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                     {/* Accent Color */}
                     <View style={{ marginBottom: 20 }}>
-                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          { fontSize: 16, marginBottom: 8 },
+                        ]}
+                      >
                         Accent Color
                       </Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
                         {[
-                          { value: 'blue', label: 'Electric Blue', color: '#00C2FF' },
+                          {
+                            value: 'blue',
+                            label: 'Electric Blue',
+                            color: '#00C2FF',
+                          },
                           { value: 'red', label: 'Red', color: '#EF4444' },
-                          { value: 'purple', label: 'Purple', color: '#A855F7' },
+                          {
+                            value: 'purple',
+                            label: 'Purple',
+                            color: '#A855F7',
+                          },
                           { value: 'green', label: 'Green', color: '#22C55E' },
                         ].map(opt => (
                           <Pressable
@@ -36065,20 +36371,39 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               flex: 1,
                               padding: 12,
                               borderRadius: 8,
-                              backgroundColor: harborSettings.accentColor === opt.value 
-                                ? opt.color 
-                                : 'rgba(255,255,255,0.08)',
-                              borderWidth: harborSettings.accentColor === opt.value ? 2 : 1,
-                              borderColor: harborSettings.accentColor === opt.value ? '#FFF' : 'rgba(255,255,255,0.2)',
+                              backgroundColor:
+                                harborSettings.accentColor === opt.value
+                                  ? opt.color
+                                  : 'rgba(255,255,255,0.08)',
+                              borderWidth:
+                                harborSettings.accentColor === opt.value
+                                  ? 2
+                                  : 1,
+                              borderColor:
+                                harborSettings.accentColor === opt.value
+                                  ? '#FFF'
+                                  : 'rgba(255,255,255,0.2)',
                             }}
-                            onPress={() => saveHarborSettings({ accentColor: opt.value as any })}
+                            onPress={() =>
+                              saveHarborSettings({
+                                accentColor: opt.value as any,
+                              })
+                            }
                           >
-                            <Text style={{ 
-                              color: harborSettings.accentColor === opt.value ? '#000' : '#FFF',
-                              fontWeight: harborSettings.accentColor === opt.value ? '700' : '400',
-                              textAlign: 'center',
-                              fontSize: 12,
-                            }}>
+                            <Text
+                              style={{
+                                color:
+                                  harborSettings.accentColor === opt.value
+                                    ? '#000'
+                                    : '#FFF',
+                                fontWeight:
+                                  harborSettings.accentColor === opt.value
+                                    ? '700'
+                                    : '400',
+                                textAlign: 'center',
+                                fontSize: 12,
+                              }}
+                            >
                               {opt.label}
                             </Text>
                           </Pressable>
@@ -36088,7 +36413,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                     {/* Animation Level */}
                     <View style={{ marginBottom: 20 }}>
-                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          { fontSize: 16, marginBottom: 8 },
+                        ]}
+                      >
                         Animations
                       </Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -36103,19 +36433,35 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               flex: 1,
                               padding: 12,
                               borderRadius: 8,
-                              backgroundColor: harborSettings.animationLevel === opt.value 
-                                ? '#00C2FF' 
-                                : 'rgba(255,255,255,0.08)',
-                              borderWidth: harborSettings.animationLevel === opt.value ? 2 : 0,
+                              backgroundColor:
+                                harborSettings.animationLevel === opt.value
+                                  ? '#00C2FF'
+                                  : 'rgba(255,255,255,0.08)',
+                              borderWidth:
+                                harborSettings.animationLevel === opt.value
+                                  ? 2
+                                  : 0,
                               borderColor: '#00C2FF',
                             }}
-                            onPress={() => saveHarborSettings({ animationLevel: opt.value as any })}
+                            onPress={() =>
+                              saveHarborSettings({
+                                animationLevel: opt.value as any,
+                              })
+                            }
                           >
-                            <Text style={{ 
-                              color: harborSettings.animationLevel === opt.value ? '#000' : '#FFF',
-                              fontWeight: harborSettings.animationLevel === opt.value ? '700' : '400',
-                              textAlign: 'center',
-                            }}>
+                            <Text
+                              style={{
+                                color:
+                                  harborSettings.animationLevel === opt.value
+                                    ? '#000'
+                                    : '#FFF',
+                                fontWeight:
+                                  harborSettings.animationLevel === opt.value
+                                    ? '700'
+                                    : '400',
+                                textAlign: 'center',
+                              }}
+                            >
                               {opt.label}
                             </Text>
                           </Pressable>
@@ -36125,7 +36471,12 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
 
                     {/* Navigation Style */}
                     <View style={{ marginBottom: 20 }}>
-                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                      <Text
+                        style={[
+                          styles.logbookActionText,
+                          { fontSize: 16, marginBottom: 8 },
+                        ]}
+                      >
                         Navigation Style
                       </Text>
                       <View style={{ flexDirection: 'row', gap: 8 }}>
@@ -36140,20 +36491,36 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               flex: 1,
                               padding: 12,
                               borderRadius: 8,
-                              backgroundColor: harborSettings.navigationStyle === opt.value 
-                                ? '#00C2FF' 
-                                : 'rgba(255,255,255,0.08)',
-                              borderWidth: harborSettings.navigationStyle === opt.value ? 2 : 0,
+                              backgroundColor:
+                                harborSettings.navigationStyle === opt.value
+                                  ? '#00C2FF'
+                                  : 'rgba(255,255,255,0.08)',
+                              borderWidth:
+                                harborSettings.navigationStyle === opt.value
+                                  ? 2
+                                  : 0,
                               borderColor: '#00C2FF',
                             }}
-                            onPress={() => saveHarborSettings({ navigationStyle: opt.value as any })}
+                            onPress={() =>
+                              saveHarborSettings({
+                                navigationStyle: opt.value as any,
+                              })
+                            }
                           >
-                            <Text style={{ 
-                              color: harborSettings.navigationStyle === opt.value ? '#000' : '#FFF',
-                              fontWeight: harborSettings.navigationStyle === opt.value ? '700' : '400',
-                              textAlign: 'center',
-                              fontSize: 12,
-                            }}>
+                            <Text
+                              style={{
+                                color:
+                                  harborSettings.navigationStyle === opt.value
+                                    ? '#000'
+                                    : '#FFF',
+                                fontWeight:
+                                  harborSettings.navigationStyle === opt.value
+                                    ? '700'
+                                    : '400',
+                                textAlign: 'center',
+                                fontSize: 12,
+                              }}
+                            >
                               {opt.label}
                             </Text>
                           </Pressable>
@@ -40308,7 +40675,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ) : (
               <ScrollView
                 style={{ marginTop: 8, maxHeight: 420 }}
-                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 8 }}
+                contentContainerStyle={{
+                  paddingHorizontal: 16,
+                  paddingBottom: 8,
+                }}
               >
                 {manageSentStorageList.length === 0 ? (
                   <Text
