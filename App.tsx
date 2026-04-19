@@ -1784,6 +1784,13 @@ type HarborSettingsState = {
   chatQuickSend: boolean;
   smartDataSaver: boolean;
   appLanguage: SupportedAppLanguage;
+  // Appearance Settings
+  themeMode: 'dark' | 'light' | 'blueNeon';
+  feedLayout: 'compact' | 'standard' | 'grid';
+  fontSize: 'small' | 'medium' | 'large';
+  accentColor: 'blue' | 'red' | 'purple' | 'green';
+  navigationStyle: 'bottom' | 'side' | 'fab';
+  animationLevel: 'full' | 'smooth' | 'minimal';
 };
 
 type SupportedAppLanguage = 'system' | 'en' | 'sn' | 'nd' | 'sw';
@@ -2576,6 +2583,13 @@ const DEFAULT_HARBOR_SETTINGS: HarborSettingsState = {
   chatQuickSend: true,
   smartDataSaver: true,
   appLanguage: 'system',
+  // Default appearance settings
+  themeMode: 'dark',
+  feedLayout: 'standard',
+  fontSize: 'medium',
+  accentColor: 'blue',
+  navigationStyle: 'bottom',
+  animationLevel: 'smooth',
 };
 
 const APP_LANGUAGE_OPTIONS: Array<{
@@ -2726,6 +2740,22 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'settings.alertBellsDesc': 'Notification tones and badge behavior',
     'settings.cacheCurrents': 'Cache & Currents',
     'settings.cacheCurrentsDesc': 'Storage and data transfer mode',
+    'settings.myLook': 'My Look',
+    'settings.myLookDesc': 'Customize app appearance and theme',
+    'settings.themeMode': 'Theme Mode',
+    'settings.themeModeDesc': 'Dark, Light or Blue Neon theme',
+    'settings.feedLayout': 'Feed Layout',
+    'settings.feedLayoutDesc': 'Compact, Standard or Grid view',
+    'settings.fontSize': 'Font Size',
+    'settings.fontSizeDesc': 'Small, Medium or Large text',
+    'settings.accentColor': 'Accent Color',
+    'settings.accentColorDesc': 'Electric Blue, Red, Purple or Green',
+    'settings.navigationStyle': 'Navigation Style',
+    'settings.navigationStyleDesc': 'Bottom Tabs, Side Menu or FAB',
+    'settings.animationSettings': 'Animation Settings',
+    'settings.animationSettingsDesc': 'Full, Smooth or Minimal animations',
+    'settings.dataSaverMode': 'Data Saver Mode',
+    'settings.dataSaverModeDesc': 'Reduce data usage for posts and media',
     'settings.tongueRegion': 'Tongue & Region',
     'settings.tongueRegionDesc': 'App language preference',
     'settings.tidePatches': 'Tide Patches',
@@ -7251,6 +7281,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       chat_harbor: false,
       alert_bells: true,
       cache_currents: false,
+      my_look: false,
+      theme_mode: false,
+      feed_layout: false,
+      font_size: false,
+      accent_color: false,
+      navigation_style: false,
+      animation_settings: false,
+      data_saver_mode: false,
       tongue_region: false,
       tide_patches: false,
     });
@@ -10692,6 +10730,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [inboxSearchQuery, setInboxSearchQuery] = useState('');
   const [selectedThread, setSelectedThread] =
     useState<SelectedInboxThread | null>(null);
+  const [showMediaViewer, setShowMediaViewer] = useState(false);
+  const [selectedMediaViewer, setSelectedMediaViewer] = useState<{uri: string; type: 'image' | 'video'} | null>(null);
   const [incomingDirectCall, setIncomingDirectCall] =
     useState<DirectCallSession | null>(null);
   const [outgoingDirectCall, setOutgoingDirectCall] =
@@ -27736,11 +27776,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </View>
       </Modal>
 
-      {/* MESSAGING INBOX MODAL */}
+      {/* MESSAGING INBOX - FULL SCREEN */}
       <Modal
         visible={showInbox}
-        transparent
-        animationType="none"
+        transparent={false}
+        animationType="slide"
         onRequestClose={() => {
           if (selectedThread) {
             resetInboxView();
@@ -27749,51 +27789,37 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           closeInboxModal();
         }}
       >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
-        >
-          <View
-            style={[
-              styles.logbookContainer,
-              {
-                maxHeight: SCREEN_HEIGHT * 0.8,
-                borderRadius: 12,
-                overflow: 'hidden',
-              },
-            ]}
-          >
-            {paperTexture && (
-              <Image source={paperTexture} style={styles.logbookBg} />
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+          {/* Header */}
+          <View style={{ 
+            flexDirection: 'row', 
+            alignItems: 'center', 
+            paddingTop: 50, 
+            paddingBottom: 12, 
+            paddingHorizontal: 16,
+            backgroundColor: '#0F4C81',
+          }}>
+            <Pressable onPress={() => {
+              if (selectedThread) {
+                resetInboxView();
+              } else {
+                closeInboxModal();
+              }
+            }} style={{ paddingRight: 16 }}>
+              <Text style={{ color: '#FFF', fontSize: 20 }}>←</Text>
+            </Pressable>
+            <Text style={{ color: '#FFF', fontSize: 18, fontWeight: '700', flex: 1 }}>
+              {selectedThread ? 
+                (selectedThread.kind === 'fleet' ? selectedThread.fleetName || 'Fleet' : selectedThread.senderName || 'Chat') 
+                : t('inbox.title')
+              }
+            </Text>
+            {!selectedThread && (
+              <Pressable onPress={() => setShowInbox(false)}>
+                <Text style={{ color: '#FFF', fontSize: 16 }}>✕</Text>
+              </Pressable>
             )}
-            <View style={{ flex: 1, padding: 16 }}>
-              <View style={{ marginBottom: 16 }}>
-                <Text
-                  style={[
-                    styles.logbookTitle,
-                    { textAlign: 'center', marginBottom: 8 },
-                  ]}
-                >
-                  {t('inbox.title')}
-                </Text>
-                <Text
-                  style={{
-                    color: 'white',
-                    fontSize: 16,
-                    fontWeight: 'bold',
-                    textAlign: 'left',
-                  }}
-                >
-                  <Text style={{ color: '#8D0000' }}>{t('inbox.header')}</Text>
-                  <Text style={{ color: 'white' }}>
-                    (
-                    {notifications.length +
-                      messageThreads.length +
-                      fleetThreads.length +
-                      callHistory.length}
-                    )
-                  </Text>
-                </Text>
-              </View>
+          </View>
 
               {!selectedThread ? (
                 // Unified notifications view
@@ -28968,12 +28994,26 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             borderColor: '#FFD700',
                           }}
                           onLongPress={() => {
+                            const msgStatus = message.status || 'sent';
+                            const statusLabel = msgStatus === 'sending' ? 'Sending' :
+                                              msgStatus === 'sent' ? 'Sent' :
+                                              msgStatus === 'delivered' ? 'Delivered' : 'Seen';
+                            const timeStr = message.createdAt?.toDate 
+                              ? formatDefiniteTime(message.createdAt.toDate()) 
+                              : 'Unknown';
+                            Alert.alert(
+                              `Message Info`,
+                              `Status: ${statusLabel}\nReceived: ${timeStr}`,
+                              [
+                                { text: 'OK' },
+                              ],
+                            );
                             if (!isThreadSelectionMode) {
                               setIsThreadSelectionMode(true);
                               setSelectedThreadMessages(
                                 new Set([message.id || `msg_${index}`]),
                               );
-                              setSelectedMessageForReply(null); // Clear reply selection when entering selection mode
+                              setSelectedMessageForReply(null);
                             }
                           }}
                           onPress={() => {
@@ -29136,6 +29176,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                     )
                                   : 'Unknown time'}
                               </Text>
+                              {message.fromUid === myUid && (
+                                <Text style={{ marginLeft: 4, fontSize: 10, color: message.status === 'seen' ? '#00C2FF' : 'rgba(255,255,255,0.6)' }}>
+                                  {message.status === 'sending' ? '⏳' :
+                                   message.status === 'sent' ? '⚡' :
+                                   message.status === 'delivered' ? '⚡⚡' :
+                                   message.status === 'seen' ? '⚡⚡' :
+                                   '⚡'}
+                                </Text>
+                              )}
                             </View>
                             <Text
                               style={{
@@ -29147,58 +29196,92 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               {getMessagePreviewText(message)}
                             </Text>
                             {message.attachmentUrl && (
-                              <View style={styles.messageAttachmentActions}>
-                                <Pressable
-                                  style={styles.messageAttachmentActionBtn}
-                                  onPress={() => {
-                                    Linking.openURL(
-                                      String(message.attachmentUrl),
-                                    ).catch(() => {});
-                                  }}
-                                >
-                                  <Text
-                                    style={styles.messageAttachmentActionText}
-                                  >
-                                    📎 Open attachment
-                                  </Text>
-                                </Pressable>
-                                {(() => {
-                                  const downloadKey = `thread-${message.id || String(message.attachmentUrl)}`;
-                                  const isDownloading =
-                                    !!activeAttachmentDownloads[downloadKey];
-                                  const progress =
-                                    attachmentDownloadProgress[downloadKey];
+                              (() => {
+                                const attachmentType = String(message.attachmentType || '');
+                                const isImage = attachmentType.startsWith('image/');
+                                const isVideo = attachmentType.startsWith('video/');
+                                const isMedia = isImage || isVideo;
+                                
+                                if (isMedia) {
                                   return (
                                     <Pressable
-                                      style={[
-                                        styles.messageAttachmentDownloadBtn,
-                                        isDownloading &&
-                                          styles.messageAttachmentDownloadBtnActive,
-                                      ]}
-                                      disabled={isDownloading}
-                                      onPress={() =>
-                                        downloadMessageAttachment(
-                                          String(message.attachmentUrl),
-                                          String(message.attachmentName || ''),
-                                          downloadKey,
-                                        )
-                                      }
+                                      onPress={() => {
+                                        setSelectedMediaViewer({
+                                          uri: String(message.attachmentUrl),
+                                          type: isVideo ? 'video' : 'image',
+                                        });
+                                        setShowMediaViewer(true);
+                                      }}
                                     >
-                                      <Text
-                                        style={
-                                          styles.messageAttachmentDownloadText
-                                        }
-                                      >
-                                        {isDownloading
-                                          ? `⬇ Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
-                                          : '⬇ Download'}
-                                      </Text>
+                                      <Image
+                                        source={{ uri: String(message.attachmentUrl) }}
+                                        style={{
+                                          width: 220,
+                                          height: 180,
+                                          borderRadius: 12,
+                                          marginTop: 8,
+                                          marginRight: 40,
+                                        }}
+                                        resizeMode="cover"
+                                      />
+                                      {isVideo && (
+                                        <View style={{
+                                          position: 'absolute',
+                                          top: 8,
+                                          left: 8,
+                                          backgroundColor: 'rgba(0,0,0,0.6)',
+                                          borderRadius: 4,
+                                          padding: 4,
+                                        }}>
+                                          <Text style={{ color: 'white', fontSize: 12 }}>▶ Video</Text>
+                                        </View>
+                                      )}
                                     </Pressable>
                                   );
-                                })()}
-                                {!!activeAttachmentDownloads[
-                                  `thread-${message.id || String(message.attachmentUrl)}`
-                                ] && (
+                                }
+                                
+                                return (
+                                  <Pressable
+                                    style={styles.messageAttachmentActionBtn}
+                                    onPress={() => {
+                                      Linking.openURL(
+                                        String(message.attachmentUrl),
+                                      ).catch(() => {});
+                                    }}
+                                  >
+                                    <Text
+                                      style={styles.messageAttachmentActionText}
+                                    >
+                                      📎 {message.attachmentName || 'Open attachment'}
+                                    </Text>
+                                  </Pressable>
+                                );
+                              })()
+                            )}
+                            {message.attachmentUrl && (() => {
+                              const downloadKey = `thread-${message.id || String(message.attachmentUrl)}`;
+                              const isDownloading = !!activeAttachmentDownloads[downloadKey];
+                              const progress = attachmentDownloadProgress[downloadKey];
+                              return (
+                                <Pressable
+                                  style={[
+                                    styles.messageAttachmentDownloadBtn,
+                                    isDownloading && styles.messageAttachmentDownloadBtnActive,
+                                  ]}
+                                  disabled={isDownloading}
+                                  onPress={() => downloadMessageAttachment(
+                                    String(message.attachmentUrl),
+                                    String(message.attachmentName || ''),
+                                    downloadKey,
+                                  )}
+                                >
+                                  <Text style={styles.messageAttachmentDownloadText}>
+                                    {isDownloading ? `⬇ Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim() : '⬇ Download'}
+                                  </Text>
+                                </Pressable>
+                              );
+                            })()}
+                            {!!activeAttachmentDownloads[`thread-${message.id || String(message.attachmentUrl)}`] && (
                                   <View
                                     style={
                                       styles.messageAttachmentProgressTrack
@@ -29224,7 +29307,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                 )}
                               </View>
                             )}
-                          </View>
                         </Pressable>
                       ))
                     )}
@@ -29457,6 +29539,61 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       <View
                         style={{ flexDirection: 'row', alignItems: 'center' }}
                       >
+                        {/* Attachment + Button */}
+                        <Pressable
+                          style={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: 20,
+                            backgroundColor: 'rgba(255,255,255,0.1)',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 8,
+                          }}
+                          onPress={() => {
+                            Alert.alert(
+                              'Attach',
+                              'Choose attachment type',
+                              [
+                                {
+                                  text: 'Photo/Video',
+                                  onPress: async () => {
+                                    try {
+                                      const result = await launchImageLibrary({
+                                        mediaType: 'mixed',
+                                        selectionLimit: 1,
+                                        presentationStyle: 'fullScreen',
+                                      });
+                                      if (result.assets?.[0]) {
+                                        setThreadMessageAttachment(result.assets[0]);
+                                      }
+                                    } catch (error) {
+                                      console.error('Attachment error:', error);
+                                    }
+                                  },
+                                },
+                                {
+                                  text: 'Audio',
+                                  onPress: async () => {
+                                    const picked = await pickAttachmentFromSDCard();
+                                    if (picked) setThreadMessageAttachment(picked);
+                                  },
+                                },
+                                {
+                                  text: 'Document',
+                                  onPress: async () => {
+                                    const picked = await pickAttachmentFromSDCard();
+                                    if (picked) setThreadMessageAttachment(picked);
+                                  },
+                                },
+                                { text: 'Cancel', style: 'cancel' },
+                              ],
+                              { cancelable: true },
+                            );
+                          }}
+                        >
+                          <Text style={{ color: '#FFF', fontSize: 22, fontWeight: '300' }}>+</Text>
+                        </Pressable>
                         <TextInput
                           ref={replyInputRef}
                           style={{
@@ -29484,7 +29621,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                               (quickReplyText.trim() ||
                                 threadMessageAttachment) &&
                               !isThreadSending
-                                ? '#FFD700'
+                                ? '#00C2FF'
                                 : 'rgba(255,255,255,0.2)',
                             borderRadius: 6,
                             paddingHorizontal: 12,
@@ -29707,48 +29844,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                         </View>
                       ) : null}
                       {selectedThread.kind !== 'fleet' ? (
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            gap: 8,
-                            marginTop: 10,
-                          }}
-                        >
-                          <Pressable
-                            style={[styles.attachActionBtn, { flex: 1 }]}
-                            onPress={async () => {
-                              try {
-                                const result = await launchImageLibrary({
-                                  mediaType: 'mixed',
-                                  selectionLimit: 1,
-                                  presentationStyle: 'fullScreen',
-                                });
-                                if (result.assets?.[0]) {
-                                  setThreadMessageAttachment(result.assets[0]);
-                                }
-                              } catch (error) {
-                                console.error(
-                                  'Thread phone attachment error:',
-                                  error,
-                                );
-                              }
-                            }}
-                          >
-                            <Text style={styles.attachActionBtnText}>
-                              Attach Phone
-                            </Text>
-                          </Pressable>
-                          <Pressable
-                            style={[styles.attachActionBtn, { flex: 1 }]}
-                            onPress={async () => {
-                              const picked = await pickAttachmentFromSDCard();
-                              if (picked) setThreadMessageAttachment(picked);
-                            }}
-                          >
-                            <Text style={styles.attachActionBtnText}>
-                              Attach SD Card
-                            </Text>
-                          </Pressable>
+                        <View style={{ height: 0, overflow: 'hidden' }}>
                         </View>
                       ) : (
                         <Text
@@ -29766,8 +29862,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </ScrollView>
                 </>
               )}
-            </View>
-          </View>
           <Pressable
             style={styles.dismissBtn}
             onPress={() => {
@@ -29783,6 +29877,70 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             </Text>
           </Pressable>
         </View>
+      </Modal>
+
+      <Modal
+        visible={showMediaViewer}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMediaViewer(false)}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: 'rgba(0,0,0,0.95)',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+          onPress={() => setShowMediaViewer(false)}
+        >
+          {selectedMediaViewer?.type === 'video' ? (
+            (() => {
+              const RNVideo = require('react-native-video').default;
+              return RNVideo ? (
+                <RNVideo
+                  source={{ uri: selectedMediaViewer.uri }}
+                  style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.7 }}
+                  resizeMode="contain"
+                  shouldPlay
+                  isLooping
+                />
+              ) : (
+                <View style={{
+                  width: SCREEN_WIDTH,
+                  height: SCREEN_HEIGHT * 0.7,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  backgroundColor: 'rgba(255,255,255,0.1)',
+                }}>
+                  <Text style={{ color: 'white', fontSize: 16 }}>Video: {selectedMediaViewer?.uri}</Text>
+                </View>
+              );
+            })()
+          ) : (
+            <Image
+              source={{ uri: selectedMediaViewer?.uri || '' }}
+              style={{
+                width: SCREEN_WIDTH,
+                height: SCREEN_HEIGHT * 0.8,
+                resizeMode: 'contain',
+              }}
+            />
+          )}
+          <Pressable
+            style={{
+              position: 'absolute',
+              top: 50,
+              right: 16,
+              backgroundColor: 'rgba(255,255,255,0.2)',
+              borderRadius: 20,
+              padding: 8,
+            }}
+            onPress={() => setShowMediaViewer(false)}
+          >
+            <Text style={{ color: 'white', fontSize: 20 }}>✕</Text>
+          </Pressable>
+        </Pressable>
       </Modal>
 
       <Modal
@@ -31066,29 +31224,83 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             },
           ]}
         >
-          <Pressable
-            style={{
-              flex: 1,
-              width: '100%',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-            onPress={() => setZoomedProfilePic(null)}
-          >
-            {zoomedProfilePic && (
-              <Image
-                source={{ uri: zoomedProfilePic }}
-                style={{
-                  width: SCREEN_WIDTH * 0.9,
-                  height: SCREEN_WIDTH * 0.9,
-                  borderRadius: SCREEN_WIDTH * 0.45,
-                  borderWidth: 4,
-                  borderColor: '#00C2FF',
-                }}
-                resizeMode="cover"
-              />
-            )}
-          </Pressable>
+<Pressable
+                          style={{
+                            width: 36,
+                            height: 36,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                          }}
+                          onPress={() => {
+                            Alert.alert(
+                              'Attach Media',
+                              'Choose attachment type:',
+                              [
+                                {
+                                  text: 'Photo/Video',
+                                  onPress: async () => {
+                                    try {
+                                      const result = await launchImageLibrary({
+                                        mediaType: 'mixed',
+                                        selectionLimit: 1,
+                                        presentationStyle: 'fullScreen',
+                                      });
+                                      if (result.assets?.[0]) {
+                                        setThreadMessageAttachment(result.assets[0]);
+                                      }
+                                    } catch (error) {
+                                      console.error('Thread phone attachment error:', error);
+                                    }
+                                  },
+                                },
+                                {
+                                  text: 'Audio',
+                                  onPress: async () => {
+                                    try {
+                                      const result = await AudioPicker.pickAudio();
+                                      if (result && result.uri) {
+                                        const audioAsset = {
+                                          uri: result.uri,
+                                          type: 'audio/mpeg',
+                                          fileName: result.name || 'audio',
+                                        };
+                                        setThreadMessageAttachment(audioAsset);
+                                      }
+                                    } catch (error) {
+                                      console.error('Audio picker error:', error);
+                                    }
+                                  },
+                                },
+                                {
+                                  text: 'File',
+                                  onPress: async () => {
+                                    try {
+                                      const result = AudioPicker.pickFiles
+                                        ? await AudioPicker.pickFiles()
+                                        : [await AudioPicker.pickAudio()];
+                                      if (result?.[0]) {
+                                        const fileAsset = {
+                                          uri: result[0].uri,
+                                          type: result[0].type || 'application/octet-stream',
+                                          fileName: result[0].name,
+                                        };
+                                        setThreadMessageAttachment(fileAsset);
+                                      }
+                                    } catch (error) {
+                                      console.error('File picker error:', error);
+                                    }
+                                  },
+                                },
+                                {
+                                  text: 'Cancel',
+                                  style: 'cancel',
+                                },
+                              ],
+                            );
+                          }}
+                        >
+                          <Text style={{ color: '#00C2FF', fontSize: 28, fontWeight: '300' }}>+</Text>
+                        </Pressable>
           <Pressable
             style={[
               styles.dismissBtn,
@@ -34105,6 +34317,46 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           subtitle: t('settings.cacheCurrentsDesc'),
                         },
                         {
+                          id: 'my_look',
+                          title: t('settings.myLook'),
+                          subtitle: t('settings.myLookDesc'),
+                        },
+                        {
+                          id: 'theme_mode',
+                          title: t('settings.themeMode'),
+                          subtitle: t('settings.themeModeDesc'),
+                        },
+                        {
+                          id: 'feed_layout',
+                          title: t('settings.feedLayout'),
+                          subtitle: t('settings.feedLayoutDesc'),
+                        },
+                        {
+                          id: 'font_size',
+                          title: t('settings.fontSize'),
+                          subtitle: t('settings.fontSizeDesc'),
+                        },
+                        {
+                          id: 'accent_color',
+                          title: t('settings.accentColor'),
+                          subtitle: t('settings.accentColorDesc'),
+                        },
+                        {
+                          id: 'navigation_style',
+                          title: t('settings.navigationStyle'),
+                          subtitle: t('settings.navigationStyleDesc'),
+                        },
+                        {
+                          id: 'animation_settings',
+                          title: t('settings.animationSettings'),
+                          subtitle: t('settings.animationSettingsDesc'),
+                        },
+                        {
+                          id: 'data_saver_mode',
+                          title: t('settings.dataSaverMode'),
+                          subtitle: t('settings.dataSaverModeDesc'),
+                        },
+                        {
                           id: 'tongue_region',
                           title: t('settings.tongueRegion'),
                           subtitle: t('settings.tongueRegionDesc'),
@@ -34138,13 +34390,30 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           if (commandCentreSection === 'about') {
                             return section.id === 'tide_patches';
                           }
+                          if (commandCentreSection === 'appearance') {
+                            return (
+                              section.id === 'my_look' ||
+                              section.id === 'theme_mode' ||
+                              section.id === 'feed_layout' ||
+                              section.id === 'font_size' ||
+                              section.id === 'accent_color' ||
+                              section.id === 'navigation_style' ||
+                              section.id === 'animation_settings' ||
+                              section.id === 'data_saver_mode'
+                            );
+                          }
                           return false;
                         })
                         .map(section => (
                           <View key={`harbor-section-${section.id}`}>
                             {(section.id === 'captain_identity' ||
                               section.id === 'chat_harbor' ||
-                              section.id === 'cache_currents') && (
+                              section.id === 'cache_currents' ||
+                              section.id === 'my_look' ||
+                              section.id === 'theme_mode' ||
+                              section.id === 'feed_layout' ||
+                              section.id === 'font_size' ||
+                              section.id === 'accent_color') && (
                               <Text
                                 style={[
                                   styles.logbookActionText,
@@ -34163,7 +34432,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                   ? t('settings.profileAccess')
                                   : section.id === 'chat_harbor'
                                     ? t('settings.interaction')
-                                    : t('settings.system')}
+                                    : section.id === 'my_look' || section.id === 'theme_mode' || section.id === 'feed_layout' || section.id === 'font_size' || section.id === 'accent_color'
+                                      ? t('settings.myLook')
+                                      : t('settings.system')}
                               </Text>
                             )}
                             <Pressable
@@ -34574,6 +34845,218 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                         {t('settings.clearLocalCache')}
                                       </Text>
                                     </Pressable>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'my_look' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <Text style={styles.logbookActionText}>
+                                      {t('settings.myLook')}
+                                    </Text>
+                                    <Text style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12 }}>
+                                      Customize how XapXap looks
+                                    </Text>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'theme_mode' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <Text style={styles.logbookActionText}>{t('settings.themeMode')}</Text>
+                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                      {['dark', 'light', 'blueNeon'].map(mode => (
+                                        <Pressable
+                                          key={mode}
+                                          style={{
+                                            backgroundColor: harborSettings.themeMode === mode ? '#00C2FF' : 'rgba(255,255,255,0.1)',
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 6,
+                                            borderRadius: 6,
+                                          }}
+                                          onPress={() => saveHarborSettings({ themeMode: mode as any })}
+                                        >
+                                          <Text style={{ color: harborSettings.themeMode === mode ? '#000' : '#FFF', fontSize: 12 }}>
+                                            {mode === 'dark' ? '🌑 Dark' : mode === 'light' ? '☀️ Light' : '🔵 Blue'}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'feed_layout' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <Text style={styles.logbookActionText}>{t('settings.feedLayout')}</Text>
+                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                      {['compact', 'standard', 'grid'].map(layout => (
+                                        <Pressable
+                                          key={layout}
+                                          style={{
+                                            backgroundColor: harborSettings.feedLayout === layout ? '#00C2FF' : 'rgba(255,255,255,0.1)',
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 6,
+                                            borderRadius: 6,
+                                          }}
+                                          onPress={() => saveHarborSettings({ feedLayout: layout as any })}
+                                        >
+                                          <Text style={{ color: harborSettings.feedLayout === layout ? '#000' : '#FFF', fontSize: 12 }}>
+                                            {layout.charAt(0).toUpperCase() + layout.slice(1)}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'font_size' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <Text style={styles.logbookActionText}>{t('settings.fontSize')}</Text>
+                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                      {['small', 'medium', 'large'].map(size => (
+                                        <Pressable
+                                          key={size}
+                                          style={{
+                                            backgroundColor: harborSettings.fontSize === size ? '#00C2FF' : 'rgba(255,255,255,0.1)',
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 6,
+                                            borderRadius: 6,
+                                          }}
+                                          onPress={() => saveHarborSettings({ fontSize: size as any })}
+                                        >
+                                          <Text style={{ color: harborSettings.fontSize === size ? '#000' : '#FFF', fontSize: 12 }}>
+                                            {size.charAt(0).toUpperCase() + size.slice(1)}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'accent_color' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <Text style={styles.logbookActionText}>{t('settings.accentColor')}</Text>
+                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                      {[
+                                        { id: 'blue', color: '#00C2FF', label: '🔵 Blue' },
+                                        { id: 'red', color: '#FF4444', label: '🔴 Red' },
+                                        { id: 'purple', color: '#9B59B6', label: '🟣 Purple' },
+                                        { id: 'green', color: '#2ECC71', label: '🟢 Green' },
+                                      ].map(accent => (
+                                        <Pressable
+                                          key={accent.id}
+                                          style={{
+                                            backgroundColor: harborSettings.accentColor === accent.id ? accent.color : 'rgba(255,255,255,0.1)',
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 6,
+                                            borderRadius: 6,
+                                          }}
+                                          onPress={() => saveHarborSettings({ accentColor: accent.id as any })}
+                                        >
+                                          <Text style={{ color: harborSettings.accentColor === accent.id ? '#000' : '#FFF', fontSize: 12 }}>
+                                            {accent.label}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'navigation_style' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <Text style={styles.logbookActionText}>{t('settings.navigationStyle')}</Text>
+                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                      {['bottom', 'side', 'fab'].map(style => (
+                                        <Pressable
+                                          key={style}
+                                          style={{
+                                            backgroundColor: harborSettings.navigationStyle === style ? '#00C2FF' : 'rgba(255,255,255,0.1)',
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 6,
+                                            borderRadius: 6,
+                                          }}
+                                          onPress={() => saveHarborSettings({ navigationStyle: style as any })}
+                                        >
+                                          <Text style={{ color: harborSettings.navigationStyle === style ? '#000' : '#FFF', fontSize: 12 }}>
+                                            {style === 'bottom' ? '⬇ Bottom' : style === 'side' ? '⬅️ Side' : '⚡ FAB'}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'animation_settings' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <Text style={styles.logbookActionText}>{t('settings.animationSettings')}</Text>
+                                    <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                      {['full', 'smooth', 'minimal'].map(level => (
+                                        <Pressable
+                                          key={level}
+                                          style={{
+                                            backgroundColor: harborSettings.animationLevel === level ? '#00C2FF' : 'rgba(255,255,255,0.1)',
+                                            paddingHorizontal: 12,
+                                            paddingVertical: 6,
+                                            borderRadius: 6,
+                                          }}
+                                          onPress={() => saveHarborSettings({ animationLevel: level as any })}
+                                        >
+                                          <Text style={{ color: harborSettings.animationLevel === level ? '#000' : '#FFF', fontSize: 12 }}>
+                                            {level.charAt(0).toUpperCase() + level.slice(1)}
+                                          </Text>
+                                        </Pressable>
+                                      ))}
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+
+                            {section.id === 'data_saver_mode' &&
+                              appSettingsSectionsExpanded[section.id] && (
+                                <View style={{ marginTop: 4 }}>
+                                  <View style={styles.logbookAction}>
+                                    <View
+                                      style={{
+                                        flexDirection: 'row',
+                                        justifyContent: 'space-between',
+                                      }}
+                                    >
+                                      <Text style={styles.logbookActionText}>
+                                        {t('settings.dataSaverMode')}
+                                      </Text>
+                                      <Pressable
+                                        onPress={() =>
+                                          saveHarborSettings({
+                                            smartDataSaver: !harborSettings.smartDataSaver,
+                                          })
+                                        }
+                                      >
+                                        <Text style={styles.logbookActionText}>
+                                          {harborSettings.smartDataSaver
+                                            ? t('common.on')
+                                            : t('common.off')}
+                                        </Text>
+                                      </Pressable>
+                                    </View>
                                   </View>
                                 </View>
                               )}
@@ -35233,46 +35716,233 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   </>
                 ) : null}
                 {commandCentreSection === 'appearance' ? (
-                  <View
-                    style={{
-                      paddingVertical: 12,
-                      borderBottomWidth: 1,
-                      borderBottomColor: 'rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.logbookActionText,
-                        { fontSize: 18, marginBottom: 6 },
-                      ]}
-                    >
-                      Storm Animations
-                    </Text>
-                    <Pressable
-                      style={[
-                        styles.bridgeSettingButton,
-                        {
-                          backgroundColor: bridge.rainEffectsEnabled
-                            ? 'rgba(0, 194, 255, 0.2)'
-                            : 'rgba(255, 255, 255, 0.08)',
-                        },
-                      ]}
-                      onPress={() =>
-                        saveBridge({
-                          rainEffectsEnabled: !bridge.rainEffectsEnabled,
-                        })
-                      }
-                    >
-                      <Text style={styles.bridgeSettingButtonText}>
-                        {bridge.rainEffectsEnabled ? 'Disable' : 'Enable'} rain
-                        effects
+                  <View style={{ paddingVertical: 12 }}>
+                    {/* Theme Mode */}
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                        Theme Mode
                       </Text>
-                      <Text style={styles.bridgeSettingHint}>
-                        {bridge.rainEffectsEnabled
-                          ? 'Shake to intensify rainfall'
-                          : 'Enable to let shakes trigger rain'}
+                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                        {[
+                          { value: 'dark', label: 'Dark 🌑' },
+                          { value: 'light', label: 'Light ☀️' },
+                          { value: 'blueNeon', label: 'Blue Neon 🔵' },
+                        ].map(opt => (
+                          <Pressable
+                            key={opt.value}
+                            style={{
+                              flex: 1,
+                              minWidth: '30%',
+                              padding: 12,
+                              borderRadius: 8,
+                              backgroundColor: harborSettings.themeMode === opt.value 
+                                ? '#00C2FF' 
+                                : 'rgba(255,255,255,0.08)',
+                              borderWidth: harborSettings.themeMode === opt.value ? 2 : 0,
+                              borderColor: '#00C2FF',
+                            }}
+                            onPress={() => saveHarborSettings({ themeMode: opt.value as any })}
+                          >
+                            <Text style={{ 
+                              color: harborSettings.themeMode === opt.value ? '#000' : '#FFF',
+                              fontWeight: harborSettings.themeMode === opt.value ? '700' : '400',
+                              textAlign: 'center',
+                            }}>
+                              {opt.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+
+                    {/* Feed Layout */}
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                        Feed Layout
                       </Text>
-                    </Pressable>
+                      <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
+                        {[
+                          { value: 'compact', label: 'Compact' },
+                          { value: 'standard', label: 'Standard' },
+                          { value: 'grid', label: 'Grid' },
+                        ].map(opt => (
+                          <Pressable
+                            key={opt.value}
+                            style={{
+                              flex: 1,
+                              minWidth: '30%',
+                              padding: 12,
+                              borderRadius: 8,
+                              backgroundColor: harborSettings.feedLayout === opt.value 
+                                ? '#00C2FF' 
+                                : 'rgba(255,255,255,0.08)',
+                              borderWidth: harborSettings.feedLayout === opt.value ? 2 : 0,
+                              borderColor: '#00C2FF',
+                            }}
+                            onPress={() => saveHarborSettings({ feedLayout: opt.value as any })}
+                          >
+                            <Text style={{ 
+                              color: harborSettings.feedLayout === opt.value ? '#000' : '#FFF',
+                              fontWeight: harborSettings.feedLayout === opt.value ? '700' : '400',
+                              textAlign: 'center',
+                            }}>
+                              {opt.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+
+                    {/* Font Size */}
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                        Font Size
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {[
+                          { value: 'small', label: 'Small' },
+                          { value: 'medium', label: 'Medium' },
+                          { value: 'large', label: 'Large' },
+                        ].map(opt => (
+                          <Pressable
+                            key={opt.value}
+                            style={{
+                              flex: 1,
+                              padding: 12,
+                              borderRadius: 8,
+                              backgroundColor: harborSettings.fontSize === opt.value 
+                                ? '#00C2FF' 
+                                : 'rgba(255,255,255,0.08)',
+                              borderWidth: harborSettings.fontSize === opt.value ? 2 : 0,
+                              borderColor: '#00C2FF',
+                            }}
+                            onPress={() => saveHarborSettings({ fontSize: opt.value as any })}
+                          >
+                            <Text style={{ 
+                              color: harborSettings.fontSize === opt.value ? '#000' : '#FFF',
+                              fontWeight: harborSettings.fontSize === opt.value ? '700' : '400',
+                              textAlign: 'center',
+                            }}>
+                              {opt.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+
+                    {/* Accent Color */}
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                        Accent Color
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {[
+                          { value: 'blue', label: 'Electric Blue', color: '#00C2FF' },
+                          { value: 'red', label: 'Red', color: '#EF4444' },
+                          { value: 'purple', label: 'Purple', color: '#A855F7' },
+                          { value: 'green', label: 'Green', color: '#22C55E' },
+                        ].map(opt => (
+                          <Pressable
+                            key={opt.value}
+                            style={{
+                              flex: 1,
+                              padding: 12,
+                              borderRadius: 8,
+                              backgroundColor: harborSettings.accentColor === opt.value 
+                                ? opt.color 
+                                : 'rgba(255,255,255,0.08)',
+                              borderWidth: harborSettings.accentColor === opt.value ? 2 : 1,
+                              borderColor: harborSettings.accentColor === opt.value ? '#FFF' : 'rgba(255,255,255,0.2)',
+                            }}
+                            onPress={() => saveHarborSettings({ accentColor: opt.value as any })}
+                          >
+                            <Text style={{ 
+                              color: harborSettings.accentColor === opt.value ? '#000' : '#FFF',
+                              fontWeight: harborSettings.accentColor === opt.value ? '700' : '400',
+                              textAlign: 'center',
+                              fontSize: 12,
+                            }}>
+                              {opt.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+
+                    {/* Animation Level */}
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                        Animations
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {[
+                          { value: 'full', label: 'Full' },
+                          { value: 'smooth', label: 'Smooth' },
+                          { value: 'minimal', label: 'Battery Saver' },
+                        ].map(opt => (
+                          <Pressable
+                            key={opt.value}
+                            style={{
+                              flex: 1,
+                              padding: 12,
+                              borderRadius: 8,
+                              backgroundColor: harborSettings.animationLevel === opt.value 
+                                ? '#00C2FF' 
+                                : 'rgba(255,255,255,0.08)',
+                              borderWidth: harborSettings.animationLevel === opt.value ? 2 : 0,
+                              borderColor: '#00C2FF',
+                            }}
+                            onPress={() => saveHarborSettings({ animationLevel: opt.value as any })}
+                          >
+                            <Text style={{ 
+                              color: harborSettings.animationLevel === opt.value ? '#000' : '#FFF',
+                              fontWeight: harborSettings.animationLevel === opt.value ? '700' : '400',
+                              textAlign: 'center',
+                            }}>
+                              {opt.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+
+                    {/* Navigation Style */}
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={[styles.logbookActionText, { fontSize: 16, marginBottom: 8 }]}>
+                        Navigation Style
+                      </Text>
+                      <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {[
+                          { value: 'bottom', label: 'Bottom Tabs' },
+                          { value: 'side', label: 'Side Menu' },
+                          { value: 'fab', label: 'FAB' },
+                        ].map(opt => (
+                          <Pressable
+                            key={opt.value}
+                            style={{
+                              flex: 1,
+                              padding: 12,
+                              borderRadius: 8,
+                              backgroundColor: harborSettings.navigationStyle === opt.value 
+                                ? '#00C2FF' 
+                                : 'rgba(255,255,255,0.08)',
+                              borderWidth: harborSettings.navigationStyle === opt.value ? 2 : 0,
+                              borderColor: '#00C2FF',
+                            }}
+                            onPress={() => saveHarborSettings({ navigationStyle: opt.value as any })}
+                          >
+                            <Text style={{ 
+                              color: harborSettings.navigationStyle === opt.value ? '#000' : '#FFF',
+                              fontWeight: harborSettings.navigationStyle === opt.value ? '700' : '400',
+                              textAlign: 'center',
+                              fontSize: 12,
+                            }}>
+                              {opt.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
                   </View>
                 ) : null}
                 {commandCentreSection === 'performance' ? (
@@ -39188,7 +39858,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       </View>
                     </Pressable>
                   ))}
-                {crewMembers.length === 0 && (
+                {crewMembersList.length === 0 && (
                   <Text
                     style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}
                   >
