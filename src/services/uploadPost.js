@@ -100,15 +100,17 @@ var maybeCompressVideoForUpload = function (localPath, mimeType) { return __awai
             case 4:
                 stats = _a;
                 sizeBytes = Math.max(0, Number((stats === null || stats === void 0 ? void 0 : stats.size) || 0));
-                if (sizeBytes <= 8 * 1024 * 1024) {
+                // Reduce compression threshold to prevent over-compression
+                if (sizeBytes <= 15 * 1024 * 1024) {
                     return [2 /*return*/, resolvedPath];
                 }
                 return [4 /*yield*/, react_native_compressor_1.Video.compress(react_native_1.Platform.OS === 'android' && !/^file:\/\//i.test(resolvedPath)
                         ? "file://".concat(resolvedPath)
                         : resolvedPath, {
                         compressionMethod: 'auto',
-                        maxSize: 960,
-                        minimumFileSizeForCompress: 8,
+                        maxSize: 1280, // Increased from 960 to reduce compression
+                        minimumFileSizeForCompress: 5, // Reduced from 8 to compress smaller files
+                        bitrate: 2000000, // Set reasonable bitrate for smooth playback
                     })];
             case 5:
                 compressedUri = _b.sent();

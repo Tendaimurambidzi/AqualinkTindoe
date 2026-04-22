@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AqualinkTindoe</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        .container {
+            text-align: center;
+            max-width: 600px;
+        }
+        h1 {
+            font-size: 3em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        p {
+            font-size: 1.2em;
+            margin-bottom: 30px;
+            opacity: 0.9;
+        }
+        .status {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            backdrop-filter: blur(10px);
+        }
+        .success {
+            border-left: 4px solid #4CAF50;
+        }
+        .warning {
+            border-left: 4px solid #FF9800;
+        }
+        .error {
+            border-left: 4px solid #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1> AqualinkTindoe</h1>
+        <p>Video & Media Platform</p>
+        
+        <div class="status success">
+            <h3> Firebase Services Active</h3>
+            <p>Functions, Firestore, and Hosting are deployed</p>
+        </div>
+        
+        <div class="status warning">
+            <h3> Video Playback Status</h3>
+            <p>Optimized for instant loading and smooth playback</p>
+        </div>
+        
+        <div class="status">
+            <h3> Deployment Status</h3>
+            <p>Successfully deployed to Firebase</p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,5 +1,11 @@
 // VideoWithTapControls.tsx
-import React, {useRef, useState, useEffect, useCallback, useMemo} from "react";
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+} from 'react';
 import {
   View,
   TouchableWithoutFeedback,
@@ -11,13 +17,8 @@ import {
   Dimensions,
   Image,
   Pressable,
-} from "react-native";
-import Video, {OnProgressData} from "react-native-video";
-import {
-  getCachedVideoPath,
-  cacheVideo,
-  getVideoManifest,
-} from '../services/videoCache';
+} from 'react-native';
+import Video, { OnProgressData } from 'react-native-video';
 import { appTokens } from '../theme/tokens';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -47,8 +48,9 @@ type Props = {
   controls?: boolean;
   onLoad?: (data: any) => void;
   onBuffer?: (data: any) => void;
-  onError?: (error: any) => void;
-  onProgress?: (data: OnProgressData) => void;
+  onProgress?: (data: any) => void;
+  onError?: (err: any) => void;
+  onEnd?: () => void;
   onPlay?: () => void;
   muted?: boolean;
   playbackRate?: number;
@@ -57,14 +59,14 @@ type Props = {
   isActive?: boolean;
   onTap?: () => void;
   onMaximize?: () => void; // Reserved for maximize action
-  videoId?: string; // Add videoId prop to fetch poster
-  shouldPreload?: boolean; // New prop to control preloading
+  videoId?: string; // Optional id for analytics / parent callbacks only (no storage side effects)
+  shouldPreload?: boolean; // Kept for API compatibility; ignored (no background cache pipeline)
 };
 
 const VideoWithTapControls: React.FC<Props> = ({
   source,
-  style = {},
-  hideTimeout = 4000,
+  style,
+  hideTimeout = 3000,
   seekStep = 10,
   paused = false,
   maxBitRate,
@@ -80,8 +82,9 @@ const VideoWithTapControls: React.FC<Props> = ({
   controls,
   onLoad,
   onBuffer,
-  onError,
   onProgress,
+  onError,
+  onEnd,
   onPlay,
   muted,
   playbackRate = 1,
@@ -91,48 +94,33 @@ const VideoWithTapControls: React.FC<Props> = ({
   onTap,
   onMaximize: _onMaximize,
   videoId,
-  shouldPreload = false,
+  shouldPreload: _shouldPreload = false,
 }) => {
   const videoRef = useRef<any>(null);
-  const [internalPaused, setInternalPaused] = useState<boolean>(false); // Start with videos ready to play
+  /** Latest `source` for headers/type; updated every render so we do not list `source` in memos. */
+  const sourceRef = useRef(source);
+  sourceRef.current = source;
+
+  /** Media identity: URI string or `__asset__:id` - stable when parent recreates `{ uri }` objects. */
+  const sourceUriKey =
+    typeof source === 'number'
+      ? `__asset__:${source}`
+      : typeof source === 'object' && source && 'uri' in source
+        ? String((source as any).uri || '').trim()
+        : '';
+
+  // const [internalPaused, setInternalPaused] = useState<boolean>(false); // Removed to prevent loading states
   const [controlsVisible, setControlsVisible] = useState<boolean>(false);
   const controlsOpacity = useRef(new Animated.Value(0)).current;
   const hideTimer = useRef<NodeJS.Timeout | null>(null);
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
-  const [suppressAutoPlayUntilInactive, setSuppressAutoPlayUntilInactive] = useState<boolean>(false);
-  const [manualPauseRequested, setManualPauseRequested] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(typeof muted === 'boolean' ? muted : true);
-  const [isLoading, setIsLoading] = useState<boolean>(true); // internal readiness gate
-  const [fetchedPoster, setFetchedPoster] = useState<string | null>(null); // Fetched poster from manifest
-  const hasCalledOnPlay = useRef<boolean>(false); // Track if onPlay has been called
-  const [resolvedUri, setResolvedUri] = useState<string | null>(null);
-  const wasActiveRef = useRef<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(
+    typeof muted === 'boolean' ? muted : true,
+  );
+  const hasCalledOnPlay = useRef<boolean>(false);
   const forceMuted = muted === true;
-
-  useEffect(() => {
-    setIsLoading(true);
-    setCurrentTime(0);
-    setDuration(0);
-    setVideoCompleted(false);
-    setManualPauseRequested(false);
-    setSuppressAutoPlayUntilInactive(false);
-  }, [resolvedUri]);
-
-  // Keep mute state controlled by props when provided (e.g. overlay audio mode),
-  // otherwise use local autoplay behavior.
-  useEffect(() => {
-    if (typeof muted === 'boolean') {
-      setIsMuted(muted);
-      return;
-    }
-    if (!internalPaused && !videoCompleted && isActive) {
-      setIsMuted(false);
-    } else if (!isActive) {
-      setIsMuted(true);
-    }
-  }, [internalPaused, videoCompleted, isActive, muted]);
 
   const showControls = useCallback(() => {
     if (hideTimer.current) {
@@ -162,215 +150,150 @@ const VideoWithTapControls: React.FC<Props> = ({
     }
     Animated.timing(controlsOpacity, {
       toValue: 0,
-      duration: 50, // Reduced from 180ms to 50ms for immediate response
+      duration: 50,
       useNativeDriver: true,
     }).start(() => setControlsVisible(false));
   }, [controlsOpacity]);
 
-  const safeSeek = useCallback((time: number) => {
-    const t = Math.max(0, Math.min(time, duration || time));
-    if (videoRef.current && typeof (videoRef.current as any).seek === "function") {
-      (videoRef.current as any).seek(t);
-      setCurrentTime(t);
-    }
-  }, [duration]);
-
-  // Simplified autoplay logic - play when active and not paused
-  useEffect(() => {
-    const becameActive = isActive && !wasActiveRef.current;
-    wasActiveRef.current = isActive;
-
-    if (isActive && !paused && !manualPauseRequested) {
-      // Auto-play when becoming active
-      if (videoCompleted && becameActive) {
-        safeSeek(0);
-        setVideoCompleted(false);
-        hasCalledOnPlay.current = false;
-      }
-      setInternalPaused(false);
+  const onVideoTap = useCallback(() => {
+    onTap?.();
+    if (!controlsVisible) {
+      showControls();
     } else {
-      // Pause when not active or when externally paused
-      setInternalPaused(true);
-      if (!isActive) {
-        setManualPauseRequested(false);
-      }
       hideControls();
     }
-  }, [
-    isActive,
-    paused,
-    manualPauseRequested,
-    videoCompleted,
-    safeSeek,
-    hideControls,
-  ]);
+  }, [onTap, controlsVisible, showControls, hideControls]);
 
-  const onVideoTap = useCallback((event: any) => {
-    const { locationX } = event.nativeEvent;
-    const videoWidth = SCREEN_WIDTH;
-
-    const leftThird = videoWidth / 3;
-    const rightThird = (videoWidth * 2) / 3;
-
-    if (locationX < leftThird) {
-      safeSeek(currentTime - seekStep);
-    } else if (locationX > rightThird) {
-      safeSeek(currentTime + seekStep);
-    } else {
-      onTap?.();
+  /**
+   * Stable `source` for react-native-video: only recomputes when the URI (or asset id) changes.
+   * Listing `[source]` caused a new object every parent render -> ExoPlayer reload -> stutter/restart loop.
+   */
+  const effectiveSource = useMemo(() => {
+    const s = sourceRef.current;
+    if (typeof s === 'number') return s;
+    const uri = sourceUriKey;
+    if (!uri) {
+      console.warn('VideoWithTapControls: Empty URI provided');
+      return null;
     }
-    // Always show controls when tapping anywhere on video
-    showControls();
-  }, [currentTime, seekStep, safeSeek, showControls, onTap]);
+    const srcObj = typeof s === 'object' && s && 'uri' in s ? (s as any) : {};
+    return { ...srcObj, uri };
+  }, [sourceUriKey]);
+
+  // Light reset when the actual media URL changes (FlatList recycle / new post)
+  useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setVideoCompleted(false);
+    hasCalledOnPlay.current = false;
+  }, [sourceUriKey]);
+
+  // Keep mute state controlled by props when provided (e.g. overlay audio mode),
+  // otherwise use local autoplay behavior.
+  useEffect(() => {
+    if (typeof muted === 'boolean') {
+      setIsMuted(muted);
+      return;
+    }
+    if (!videoCompleted && isActive) {
+      setIsMuted(false);
+    } else if (!isActive) {
+      setIsMuted(true);
+    }
+  }, [videoCompleted, isActive, muted]);
+
+  const safeSeek = useCallback(
+    (position: number) => {
+      if (videoRef.current) {
+        videoRef.current.seek(position);
+        console.log(`[VideoWithTapControls] Seeking to ${position.toFixed(2)}s`);
+      }
+    },
+    [],
+  );
 
   const onToggleMute = useCallback(() => {
     if (forceMuted) {
       return;
     }
     setIsMuted(prev => !prev);
-    
+
     showControls();
   }, [forceMuted, showControls]);
 
-  const onRewind = useCallback(() => {
-    safeSeek(currentTime - seekStep);
-    showControls();
-  }, [currentTime, seekStep, safeSeek, showControls]);
+  // Removed seek controls for continuous playback
 
-  const onFastForward = useCallback(() => {
-    safeSeek(currentTime + seekStep);
-    showControls();
-  }, [currentTime, seekStep, safeSeek, showControls]);
+  // Removed pause/play functionality for continuous playback
 
-  const onPlayPause = useCallback(() => {
-    if (videoCompleted) {
-      // Reset to start but keep paused on current page.
-      safeSeek(0);
-      setVideoCompleted(false);
-      setInternalPaused(true);
-      setManualPauseRequested(true);
-      setSuppressAutoPlayUntilInactive(true);
-      showControls();
-    } else {
-      setSuppressAutoPlayUntilInactive(false);
-      setInternalPaused(prev => {
-        const nextPaused = !prev;
-        setManualPauseRequested(nextPaused);
-        return nextPaused;
-      });
-      if (!forceMuted) {
-        setIsMuted(false);
+  const handleLoad = useCallback(
+    (meta: any) => {
+      if (__DEV__) {
+        console.log('[AqualinkVideo] Load details:', {
+          duration: meta.duration,
+          currentTime: meta.currentTime,
+          naturalSize: meta.naturalSize,
+          source,
+          isActive: isActive,
+          videoCompleted: videoCompleted,
+          platform: Platform.OS,
+        });
       }
-      showControls();
-    }
-  }, [forceMuted, videoCompleted, safeSeek, showControls]);
+      setDuration(meta.duration || 0);
+      onLoad?.(meta);
+    },
+    [onLoad, isActive, videoCompleted],
+  );
 
-  const handleLoad = useCallback((meta: any) => {
-    setDuration(meta.duration || 0);
-    setIsLoading(false); // Video has loaded
-    onLoad?.(meta);
-  }, [onLoad]);
+  const handleProgress = useCallback(
+    (data: OnProgressData) => {
+      setCurrentTime(data.currentTime);
+      if (
+        __DEV__ &&
+        Math.floor(data.currentTime) % 5 === 0 &&
+        Math.floor(data.currentTime) !== Math.floor(currentTime)
+      ) {
+        console.log('[VideoWithTapControls] Progress:', {
+          currentTime: data.currentTime,
+          duration: duration,
+          isActive: isActive,
+          videoCompleted: videoCompleted,
+        });
+      }
+      onProgress?.(data);
+    },
+    [
+      onProgress,
+      isActive,
+      duration,
+      currentTime,
+      videoCompleted,
+    ],
+  );
 
-  const handleProgress = useCallback((data: OnProgressData) => {
-    setCurrentTime(data.currentTime);
-    if (data.currentTime > 0 && isLoading) {
-      setIsLoading(false);
-    }
-    onProgress?.(data);
-  }, [onProgress, isLoading]);
-
-  const handleBuffer = useCallback((data: any) => {
-    // Keep UI stable on transient buffers; avoid flashing loading overlays.
-    onBuffer?.(data);
-  }, [onBuffer]);
+  const handleBuffer = useCallback(
+    (data: any) => {
+      // Disable buffer callbacks to prevent loading spinners
+      // onBuffer?.(data);
+    },
+    [],
+  );
 
   const handleEnd = useCallback(() => {
+    hasCalledOnPlay.current = false;
     setVideoCompleted(true);
-    setInternalPaused(true);
-    // Prevent immediate auto-restart on the same feed item after completion.
-    setSuppressAutoPlayUntilInactive(true);
   }, []);
 
+  // Clear timers when this post's id changes (recycled list row)
   useEffect(() => {
-    if (videoId) {
-      let alive = true;
-      const fetchPoster = async () => {
-        try {
-          const manifest = await getVideoManifest(videoId);
-          if (alive && manifest?.thumb) {
-            setFetchedPoster(manifest.thumb);
-          }
-        } catch (error) {
-          console.warn('Failed to fetch video poster:', error);
-        }
-      };
-      fetchPoster();
-      return () => { alive = false; };
-    }
-  }, [videoId]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const sourceUri =
-      typeof source === 'object' && source && 'uri' in source
-        ? String((source as any).uri || '')
-        : '';
-
-    if (!sourceUri) {
-      setResolvedUri(null);
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    setResolvedUri(sourceUri);
-
-    const isRemote = /^https?:\/\//i.test(sourceUri);
-    if (!isRemote) {
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    (async () => {
-      try {
-        const cachedPath = await getCachedVideoPath(sourceUri);
-        if (cachedPath && !cancelled) {
-          const localUri =
-            Platform.OS === 'android' && !cachedPath.startsWith('file://')
-              ? `file://${cachedPath}`
-              : cachedPath;
-          setResolvedUri(localUri);
-        } else if ((isActive || shouldPreload) && !cachedPath) {
-          cacheVideo(sourceUri)
-            .then(path => {
-              if (cancelled) return;
-              const localUri =
-                Platform.OS === 'android' && !path.startsWith('file://')
-                  ? `file://${path}`
-                  : path;
-              setResolvedUri(localUri);
-            })
-            .catch(error => {
-              console.warn('Background video cache failed:', error);
-            });
-        }
-      } catch (error) {
-        console.warn('Video cache lookup failed:', error);
-      }
-    })();
-
     return () => {
-      cancelled = true;
+      if (hideTimer.current) {
+        clearTimeout(hideTimer.current);
+        hideTimer.current = null;
+      }
+      setControlsVisible(false);
+      hasCalledOnPlay.current = false;
     };
-  }, [source, isActive, shouldPreload]);
-
-  const resolvedSource = useMemo(() => {
-    if (typeof source === 'number') return source;
-    const srcObj = source as any;
-    if (!srcObj?.uri || !resolvedUri) return source;
-    return { ...srcObj, uri: resolvedUri };
-  }, [source, resolvedUri]);
+  }, [videoId]);
 
   useEffect(() => {
     return () => {
@@ -384,20 +307,17 @@ const VideoWithTapControls: React.FC<Props> = ({
   useEffect(() => {
     if (controlsVisible) {
       const announce = videoCompleted
-        ? "Video completed. Replay available."
-        : internalPaused
-          ? "Player paused. Controls visible."
-          : "Controls visible.";
+        ? 'Video completed. Replay available.'
+        : 'Controls visible.';
       AccessibilityInfo.isScreenReaderEnabled().then(enabled => {
         if (enabled) AccessibilityInfo.announceForAccessibility(announce);
       });
     }
-  }, [controlsVisible, internalPaused, videoCompleted]);
+  }, [controlsVisible, videoCompleted]);
 
-  // Removed: Clear auto-hide timer when video is paused to keep controls visible
   // Detect when video starts playing and call onPlay callback
   useEffect(() => {
-    if (currentTime > 0 && !internalPaused && !hasCalledOnPlay.current) {
+    if (currentTime > 0 && !hasCalledOnPlay.current) {
       hasCalledOnPlay.current = true;
       onPlay?.();
       // Hide controls when video starts playing
@@ -408,52 +328,109 @@ const VideoWithTapControls: React.FC<Props> = ({
         hideControls();
       }, hideTimeout);
     }
-  }, [currentTime, internalPaused, onPlay, hideTimeout, hideControls]);
+  }, [currentTime, onPlay, hideTimeout, hideControls]);
   const posterUri =
     initialPoster ||
-    fetchedPoster ||
-    (videoCompleted && typeof resolvedSource !== 'number'
-      ? String((resolvedSource as any)?.uri || '')
+    (videoCompleted && typeof effectiveSource !== 'number'
+      ? String((effectiveSource as any)?.uri || '')
       : '');
+
+  if (!effectiveSource) {
+    return (
+      <View style={[styles.container, style]}>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: '#000',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Text style={{ color: '#666', fontSize: 16 }}>
+            Invalid video source
+          </Text>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, style]}>
       <Video
         ref={videoRef}
-        source={resolvedSource}
+        source={effectiveSource}
         style={StyleSheet.absoluteFill}
-        paused={internalPaused}
+        paused={paused || videoCompleted}
         resizeMode={resizeMode as any}
-        maxBitRate={maxBitRate}
-        bufferConfig={bufferConfig}
-        useTextureView={useTextureView}
-        progressUpdateInterval={progressUpdateInterval}
-        poster={initialPoster || fetchedPoster}
+        {...(maxBitRate != null ? { maxBitRate } : {})}
+        {...(bufferConfig != null ? { bufferConfig } : {})}
+        {...(useTextureView !== undefined
+          ? { useTextureView }
+          : Platform.OS === 'android'
+            ? { useTextureView: false }
+            : {})}
+        {...(progressUpdateInterval != null
+          ? { progressUpdateInterval }
+          : {})}
+        poster={initialPoster ?? undefined}
         posterResizeMode={posterResizeMode as any}
-        disableFocus={disableFocus}
-        playInBackground={playInBackground}
-        playWhenInactive={playWhenInactive}
-        ignoreSilentSwitch={ignoreSilentSwitch as any}
-        controls={controls}
+        disableFocus={
+          typeof disableFocus === 'boolean'
+            ? disableFocus
+            : Platform.OS === 'android'
+        }
+        playInBackground={playInBackground ?? false}
+        playWhenInactive={playWhenInactive ?? false}
+        ignoreSilentSwitch={ignoreSilentSwitch ?? 'ignore'}
+        controls={false}
         muted={isMuted}
         rate={playbackRate}
+        preventsDisplaySleepDuringVideoPlayback={isActive}
         volume={audioVolume}
+        repeat={false}
         onLoad={handleLoad}
         onProgress={handleProgress}
         onBuffer={handleBuffer}
         onError={(err: any) => {
-          setIsLoading(false);
-          onError?.(err);
+          try {
+            console.error('Video playback error:', err);
+            console.error('Error code:', err.errorCode);
+            console.error('Error description:', err.errorDescription);
+            console.error('Video URI:', (effectiveSource as any)?.uri);
+
+            // If it's a source error, the URL is likely invalid
+            if (
+              err.errorCode === 'source' ||
+              err.errorDescription?.includes('Source error')
+            ) {
+              console.error(
+                'ExoPlayer Source Error - Invalid or inaccessible video URL',
+              );
+            }
+
+            // Safely call onError callback
+            try {
+              onError?.(err);
+            } catch (callbackError) {
+              console.error('Error in onError callback:', callbackError);
+            }
+          } catch (handlingError) {
+            console.error('Error in video error handler:', handlingError);
+          }
         }}
         onEnd={handleEnd}
+        onAudioBecomingNoisy={() => {
+          // Handle audio becoming noisy (headphones disconnected)
+          if (!isMuted) {
+            setIsMuted(true);
+          }
+        }}
       />
-      <TouchableWithoutFeedback 
-        onPress={onVideoTap}
-      >
+      <TouchableWithoutFeedback onPress={onVideoTap}>
         <View style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
-      {/* Show poster overlay when video is paused or completed */}
-      {((internalPaused || videoCompleted) && posterUri) ? (
+      {/* Only show poster overlay when video is completed, not when paused */}
+      {videoCompleted && posterUri ? (
         <View style={styles.posterContainer}>
           <Image
             source={{ uri: posterUri }}
@@ -462,107 +439,36 @@ const VideoWithTapControls: React.FC<Props> = ({
           />
         </View>
       ) : null}
-      {videoCompleted && (
-        <View style={styles.replayContainer}>
-          <Pressable
-            accessibilityLabel="Replay video"
-            onPress={onPlayPause}
-            style={({ pressed }) => [
-              styles.replayButton,
-              pressed && {
-                opacity: 0.6,
-                transform: [{ scale: 0.9 }],
-              }
-            ]}
-            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <Text style={styles.replaySymbol}>↺</Text>
-          </Pressable>
-        </View>
-      )}
       <Animated.View
-        pointerEvents={controlsVisible ? "auto" : "none"}
-        style={[styles.controlsContainer, { opacity: controlsOpacity, zIndex: 10 }]}
+        pointerEvents={controlsVisible ? 'auto' : 'none'}
+        style={[
+          styles.controlsContainer,
+          { opacity: controlsOpacity, zIndex: 10 },
+        ]}
       >
-        <View style={styles.controlsRow}>
+                <View style={styles.timeContainer}>
           <Pressable
-            accessibilityLabel="Rewind ten seconds"
-            onPress={onRewind}
-            style={({ pressed }) => [
-              styles.seekButton,
-              pressed && {
-                opacity: 0.6,
-                transform: [{ scale: 0.9 }],
-              }
-            ]}
-            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <View style={styles.seekCircle}>
-              <Text style={styles.seekNumber}>{seekStep}</Text>
-            </View>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={videoCompleted ? "Replay video" : internalPaused ? "Play" : "Pause"}
-            onPress={onPlayPause}
-            style={({ pressed }) => [
-              styles.playButton,
-              pressed && {
-                opacity: 0.6,
-                transform: [{ scale: 0.9 }],
-              }
-            ]}
-            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <View style={styles.playCircle}>
-              <Text style={styles.playSymbol}>
-                {internalPaused ? "▶" : "⏸"}
-              </Text>
-            </View>
-          </Pressable>
-
-          <Pressable
-            accessibilityLabel="Fast forward ten seconds"
-            onPress={onFastForward}
-            style={({ pressed }) => [
-              styles.seekButton,
-              pressed && {
-                opacity: 0.6,
-                transform: [{ scale: 0.9 }],
-              }
-            ]}
-            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-          >
-            <View style={styles.seekCircle}>
-              <Text style={styles.seekNumber}>{seekStep}</Text>
-            </View>
-          </Pressable>
-        </View>
-        <View style={styles.timeContainer}>
-          <Pressable
-            accessibilityLabel={isMuted ? "Unmute video" : "Mute video"}
+            accessibilityLabel={isMuted ? 'Unmute video' : 'Mute video'}
             onPress={onToggleMute}
             style={({ pressed }) => [
               styles.muteButton,
               pressed && {
                 opacity: 0.6,
                 transform: [{ scale: 0.9 }],
-              }
+              },
             ]}
             hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
             pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
-            android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
+            android_ripple={{
+              color: 'rgba(255, 255, 255, 0.3)',
+              borderless: false,
+            }}
           >
-            <Text style={styles.muteSymbol}>{isMuted ? "🔇" : "🔊"}</Text>
+            <View style={styles.muteCircle}>
+              <Text style={styles.muteSymbol}>
+                {isMuted ? '🔇' : '🔊'}
+              </Text>
+            </View>
           </Pressable>
           <Text style={styles.timeText}>
             {formatTime(currentTime)} / {formatTime(duration)}
@@ -575,118 +481,65 @@ const VideoWithTapControls: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: appTokens.colors.mediaBackdrop,
-    overflow: "hidden",
+    backgroundColor: '#000',
+    position: 'relative',
+    overflow: 'hidden',
   },
   controlsContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   controlsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  seekButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 8,
-    padding: 8,
-  },
-  seekCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  seekNumber: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  playButton: {
-    marginHorizontal: 8,
-    padding: 8,
-  },
-  playCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  playSymbol: {
-    color: 'white',
-    fontSize: 20,
-    fontWeight: '600',
+    justifyContent: 'space-between',
   },
   timeContainer: {
-    position: 'absolute',
-    bottom: 14,
-    left: 14,
-    right: 14,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(5,12,20,0.62)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
-    minHeight: 34,
-    zIndex: 10,
+    justifyContent: 'space-between',
   },
   timeText: {
-    color: appTokens.colors.surface,
-    fontSize: 13,
-    fontWeight: '700',
-    fontVariant: ['tabular-nums'],
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '500',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
   },
   muteButton: {
-    padding: 4,
+    padding: 12,
+    minWidth: 48,
+    minHeight: 48,
+  },
+  muteCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   muteSymbol: {
-    fontSize: 16,
-  },
-  replayContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 5,
-  },
-  replayButton: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  replaySymbol: {
-    color: 'white',
-    fontSize: 24,
-    fontWeight: '600',
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   posterContainer: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 1,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   posterImage: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
   },
 });
 
 export default VideoWithTapControls;
-

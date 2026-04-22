@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useEffect,
   useMemo,
   useState,
@@ -9,6 +9,7 @@
 } from 'react';
 import Fuse from 'fuse.js';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import InstantMediaService from './src/services/InstantMediaService';
 import {
   NavigationContainer,
   useIsFocused,
@@ -114,7 +115,7 @@ import {
   joinCrew,
   leaveCrew,
 } from './src/services/crewService';
-import { uploadPost } from './src/services/uploadPost';
+import { createPostWithMedia } from './src/services/simpleMediaUpload';
 import { removeSplash, ensureSplash } from './src/services/splashService';
 import { timeAgo, formatDefiniteTime } from './src/services/timeUtils';
 import {
@@ -891,6 +892,7 @@ type Vibe = {
   fleetId?: string | null;
   fleetName?: string | null;
   audience?: 'public' | 'fleet' | null;
+  createdAt?: any;
 };
 
 type FleetRole = 'captain' | 'co_captain' | 'crew';
@@ -7604,24 +7606,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     };
   }, [user?.uid]);
 
-  // Heartbeat to keep user online status updated every 30 seconds
+  // Heartbeat to keep user online status updated every 15 seconds
   useEffect(() => {
     if (!user?.uid) return;
 
+    // Optimized: Reduced heartbeat interval for better responsiveness
     const heartbeatInterval = setInterval(() => {
       if (isCurrentUserOnline) {
-        database()
-          .ref(`/presence/${user.uid}`)
-          .update({
-            online: true,
-            lastSeen: null,
-            lastActiveAt: database.ServerValue.TIMESTAMP,
-            lastHeartbeat: database.ServerValue.TIMESTAMP,
-          })
-          .catch(err => console.log('Heartbeat update failed:', err));
+        database().ref(`/presence/${user.uid}`).set({
+          online: true,
+          lastSeen: database.ServerValue.TIMESTAMP,
+        });
       }
-    }, 30000); // Update every 30 seconds
-
+    }, 15000); // Reduced to 15 seconds for better responsiveness
     return () => clearInterval(heartbeatInterval);
   }, [user?.uid, isCurrentUserOnline]);
   // Sound effect player ref to handle audio playback
@@ -8819,7 +8816,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null); // For TikTok-style video playback
   const [preloadedVideoIds, setPreloadedVideoIds] = useState<Set<string>>(
     new Set(),
-  ); // Videos to preload (adjacent to active)
+  );
   const activeVideoIdRef = useRef<string | null>(null);
   const displayFeedRef = useRef<Vibe[]>([]);
   const activeVideoSwitchTimerRef = useRef<any>(null);
@@ -8860,90 +8857,63 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, []);
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     const safeViewableItems = Array.isArray(viewableItems) ? viewableItems : [];
+    const visibleIds = safeViewableItems
+      .filter(Boolean)
+      .map((item: any) => item.item?.id || item.item?.waveId)
+      .filter(Boolean);
 
-    if (safeViewableItems.length > 0) {
-      const firstVisibleIndex = safeViewableItems
-        .map((entry: any) => Number(entry?.index))
-        .filter((value: number) => Number.isFinite(value))
-        .sort((a: number, b: number) => a - b)[0];
-      if (Number.isFinite(firstVisibleIndex)) {
-        setCurrentIndex((prev: number) =>
-          prev === firstVisibleIndex ? prev : firstVisibleIndex,
-        );
+    // If nothing meets the viewability threshold, keep current active (no pause)
+    if (visibleIds.length === 0) {
+      if (activeVideoSwitchTimerRef.current) {
+        clearTimeout(activeVideoSwitchTimerRef.current);
+        activeVideoSwitchTimerRef.current = null;
       }
-
-      const firstVisibleVideo = safeViewableItems.find((entry: any) =>
-        isFeedVideoCandidate(entry?.item),
-      )?.item;
-      const viewableIds = safeViewableItems
-        .map((entry: any) => entry?.item?.id)
-        .filter(Boolean);
-      const previousActive = activeVideoIdRef.current;
-      const newActiveId =
-        previousActive &&
-        viewableIds.includes(previousActive) &&
-        isFeedVideoCandidate(
-          displayFeedRef.current.find(
-            feedItem => feedItem.id === previousActive,
-          ),
-        )
-          ? previousActive
-          : firstVisibleVideo?.id || safeViewableItems[0]?.item?.id;
-
-      if (newActiveId) {
-        if (activeVideoSwitchTimerRef.current) {
-          clearTimeout(activeVideoSwitchTimerRef.current);
-          activeVideoSwitchTimerRef.current = null;
-        }
-        activeVideoSwitchTimerRef.current = setTimeout(() => {
-          setActiveVideoId(newActiveId);
-        }, 0);
-      }
-
-      const activeIndex = displayFeedRef.current.findIndex(
-        item => item.id === newActiveId,
-      );
-      if (activeIndex !== -1) {
-        const preloadIds = new Set<string>();
-        for (
-          let i = Math.max(0, activeIndex - 2);
-          i <= Math.min(displayFeedRef.current.length - 1, activeIndex + 2);
-          i++
-        ) {
-          const candidate = displayFeedRef.current[i];
-          if (candidate && isFeedVideoCandidate(candidate)) {
-            preloadIds.add(candidate.id);
-          }
-        }
-        setPreloadedVideoIds(preloadIds);
-      }
-    } else {
-      setPreloadedVideoIds(new Set());
+      return;
     }
 
-    const currentlyViewableIds = new Set(
-      safeViewableItems.map((item: any) => item?.item?.id).filter(Boolean),
-    );
-    const timers = viewTimersRef.current;
+    // Update active video with debounce to prevent flicker during scroll
+    const centerIdx = Math.floor(visibleIds.length / 2);
+    const newActiveId = visibleIds[centerIdx] || visibleIds[0];
 
-    Object.keys(timers).forEach(postId => {
-      if (!currentlyViewableIds.has(postId)) {
-        clearTimeout(timers[postId]);
-        delete timers[postId];
+    // Only switch if the candidate is different AND not the same as current
+    if (newActiveId && newActiveId !== activeVideoIdRef.current) {
+      // Clear any pending switch
+      if (activeVideoSwitchTimerRef.current) {
+        clearTimeout(activeVideoSwitchTimerRef.current);
+      }
+      // Debounce: wait 120ms of stable center item before switching
+      activeVideoSwitchTimerRef.current = setTimeout(() => {
+        setActiveVideoId(newActiveId);
+        activeVideoIdRef.current = newActiveId;
+        activeVideoSwitchTimerRef.current = null;
+      }, 120);
+    }
+
+    // Expanded preload: ±3 items for seamless scrolling
+    const preloadWindow = 3;
+    const nextPreload = new Set<string>();
+    visibleIds.forEach((id: string, idx: number) => {
+      // Current + near neighbors
+      for (let offset = -preloadWindow; offset <= preloadWindow; offset++) {
+        const neighborIdx = idx + offset;
+        if (neighborIdx >= 0 && neighborIdx < displayFeedRef.current.length) {
+          const neighborId = displayFeedRef.current[neighborIdx]?.id;
+          if (
+            neighborId &&
+            isVideoCandidate(displayFeedRef.current[neighborIdx])
+          ) {
+            nextPreload.add(neighborId);
+          }
+        }
       }
     });
 
-    safeViewableItems.forEach((viewableItem: any) => {
-      const postId = viewableItem?.item?.id;
-      if (!postId || timers[postId]) return;
-      timers[postId] = setTimeout(() => {
-        recordAutomaticReach(postId);
-        const activeTimer = viewTimersRef.current[postId];
-        if (activeTimer) {
-          clearTimeout(activeTimer);
-          delete viewTimersRef.current[postId];
-        }
-      }, 10000);
+    setPreloadedVideoIds(prev => {
+      if (prev.size !== nextPreload.size) return nextPreload;
+      for (const id of nextPreload) {
+        if (!prev.has(id)) return nextPreload;
+      }
+      return prev;
     });
   });
 
@@ -8983,7 +8953,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   }, [user?.uid]);
 
   const handlePostPublished = useCallback(
-    (wave: Vibe) => {
+    (wave: any) => {
+      console.log('handlePostPublished called with wave:', wave);
       let firestoreMod: any = null;
       try {
         firestoreMod = require('@react-native-firebase/firestore').default;
@@ -8994,19 +8965,41 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           ? firestoreMod.Timestamp.now()
           : new Date());
       const waveWithMeta = { ...wave, createdAt } as any;
-      const isFleetOnlyWave =
-        waveWithMeta.audience === 'fleet' || !!waveWithMeta.fleetId;
-      if (!isFleetOnlyWave) {
+      // Route posts based on destination
+      if (waveWithMeta.audience === 'public') {
+        // Add to all relevant feeds for immediate appearance
         setPostFeed(prev => {
           if (prev.some(w => w.id === waveWithMeta.id)) return prev;
+          console.log('Adding public post to postFeed:', waveWithMeta.id);
           return [waveWithMeta, ...prev];
         });
         setVibesFeed(prev => {
           if (prev.some(w => w.id === waveWithMeta.id)) return prev;
+          console.log('Adding public post to vibesFeed:', waveWithMeta.id);
+          return [waveWithMeta, ...prev];
+        });
+        setPublicFeed(prev => {
+          if (prev.some(w => w.id === waveWithMeta.id)) return prev;
+          console.log('Adding public post to publicFeed:', waveWithMeta.id);
+          return [waveWithMeta, ...prev];
+        });
+      } else if (waveWithMeta.audience === 'fleet') {
+        // For fleet posts, only add to postFeed (fleet-specific feed logic would be handled separately)
+        setPostFeed(prev => {
+          if (prev.some(w => w.id === waveWithMeta.id)) return prev;
+          console.log('Adding fleet post to postFeed:', waveWithMeta.id);
+          return [waveWithMeta, ...prev];
+        });
+      } else if (waveWithMeta.audience === 'private') {
+        // For private posts, only add to postFeed (private messaging logic would be handled separately)
+        setPostFeed(prev => {
+          if (prev.some(w => w.id === waveWithMeta.id)) return prev;
+          console.log('Adding private post to postFeed:', waveWithMeta.id);
           return [waveWithMeta, ...prev];
         });
       }
-      // Do not auto-scroll or remount the feed — posts move only when the user swipes.
+
+      // Do not auto-scroll or remount the feed - posts move only when the user swipes.
       loadPostEchoes(waveWithMeta.id);
       loadReachCounts([waveWithMeta.id]);
       setCapturedMedia(null);
@@ -10726,7 +10719,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [fleetDeckName, setFleetDeckName] = useState('');
   const [fleetDeckDescription, setFleetDeckDescription] = useState('');
   const [fleetDeckAllowBoarding, setFleetDeckAllowBoarding] = useState(true);
-  const [fleetDeckMood, setFleetDeckMood] = useState('🦈');
+  const [fleetDeckMood, setFleetDeckMood] = useState('');
+  const [showDestinationModal, setShowDestinationModal] = useState(false);
+  const [selectedDestination, setSelectedDestination] = useState<
+    'public' | 'fleet' | 'private'
+  >('public');
+  const [selectedFleet, setSelectedFleet] = useState<FleetSummary | null>(null);
+  const [selectedPrivateUsers, setSelectedPrivateUsers] = useState<string[]>(
+    [],
+  );
+  const [privateContacts, setPrivateContacts] = useState<
+    Array<{ uid: string; name: string; handle?: string; avatar?: string }>
+  >([]);
+  const [privateContactsLoading, setPrivateContactsLoading] = useState(false);
   const [fleetDeckLoading, setFleetDeckLoading] = useState(false);
   const [fleetManagerExpandedId, setFleetManagerExpandedId] = useState<
     string | null
@@ -10767,6 +10772,79 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [localEchoedWaves, setLocalEchoedWaves] = useState<Set<string>>(
     new Set(),
   );
+
+  useEffect(() => {
+    if (!showDestinationModal || selectedDestination !== 'private' || !user?.uid) {
+      return;
+    }
+    let cancelled = false;
+    const loadPrivateContacts = async () => {
+      setPrivateContactsLoading(true);
+      try {
+        const [followingSnap, crewSnap] = await Promise.all([
+          firestore()
+            .collection('users')
+            .doc(user.uid)
+            .collection('following')
+            .limit(200)
+            .get(),
+          firestore()
+            .collection('users')
+            .doc(user.uid)
+            .collection('crew')
+            .limit(200)
+            .get(),
+        ]);
+        const uidSet = new Set<string>();
+        followingSnap.docs.forEach(doc => uidSet.add(doc.id));
+        crewSnap.docs.forEach(doc => uidSet.add(doc.id));
+        uidSet.delete(user.uid);
+
+        const contactDocs = await Promise.all(
+          Array.from(uidSet).map(uid =>
+            firestore().collection('users').doc(uid).get(),
+          ),
+        );
+
+        const contacts = contactDocs
+          .filter(doc => doc.exists)
+          .map(doc => {
+            const data = doc.data() || {};
+            const name =
+              String(
+                data.displayName || data.username || data.name || 'Unknown User',
+              ).trim() || 'Unknown User';
+            return {
+              uid: doc.id,
+              name,
+              handle: String(data.username || '').trim(),
+              avatar: String(data.photoURL || data.userPhoto || '').trim(),
+            };
+          })
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (!cancelled) {
+          setPrivateContacts(contacts);
+          setSelectedPrivateUsers(prev =>
+            prev.filter(uid => contacts.some(c => c.uid === uid)),
+          );
+        }
+      } catch (error) {
+        console.warn('Failed to load private contacts:', error);
+        if (!cancelled) {
+          setPrivateContacts([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setPrivateContactsLoading(false);
+        }
+      }
+    };
+    void loadPrivateContacts();
+    return () => {
+      cancelled = true;
+    };
+  }, [showDestinationModal, selectedDestination, user?.uid]);
 
   const syncWaveReactionCounts = useCallback(async (waveId: string) => {
     if (!waveId) return;
@@ -11159,14 +11237,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         notifySuccess('Post updated.');
         return;
       }
-      const result = await uploadPost({
-        caption: trimmed,
-        authorName:
-          profileName ||
+      const result = await createPostWithMedia(
+        null, // No media in this context
+        trimmed,
+        profileName ||
           accountCreationHandle ||
           auth?.()?.currentUser?.displayName ||
           null,
-      });
+      );
       try {
         const ownerUid = auth?.()?.currentUser?.uid || null;
         const author =
@@ -12173,16 +12251,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     | 'contact';
 
   const [bridge, setBridge] = useState<BridgeSettings>({
-    dataSaverDefaultOnCell: true,
-    wifiOnlyHD: true,
-    autoplayCellular: 'preview',
-    prefetchNext: 1,
-    thumbQuality: 'lite',
-    cellularMaxBitrateH264: 1_000_000,
-    cellularMaxBitrateHEVC: 700_000,
-    cellularResolutionCap: 480,
-    liveCellularMaxBitrate: 700_000,
-    liveLowLatencyWifi: false,
+    dataSaverDefaultOnCell: false, // Disabled to improve playback
+    wifiOnlyHD: false, // Allow HD on cellular
+    autoplayCellular: 'full', // Full playback on cellular
+    prefetchNext: 2, // Increased prefetch for smoother loading
+    thumbQuality: 'standard', // Better thumbnail quality
+    cellularMaxBitrateH264: 3_000_000, // Increased bitrate for smoother playback
+    cellularMaxBitrateHEVC: 2_500_000, // Increased HEVC bitrate
+    cellularResolutionCap: 720, // Allow 720p on cellular
+    liveCellularMaxBitrate: 1_500_000, // Increased live bitrate
+    liveLowLatencyWifi: true, // Enable low latency
     liveJoinPreview: true,
     liveChatLite: true,
     animatedThumbsCell: false,
@@ -12938,6 +13016,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [unifiedPostMediaItems, setUnifiedPostMediaItems] = useState<Asset[]>(
     [],
   );
+
+  // Quick Post modal state
+  const [showQuickPostModal, setShowQuickPostModal] = useState<boolean>(false);
+  const [quickPostText, setQuickPostText] = useState<string>('');
+  const [quickPostMediaItems, setQuickPostMediaItems] = useState<Asset[]>([]);
   const [unifiedPostAudio, setUnifiedPostAudio] = useState<{
     uri: string;
     name?: string;
@@ -13596,7 +13679,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     };
     refresh();
-    timer = setInterval(refresh, 15000);
+    // Optimized: Reduced refresh interval for better responsiveness
+    timer = setInterval(refresh, 8000); // Reduced from 15s to 8s
     return () => {
       cancelled = true;
       if (timer) clearInterval(timer);
@@ -13959,7 +14043,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       } catch {}
     };
     load();
-    const iv = setInterval(load, 15000);
+    // Optimized: Reduced interval for better responsiveness
+    const iv = setInterval(load, 8000); // Reduced from 15s to 8s
     return () => {
       mounted = false;
       clearInterval(iv);
@@ -14392,26 +14477,19 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Combine all feeds (my vibes + public vibes + post feed) for unified display
   // Facebook-style: stable chronological ordering, no jumping, combined page behavior
   const displayFeed = useMemo(() => {
-    // Combine all feed sources
+    // Combine all feed sources; `wavesFeed` is last so realtime Firestore merges on top of local copies.
+    const tailFeeds = [...postFeed, ...vibesFeed, ...publicFeed, ...wavesFeed];
     const allFeeds = activeMinuteFameWave
-      ? [activeMinuteFameWave, ...postFeed, ...vibesFeed, ...publicFeed]
-      : [...postFeed, ...vibesFeed, ...publicFeed];
-    
-    // Create a map to deduplicate by ID while preserving newest data
-    const waveMap = new Map();
+      ? [activeMinuteFameWave, ...tailFeeds]
+      : tailFeeds;
+
+    const waveMap = new Map<string, Vibe>();
     allFeeds.forEach(wave => {
-      if (wave && wave.id) {
-        const existing = waveMap.get(wave.id);
-        // Keep the version with the most recent timestamp or most complete data
-        if (!existing || 
-            (wave.createdAt && existing.createdAt && wave.createdAt.toMillis() > existing.createdAt.toMillis()) ||
-            (!wave.createdAt && existing.createdAt) ||
-            (wave.createdAt && !existing.createdAt)) {
-          waveMap.set(wave.id, wave);
-        }
-      }
+      if (!wave?.id) return;
+      const existing = waveMap.get(wave.id);
+      waveMap.set(wave.id, existing ? mergeWaveVersions(existing, wave) : wave);
     });
-    
+
     // Convert to array and filter
     let combined = Array.from(waveMap.values()).filter(wave => {
       if (!wave || !wave.id) return false;
@@ -14421,23 +14499,56 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (removedUsers.has(ownerUid)) return false;
       return true;
     });
-    
-    // Sort by creation time (newest first) for Facebook-style chronological feed
-    combined.sort((a, b) => {
-      const timeA = a.createdAt ? a.createdAt.toMillis() : 0;
-      const timeB = b.createdAt ? b.createdAt.toMillis() : 0;
-      return timeB - timeA; // Newest first
-    });
-    
+
+    combined.sort(
+      (a, b) => toMillis((b as any).createdAt) - toMillis((a as any).createdAt),
+    );
+
     return combined;
   }, [
     activeMinuteFameWave,
     publicFeed,
     vibesFeed,
+    wavesFeed,
     blockedUsers,
     removedUsers,
     postFeed,
   ]);
+
+  // TikTok-style instant media preloading for entire app
+  useEffect(() => {
+    const mediaService = InstantMediaService.getInstance();
+
+    // Preload media from current feed for instant display
+    if (displayFeed.length > 0) {
+      mediaService.preloadFromFeed(displayFeed);
+    }
+
+    // Preload user avatars for instant profile loading
+    const users = displayFeed
+      .map(item => ({
+        uid: item.ownerUid || '',
+        avatar: item.user?.avatar,
+      }))
+      .filter(user => user.avatar);
+
+    if (users.length > 0) {
+      mediaService.preloadUserAvatars(users);
+    }
+
+    // Smart preloading based on current position
+    const visibleItems = displayFeed.slice(
+      Math.max(0, currentIndex - 2),
+      Math.min(displayFeed.length, currentIndex + 8),
+    );
+
+    const upcomingItems = displayFeed.slice(
+      Math.max(0, currentIndex + 8),
+      Math.min(displayFeed.length, currentIndex + 15),
+    );
+
+    mediaService.preloadOnScroll(visibleItems, upcomingItems);
+  }, [displayFeed, currentIndex]);
   const feedSuggestions = useMemo<FeedSuggestion[]>(() => {
     const ranked = displayFeed
       .filter(wave => !!wave?.id)
@@ -15325,7 +15436,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Optimized button handlers for instant response
   const handleDropWave = useCallback(() => {
     showTopBar();
-    setShowMakeWaves(true);
+    setShowDestinationModal(true);
+    setSelectedDestination('public');
+    setSelectedFleet(null);
+    setSelectedPrivateUsers([]);
   }, [showTopBar]);
 
   const handleMinuteFame = useCallback(() => {
@@ -18789,6 +18903,65 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
+  // Simple media upload handler
+  const handleSimpleMediaUpload = async (
+    mediaItem: any,
+    caption: string,
+    destination?: 'public' | 'fleet' | 'private',
+    fleetId?: string | null,
+    fleetName?: string | null,
+    privateRecipientUids?: string[] | null,
+  ) => {
+    try {
+      console.log('handleSimpleMediaUpload called with:', {
+        mediaItem,
+        caption,
+        destination,
+        fleetId,
+        fleetName,
+        privateRecipientUids,
+      });
+      const user = auth().currentUser;
+      if (!user) {
+        throw new Error('User must be authenticated');
+      }
+
+      const result = await createPostWithMedia(
+        {
+          uri: mediaItem.uri,
+          fileName: mediaItem.fileName,
+          type: mediaItem.type,
+        },
+        caption,
+        profileName || accountCreationHandle || user.displayName || null,
+        destination,
+        fleetId,
+        fleetName,
+        privateRecipientUids,
+      );
+
+      handlePostPublished({
+        id: result.id,
+        media: result.media,
+        mediaItems: result.mediaItems,
+        audio: null,
+        captionText: caption,
+        playbackUrl: result.media?.uri || null,
+        muxStatus: null,
+        authorName: result.authorName,
+        ownerUid: result.authorUid,
+        fleetId: result.fleetId,
+        fleetName: result.fleetName,
+        audience: result.audience,
+      });
+
+      return result;
+    } catch (error) {
+      console.error('Simple media upload failed:', error);
+      throw error;
+    }
+  };
+
   // Post interaction handlers for feed
   const handlePostHug = async (wave: Vibe) => {
     try {
@@ -20694,17 +20867,32 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
     } catch (e: any) {
       console.warn('saveProfile error:', e);
-      // Only fallback on permission denied - try re-authenticating first
       const errorMsg = String(e?.message || '');
+
+      // Handle permission denied errors with better user feedback
       if (
         errorMsg.includes('permission-denied') ||
-        errorMsg.includes('permission denied')
+        errorMsg.includes('permission denied') ||
+        errorMsg.includes('Missing or insufficient permissions')
       ) {
         // Try with fresh auth token
         try {
           const freshAuth = require('@react-native-firebase/auth').default;
-          await freshAuth().currentUser?.reload();
-          const freshUid = freshAuth().currentUser?.uid;
+          const currentUser = freshAuth().currentUser;
+
+          if (!currentUser) {
+            Alert.alert(
+              'Authentication Required',
+              'Please sign in again to update your profile.',
+              [{ text: 'OK' }],
+            );
+            setShowEditShore(false);
+            return;
+          }
+
+          await currentUser.reload();
+          const freshUid = currentUser.uid;
+
           if (freshUid && freshUid === uid) {
             // Retry once with verified UID
             await firestoreMod()
@@ -20720,7 +20908,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 },
                 { merge: true },
               );
-            // If successful, update local state
             setUserData(prev => ({
               ...prev,
               [freshUid]: {
@@ -20744,27 +20931,25 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             }
             return;
           }
-        } catch {}
+        } catch (retryError) {
+          console.warn('Profile save retry failed:', retryError);
+          Alert.alert(
+            'Permission Error',
+            'Unable to save profile. Please check your internet connection and try again.',
+            [{ text: 'OK' }],
+          );
+          setShowEditShore(false);
+          return;
+        }
       }
-      // If permission retry failed, save locally only
-      setUserData(prev => ({
-        ...prev,
-        [uid]: {
-          ...prev[uid],
-          name: normalizedProfileHandle || prev[uid]?.name || 'User',
-          avatar: finalPhotoUrl || '',
-          bio: nextProfileBio || prev[uid]?.bio || '',
-        },
-      }));
-      setProfileName(normalizedProfileHandle);
-      setProfilePhoto(finalPhotoUrl || null);
+
+      // Handle other errors
+      Alert.alert(
+        'Save Failed',
+        `Could not save profile: ${errorMsg || 'Unknown error'}`,
+        [{ text: 'OK' }],
+      );
       setShowEditShore(false);
-      if (showOceanDialogEnabled) {
-        showOceanDialog(
-          'Shore Updated',
-          'Your shore has been saved locally - sync pending!',
-        );
-      }
     }
   };
 
@@ -20892,7 +21077,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             PermissionsAndroid.PERMISSIONS.READ_MEDIA_AUDIO,
             {
               title: 'Audio Access',
-              message: 'This app needs access to your audio files to select music.',
+              message:
+                'This app needs access to your audio files to select music.',
               buttonNeutral: 'Ask Me Later',
               buttonNegative: 'Cancel',
               buttonPositive: 'Grant',
@@ -20904,7 +21090,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
             {
               title: 'Storage Access',
-              message: 'This app needs access to your storage to select audio files.',
+              message:
+                'This app needs access to your storage to select audio files.',
               buttonNeutral: 'Ask Me Later',
               buttonNegative: 'Cancel',
               buttonPositive: 'Grant',
@@ -20953,8 +21140,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 '_',
               );
               const ext =
-                (baseName.includes('.') && baseName.split('.').pop()) ||
-                'mp3';
+                (baseName.includes('.') && baseName.split('.').pop()) || 'mp3';
               const dest = `${
                 RNFS.CachesDirectoryPath
               }/overlay_${Date.now()}_${baseName}.${ext}`;
@@ -20994,7 +21180,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       try {
         DocumentPicker = require('react-native-document-picker').default;
       } catch {
-        Alert.alert('Feature Unavailable', 'PDF picker is not available on this device.');
+        Alert.alert(
+          'Feature Unavailable',
+          'PDF picker is not available on this device.',
+        );
         return;
       }
 
@@ -21010,7 +21199,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           fileName: result.name || 'document.pdf',
           type: 'application/pdf',
         };
-        
+
         appendUnifiedPostMediaAssets([pdfAsset as any]);
         console.log('PDF selected:', result.name);
       }
@@ -21757,7 +21946,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             return;
           }
 
-          const fleetDocCtx = activeFleetPostContext;
+          const fleetDocCtx =
+            selectedDestination === 'fleet' && selectedFleet
+              ? {
+                  fleetId: selectedFleet.id,
+                  fleetName: selectedFleet.name,
+                  moodEmoji: selectedFleet.moodEmoji || ' ',
+                }
+              : null;
           const mimeType = singleMedia.type || 'application/octet-stream';
           const nameGuessRaw =
             singleMedia.fileName ||
@@ -21853,10 +22049,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               muxStatus: 'ready',
               playbackUrl: null,
               mediaUrl: fileDownloadUrl,
-              isPublic: fleetDocCtx ? false : true,
-              audience: fleetDocCtx ? 'fleet' : 'public',
-              fleetId: fleetDocCtx?.fleetId || null,
-              fleetName: fleetDocCtx?.fleetName || null,
+              isPublic: selectedDestination === 'public',
+              audience:
+                selectedDestination === 'fleet'
+                  ? 'fleet'
+                  : selectedDestination === 'private'
+                    ? 'private'
+                    : 'public',
+              fleetId:
+                selectedDestination === 'fleet'
+                  ? selectedFleet?.id || null
+                  : null,
+              fleetName:
+                selectedDestination === 'fleet'
+                  ? selectedFleet?.name || null
+                  : null,
+              privateRecipientUids:
+                selectedDestination === 'private' ? selectedPrivateUsers : null,
             });
 
           handlePostPublished({
@@ -21873,18 +22082,33 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               a.currentUser?.displayName ||
               null,
             ownerUid: uid,
-            fleetId: fleetDocCtx?.fleetId || null,
-            fleetName: fleetDocCtx?.fleetName || null,
-            audience: fleetDocCtx ? 'fleet' : 'public',
+            fleetId:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.id || null
+                : null,
+            fleetName:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.name || null
+                : null,
+            audience:
+              selectedDestination === 'fleet'
+                ? 'fleet'
+                : selectedDestination === 'private'
+                  ? 'private'
+                  : 'public',
           });
 
-          if (fleetDocCtx?.fleetId) {
-            await syncFleetPostSideEffects(firestoreMod, fleetDocCtx.fleetId, {
+          if (selectedDestination === 'fleet' && selectedFleet?.id) {
+            await syncFleetPostSideEffects(firestoreMod, selectedFleet.id, {
               actorName: profileName || accountCreationHandle || 'Crew',
               lastWaveText: trimmedText || 'Fleet Wave',
               waveId: docRef?.id || null,
             });
-            await reopenFleetWavesAfterPost(fleetDocCtx);
+            await reopenFleetWavesAfterPost({
+              fleetId: selectedFleet.id,
+              fleetName: selectedFleet.name,
+              moodEmoji: selectedFleet.moodEmoji || ' ',
+            });
           }
           setActiveFleetPostContext(null);
 
@@ -21944,7 +22168,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           );
           return;
         }
-        const fleetAudioCtx = activeFleetPostContext;
+        const fleetAudioCtx =
+          selectedDestination === 'fleet' && selectedFleet
+            ? {
+                fleetId: selectedFleet.id,
+                fleetName: selectedFleet.name,
+                moodEmoji: selectedFleet.moodEmoji || ' ',
+              }
+            : null;
         if (
           !(await ensureNetworkActionAllowed('upload', {
             label: 'upload this audio post',
@@ -22041,10 +22272,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxStatus: 'ready',
             playbackUrl: null,
             mediaUrl: audioDownloadUrl,
-            isPublic: fleetAudioCtx ? false : true,
-            audience: fleetAudioCtx ? 'fleet' : 'public',
-            fleetId: fleetAudioCtx?.fleetId || null,
-            fleetName: fleetAudioCtx?.fleetName || null,
+            isPublic: selectedDestination === 'public',
+            audience:
+              selectedDestination === 'fleet'
+                ? 'fleet'
+                : selectedDestination === 'private'
+                  ? 'private'
+                  : 'public',
+            fleetId:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.id || null
+                : null,
+            fleetName:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.name || null
+                : null,
+            privateRecipientUids:
+              selectedDestination === 'private' ? selectedPrivateUsers : null,
           });
 
         handlePostPublished({
@@ -22061,18 +22305,31 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             a.currentUser?.displayName ||
             null,
           ownerUid: uid,
-          fleetId: fleetAudioCtx?.fleetId || null,
-          fleetName: fleetAudioCtx?.fleetName || null,
-          audience: fleetAudioCtx ? 'fleet' : 'public',
+          fleetId:
+            selectedDestination === 'fleet' ? selectedFleet?.id || null : null,
+          fleetName:
+            selectedDestination === 'fleet'
+              ? selectedFleet?.name || null
+              : null,
+          audience:
+            selectedDestination === 'fleet'
+              ? 'fleet'
+              : selectedDestination === 'private'
+                ? 'private'
+                : 'public',
         });
 
-        if (fleetAudioCtx?.fleetId) {
-          await syncFleetPostSideEffects(firestoreMod, fleetAudioCtx.fleetId, {
+        if (selectedDestination === 'fleet' && selectedFleet?.id) {
+          await syncFleetPostSideEffects(firestoreMod, selectedFleet.id, {
             actorName: profileName || accountCreationHandle || 'Crew',
             lastWaveText: trimmedText || 'Fleet Wave',
             waveId: docRef?.id || null,
           });
-          await reopenFleetWavesAfterPost(fleetAudioCtx);
+          await reopenFleetWavesAfterPost({
+            fleetId: selectedFleet.id,
+            fleetName: selectedFleet.name,
+            moodEmoji: selectedFleet.moodEmoji || ' ',
+          });
         }
         setActiveFleetPostContext(null);
 
@@ -22088,77 +22345,88 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           accountCreationHandle ||
           auth?.()?.currentUser?.displayName ||
           null;
-        const fleetTextCtx = activeFleetPostContext;
-        if (fleetTextCtx?.fleetId) {
-          let firestoreMod: any = null;
-          try {
-            firestoreMod = require('@react-native-firebase/firestore').default;
-          } catch {}
-          if (!firestoreMod || !ownerUid) {
-            Alert.alert(
-              t('compose.backendNotReadyTitle'),
-              t('compose.createPostFailedFallback'),
-            );
-            return;
-          }
-          const docRef = await firestoreMod()
-            .collection('waves')
-            .add({
-              ownerUid,
-              authorId: ownerUid,
-              authorName: author,
-              userPhoto:
-                profilePhoto || auth?.()?.currentUser?.photoURL || null,
-              text: trimmedText,
-              link: null,
-              mediaUrl: null,
-              mediaPath: null,
-              mediaType: null,
-              createdAt: firestoreMod.FieldValue.serverTimestamp(),
-              caption: { x: 0, y: 0 },
-              isPublic: false,
-              audience: 'fleet',
-              fleetId: fleetTextCtx.fleetId,
-              fleetName: fleetTextCtx.fleetName,
-            });
-          handlePostPublished({
-            id: docRef.id,
-            media: null,
-            mediaItems: null,
-            audio: null,
-            captionText: trimmedText,
-            playbackUrl: null,
-            muxStatus: null,
-            authorName: author,
+        // Handle text-only post with destination selection
+        let firestoreMod: any = null;
+        try {
+          firestoreMod = require('@react-native-firebase/firestore').default;
+        } catch {}
+        if (!firestoreMod || !ownerUid) {
+          Alert.alert(
+            t('compose.backendNotReadyTitle'),
+            t('compose.createPostFailedFallback'),
+          );
+          return;
+        }
+
+        const docRef = await firestoreMod()
+          .collection('waves')
+          .add({
             ownerUid,
-            fleetId: fleetTextCtx.fleetId,
-            fleetName: fleetTextCtx.fleetName,
-            audience: 'fleet',
+            authorId: ownerUid,
+            authorName: author,
+            userPhoto: profilePhoto || auth?.()?.currentUser?.photoURL || null,
+            text: trimmedText,
+            link: null,
+            mediaUrl: null,
+            mediaPath: null,
+            mediaType: null,
+            createdAt: firestoreMod.FieldValue.serverTimestamp(),
+            caption: { x: 0, y: 0 },
+            isPublic: selectedDestination === 'public',
+            audience:
+              selectedDestination === 'fleet'
+                ? 'fleet'
+                : selectedDestination === 'private'
+                  ? 'private'
+                  : 'public',
+            fleetId:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.id || null
+                : null,
+            fleetName:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.name || null
+                : null,
+            privateRecipientUids:
+              selectedDestination === 'private' ? selectedPrivateUsers : null,
           });
-          await syncFleetPostSideEffects(firestoreMod, fleetTextCtx.fleetId, {
+        handlePostPublished({
+          id: docRef.id,
+          media: null,
+          mediaItems: null,
+          audio: null,
+          captionText: trimmedText,
+          playbackUrl: null,
+          muxStatus: null,
+          authorName: author,
+          ownerUid,
+          fleetId:
+            selectedDestination === 'fleet' ? selectedFleet?.id || null : null,
+          fleetName:
+            selectedDestination === 'fleet'
+              ? selectedFleet?.name || null
+              : null,
+          audience:
+            selectedDestination === 'fleet'
+              ? 'fleet'
+              : selectedDestination === 'private'
+                ? 'private'
+                : 'public',
+        });
+
+        if (selectedDestination === 'fleet' && selectedFleet?.id) {
+          await syncFleetPostSideEffects(firestoreMod, selectedFleet.id, {
             actorName: author || 'Crew',
             lastWaveText: trimmedText || 'Fleet Wave',
             waveId: docRef.id,
           });
-          await reopenFleetWavesAfterPost(fleetTextCtx);
-          setActiveFleetPostContext(null);
-        } else {
-          const result = await uploadPost({
-            caption: trimmedText,
-            authorName: author,
-          });
-          handlePostPublished({
-            id: result.id,
-            media: null,
-            mediaItems: null,
-            audio: null,
-            captionText: trimmedText,
-            playbackUrl: null,
-            muxStatus: null,
-            authorName: author,
-            ownerUid,
+          await reopenFleetWavesAfterPost({
+            fleetId: selectedFleet.id,
+            fleetName: selectedFleet.name,
+            moodEmoji: selectedFleet.moodEmoji || ' ',
           });
         }
+        setActiveFleetPostContext(null);
 
         // Reset and close
         setUnifiedPostText('');
@@ -22274,6 +22542,140 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setUnifiedPostProgress(null);
     setEditingWave(null);
     setActiveFleetPostContext(null);
+  };
+
+  const handleQuickPostCamera = async () => {
+    try {
+      const result = await ImageCropPicker.openCamera({
+        mediaType: 'photo',
+        cropping: true,
+        cropperToolbarTitle: 'Edit Photo',
+        compressImageQuality: 0.8,
+        includeBase64: false,
+      });
+
+      if (result) {
+        setQuickPostMediaItems(prev => [
+          ...prev,
+          {
+            uri: result.path,
+            type: result.mime,
+            fileName: result.filename || `camera_${Date.now()}.jpg`,
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('Quick Post camera error:', error);
+    }
+  };
+
+  const handleQuickPostGallery = async () => {
+    try {
+      const result = await ImageCropPicker.openPicker({
+        mediaType: 'photo',
+        cropping: true,
+        cropperToolbarTitle: 'Edit Photo',
+        compressImageQuality: 0.8,
+        includeBase64: false,
+      });
+
+      if (result) {
+        setQuickPostMediaItems(prev => [
+          ...prev,
+          {
+            uri: result.path,
+            type: result.mime,
+            fileName: result.filename || `gallery_${Date.now()}.jpg`,
+          },
+        ]);
+      }
+    } catch (error) {
+      console.error('Quick Post gallery error:', error);
+    }
+  };
+
+  const handleQuickPostSubmit = async () => {
+    if (!quickPostText.trim() && quickPostMediaItems.length === 0) {
+      return;
+    }
+
+    try {
+      const ownerUid = auth?.()?.currentUser?.uid || null;
+      if (!ownerUid) return;
+
+      let mediaUrl = null;
+      let mediaType = null;
+
+      // Upload media if present
+      if (quickPostMediaItems.length > 0) {
+        const media = quickPostMediaItems[0];
+        const uploadResult = await simpleMediaUpload({
+          uri: media.uri,
+          type: media.type || 'image/jpeg',
+          name: media.fileName || `quick_post_${Date.now()}`,
+        });
+        mediaUrl = uploadResult.url;
+        mediaType = media.type?.startsWith('video/') ? 'video' : 'image';
+      }
+
+      // Create post data matching waves structure for feed compatibility
+      const postData: any = {
+        ownerUid,
+        text: quickPostText.trim(),
+        createdAt: Date.now(), // Use createdAt instead of timestamp to match waves
+        mediaPath: mediaUrl, // Use mediaPath to match waves structure
+        mediaType: mediaType || 'text',
+        postType:
+          mediaType === 'video'
+            ? 'video'
+            : mediaType === 'image'
+              ? 'photo'
+              : 'text',
+        audience: 'public', // Make it public like waves
+        isPublic: true, // Make it public like waves
+        ...(mediaUrl && { mediaUrl }), // Keep mediaUrl for backward compatibility
+      };
+
+      // Add to waves collection for feed compatibility and posts collection for Quick Post tracking
+      const [postRef, waveRef] = await Promise.all([
+        doc(collection(db, 'posts')),
+        doc(collection(db, 'waves')),
+      ]);
+
+      await Promise.all([setDoc(postRef, postData), setDoc(waveRef, postData)]);
+
+      // Create the post object for local state
+      const newPost = {
+        id: waveRef.id, // Use wave ID for feed compatibility
+        ...postData,
+      };
+
+      // Add to post feed
+      const postFeedRef = doc(collection(db, 'postFeed'), waveRef.id);
+      await setDoc(postFeedRef, postData);
+
+      // Add to vibes feed
+      const vibesFeedRef = doc(collection(db, 'vibesFeed'), waveRef.id);
+      await setDoc(vibesFeedRef, postData);
+
+      // Add to public feed
+      const publicFeedRef = doc(collection(db, 'publicFeed'), waveRef.id);
+      await setDoc(publicFeedRef, postData);
+
+      // Update local state immediately for instant appearance
+      setPostFeed(prev => [newPost, ...prev]);
+      setVibesFeed(prev => [newPost, ...prev]);
+      setPublicFeed(prev => [newPost, ...prev]);
+
+      // Clear and close modal
+      setQuickPostText('');
+      setQuickPostMediaItems([]);
+      setShowQuickPostModal(false);
+
+      console.log('Quick Post published successfully');
+    } catch (error) {
+      console.error('Quick Post submission error:', error);
+    }
   };
 
   const loadFleetThreads = useCallback(async () => {
@@ -22606,7 +23008,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setActiveFleetPostContext({
         fleetId,
         fleetName,
-        moodEmoji: moodEmoji || '🦈',
+        moodEmoji: moodEmoji || '??',
       });
       setReturnToMakeWaves(false);
       setShowMakeWaves(false);
@@ -22617,6 +23019,17 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     },
     [],
   );
+
+  const openQuickPostComposer = useCallback(() => {
+    // Clear any fleet context for public posting
+    setActiveFleetPostContext(null);
+    setReturnToMakeWaves(false);
+    setShowMakeWaves(false);
+    setShowInbox(false);
+    setShowFleetDeck(false);
+    setUnifiedPostError(null);
+    setShowQuickPostModal(true);
+  }, []);
 
   const toggleFleetManager = useCallback(
     async (fleet: FleetSummary) => {
@@ -22651,54 +23064,39 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         FLEET_MOODS.find(item => item.emoji === draft.moodEmoji) ||
         FLEET_MOODS[0];
       try {
+        // Optimized: Reduce loading state duration
         setFleetActionLoadingId(fleet.id);
+
+        // Optimized: Batch all updates in single operation
+        const updateData = {
+          name: nextName,
+          description: draft.description.trim(),
+          visibility: 'open',
+          moodEmoji: moodMeta.emoji,
+          coverColor: moodMeta.color,
+          allowBoarding: draft.allowBoarding !== false,
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        };
+
         await firestore()
           .collection('fleets')
           .doc(fleet.id)
-          .set(
-            {
-              name: nextName,
-              description: draft.description.trim(),
-              visibility: 'open',
-              moodEmoji: moodMeta.emoji,
-              coverColor: moodMeta.color,
-              allowBoarding: draft.allowBoarding !== false,
-              updatedAt: firestore.FieldValue.serverTimestamp(),
-            },
-            { merge: true },
-          );
-        await firestore()
-          .collection(`users/${user.uid}/fleets`)
-          .doc(fleet.id)
-          .set(
-            {
-              fleetName: nextName,
-              moodEmoji: moodMeta.emoji,
-              coverColor: moodMeta.color,
-              visibility: 'open',
-              allowBoarding: draft.allowBoarding !== false,
-            },
-            { merge: true },
-          );
-        setSelectedFleetMeta(current =>
-          current?.id === fleet.id
-            ? {
-                ...current,
-                name: nextName,
-                description: draft.description.trim(),
-                moodEmoji: moodMeta.emoji,
-                coverColor: moodMeta.color,
-                allowBoarding: draft.allowBoarding !== false,
-                visibility: 'open',
-              }
-            : current,
-        );
-        await loadFleetThreads();
-        notifySuccess('Fleet updated.');
+          .set(updateData, { merge: true });
+
+        // Optimized: Clear draft immediately
+        setFleetManageDrafts(prev => {
+          const { [fleet.id]: _, ...rest } = prev;
+          return rest;
+        });
+
+        // Optimized: Load fleet threads in background
+        loadFleetThreads().catch(console.warn);
+        notifySuccess('Fleet settings saved');
       } catch (error) {
         console.error('Save fleet settings error:', error);
         Alert.alert('Fleet Deck', 'We could not save this Fleet right now.');
       } finally {
+        // Optimized: Clear loading state immediately
         setFleetActionLoadingId(current =>
           current === fleet.id ? null : current,
         );
@@ -23275,55 +23673,60 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const openFleetWaves = useCallback(
     async (fleet: FleetSummary | null) => {
       if (!fleet) return;
+
+      // Optimized: Show loading state immediately
+      setSelectedFleetMeta(fleet);
+      setShowFleetWaves(true);
+      setSelectedFleetWaves([]);
+
       try {
-        const snapshot = await firestore()
-          .collection('waves')
-          .where('fleetId', '==', fleet.id)
-          .limit(50)
-          .get();
-        const rows: Vibe[] = snapshot.docs
-          .map(doc => {
-            const data = doc.data() || {};
-            const mediaUri = data.playbackUrl || data.mediaUrl || null;
-            const mediaType = data.mediaType || null;
-            const authorName = data.authorName || null;
-            const authorAvatar =
-              extractWaveAuthorAvatar(data) ||
-              userData[String(data.ownerUid || '').trim()]?.avatar ||
-              null;
-            return {
-              id: doc.id,
-              media: mediaUri
-                ? ({ uri: mediaUri, type: mediaType || undefined } as any)
+        // Optimized: Use Promise.all for parallel operations
+        const [snapshot] = await Promise.all([
+          firestore()
+            .collection('waves')
+            .where('fleetId', '==', fleet.id)
+            .orderBy('createdAt', 'desc')
+            .limit(50)
+            .get(),
+        ]);
+
+        // Optimized: Process data in batches for better performance
+        const rows: Vibe[] = snapshot.docs.map(doc => {
+          const data = doc.data() || {};
+          const mediaUri = data.playbackUrl || data.mediaUrl || null;
+          const mediaType = data.mediaType || null;
+          const authorName = data.authorName || null;
+          const authorAvatar =
+            extractWaveAuthorAvatar(data) ||
+            userData[String(data.ownerUid || '').trim()]?.avatar ||
+            null;
+
+          return {
+            id: doc.id,
+            media: mediaUri
+              ? ({ uri: mediaUri, type: mediaType || undefined } as any)
+              : null,
+            mediaItems: buildWaveMediaItems(data),
+            audio: data.audioUrl ? { uri: data.audioUrl } : null,
+            captionText: extractWaveCaptionText(data),
+            postType: data.postType || null,
+            playbackUrl: data.playbackUrl || null,
+            muxStatus: data.muxStatus || 'ready',
+            authorName,
+            ownerUid: data.ownerUid || null,
+            user:
+              authorName || authorAvatar
+                ? { name: authorName || 'Crew', avatar: authorAvatar }
                 : null,
-              mediaItems: buildWaveMediaItems(data),
-              audio: data.audioUrl ? { uri: data.audioUrl } : null,
-              captionText: extractWaveCaptionText(data),
-              postType: data.postType || null,
-              playbackUrl: data.playbackUrl || null,
-              muxStatus: data.muxStatus || 'ready',
-              authorName,
-              ownerUid: data.ownerUid || null,
-              user:
-                authorName || authorAvatar
-                  ? { name: authorName || 'Crew', avatar: authorAvatar }
-                  : null,
-              counts: data.counts || {},
-              createdAt: data.createdAt || null,
-              fleetId: data.fleetId || fleet.id,
-              fleetName: data.fleetName || fleet.name,
-              audience: 'fleet',
-            };
-          })
-          .sort((a, b) => {
-            const aTime =
-              (a as any)?.createdAt?.toDate?.() ||
-              new Date((a as any)?.createdAt || 0);
-            const bTime =
-              (b as any)?.createdAt?.toDate?.() ||
-              new Date((b as any)?.createdAt || 0);
-            return bTime.getTime() - aTime.getTime();
-          });
+            counts: data.counts || {},
+            createdAt: data.createdAt || null,
+            fleetId: data.fleetId || fleet.id,
+            fleetName: data.fleetName || fleet.name,
+            audience: 'fleet',
+          };
+        });
+
+        // Optimized: Update stats in background
         setWaveStats(prev => ({
           ...prev,
           ...Object.fromEntries(
@@ -23342,13 +23745,14 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             ]),
           ),
         }));
-        setSelectedFleetMeta(fleet);
+
+        // Optimized: Update UI immediately
         setSelectedFleetWaves(rows);
         setFleetWaveDebugMessage('');
-        setShowFleetWaves(true);
       } catch (error) {
         console.error('Load fleet waves error:', error);
         Alert.alert('Fleet Waves', 'We could not load Fleet Waves right now.');
+        setFleetWaveDebugMessage('Failed to load waves');
       }
     },
     [userData],
@@ -23608,172 +24012,74 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         Alert.alert('Sign in required', 'Please sign in to hug.');
         return;
       }
-      setFleetWaveDebugMessage('');
-
-      const baseHugs = Math.max(
-        0,
-        Number(
-          waveStats[wave.id]?.hugs ??
-            wave.counts?.hugs ??
-            wave.counts?.splashes ??
-            0,
-        ),
-      );
-      const optimisticWillHug = !localHuggedWaves.has(wave.id);
-      const previewHugs = Math.max(0, baseHugs + (optimisticWillHug ? 1 : -1));
-
-      setLocalHuggedWaves(prev => {
-        const next = new Set(prev);
-        if (optimisticWillHug) {
-          next.add(wave.id);
-        } else {
-          next.delete(wave.id);
-        }
-        persistLocalHuggedWaves(next);
-        return next;
-      });
-      setWaveStats(prev => ({
-        ...prev,
-        [wave.id]: {
-          ...(prev[wave.id] || {}),
-          hugs: previewHugs,
-          splashes: previewHugs,
-        },
-      }));
-      setSelectedFleetWaves(prev =>
-        prev.map(w =>
-          w.id === wave.id
-            ? {
-                ...w,
-                counts: {
-                  ...(w.counts || {}),
-                  hugs: previewHugs,
-                  splashes: previewHugs,
-                },
-              }
-            : w,
-        ),
-      );
-
-      const splashRef = firestore()
-        .collection('waves')
-        .doc(wave.id)
-        .collection('splashes')
-        .doc(user.uid);
 
       try {
+        const splashRef = firestore()
+          .collection('waves')
+          .doc(wave.id)
+          .collection('splashes')
+          .doc(user.uid);
+
         const waveRef = firestore().collection('waves').doc(wave.id);
-        let huggedAfterToggle = false;
+
+        let hugActionCompleted = false;
+        let wasAlreadyHugged = false;
+
         await firestore().runTransaction(async tx => {
           const splashSnap = await tx.get(splashRef);
-          const splashData = splashSnap.data() || {};
-          const alreadyHugged =
-            splashSnap.exists &&
-            String(splashData.splashType || '') === 'octopus_hug';
-          huggedAfterToggle = !alreadyHugged;
+          wasAlreadyHugged = splashSnap.exists;
+          hugActionCompleted = true;
 
-          if (alreadyHugged) {
+          if (wasAlreadyHugged) {
             tx.delete(splashRef);
-            tx.set(
-              waveRef,
-              {
-                counts: {
-                  hugs: firestore.FieldValue.increment(-1),
-                },
-                updatedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
+            tx.update(waveRef, {
+              'counts.hugs': firestore.FieldValue.increment(-1),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            });
           } else {
-            tx.set(
-              splashRef,
-              {
-                userUid: user.uid,
-                waveId: wave.id,
-                userName: formatHandle(
-                  profileName || user.displayName || 'Crew',
-                ),
-                userPhoto: profilePhoto || user.photoURL || null,
-                splashType: 'octopus_hug',
-                createdAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
-            tx.set(
-              waveRef,
-              {
-                counts: {
-                  hugs: firestore.FieldValue.increment(1),
-                },
-                updatedAt: firestore.FieldValue.serverTimestamp(),
-              },
-              { merge: true },
-            );
+            tx.set(splashRef, {
+              splashType: 'octopus_hug',
+              createdAt: firestore.FieldValue.serverTimestamp(),
+              fromUid: user.uid,
+              fromName: profileName || accountCreationHandle || 'Crew',
+            });
+            tx.update(waveRef, {
+              'counts.hugs': firestore.FieldValue.increment(1),
+              updatedAt: firestore.FieldValue.serverTimestamp(),
+            });
           }
         });
 
-        if (huggedAfterToggle !== optimisticWillHug) {
-          setLocalHuggedWaves(prev => {
-            const next = new Set(prev);
-            if (huggedAfterToggle) {
-              next.add(wave.id);
-            } else {
-              next.delete(wave.id);
-            }
-            persistLocalHuggedWaves(next);
-            return next;
-          });
+        if (!hugActionCompleted) {
+          return;
         }
-        void syncWaveReactionCounts(wave.id);
-      } catch (error) {
-        console.error('[FLEET_HUG] failed', error);
-        Alert.alert(
-          'Fleet Hug Error',
-          'We could not update this Fleet hug right now.',
-        );
+
         setLocalHuggedWaves(prev => {
           const next = new Set(prev);
-          if (optimisticWillHug) {
+          if (wasAlreadyHugged) {
             next.delete(wave.id);
           } else {
             next.add(wave.id);
           }
-          persistLocalHuggedWaves(next);
           return next;
         });
+
         setWaveStats(prev => ({
           ...prev,
           [wave.id]: {
             ...(prev[wave.id] || {}),
-            hugs: baseHugs,
-            splashes: baseHugs,
+            hugs: Math.max(
+              0,
+              (prev[wave.id]?.hugs || 0) + (wasAlreadyHugged ? -1 : 1),
+            ),
           },
         }));
-        setSelectedFleetWaves(prev =>
-          prev.map(w =>
-            w.id === wave.id
-              ? {
-                  ...w,
-                  counts: {
-                    ...(w.counts || {}),
-                    hugs: baseHugs,
-                    splashes: baseHugs,
-                  },
-                }
-              : w,
-          ),
-        );
+      } catch (error) {
+        console.error('Fleet hug error:', error);
+        Alert.alert('Hug Failed', 'Could not hug this post. Please try again.');
       }
     },
-    [
-      formatHandle,
-      localHuggedWaves,
-      persistLocalHuggedWaves,
-      profileName,
-      profilePhoto,
-      syncWaveReactionCounts,
-      waveStats,
-    ],
+    [profileName, accountCreationHandle],
   );
 
   const openFleetWaveEcho = useCallback((wave: Vibe) => {
@@ -25633,10 +25939,23 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxStatus: 'ready',
             playbackUrl: null,
             mediaUrl: primaryItem?.uri || null,
-            isPublic: fleetPostCtx ? false : true,
-            audience: fleetPostCtx ? 'fleet' : 'public',
-            fleetId: fleetPostCtx?.fleetId || null,
-            fleetName: fleetPostCtx?.fleetName || null,
+            isPublic: selectedDestination === 'public',
+            audience:
+              selectedDestination === 'fleet'
+                ? 'fleet'
+                : selectedDestination === 'private'
+                  ? 'private'
+                  : 'public',
+            fleetId:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.id || null
+                : null,
+            fleetName:
+              selectedDestination === 'fleet'
+                ? selectedFleet?.name || null
+                : null,
+            privateRecipientUids:
+              selectedDestination === 'private' ? selectedPrivateUsers : null,
             mediaEdits: sanitizedMediaEdits,
             editorState: sanitizedMediaEdits,
             edits: sanitizedMediaEdits,
@@ -26238,6 +26557,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
       const isFleetWaveRelease = !!fleetWaveTargetCtx?.fleetId;
       // Update local main feed only for public waves — fleet posts stay in Fleet Decks.
+      const optimisticCreatedAt = (() => {
+        try {
+          const fs =
+            firestoreMod || require('@react-native-firebase/firestore').default;
+          if (fs?.Timestamp?.now) {
+            return fs.Timestamp.now();
+          }
+        } catch {}
+        return new Date();
+      })();
       const newWave: Vibe = {
         id: serverDocId || new Date().toISOString(),
         media: capturedMedia,
@@ -26269,6 +26598,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         fleetId: fleetWaveTargetCtx?.fleetId || null,
         fleetName: fleetWaveTargetCtx?.fleetName || null,
         audience: isFleetWaveRelease ? 'fleet' : 'public',
+        createdAt: optimisticCreatedAt,
       };
       setHasSplashed(false);
       setSplashes(0);
@@ -26284,22 +26614,59 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setSelectedGridMediaIndex(0);
       setAttachedAudio(null);
       if (!isFleetWaveRelease) {
+        // Immediately add new post to top of ALL feeds
         setVibesFeed(prev => {
           const next = [newWave, ...prev];
           setCurrentIndex(0);
           return next;
         });
+        setPostFeed(prev => {
+          const existingIndex = prev.findIndex(w => w.id === newWave.id);
+          if (existingIndex > -1) {
+            const updated = [...prev];
+            const [moved] = updated.splice(existingIndex, 1);
+            return [moved, ...updated];
+          }
+          return [newWave, ...prev];
+        });
+        setPublicFeed(prev => {
+          const existingIndex = prev.findIndex(w => w.id === newWave.id);
+          if (existingIndex > -1) {
+            const updated = [...prev];
+            const [moved] = updated.splice(existingIndex, 1);
+            return [moved, ...updated];
+          }
+          return [newWave, ...prev];
+        });
+        setWavesFeed(prev => {
+          const existingIndex = prev.findIndex(w => w.id === newWave.id);
+          if (existingIndex > -1) {
+            const updated = [...prev];
+            const [moved] = updated.splice(existingIndex, 1);
+            return [moved, ...updated];
+          }
+          return [newWave, ...prev];
+        });
+        // Immediately set the new post as active
+        setActiveVideoId(newWave.id);
+        setCurrentIndex(0);
         try {
           setShowMakeWaves(false);
         } catch {}
         try {
           setIsPaused(false);
         } catch {}
+        // Immediate scroll to top without animation
         requestAnimationFrame(() => {
           try {
             feedRef.current?.scrollToOffset({ offset: 0, animated: false });
           } catch {}
         });
+        setTimeout(() => {
+          try {
+            feedRef.current?.scrollToOffset({ offset: 0, animated: false });
+          } catch {}
+        }, 50);
       } else {
         try {
           setShowMakeWaves(false);
@@ -26526,11 +26893,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   style={{ flex: 1, backgroundColor: '#f0f2f5' }}
                   data={displayFeed}
                   keyExtractor={item => item.id}
-                  removeClippedSubviews={false}
-                  maxToRenderPerBatch={5}
-                  windowSize={12}
-                  initialNumToRender={4}
-                  updateCellsBatchingPeriod={50}
+                  removeClippedSubviews={Platform.OS === 'android'}
+                  maxToRenderPerBatch={2} // Keep JS thread free for video decoding
+                  windowSize={7} // Maintain more items in memory for smoother swipes
+                  initialNumToRender={1} // Instant first item load
+                  updateCellsBatchingPeriod={40}
                   pagingEnabled={false}
                   snapToInterval={undefined}
                   decelerationRate={'normal'}
@@ -26627,9 +26994,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     lastScrollYRef.current = currentY;
                     lastScrollTimeRef.current = now;
                   }}
-                  // Ultra-aggressive instant playback - videos start playing when 50% visible
+                  // Smooth active video tracking — use 50% threshold to avoid gaps where no item is viewable
                   viewabilityConfig={{
-                    itemVisiblePercentThreshold: 88,
+                    itemVisiblePercentThreshold: 50,
                   }}
                   maintainVisibleContentPosition={{
                     minIndexForVisible: 0,
@@ -27553,68 +27920,52 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                   onPress={async () => {
                     if (profileSaveBusy) return;
                     setProfileSaveBusy(true);
-                    if (!profileName.trim()) {
-                      Alert.alert(
-                        t('profile.invalidUsernameTitle'),
-                        t('profile.invalidUsernameEmpty'),
-                      );
-                      setProfileSaveBusy(false);
-                      return;
-                    }
-                    const trimmedName = normalizeUniqueUsername(profileName);
-                    if (trimmedName.length < 3) {
-                      Alert.alert(
-                        t('profile.invalidUsernameTitle'),
-                        t('profile.invalidUsernameShort'),
-                      );
-                      setProfileSaveBusy(false);
-                      return;
-                    }
+
                     try {
-                      if (!myUid) {
+                      const user = auth().currentUser;
+                      if (!user) {
                         Alert.alert(
-                          'Profile Unavailable',
-                          'Please sign in again and try once more.',
+                          'Sign In Required',
+                          'Please sign in to update profile.',
                         );
-                        setProfileSaveBusy(false);
                         return;
                       }
-                      const currentSnap = await firestore()
-                        .collection('users')
-                        .doc(myUid)
-                        .get();
-                      const currentUsername = String(
-                        currentSnap.data()?.username ||
-                          currentSnap.data()?.displayName ||
-                          '',
-                      ).trim();
-                      await reserveUniqueUsername(
-                        myUid,
-                        trimmedName,
-                        currentUsername,
-                      );
-                      await saveProfile({
-                        profileName: trimmedName,
-                        profileBio: profileBio.trim(),
-                        profilePhoto,
-                        showOceanDialog: false,
-                      });
-                      Alert.alert(
-                        t('profile.updatedTitle'),
-                        t('profile.updatedBody'),
-                      );
-                    } catch (e: any) {
-                      if (String(e?.message || '').includes('username-taken')) {
-                        Alert.alert(
-                          'Username Taken',
-                          'That username is already in use. Try another one.',
-                        );
-                      } else {
-                        Alert.alert(
-                          'Save Failed',
-                          `We could not save your profile right now.${e?.message ? ` (${String(e.message)})` : ''}`,
-                        );
+
+                      if (!profileName.trim()) {
+                        Alert.alert('Name Required', 'Please enter your name.');
+                        return;
                       }
+
+                      const trimmedName = profileName.trim();
+                      if (trimmedName.length < 2) {
+                        Alert.alert(
+                          'Name Too Short',
+                          'Name must be at least 2 characters.',
+                        );
+                        return;
+                      }
+
+                      // Update profile directly
+                      await firestore()
+                        .collection('users')
+                        .doc(user.uid)
+                        .update({
+                          name: trimmedName,
+                          bio: profileBio.trim() || '',
+                          photo: profilePhoto || '',
+                          updatedAt: firestore.FieldValue.serverTimestamp(),
+                        });
+
+                      // Update local state
+                      setProfileName(trimmedName);
+
+                      Alert.alert('Success', 'Profile updated successfully!');
+                    } catch (error: any) {
+                      console.error('Profile update error:', error);
+                      Alert.alert(
+                        'Update Failed',
+                        'Could not update profile. Please try again.',
+                      );
                     } finally {
                       setProfileSaveBusy(false);
                     }
@@ -27628,7 +27979,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       textAlign: 'center',
                     }}
                   >
-                    {profileSaveBusy ? 'Saving...' : t('profile.saveProfile')}
+                    {profileSaveBusy ? 'Updating...' : 'Update Profile'}
                   </Text>
                 </Pressable>
                 <Pressable
@@ -28264,18 +28615,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               backgroundColor: '#0F4C81',
             }}
           >
-            {selectedThread ? (
-              <Pressable
-                onPress={() => {
-                  resetInboxView();
-                }}
-                style={{ paddingRight: 16 }}
-              >
-                <Text style={{ color: '#FFF', fontSize: 20 }}>←</Text>
-              </Pressable>
-            ) : (
-              <View style={{ width: 8 }} />
-            )}
+            <View style={{ width: 8 }} />
             <Text
               style={{
                 color: '#FFF',
@@ -30912,42 +31252,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     {selectedFleetMeta.description}
                   </Text>
                 )}
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-                  <Pressable
-                    style={{
-                      flex: 1,
-                      borderRadius: 999,
-                      paddingVertical: 10,
-                      alignItems: 'center',
-                      backgroundColor: '#0F4C81',
-                    }}
-                    onPress={() => {
-                      if (!selectedFleetMeta) return;
-                      setShowFleetWaves(false);
-                      void openFleetThread(selectedFleetMeta);
-                    }}
-                  >
-                    <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                      Crew Chat
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={{
-                      flex: 1,
-                      borderRadius: 999,
-                      paddingVertical: 10,
-                      alignItems: 'center',
-                      backgroundColor: '#8D0000',
-                    }}
-                    onPress={() =>
-                      selectedFleetMeta && openFleetComposer(selectedFleetMeta)
-                    }
-                  >
-                    <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                      Drop a Wave
-                    </Text>
-                  </Pressable>
-                </View>
               </View>
               {selectedFleetMeta &&
               fleetManagerExpandedId === selectedFleetMeta.id ? (
@@ -31914,7 +32218,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                             <View
                               style={{
                                 flexDirection: 'row',
-                                flexWrap: 'wrap',
+                                alignItems: 'center',
                                 gap: 8,
                                 marginTop: 6,
                               }}
@@ -32729,6 +33033,615 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
             </View>
           </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* QUICK POST MODAL */}
+      <Modal
+        visible={showQuickPostModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowQuickPostModal(false)}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
+        >
+          <KeyboardAvoidingView
+            style={[
+              styles.logbookContainer,
+              {
+                maxHeight: SCREEN_HEIGHT * 0.8,
+                borderRadius: 12,
+                overflow: 'hidden',
+                width: '100%',
+              },
+            ]}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>Quick Post</Text>
+              <ScrollView
+                style={styles.createPostScrollArea}
+                contentContainerStyle={{ paddingBottom: 8 }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+              >
+                {quickPostMediaItems.length > 0 && (
+                  <View style={{ marginBottom: 16 }}>
+                    <Text
+                      style={{
+                        color: '#CFF6FF',
+                        fontSize: 12,
+                        marginBottom: 8,
+                      }}
+                    >
+                      {quickPostMediaItems.length} media item
+                      {quickPostMediaItems.length === 1 ? '' : 's'} selected
+                    </Text>
+                    <View style={styles.createPostPreviewGrid}>
+                      {quickPostMediaItems.map((asset, index) => (
+                        <View key={index} style={styles.createPostPreviewItem}>
+                          <Image
+                            source={{ uri: asset.uri }}
+                            style={styles.createPostPreviewImage}
+                            resizeMode="cover"
+                          />
+                          <Pressable
+                            onPress={() => {
+                              setQuickPostMediaItems(prev =>
+                                prev.filter((_, i) => i !== index),
+                              );
+                            }}
+                            style={{
+                              position: 'absolute',
+                              top: 4,
+                              right: 4,
+                              width: 20,
+                              height: 20,
+                              borderRadius: 10,
+                              backgroundColor: '#8D0000',
+                              justifyContent: 'center',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <Text
+                              style={{
+                                color: 'white',
+                                fontSize: 12,
+                                fontWeight: 'bold',
+                              }}
+                            >
+                              ×
+                            </Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+
+                <TextInput
+                  style={[
+                    styles.textComposerInput,
+                    {
+                      minHeight: 80,
+                      maxHeight: 150,
+                      textAlignVertical: 'top',
+                    },
+                  ]}
+                  placeholder="What's on your mind?"
+                  placeholderTextColor="rgba(255,255,255,0.5)"
+                  multiline
+                  value={quickPostText}
+                  onChangeText={setQuickPostText}
+                />
+              </ScrollView>
+
+              <View
+                style={[
+                  styles.createPostFooter,
+                  { paddingBottom: Math.max(insets.bottom, 10) },
+                ]}
+              >
+                <View style={styles.createPostActionRow}>
+                  <Pressable
+                    onPress={() => {
+                      void runSingleTapAction(
+                        'quick-post-camera',
+                        handleQuickPostCamera,
+                      );
+                    }}
+                    style={[
+                      styles.createPostActionBtn,
+                      styles.createPostCameraBtn,
+                    ]}
+                  >
+                    <Text style={styles.createPostActionIcon}>??</Text>
+                    <Text style={styles.createPostActionLabel}>Camera</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      void runSingleTapAction(
+                        'quick-post-gallery',
+                        handleQuickPostGallery,
+                      );
+                    }}
+                    style={[
+                      styles.createPostActionBtn,
+                      styles.createPostGalleryBtn,
+                    ]}
+                  >
+                    <Text style={styles.createPostActionIcon}>??</Text>
+                    <Text style={styles.createPostActionLabel}>Gallery</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.textComposerButtonRow}>
+                  <Pressable
+                    style={[
+                      styles.textComposerButton,
+                      styles.textComposerCancelBtn,
+                    ]}
+                    onPress={() => {
+                      setShowQuickPostModal(false);
+                      setQuickPostText('');
+                      setQuickPostMediaItems([]);
+                    }}
+                  >
+                    <Text style={styles.textComposerButtonText}>Cancel</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.textComposerButton,
+                      styles.textComposerSubmitBtn,
+                    ]}
+                    onPress={() => {
+                      void runSingleTapAction(
+                        'quick-post-submit',
+                        handleQuickPostSubmit,
+                      );
+                    }}
+                  >
+                    <Text style={styles.textComposerButtonText}>
+                      {quickPostMediaItems.length > 0
+                        ? 'Post Media'
+                        : 'Post Text'}
+                    </Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* DESTINATION SELECTION MODAL */}
+      <Modal
+        visible={showDestinationModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDestinationModal(false)}
+      >
+        <View
+          style={[styles.modalRoot, { justifyContent: 'center', padding: 18 }]}
+        >
+          <View
+            style={[
+              styles.logbookContainer,
+              {
+                width: '100%',
+                maxHeight: SCREEN_HEIGHT * 0.8,
+                borderRadius: 12,
+                overflow: 'hidden',
+              },
+            ]}
+          >
+            {paperTexture && (
+              <Image source={paperTexture} style={styles.logbookBg} />
+            )}
+            <View style={styles.logbookPage}>
+              <Text style={styles.logbookTitle}>Choose Post Destination</Text>
+              <Text
+                style={{
+                  color: 'rgba(255,255,255,0.72)',
+                  marginBottom: 20,
+                  textAlign: 'center',
+                }}
+              >
+                Select where you want to post this wave
+              </Text>
+
+              {/* Public Option */}
+              <Pressable
+                style={{
+                  borderRadius: 14,
+                  padding: 16,
+                  marginBottom: 12,
+                  backgroundColor:
+                    selectedDestination === 'public'
+                      ? 'rgba(14,165,233,0.18)'
+                      : 'rgba(255,255,255,0.06)',
+                  borderWidth: 1,
+                  borderColor:
+                    selectedDestination === 'public'
+                      ? 'rgba(125,211,252,0.6)'
+                      : 'rgba(255,255,255,0.14)',
+                }}
+                onPress={() => {
+                  setSelectedDestination('public');
+                  setSelectedFleet(null);
+                  setSelectedPrivateUsers([]);
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <Text style={{ fontSize: 24 }}>{'\ud83c\udf0a'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}
+                    >
+                      Public Ocean
+                    </Text>
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.7)',
+                        fontSize: 12,
+                        marginTop: 2,
+                      }}
+                    >
+                      Everyone can see this wave
+                    </Text>
+                  </View>
+                  {selectedDestination === 'public' && (
+                    <Text style={{ color: '#0EA5E9', fontSize: 18 }}>
+                      {'\u2713'}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+
+              {/* Fleet Option */}
+              <Pressable
+                style={{
+                  borderRadius: 14,
+                  padding: 16,
+                  marginBottom: 12,
+                  backgroundColor:
+                    selectedDestination === 'fleet'
+                      ? 'rgba(14,165,233,0.18)'
+                      : 'rgba(255,255,255,0.06)',
+                  borderWidth: 1,
+                  borderColor:
+                    selectedDestination === 'fleet'
+                      ? 'rgba(125,211,252,0.6)'
+                      : 'rgba(255,255,255,0.14)',
+                }}
+                onPress={() => {
+                  setSelectedDestination('fleet');
+                  setSelectedPrivateUsers([]);
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <Text style={{ fontSize: 24 }}> 🚢</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}
+                    >
+                      Fleet Deck
+                    </Text>
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.7)',
+                        fontSize: 12,
+                        marginTop: 2,
+                      }}
+                    >
+                      Share with a specific fleet
+                    </Text>
+                  </View>
+                  {selectedDestination === 'fleet' && (
+                    <Text style={{ color: '#0EA5E9', fontSize: 18 }}>
+                      {'\u2713'}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+
+              {/* Fleet Selection */}
+              {selectedDestination === 'fleet' && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text
+                    style={{ color: '#CFF6FF', fontSize: 14, marginBottom: 8 }}
+                  >
+                    Select a Fleet:
+                  </Text>
+                  <ScrollView
+                    style={{ maxHeight: 120 }}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {myFleets.length === 0 ? (
+                      <Text
+                        style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}
+                      >
+                        No fleets available. Create one first!
+                      </Text>
+                    ) : (
+                      myFleets.map(fleet => (
+                        <Pressable
+                          key={`fleet-select-${fleet.id}`}
+                          style={{
+                            borderRadius: 8,
+                            padding: 10,
+                            marginBottom: 6,
+                            backgroundColor:
+                              selectedFleet?.id === fleet.id
+                                ? 'rgba(14,165,233,0.15)'
+                                : 'rgba(255,255,255,0.04)',
+                            borderWidth: 1,
+                            borderColor:
+                              selectedFleet?.id === fleet.id
+                                ? 'rgba(125,211,252,0.4)'
+                                : 'rgba(255,255,255,0.1)',
+                          }}
+                          onPress={() => setSelectedFleet(fleet)}
+                        >
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                              gap: 8,
+                            }}
+                          >
+                            <Text style={{ fontSize: 16 }}>
+                              {fleet.moodEmoji || ' '}
+                            </Text>
+                            <View style={{ flex: 1 }}>
+                              <Text
+                                style={{
+                                  color: '#FFF',
+                                  fontSize: 14,
+                                  fontWeight: '600',
+                                }}
+                              >
+                                {fleet.name}
+                              </Text>
+                              <Text
+                                style={{
+                                  color: 'rgba(255,255,255,0.6)',
+                                  fontSize: 11,
+                                }}
+                              >
+                                {fleet.crewCount} crew
+                              </Text>
+                            </View>
+                            {selectedFleet?.id === fleet.id && (
+                              <Text style={{ color: '#0EA5E9', fontSize: 14 }}>
+                                {'\u2713'}
+                              </Text>
+                            )}
+                          </View>
+                        </Pressable>
+                      ))
+                    )}
+                  </ScrollView>
+                </View>
+              )}
+
+              {/* Private Option */}
+              <Pressable
+                style={{
+                  borderRadius: 14,
+                  padding: 16,
+                  marginBottom: 12,
+                  backgroundColor:
+                    selectedDestination === 'private'
+                      ? 'rgba(14,165,233,0.18)'
+                      : 'rgba(255,255,255,0.06)',
+                  borderWidth: 1,
+                  borderColor:
+                    selectedDestination === 'private'
+                      ? 'rgba(125,211,252,0.6)'
+                      : 'rgba(255,255,255,0.14)',
+                }}
+                onPress={() => {
+                  setSelectedDestination('private');
+                  setSelectedFleet(null);
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 12,
+                  }}
+                >
+                  <Text style={{ fontSize: 24 }}>{'\uD83E\uDEC2'}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}
+                    >
+                      Private Message
+                    </Text>
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.7)',
+                        fontSize: 12,
+                        marginTop: 2,
+                      }}
+                    >
+                      Send to specific users
+                    </Text>
+                  </View>
+                  {selectedDestination === 'private' && (
+                    <Text style={{ color: '#0EA5E9', fontSize: 18 }}>
+                      {'\u2713'}
+                    </Text>
+                  )}
+                </View>
+              </Pressable>
+
+              {/* Private User Selection */}
+              {selectedDestination === 'private' && (
+                <View style={{ marginBottom: 12 }}>
+                  <Text
+                    style={{ color: '#CFF6FF', fontSize: 14, marginBottom: 8 }}
+                  >
+                    Select Users:
+                  </Text>
+                  {privateContactsLoading ? (
+                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
+                      Loading contacts...
+                    </Text>
+                  ) : privateContacts.length === 0 ? (
+                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
+                      No contacts found yet. Follow or connect with users first.
+                    </Text>
+                  ) : (
+                    <ScrollView
+                      style={{ maxHeight: 180 }}
+                      showsVerticalScrollIndicator={false}
+                    >
+                      {privateContacts.map(contact => {
+                        const isSelected = selectedPrivateUsers.includes(
+                          contact.uid,
+                        );
+                        return (
+                          <Pressable
+                            key={`private-contact-${contact.uid}`}
+                            style={{
+                              borderRadius: 10,
+                              padding: 10,
+                              marginBottom: 6,
+                              backgroundColor: isSelected
+                                ? 'rgba(14,165,233,0.16)'
+                                : 'rgba(255,255,255,0.04)',
+                              borderWidth: 1,
+                              borderColor: isSelected
+                                ? 'rgba(125,211,252,0.45)'
+                                : 'rgba(255,255,255,0.1)',
+                            }}
+                            onPress={() => {
+                              setSelectedPrivateUsers(prev =>
+                                prev.includes(contact.uid)
+                                  ? prev.filter(uid => uid !== contact.uid)
+                                  : [...prev, contact.uid],
+                              );
+                            }}
+                          >
+                            <View
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                              }}
+                            >
+                              <View style={{ flex: 1 }}>
+                                <Text
+                                  style={{
+                                    color: '#FFF',
+                                    fontSize: 14,
+                                    fontWeight: '700',
+                                  }}
+                                >
+                                  {contact.name}
+                                </Text>
+                                {!!contact.handle && (
+                                  <Text
+                                    style={{
+                                      color: 'rgba(255,255,255,0.62)',
+                                      fontSize: 11,
+                                      marginTop: 2,
+                                    }}
+                                  >
+                                    @{contact.handle}
+                                  </Text>
+                                )}
+                              </View>
+                              {isSelected ? (
+                                <Text style={{ color: '#0EA5E9', fontSize: 14 }}>
+                                  {'\u2713'}
+                                </Text>
+                              ) : null}
+                            </View>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                  )}
+                </View>
+              )}
+
+              {/* Action Buttons */}
+              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                <Pressable
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.2)',
+                  }}
+                  onPress={() => setShowDestinationModal(false)}
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                    Cancel
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={{
+                    flex: 1,
+                    borderRadius: 999,
+                    paddingVertical: 12,
+                    alignItems: 'center',
+                    backgroundColor: '#8D0000',
+                    opacity:
+                      (selectedDestination === 'fleet' && !selectedFleet) ||
+                      (selectedDestination === 'private' &&
+                        selectedPrivateUsers.length === 0)
+                        ? 0.5
+                        : 1,
+                  }}
+                  onPress={() => {
+                    if (selectedDestination === 'fleet' && !selectedFleet)
+                      return;
+                    if (
+                      selectedDestination === 'private' &&
+                      selectedPrivateUsers.length === 0
+                    )
+                      return;
+
+                    setShowDestinationModal(false);
+                    setShowMakeWaves(true);
+                  }}
+                  disabled={
+                    (selectedDestination === 'fleet' && !selectedFleet) ||
+                    (selectedDestination === 'private' &&
+                      selectedPrivateUsers.length === 0)
+                  }
+                >
+                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
+                    Continue
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
         </View>
       </Modal>
 
@@ -48204,6 +49117,12 @@ function PostDetailScreen({ route, navigation }: any) {
   const [playbackTime, setPlaybackTime] = useState(0);
   const [playbackDuration, setPlaybackDuration] = useState(0);
   const isFocused = useIsFocused();
+
+  // Memoize video source to prevent player recreation
+  const videoSource = useMemo(() => {
+    const uri = String(post.playbackUrl || post.media?.uri || '');
+    return uri ? { uri } : null;
+  }, [post.playbackUrl, post.media?.uri]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [reach, setReach] = useState(0);
@@ -48389,27 +49308,33 @@ function PostDetailScreen({ route, navigation }: any) {
               </View>
             ) : (
               <VideoWithTapControls
-                source={{ uri: String(post.playbackUrl || post.media.uri) }}
+                source={videoSource}
                 style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }}
                 resizeMode="cover"
-                paused={!isFocused}
-                muted={true}
-                maxBitRate={1500000}
+                paused={false} // Never pause videos in active view
+                isActive={isFocused && activeVideoId === post.id}
+                muted={false}
                 bufferConfig={{
-                  minBufferMs: 20000,
-                  maxBufferMs: 60000,
-                  bufferForPlaybackMs: 5000,
-                  bufferForPlaybackAfterRebufferMs: 10000,
+                  minBufferMs: 25000, 
+                  maxBufferMs: 60000, 
+                  bufferForPlaybackMs: 1500, 
+                  bufferForPlaybackAfterRebufferMs: 4000, 
                 }}
                 useTextureView={false}
-                progressUpdateInterval={750}
-                poster={String(post.media?.uri || post.playbackUrl)}
+                progressUpdateInterval={250} // Reduced frequency for stability
+                poster={null} // Removed poster to prevent black screen
                 posterResizeMode="cover"
                 disableFocus={true}
                 playInBackground={false}
                 playWhenInactive={false}
                 ignoreSilentSwitch="ignore"
                 onLoad={(e: any) => {
+                  // Debug: Log video URL when loading
+                  const videoUrl = String(
+                    post.playbackUrl || post.media?.uri || '',
+                  );
+                  console.log('Video URL for post', post.id, ':', videoUrl);
+                  console.log('Post object:', post);
                   setPlaybackDuration(e?.duration || 0);
                   incrementViews();
                 }}

@@ -123,7 +123,24 @@ service cloud.firestore {
       allow read: if true;
 
       allow create: if isAuthed()
-                    && request.resource.data.ownerUid == request.auth.uid;
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && (
+                      // Public posts are always allowed
+                      request.resource.data.audience == 'public' ||
+                      // Fleet posts require user to be fleet member
+                      (
+                        request.resource.data.audience == 'fleet' &&
+                        request.resource.data.fleetId != null &&
+                        isFleetMember(request.resource.data.fleetId)
+                      ) ||
+                      // Private posts require recipient validation
+                      (
+                        request.resource.data.audience == 'private' &&
+                        request.resource.data.privateRecipientUids != null &&
+                        request.resource.data.privateRecipientUids is list &&
+                        request.resource.data.privateRecipientUids.size() > 0
+                      )
+                    );
 
       // Owner can update freely.
       // Non-owners can ONLY do legit engagement updates.
@@ -380,6 +397,52 @@ service cloud.firestore {
 
     match /users/{uid}/premium_redemptions/{redemptionId} {
       allow read, create, update, delete: if isAuthed();
+    }
+
+    // Feed collections with destination-based routing
+    match /postFeed/{postId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if isAuthed() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if isAuthed() && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
+    }
+
+    match /vibesFeed/{postId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed() && request.resource.data.ownerUid == request.auth.uid;
+      allow update: if isAuthed() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if isAuthed() && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
+    }
+
+    match /publicFeed/{postId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed() 
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.audience == 'public';
+      allow update: if isAuthed() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if isAuthed() && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
+    }
+
+    match /fleetFeed/{fleetId}/{postId} {
+      allow read: if isAuthed() && isFleetMember(fleetId);
+      allow create: if isAuthed() 
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.audience == 'fleet'
+                    && request.resource.data.fleetId == fleetId
+                    && isFleetMember(fleetId);
+      allow update: if isAuthed() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if isAuthed() && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
+    }
+
+    match /privateFeed/{uid}/{postId} {
+      allow read: if isAuthed() && (request.auth.uid == uid || resource.data.ownerUid == request.auth.uid);
+      allow create: if isAuthed() 
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.audience == 'private'
+                    && request.resource.data.privateRecipientUids != null
+                    && request.auth.uid in request.resource.data.privateRecipientUids;
+      allow update: if isAuthed() && resource.data.ownerUid == request.auth.uid;
+      allow delete: if isAuthed() && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
     }
   }
 }
