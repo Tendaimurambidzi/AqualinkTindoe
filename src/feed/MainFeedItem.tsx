@@ -377,6 +377,7 @@ const MainFeedItem = memo<MainFeedItemProps>(
     const [splashSyncStatus, setSplashSyncStatus] = useState<
       'idle' | 'saving' | 'error'
     >('idle');
+    const pendingHugEchoIds = useRef<Set<string>>(new Set());
     const [lastSplashAction, setLastSplashAction] = useState<
       'add' | 'remove' | null
     >(null);
@@ -1156,17 +1157,20 @@ const MainFeedItem = memo<MainFeedItemProps>(
     const toggleEchoHug = useCallback(
       async (echo: any) => {
         if (!echo?.id || !myUid) return;
+        const echoId = String(echo.id);
+        if (pendingHugEchoIds.current.has(echoId)) return; // prevent double-tap
+        pendingHugEchoIds.current.add(echoId);
         const { hugs, hugged } = getEchoHugState(echo);
         const nextHugs = Math.max(0, hugs + (hugged ? -1 : 1));
         setLocalEchoHugs(prev => ({
           ...prev,
-          [echo.id]: { hugs: nextHugs, hugged: !hugged },
+          [echoId]: { hugs: nextHugs, hugged: !hugged },
         }));
 
         try {
           const ref = firestore()
             .collection(`waves/${item.id}/echoes`)
-            .doc(echo.id);
+            .doc(echoId);
           const FieldValue = (firestore as any).FieldValue;
           await ref.set(
             {
@@ -1181,8 +1185,10 @@ const MainFeedItem = memo<MainFeedItemProps>(
           // Revert UI on error
           setLocalEchoHugs(prev => ({
             ...prev,
-            [echo.id]: { hugs, hugged },
+            [echoId]: { hugs, hugged },
           }));
+        } finally {
+          pendingHugEchoIds.current.delete(echoId);
         }
       },
       [getEchoHugState, item.id, myUid],
@@ -1257,6 +1263,7 @@ const MainFeedItem = memo<MainFeedItemProps>(
         const isExpanded = expandedReplies[echo.id];
         const replyCountLabel = `${translate('feed.replyAction')}(${echo.replyCount || 0})`;
         const hugCountLabel = `${translate('feed.hugAction')}(${hugs})`;
+        const isHugPending = pendingHugEchoIds.current.has(String(echo.id));
 
         return (
           <View
@@ -1349,11 +1356,13 @@ const MainFeedItem = memo<MainFeedItemProps>(
               <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
                 <Pressable
                   onPress={() => toggleEchoHug(echo)}
+                  disabled={isHugPending}
                   style={{
                     backgroundColor: 'rgba(255,235,59,0.95)',
                     paddingHorizontal: 8,
                     paddingVertical: 4,
                     borderRadius: 8,
+                    opacity: isHugPending ? 0.6 : 1,
                   }}
                 >
                   <Text
@@ -1953,47 +1962,54 @@ const MainFeedItem = memo<MainFeedItemProps>(
                             flexDirection: 'row',
                             flexWrap: 'wrap',
                             width: SCREEN_WIDTH,
-                            height: 400,
+                            gap: 0,
                           }}
                         >
-                          {galleryMediaItems.slice(0, 4).map((m, i) => (
-                            <View
-                              key={i}
-                              style={{
-                                width: '50%',
-                                height: '50%',
-                                padding: 1,
-                              }}
-                            >
-                              <InstantImage
-                                source={{ uri: m.uri }}
-                                style={{ width: '100%', height: '100%' }}
-                                resizeMode="contain"
-                              />
-                              {i === 3 && galleryMediaItems.length > 4 && (
-                                <View
-                                  style={[
-                                    StyleSheet.absoluteFill,
-                                    {
-                                      backgroundColor: 'rgba(0,0,0,0.6)',
-                                      justifyContent: 'center',
-                                      alignItems: 'center',
-                                    },
-                                  ]}
-                                >
-                                  <Text
-                                    style={{
-                                      color: 'white',
-                                      fontSize: 22,
-                                      fontWeight: '800',
-                                    }}
+                          {galleryMediaItems.slice(0, 6).map((m, i) => {
+                            const isOverlay =
+                              galleryMediaItems.length > 6 && i === 5;
+                            const overlayText = `+${galleryMediaItems.length - 6}`;
+                            return (
+                              <View
+                                key={i}
+                                style={{
+                                  width: '33.333%',
+                                  aspectRatio: 1,
+                                  padding: 0,
+                                  margin: 0,
+                                  backgroundColor: '#000',
+                                }}
+                              >
+                                <InstantImage
+                                  source={{ uri: m.uri }}
+                                  style={{ width: '100%', height: '100%' }}
+                                  resizeMode="contain"
+                                />
+                                {isOverlay && (
+                                  <View
+                                    style={[
+                                      StyleSheet.absoluteFill,
+                                      {
+                                        backgroundColor: 'rgba(0,0,0,0.6)',
+                                        justifyContent: 'center',
+                                        alignItems: 'center',
+                                      },
+                                    ]}
                                   >
-                                    +{galleryMediaItems.length - 4}
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                          ))}
+                                    <Text
+                                      style={{
+                                        color: 'white',
+                                        fontSize: 22,
+                                        fontWeight: '800',
+                                      }}
+                                    >
+                                      {overlayText}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                            );
+                          })}
                         </View>
                       ) : (
                         <InstantImage

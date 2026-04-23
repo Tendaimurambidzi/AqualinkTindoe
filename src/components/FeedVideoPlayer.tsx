@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Video, { OnProgressData } from 'react-native-video';
+import { useNetInfo } from '@react-native-community/netinfo';
 import { appTokens } from '../theme/tokens';
 import { useGlobalMute } from '../contexts/GlobalMuteContext';
 
@@ -60,6 +61,10 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const netInfo = useNetInfo();
+  const [showNetBanner, setShowNetBanner] = useState(false);
+  const netBannerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastNetBannerTimeRef = useRef<number>(0);
 
   const isMuted = typeof muted === 'boolean' ? muted : isGloballyMuted;
 
@@ -90,6 +95,28 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
       // When not active, videos should be muted via global mute
     }
   }, [isActive]);
+
+  // Network warning: brief banner when connection is poor during playback
+  useEffect(() => {
+    const isPoorOrNone = !netInfo.isConnected || netInfo.isConnectionExpensive;
+    const now = Date.now();
+    const cooldown = 15000; // 15 seconds between popups
+    const canShow =
+      isPoorOrNone && now - lastNetBannerTimeRef.current > cooldown;
+
+    if (canShow && !paused && isActive) {
+      setShowNetBanner(true);
+      lastNetBannerTimeRef.current = now;
+      if (netBannerTimerRef.current) clearTimeout(netBannerTimerRef.current);
+      netBannerTimerRef.current = setTimeout(() => {
+        setShowNetBanner(false);
+      }, 3000);
+    }
+
+    return () => {
+      if (netBannerTimerRef.current) clearTimeout(netBannerTimerRef.current);
+    };
+  }, [netInfo.isConnected, netInfo.isConnectionExpensive, paused, isActive]);
 
   const handleLoad = useCallback((meta: any) => {
     setDuration(meta?.duration || 0);
@@ -204,6 +231,14 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
         onError={handleError}
         onEnd={handleEnd}
       />
+
+      {showNetBanner && (
+        <View style={styles.networkBanner}>
+          <Text style={styles.networkBannerText}>
+            Poor network — video may buffer
+          </Text>
+        </View>
+      )}
 
       <Pressable style={StyleSheet.absoluteFill} onPress={revealControls} />
 
@@ -391,6 +426,23 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 20,
     fontWeight: 'bold',
+  },
+  networkBanner: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    zIndex: 20,
+  },
+  networkBannerText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 });
 
