@@ -1168,17 +1168,13 @@ const MainFeedItem = memo<MainFeedItemProps>(
             .collection(`waves/${item.id}/echoes`)
             .doc(echo.id);
           const FieldValue = (firestore as any).FieldValue;
-          if (hugged) {
-            await ref.update({
-              hugs: FieldValue.increment(-1),
-              [`huggedBy.${myUid}`]: FieldValue.delete(),
-            });
-          } else {
-            await ref.update({
-              hugs: FieldValue.increment(1),
-              [`huggedBy.${myUid}`]: true,
-            });
-          }
+          await ref.set(
+            {
+              hugs: FieldValue.increment(hugged ? -1 : 1),
+              [`huggedBy.${myUid}`]: hugged ? FieldValue.delete() : true,
+            },
+            { merge: true },
+          );
           console.log('Hug state persisted successfully');
         } catch (e) {
           console.log('Hug persistence error:', e);

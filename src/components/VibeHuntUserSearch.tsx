@@ -197,46 +197,19 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
     const term = searchQuery.trim();
     if (!term) {
       setResults(directoryUsers.slice(0, 80));
-      setError(
-        directoryUsers.length === 0 && !loading ? 'No users found.' : null,
-      );
+      setError(null);
       return;
     }
 
     const queryNorm = normalizeText(term);
-    const exactMatches = directoryUsers.filter(user => {
+    // Relaxed matching: username or email contains the query (case-insensitive)
+    const matched = directoryUsers.filter(user => {
       const usernameNorm = normalizeText(user.username);
       const emailNorm = normalizeText(user.email);
-      return usernameNorm === queryNorm || emailNorm === queryNorm;
+      return usernameNorm.includes(queryNorm) || emailNorm.includes(queryNorm);
     });
-
-    const prefixMatches = directoryUsers.filter(user => {
-      const usernameNorm = normalizeText(user.username);
-      const emailNorm = normalizeText(user.email);
-      const isPrefix =
-        usernameNorm.startsWith(queryNorm) || emailNorm.startsWith(queryNorm);
-      const isExact = usernameNorm === queryNorm || emailNorm === queryNorm;
-      return isPrefix && !isExact;
-    });
-
-    const fuse = new Fuse(directoryUsers, {
-      keys: ['username', 'email', 'bio'],
-      threshold: 0.36,
-      ignoreLocation: true,
-      minMatchCharLength: 2,
-    });
-    const fuzzyResults = fuse.search(term).map(entry => entry.item);
-
-    const seen = new Set<string>();
-    const merged = [...exactMatches, ...prefixMatches, ...fuzzyResults].filter(
-      user => {
-        if (seen.has(user.uid)) return false;
-        seen.add(user.uid);
-        return true;
-      },
-    );
-    setResults(merged);
-    setError(merged.length === 0 ? 'No matching users found.' : null);
+    setResults(matched);
+    setError(null); // Never block UI with error — show empty list if no matches
   }, [directoryUsers, loading, searchQuery]);
 
   const persistRecentQuery = (value: string) => {

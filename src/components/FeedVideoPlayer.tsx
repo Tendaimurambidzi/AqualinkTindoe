@@ -56,11 +56,11 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [controlsVisible, setControlsVisible] = useState(false);
+  const [videoCompleted, setVideoCompleted] = useState(false);
   const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
 
-  // Use global mute unless explicitly muted prop is provided
   const isMuted = typeof muted === 'boolean' ? muted : isGloballyMuted;
 
   const sourceKey = useMemo(() => {
@@ -81,13 +81,13 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
     setDuration(0);
     setManualPaused(false);
     setControlsVisible(false);
+    setVideoCompleted(false);
     hasSignaledPlayRef.current = false;
   }, [sourceKey]);
 
   useEffect(() => {
     if (!isActive) {
-      // When not active, videos should be muted
-      // Global mute will handle this automatically
+      // When not active, videos should be muted via global mute
     }
   }, [isActive]);
 
@@ -114,6 +114,10 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
     [onError],
   );
 
+  const handleEnd = useCallback(() => {
+    setVideoCompleted(true);
+  }, []);
+
   const hideControlsSoon = useCallback(() => {
     if (hideControlsTimerRef.current) {
       clearTimeout(hideControlsTimerRef.current);
@@ -121,13 +125,47 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
     hideControlsTimerRef.current = setTimeout(() => {
       setControlsVisible(false);
       hideControlsTimerRef.current = null;
-    }, 3000); // Hide after 3 seconds
+    }, 3000);
   }, []);
 
   const revealControls = useCallback(() => {
     setControlsVisible(true);
     hideControlsSoon();
   }, [hideControlsSoon]);
+
+  const safeSeek = useCallback((position: number) => {
+    if (videoRef.current) {
+      videoRef.current.seek(position);
+    }
+  }, []);
+
+  const onRewind = useCallback(() => {
+    const newPosition = Math.max(0, currentTime - 10);
+    safeSeek(newPosition);
+    hideControlsSoon();
+  }, [currentTime, safeSeek, hideControlsSoon]);
+
+  const onFastForward = useCallback(() => {
+    const newPosition = Math.min(duration, currentTime + 10);
+    safeSeek(newPosition);
+    hideControlsSoon();
+  }, [currentTime, duration, safeSeek, hideControlsSoon]);
+
+  const onPlayPause = useCallback(() => {
+    if (videoCompleted) {
+      safeSeek(0);
+      setVideoCompleted(false);
+      setManualPaused(false);
+    } else {
+      setManualPaused(prev => !prev);
+    }
+    hideControlsSoon();
+  }, [videoCompleted, safeSeek, hideControlsSoon]);
+
+  const onToggleMute = useCallback(() => {
+    toggleGlobalMute();
+    hideControlsSoon();
+  }, [toggleGlobalMute, hideControlsSoon]);
 
   useEffect(() => {
     return () => {
@@ -155,7 +193,6 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
         style={StyleSheet.absoluteFill}
         paused={paused || manualPaused}
         muted={isMuted}
-        repeat
         resizeMode={resizeMode as any}
         ignoreSilentSwitch="ignore"
         playInBackground={false}
@@ -165,6 +202,7 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
         onLoad={handleLoad}
         onProgress={handleProgress}
         onError={handleError}
+        onEnd={handleEnd}
       />
 
       <Pressable style={StyleSheet.absoluteFill} onPress={revealControls} />
@@ -176,10 +214,7 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
           </Text>
           <Pressable
             accessibilityLabel={isMuted ? 'Unmute video' : 'Mute video'}
-            onPress={() => {
-              toggleGlobalMute();
-              hideControlsSoon();
-            }}
+            onPress={onToggleMute}
             hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
             style={styles.iconButton}
           >
@@ -190,43 +225,69 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
 
       {controlsVisible ? (
         <View style={styles.controlsOverlay} pointerEvents="box-none">
+          {/* Rewind */}
           <Pressable
-            style={styles.controlPill}
-            onPress={() => {
-              setManualPaused(prev => !prev);
-              hideControlsSoon();
+            accessibilityLabel={`Rewind 10 seconds`}
+            onPress={onRewind}
+            style={({ pressed }) => [
+              styles.controlButton,
+              pressed && { opacity: 0.6, transform: [{ scale: 0.9 }] },
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            android_ripple={{
+              color: 'rgba(255,255,255,0.3)',
+              borderless: false,
             }}
-            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
           >
-            <Text style={styles.controlPillText}>
-              {manualPaused ? '▶' : '⏸'}
-            </Text>
+            <View style={styles.controlCircle}>
+              <Text style={styles.controlSymbol}>⏮</Text>
+            </View>
           </Pressable>
+
+          {/* Play / Pause / Replay */}
           <Pressable
-            style={styles.controlPill}
-            onPress={() => {
-              if (
-                videoRef.current &&
-                typeof videoRef.current.seek === 'function'
-              ) {
-                videoRef.current.seek(0);
-              }
-              setCurrentTime(0);
-              hideControlsSoon();
+            accessibilityRole="button"
+            accessibilityLabel={
+              videoCompleted ? 'Replay video' : manualPaused ? 'Play' : 'Pause'
+            }
+            onPress={onPlayPause}
+            style={({ pressed }) => [
+              styles.playButton,
+              pressed && { opacity: 0.6, transform: [{ scale: 0.9 }] },
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            android_ripple={{
+              color: 'rgba(255,255,255,0.3)',
+              borderless: false,
             }}
-            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
           >
-            <Text style={styles.controlPillText}>↺</Text>
+            <View style={styles.playCircle}>
+              <Text style={styles.playSymbol}>
+                {videoCompleted ? '↺' : manualPaused ? '▶' : '⏸'}
+              </Text>
+            </View>
           </Pressable>
+
+          {/* Fast Forward */}
           <Pressable
-            style={styles.controlPill}
-            onPress={() => {
-              toggleGlobalMute();
-              hideControlsSoon();
+            accessibilityLabel={`Fast forward 10 seconds`}
+            onPress={onFastForward}
+            style={({ pressed }) => [
+              styles.controlButton,
+              pressed && { opacity: 0.6, transform: [{ scale: 0.9 }] },
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            android_ripple={{
+              color: 'rgba(255,255,255,0.3)',
+              borderless: false,
             }}
-            hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
           >
-            <Text style={styles.controlPillText}>{isMuted ? '🔇' : '🔊'}</Text>
+            <View style={styles.controlCircle}>
+              <Text style={styles.controlSymbol}>⏭</Text>
+            </View>
           </Pressable>
         </View>
       ) : null}
@@ -295,20 +356,41 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 14,
   },
-  controlPill: {
-    backgroundColor: 'rgba(0,0,0,0.62)',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.32)',
-    width: 48,
-    height: 48,
+  controlButton: {
+    padding: 8,
+    minWidth: 48,
+    minHeight: 48,
+  },
+  controlCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  controlPillText: {
+  controlSymbol: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  playButton: {
+    padding: 12,
+    minWidth: 48,
+    minHeight: 48,
+  },
+  playCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playSymbol: {
     color: '#fff',
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: 'bold',
   },
 });
 
