@@ -194,8 +194,12 @@ service cloud.firestore {
                       (
                         request.resource.data.diff(resource.data)
                           .changedKeys().hasOnly(["hugs", "huggedBy"])
-                        && (!('hugs' in request.resource.data) || request.resource.data.hugs is number)
-                        && (!('huggedBy' in request.resource.data) || request.resource.data.huggedBy is map)
+                       && (
+                         (!('hugs' in request.resource.data) ||
+                           request.resource.data.hugs is number ||
+                           request.resource.data.hugs is map)  // allow FieldValue.increment sentinel
+                         && (!('huggedBy' in request.resource.data) || request.resource.data.huggedBy is map)
+                       )
                       )
                     );
 
