@@ -56,6 +56,11 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/fleets/$(fleetId)).data.captainUid == request.auth.uid;
     }
 
+    function isPrivateGroupMember(groupId) {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/private_groups/$(groupId)/members/$(request.auth.uid));
+    }
+
     function isPremiumTicketClaim() {
       return isAuthed()
         && resource.data.claimedByUid == null
@@ -236,6 +241,10 @@ service cloud.firestore {
           && (uid == resource.data.callerUid || uid == resource.data.calleeUid)
           && (request.auth.uid == resource.data.callerUid || request.auth.uid == resource.data.calleeUid);
       }
+
+      match /privateGroups/{groupId} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
     }
 
     // Connections (followers) - new collection for follow system
@@ -383,6 +392,46 @@ service cloud.firestore {
       allow create: if request.auth != null
                     && request.auth.uid == userId;
       allow read: if false; // viewers list stays private
+    }
+
+    match /private_groups/{groupId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.inviteCode is string;
+      allow update: if isAuthed() && resource.data.createdBy == request.auth.uid;
+      allow delete: if isAuthed() && resource.data.createdBy == request.auth.uid;
+
+      match /members/{userId} {
+        allow read: if isAuthed() && isPrivateGroupMember(groupId);
+        allow create: if isAuthed() && (
+          (
+            request.auth.uid == userId
+            && get(/databases/$(database)/documents/private_groups/$(groupId)).data.createdBy == request.auth.uid
+            && request.resource.data.role == 'admin'
+          )
+          || (
+            request.auth.uid == userId
+            && request.resource.data.role == 'member'
+            && request.resource.data.joinInviteCode == get(/databases/$(database)/documents/private_groups/$(groupId)).data.inviteCode
+          )
+        );
+        allow update, delete: if false;
+      }
+
+      match /waves/{waveId} {
+        allow read: if isPrivateGroupMember(groupId);
+        allow create: if isPrivateGroupMember(groupId)
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.audience == 'private_group';
+        allow update: if isPrivateGroupMember(groupId) && (
+          resource.data.ownerUid == request.auth.uid ||
+          isOnlyCountsUpdate()
+        );
+        allow delete: if isAuthed()
+          && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
+      }
     }
   }
 }

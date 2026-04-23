@@ -1,7 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Video, { OnProgressData } from 'react-native-video';
 import { appTokens } from '../theme/tokens';
+import { useGlobalMute } from '../contexts/GlobalMuteContext';
 
 type FeedVideoPlayerProps = {
   source: { uri: string } | number;
@@ -43,13 +50,18 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
 }) => {
   const videoRef = useRef<any>(null);
   const hasSignaledPlayRef = useRef(false);
-  const [isMuted, setIsMuted] = useState(true);
+  const { isGloballyMuted, toggleGlobalMute } = useGlobalMute();
   const [manualPaused, setManualPaused] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
   const [controlsVisible, setControlsVisible] = useState(false);
-  const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideControlsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  // Use global mute unless explicitly muted prop is provided
+  const isMuted = typeof muted === 'boolean' ? muted : isGloballyMuted;
 
   const sourceKey = useMemo(() => {
     if (typeof source === 'number') return `asset:${source}`;
@@ -74,22 +86,14 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
 
   useEffect(() => {
     if (!isActive) {
-      setIsMuted(true);
+      // When not active, videos should be muted
+      // Global mute will handle this automatically
     }
   }, [isActive]);
 
-  useEffect(() => {
-    if (typeof muted === 'boolean') {
-      setIsMuted(muted);
-    }
-  }, [muted]);
-
-  const handleLoad = useCallback(
-    (meta: any) => {
-      setDuration(meta?.duration || 0);
-    },
-    [],
-  );
+  const handleLoad = useCallback((meta: any) => {
+    setDuration(meta?.duration || 0);
+  }, []);
 
   const handleProgress = useCallback(
     (progress: OnProgressData) => {
@@ -117,7 +121,7 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
     hideControlsTimerRef.current = setTimeout(() => {
       setControlsVisible(false);
       hideControlsTimerRef.current = null;
-    }, 2200);
+    }, 3000); // Hide after 3 seconds
   }, []);
 
   const revealControls = useCallback(() => {
@@ -165,22 +169,24 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
 
       <Pressable style={StyleSheet.absoluteFill} onPress={revealControls} />
 
-      <View style={styles.bottomBar}>
-        <Text style={styles.bottomText}>
-          {formatTime(currentTime)} / {formatTime(duration)}
-        </Text>
-        <Pressable
-          accessibilityLabel={isMuted ? 'Unmute video' : 'Mute video'}
-          onPress={() => {
-            setIsMuted(prev => !prev);
-            hideControlsSoon();
-          }}
-          hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
-          style={styles.iconButton}
-        >
-          <Text style={styles.iconText}>{isMuted ? '🔇' : '🔊'}</Text>
-        </Pressable>
-      </View>
+      {controlsVisible && (
+        <View style={styles.bottomBar}>
+          <Text style={styles.bottomText}>
+            {formatTime(currentTime)} / {formatTime(duration)}
+          </Text>
+          <Pressable
+            accessibilityLabel={isMuted ? 'Unmute video' : 'Mute video'}
+            onPress={() => {
+              toggleGlobalMute();
+              hideControlsSoon();
+            }}
+            hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+            style={styles.iconButton}
+          >
+            <Text style={styles.iconText}>{isMuted ? '🔇' : '🔊'}</Text>
+          </Pressable>
+        </View>
+      )}
 
       {controlsVisible ? (
         <View style={styles.controlsOverlay} pointerEvents="box-none">
@@ -192,12 +198,17 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
             }}
             hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}
           >
-            <Text style={styles.controlPillText}>{manualPaused ? '▶' : '⏸'}</Text>
+            <Text style={styles.controlPillText}>
+              {manualPaused ? '▶' : '⏸'}
+            </Text>
           </Pressable>
           <Pressable
             style={styles.controlPill}
             onPress={() => {
-              if (videoRef.current && typeof videoRef.current.seek === 'function') {
+              if (
+                videoRef.current &&
+                typeof videoRef.current.seek === 'function'
+              ) {
                 videoRef.current.seek(0);
               }
               setCurrentTime(0);
@@ -210,7 +221,7 @@ const FeedVideoPlayer: React.FC<FeedVideoPlayerProps> = ({
           <Pressable
             style={styles.controlPill}
             onPress={() => {
-              setIsMuted(prev => !prev);
+              toggleGlobalMute();
               hideControlsSoon();
             }}
             hitSlop={{ top: 16, bottom: 16, left: 16, right: 16 }}

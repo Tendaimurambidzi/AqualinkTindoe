@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import React, { useEffect, useMemo, useState } from 'react';
 import Fuse from 'fuse.js';
 import {
   View,
@@ -10,6 +9,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Pressable,
+  Keyboard,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import firestore from '@react-native-firebase/firestore';
@@ -33,6 +33,8 @@ interface VibeHuntUserSearchProps {
   onProfilePhotoSelect?: (photoURL: string | null) => void;
   onOpenUserProfile?: (user: { uid: string; name: string }) => void;
   onOpenAvatarPreview?: (photoURL: string) => void;
+  selectedUserIds?: string[];
+  onUserToggleSelect?: (user: { uid: string; name: string }) => void;
 }
 
 const VIBE_HUNT_RECENT_KEY = 'vibe_hunt_recent_queries';
@@ -57,7 +59,8 @@ const toDateOrNull = (value: any): Date | null => {
 const normalizePhotoUrl = (value?: string | null) => {
   const raw = String(value || '').trim();
   if (!raw) return null;
-  if (raw.toLowerCase() === 'null' || raw.toLowerCase() === 'undefined') return null;
+  if (raw.toLowerCase() === 'null' || raw.toLowerCase() === 'undefined')
+    return null;
   return raw;
 };
 
@@ -80,7 +83,8 @@ const sortUsers = (users: VibeUser[]) =>
     const onlineDelta = Number(b.online === true) - Number(a.online === true);
     if (onlineDelta !== 0) return onlineDelta;
     const pointsDelta =
-      Number(b.minuteFameCareerPoints || 0) - Number(a.minuteFameCareerPoints || 0);
+      Number(b.minuteFameCareerPoints || 0) -
+      Number(a.minuteFameCareerPoints || 0);
     if (pointsDelta !== 0) return pointsDelta;
     return normalizeText(a.username || a.email).localeCompare(
       normalizeText(b.username || b.email),
@@ -93,6 +97,8 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   onProfilePhotoSelect,
   onOpenUserProfile,
   onOpenAvatarPreview,
+  selectedUserIds = [],
+  onUserToggleSelect,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [directoryUsers, setDirectoryUsers] = useState<VibeUser[]>([]);
@@ -100,9 +106,15 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [recentQueries, setRecentQueries] = useState<string[]>([]);
-  const [brokenAvatarIds, setBrokenAvatarIds] = useState<Set<string>>(new Set());
+  const [brokenAvatarIds, setBrokenAvatarIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const blockedSet = useMemo(() => new Set(blockedUserIds), [blockedUserIds]);
+  const selectedSet = useMemo(
+    () => new Set(selectedUserIds),
+    [selectedUserIds],
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -185,7 +197,9 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
     const term = searchQuery.trim();
     if (!term) {
       setResults(directoryUsers.slice(0, 80));
-      setError(directoryUsers.length === 0 && !loading ? 'No users found.' : null);
+      setError(
+        directoryUsers.length === 0 && !loading ? 'No users found.' : null,
+      );
       return;
     }
 
@@ -201,8 +215,7 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
       const emailNorm = normalizeText(user.email);
       const isPrefix =
         usernameNorm.startsWith(queryNorm) || emailNorm.startsWith(queryNorm);
-      const isExact =
-        usernameNorm === queryNorm || emailNorm === queryNorm;
+      const isExact = usernameNorm === queryNorm || emailNorm === queryNorm;
       return isPrefix && !isExact;
     });
 
@@ -215,11 +228,13 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
     const fuzzyResults = fuse.search(term).map(entry => entry.item);
 
     const seen = new Set<string>();
-    const merged = [...exactMatches, ...prefixMatches, ...fuzzyResults].filter(user => {
-      if (seen.has(user.uid)) return false;
-      seen.add(user.uid);
-      return true;
-    });
+    const merged = [...exactMatches, ...prefixMatches, ...fuzzyResults].filter(
+      user => {
+        if (seen.has(user.uid)) return false;
+        seen.add(user.uid);
+        return true;
+      },
+    );
     setResults(merged);
     setError(merged.length === 0 ? 'No matching users found.' : null);
   }, [directoryUsers, loading, searchQuery]);
@@ -232,7 +247,9 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
         term,
         ...prev.filter(item => item.toLowerCase() !== term.toLowerCase()),
       ].slice(0, 8);
-      AsyncStorage.setItem(VIBE_HUNT_RECENT_KEY, JSON.stringify(next)).catch(() => {});
+      AsyncStorage.setItem(VIBE_HUNT_RECENT_KEY, JSON.stringify(next)).catch(
+        () => {},
+      );
       return next;
     });
   };
@@ -240,14 +257,22 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
   const handleUserPress = (user: VibeUser) => {
     persistRecentQuery(searchQuery || user.username || user.email || '');
     onProfilePhotoSelect?.(user.photoURL || null);
-    onOpenUserProfile?.({
+    const mappedUser = {
       uid: user.uid,
       name: String(user.username || user.email || 'User'),
-    });
+    };
+    if (onUserToggleSelect) {
+      onUserToggleSelect(mappedUser);
+      return;
+    }
+    onOpenUserProfile?.(mappedUser);
   };
 
   const getInitials = (user: VibeUser) => {
-    const name = String(user.username || user.email || '?').replace(/^[@/]+/, '');
+    const name = String(user.username || user.email || '?').replace(
+      /^[@/]+/,
+      '',
+    );
     const parts = name.trim().split(/\s+/);
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return `${parts[0][0] || ''}${parts[parts.length - 1][0] || ''}`.toUpperCase();
@@ -255,11 +280,15 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
 
   const renderUser = ({ item }: { item: VibeUser }) => {
     const isBlocked = blockedSet.has(item.uid);
+    const isSelected = selectedSet.has(item.uid);
     const photoUrl = normalizePhotoUrl(item.photoURL);
     const showPhoto = !!photoUrl && !brokenAvatarIds.has(item.uid);
     const statusLine = formatStatusLine(item);
     return (
-      <Pressable style={styles.userItem} onPress={() => handleUserPress(item)}>
+      <Pressable
+        style={[styles.userItem, isSelected ? styles.userItemSelected : null]}
+        onPress={() => handleUserPress(item)}
+      >
         <Pressable
           onPress={() => {
             handleUserPress(item);
@@ -315,7 +344,10 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           ) : null}
         </View>
         <View style={styles.metaCol}>
-          <Text style={styles.pointsValue}>{Number(item.minuteFameCareerPoints || 0)}</Text>
+          {isSelected ? <Text style={styles.selectedTick}>✓</Text> : null}
+          <Text style={styles.pointsValue}>
+            {Number(item.minuteFameCareerPoints || 0)}
+          </Text>
           <Text style={styles.pointsLabel}>points</Text>
         </View>
       </Pressable>
@@ -342,7 +374,15 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
             styles.searchButton,
             pressed && styles.searchButtonPressed,
           ]}
-          onPress={() => persistRecentQuery(searchQuery)}
+          onPress={() => {
+            Keyboard.dismiss();
+            persistRecentQuery(searchQuery);
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          android_ripple={{
+            color: 'rgba(0, 194, 255, 0.3)',
+            borderless: false,
+          }}
         >
           <Text style={styles.searchButtonText}>Search</Text>
         </Pressable>
@@ -380,7 +420,11 @@ const VibeHuntUserSearch: React.FC<VibeHuntUserSearchProps> = ({
           {searchQuery.trim() ? 'Matching users' : 'Popular users'}
         </Text>
         {loading ? (
-          <ActivityIndicator size="small" color="#00C2FF" style={{ paddingVertical: 18 }} />
+          <ActivityIndicator
+            size="small"
+            color="#00C2FF"
+            style={{ paddingVertical: 18 }}
+          />
         ) : error ? (
           <Text style={styles.emptyText}>{error}</Text>
         ) : (
@@ -508,6 +552,12 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(0, 194, 255, 0.18)',
     gap: 10,
   },
+  userItemSelected: {
+    backgroundColor: 'rgba(14, 165, 233, 0.16)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(125, 211, 252, 0.45)',
+  },
   avatar: {
     width: 52,
     height: 52,
@@ -570,6 +620,12 @@ const styles = StyleSheet.create({
   pointsLabel: {
     color: 'rgba(255,255,255,0.62)',
     fontSize: 11,
+  },
+  selectedTick: {
+    color: '#67E8F9',
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 4,
   },
   blockedPill: {
     borderRadius: 999,
@@ -678,4 +734,3 @@ const styles = StyleSheet.create({
 });
 
 export default VibeHuntUserSearch;
-

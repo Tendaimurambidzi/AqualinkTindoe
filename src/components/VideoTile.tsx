@@ -1,6 +1,7 @@
 import React, { memo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import Video from 'react-native-video';
+import { useGlobalMute } from '../contexts/GlobalMuteContext';
 
 const VideoTile = memo(function VideoTile({
   videoId,
@@ -12,6 +13,7 @@ const VideoTile = memo(function VideoTile({
   isActive?: boolean;
 }) {
   const [hasError, setHasError] = useState(false);
+  const { isGloballyMuted } = useGlobalMute();
 
   const videoUrl = manifest?.high || manifest?.med || manifest?.low;
   const posterUrl = manifest?.thumb;
@@ -34,6 +36,7 @@ const VideoTile = memo(function VideoTile({
         paused={false}
         resizeMode="cover"
         repeat={false}
+        muted={isGloballyMuted}
         onError={() => setHasError(true)}
         onLoad={() => setHasError(false)}
         poster={posterUrl}

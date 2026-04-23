@@ -1,7 +1,14 @@
 import React from 'react';
 import { Vibration } from 'react-native';
 
-export type HapticPattern = 'wave' | 'splash' | 'fish' | 'storm' | 'dolphin' | 'gentle' | 'strong';
+export type HapticPattern =
+  | 'wave'
+  | 'splash'
+  | 'fish'
+  | 'storm'
+  | 'dolphin'
+  | 'gentle'
+  | 'strong';
 
 class HapticWaveFeedback {
   static wave() {
@@ -32,6 +39,11 @@ class HapticWaveFeedback {
   static gentle() {
     // Soft single pulse
     Vibration.vibrate(20);
+  }
+
+  static light() {
+    // Light tap feedback
+    Vibration.vibrate(10);
   }
 
   static strong() {

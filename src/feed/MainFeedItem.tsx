@@ -102,6 +102,14 @@ const isImageAsset = (asset: Asset | null | undefined): boolean => {
   return /(\.(jpg|jpeg|png|gif|webp|heic))($|\?)/i.test(uri);
 };
 
+const isPdfAsset = (asset: Asset | null | undefined): boolean => {
+  if (!asset) return false;
+  const t = String(asset.type || '').toLowerCase();
+  if (t.includes('pdf') || t === 'application/pdf') return true;
+  const uri = String(asset.uri || '').toLowerCase();
+  return /\.pdf($|\?)/i.test(uri);
+};
+
 type Vibe = {
   id: string;
   media?: Asset | null;
@@ -254,7 +262,6 @@ interface MainFeedItemProps {
   setShowEchoes: (show: boolean) => void;
   setShowPearls: (show: boolean) => void;
   anchorWave: (item: Vibe) => void;
-  onShareWave: (item: Vibe) => void;
   setEchoExpansionInProgress: React.Dispatch<
     React.SetStateAction<Record<string, boolean>>
   >;
@@ -269,8 +276,6 @@ interface MainFeedItemProps {
   onReplyToEcho: (waveId: string, echo: any) => void;
   onOpenCreatorProfile: (userId: string, userName?: string | null) => void;
   onOpenProfilePicture: (uri: string) => void;
-  onOpenFleetDeck: () => void;
-  fleetDeckBadgeCount?: number;
 }
 
 const MainFeedItem = memo<MainFeedItemProps>(
@@ -331,7 +336,6 @@ const MainFeedItem = memo<MainFeedItemProps>(
     setShowEchoes,
     setShowPearls,
     anchorWave,
-    onShareWave,
     setEchoExpansionInProgress,
     setExpandedEchoes,
     setEchoesPageSize,
@@ -340,8 +344,6 @@ const MainFeedItem = memo<MainFeedItemProps>(
     onReplyToEcho,
     onOpenCreatorProfile,
     onOpenProfilePicture,
-    onOpenFleetDeck,
-    fleetDeckBadgeCount = 0,
     recordTextReach,
   }) => {
     const [status, setStatus] = useState<string>('');
@@ -564,8 +566,7 @@ const MainFeedItem = memo<MainFeedItemProps>(
       return item.media?.uri ? [item.media] : [];
     }, [item.media, item.mediaItems, (item as any).galleryItems]);
 
-    // Feed uses single-media layout only (first item). Multi-tile grid removed for Android stability / simplicity.
-    const hasMultiMediaGrid = false;
+    const hasMultiMediaGrid = galleryMediaItems.length > 1;
     const hugCountBase = Math.max(
       0,
       Number(item.counts?.hugs ?? item.counts?.splashes ?? 0),
@@ -619,7 +620,9 @@ const MainFeedItem = memo<MainFeedItemProps>(
       (mediaUri.length > 0 && mediaType.startsWith('video/'));
     const hasImageMedia =
       mediaUri.length > 0 &&
-      (isExplicitImage ||
+      (explicitPostType === 'gallery' ||
+        isExplicitImage ||
+        (Array.isArray(item.mediaItems) && item.mediaItems.length > 1) ||
         isImageAsset(primaryMedia) ||
         (!hasVideoMedia && mediaType.startsWith('image/')));
     const isPdfDocument =
@@ -1096,10 +1099,6 @@ const MainFeedItem = memo<MainFeedItemProps>(
       anchorWave(item);
     }, [item, anchorWave]);
 
-    const handleCast = useCallback(() => {
-      onShareWave(item);
-    }, [item, onShareWave]);
-
     const handleReachPress = useCallback(() => {
       recordVideoReach(item.id).catch(error => {
         console.log('Reach recording failed:', error.message);
@@ -1175,13 +1174,10 @@ const MainFeedItem = memo<MainFeedItemProps>(
               [`huggedBy.${myUid}`]: FieldValue.delete(),
             });
           } else {
-            await ref.set(
-              {
-                hugs: FieldValue.increment(1),
-                huggedBy: { [myUid]: true },
-              },
-              { merge: true },
-            );
+            await ref.update({
+              hugs: FieldValue.increment(1),
+              [`huggedBy.${myUid}`]: true,
+            });
           }
           console.log('Hug state persisted successfully');
         } catch (e) {
@@ -1460,77 +1456,7 @@ const MainFeedItem = memo<MainFeedItemProps>(
                 }}
               >
                 <View style={styles.headerTopRow}>
-                  {/* Profile Row: Fleet Deck button (left), Avatar (center), Crew Count (right) */}
-                  {item.ownerUid === myUid ? (
-                    <View style={styles.sideButtonRail}>
-                      <Pressable
-                        onPress={() => {
-                          HapticWaveFeedback.light();
-                          onOpenFleetDeck();
-                        }}
-                        style={({ pressed }) => [
-                          {
-                            backgroundColor: pressed
-                              ? 'rgba(255,255,255,0.8)'
-                              : 'rgba(255,255,255,0.96)',
-                            borderRadius: 18,
-                            paddingHorizontal: 14,
-                            paddingVertical: 8,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            minWidth: 44,
-                            position: 'relative',
-                          },
-                          pressed && {
-                            opacity: 0.8,
-                            transform: [{ scale: 0.98 }],
-                          },
-                        ]}
-                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                      >
-                        <Text
-                          style={{
-                            color: '#B91C1C',
-                            fontWeight: '900',
-                            fontSize: 15,
-                          }}
-                        >
-                          FLEET DECKS
-                        </Text>
-                        {fleetDeckBadgeCount > 0 ? (
-                          <View
-                            style={{
-                              position: 'absolute',
-                              top: -8,
-                              right: -8,
-                              minWidth: 20,
-                              height: 20,
-                              borderRadius: 10,
-                              paddingHorizontal: 5,
-                              backgroundColor: '#FFD54A',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              borderWidth: 1,
-                              borderColor: 'rgba(8, 51, 88, 0.22)',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                color: '#111827',
-                                fontWeight: '900',
-                                fontSize: 10,
-                              }}
-                            >
-                              {fleetDeckBadgeCount > 99
-                                ? '99+'
-                                : fleetDeckBadgeCount}
-                            </Text>
-                          </View>
-                        ) : null}
-                      </Pressable>
-                    </View>
-                  ) : null}
-                  {/* Avatar and profile info remain unchanged */}
+                  {/* Profile Row: Avatar (center), Crew Count (right) */}
 
                   {/* Connect/Disconnect Button */}
                   {item.ownerUid !== myUid && (
@@ -1735,7 +1661,8 @@ const MainFeedItem = memo<MainFeedItemProps>(
 
                 {/* Post Media */}
                 {hasPdfMedia ? (
-                  <View
+                  <Pressable
+                    onPress={() => Linking.openURL(mediaUri)}
                     style={{
                       marginHorizontal: 0,
                       width: SCREEN_WIDTH,
@@ -1746,8 +1673,8 @@ const MainFeedItem = memo<MainFeedItemProps>(
                       uri={mediaUri}
                       height={Math.min(SCREEN_HEIGHT * 0.68, 520)}
                     />
-                  </View>
-                ) : hasVideoMedia ? (
+                  </Pressable>
+                ) : hasVideoMedia && !hasMultiMediaGrid ? (
                   <View
                     style={{
                       marginHorizontal: 0,
@@ -1815,7 +1742,10 @@ const MainFeedItem = memo<MainFeedItemProps>(
                               );
                             });
                           } catch (error) {
-                            console.log('Video onPlay error:', error?.message || error);
+                            console.log(
+                              'Video onPlay error:',
+                              error?.message || error,
+                            );
                           }
                         }}
                       />
@@ -2021,20 +1951,70 @@ const MainFeedItem = memo<MainFeedItemProps>(
                       }}
                     >
                       {renderMoMoBadge()}
-                      <InstantImage
-                        source={{ uri: mediaUri }}
-                        style={[
-                          videoStyleFor(item.id),
-                          { backgroundColor: '#000' },
-                          {
-                            transform: [
-                              { scaleX: mediaEdits?.mirror ? -1 : 1 },
-                              { scaleY: mediaEdits?.flipVertical ? -1 : 1 },
-                            ],
-                          },
-                        ]}
-                        resizeMode="cover"
-                      />
+                      {hasMultiMediaGrid ? (
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            width: SCREEN_WIDTH,
+                            height: 400,
+                          }}
+                        >
+                          {galleryMediaItems.slice(0, 4).map((m, i) => (
+                            <View
+                              key={i}
+                              style={{
+                                width: '50%',
+                                height: '50%',
+                                padding: 1,
+                              }}
+                            >
+                              <InstantImage
+                                source={{ uri: m.uri }}
+                                style={{ width: '100%', height: '100%' }}
+                                resizeMode="contain"
+                              />
+                              {i === 3 && galleryMediaItems.length > 4 && (
+                                <View
+                                  style={[
+                                    StyleSheet.absoluteFill,
+                                    {
+                                      backgroundColor: 'rgba(0,0,0,0.6)',
+                                      justifyContent: 'center',
+                                      alignItems: 'center',
+                                    },
+                                  ]}
+                                >
+                                  <Text
+                                    style={{
+                                      color: 'white',
+                                      fontSize: 22,
+                                      fontWeight: '800',
+                                    }}
+                                  >
+                                    +{galleryMediaItems.length - 4}
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          ))}
+                        </View>
+                      ) : (
+                        <InstantImage
+                          source={{ uri: mediaUri }}
+                          style={[
+                            videoStyleFor(item.id),
+                            { backgroundColor: '#000' },
+                            {
+                              transform: [
+                                { scaleX: mediaEdits?.mirror ? -1 : 1 },
+                                { scaleY: mediaEdits?.flipVertical ? -1 : 1 },
+                              ],
+                            },
+                          ]}
+                          resizeMode="contain"
+                        />
+                      )}
                       {filterOverlayStyle ? (
                         <View
                           pointerEvents="none"
@@ -2177,7 +2157,6 @@ const MainFeedItem = memo<MainFeedItemProps>(
               </Pressable>
             )}
 
-            
             {/* Read More - positioned above footer */}
             {textOnlyStory &&
               item.captionText &&
@@ -2224,7 +2203,6 @@ const MainFeedItem = memo<MainFeedItemProps>(
               }
               onPearl={handlePearl}
               onAnchor={handleAnchor}
-              onCast={handleCast}
               splashSyncStatus={splashSyncStatus}
               onRetrySplash={handleRetrySplashSync}
               translate={translate}
@@ -2315,6 +2293,41 @@ const MainFeedItem = memo<MainFeedItemProps>(
                       controls
                       paused={false}
                     />
+                  ) : isPdfAsset(galleryMediaItems[viewerIndex]) ? (
+                    <View
+                      style={{
+                        width: SCREEN_WIDTH,
+                        height: SCREEN_HEIGHT * 0.72,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        paddingHorizontal: 16,
+                        gap: 10,
+                      }}
+                    >
+                      <FeedPdfCard
+                        uri={String(galleryMediaItems[viewerIndex].uri || '')}
+                        height={SCREEN_HEIGHT * 0.58}
+                      />
+                      <Pressable
+                        onPress={() =>
+                          Linking.openURL(
+                            String(galleryMediaItems[viewerIndex].uri || ''),
+                          ).catch(() => {})
+                        }
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 999,
+                          borderWidth: 1,
+                          borderColor: 'rgba(255,255,255,0.24)',
+                          backgroundColor: 'rgba(8,16,28,0.66)',
+                        }}
+                      >
+                        <Text style={{ color: '#fff', fontWeight: '700' }}>
+                          Open PDF
+                        </Text>
+                      </Pressable>
+                    </View>
                   ) : (
                     <View
                       style={{
@@ -2483,6 +2496,46 @@ const MainFeedItem = memo<MainFeedItemProps>(
                           style={{ width: '100%', height: '100%' }}
                           resizeMode="cover"
                         />
+                      ) : isVideoAsset(mediaItem) ? (
+                        <View
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: '#fff',
+                              fontSize: 11,
+                              textAlign: 'center',
+                              paddingHorizontal: 6,
+                            }}
+                          >
+                            Video ▶
+                          </Text>
+                        </View>
+                      ) : isPdfAsset(mediaItem) ? (
+                        <View
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text
+                            style={{
+                              color: '#fff',
+                              fontSize: 11,
+                              textAlign: 'center',
+                              paddingHorizontal: 6,
+                            }}
+                          >
+                            PDF
+                          </Text>
+                        </View>
                       ) : (
                         <Text
                           style={{
@@ -2534,7 +2587,6 @@ const MainFeedItem = memo<MainFeedItemProps>(
                   }
                   onPearl={handlePearl}
                   onAnchor={handleAnchor}
-                  onCast={handleCast}
                   splashSyncStatus={splashSyncStatus}
                   onRetrySplash={handleRetrySplashSync}
                   translate={translate}

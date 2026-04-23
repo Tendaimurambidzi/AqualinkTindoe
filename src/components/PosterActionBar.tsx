@@ -33,13 +33,11 @@ interface PosterActionBarProps {
   echoesCount: number;
   pearlsCount: number;
   isAnchored: boolean;
-  isCasted: boolean;
   onAdd: () => void;
   onRemove: () => void;
-  onEcho: (waveId: string) => void;
+  onEcho: (waveId: string) => void | Promise<void>;
   onPearl: () => void;
   onAnchor: () => void;
-  onCast: () => void;
   creatorUserId: string;
   splashSyncStatus?: 'idle' | 'saving' | 'error';
   onRetrySplash?: () => void;
@@ -54,13 +52,11 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
   echoesCount,
   pearlsCount,
   isAnchored,
-  isCasted,
   onAdd,
   onRemove,
   onEcho,
   onPearl,
   onAnchor,
-  onCast,
   creatorUserId,
   splashSyncStatus = 'idle',
   onRetrySplash,
@@ -159,23 +155,19 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
     // No blocking timeout - allow instant re-taps
   };
 
-  const handleEcho = () => {
-    // Immediate visual feedback
-    if (!hasEchoed) {
+  const handleEcho = async () => {
+    if (hasEchoed) return;
+    if (!isOnline) {
+      offlineQueueService.addAction('echo', waveId, { text: '' });
+      return;
+    }
+    try {
+      await Promise.resolve(onEcho(waveId));
       setHasEchoed(true);
       setLocalEchoesCount(prev => Math.max(0, prev + 1));
+    } catch (error) {
+      console.error('Echo failed:', error);
     }
-
-    // Handle action based on connectivity
-    if (isOnline) {
-      // Call the parent callback for immediate sync
-      onEcho(waveId);
-    } else {
-      // Queue action for offline processing (basic echo without text for now)
-      offlineQueueService.addAction('echo', waveId, { text: '' });
-    }
-
-    // No blocking timeout - allow instant re-taps
   };
 
   const fetchHuggers = async () => {
@@ -230,10 +222,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
 
   const handleAnchor = () => {
     onAnchor();
-  };
-
-  const handleCast = () => {
-    onCast();
   };
 
   return (
@@ -353,28 +341,6 @@ const PosterActionBar: React.FC<PosterActionBarProps> = ({
           </View>
         </Pressable>
       )}
-
-      {/* Cast Wave Button - Only show for other users' posts */}
-      {currentUserId !== creatorUserId && (
-        <Pressable
-          onPress={handleCast}
-          style={({ pressed }) => [
-            styles.textButton,
-            pressed && styles.pressedButton
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={translate('feed.castThisPost')}
-          hitSlop={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          pressRetentionOffset={{ top: 20, bottom: 20, left: 10, right: 10 }}
-          android_ripple={{ color: 'rgba(255, 255, 255, 0.3)', borderless: false }}
-        >
-          <View style={styles.buttonContent}>
-            <Text style={styles.actionIconSmall}>{'\uD83D\uDCE1'}</Text>
-            <Text style={styles.actionLabel}>{translate('feed.cast')}</Text>
-          </View>
-        </Pressable>
-      )}
-
     </View>
 
     {/* Huggers Dropdown Modal */}
@@ -705,10 +671,3 @@ const styles = StyleSheet.create({
 });
 
 export default PosterActionBar;
-
-
-
-
-
-
-

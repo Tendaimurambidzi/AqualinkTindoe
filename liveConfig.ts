@@ -25,7 +25,11 @@ export const AGORA_APP_CERTIFICATE = '';
 // Runtime backend host depends on the emulator/simulator
 const BACKEND_HOST = Platform.select({
   android: String(localSecrets?.BACKEND_HOST_ANDROID || '192.168.1.103'),
-  ios: String(localSecrets?.BACKEND_HOST_IOS || localSecrets?.BACKEND_HOST_ANDROID || '192.168.1.103'),
+  ios: String(
+    localSecrets?.BACKEND_HOST_IOS ||
+      localSecrets?.BACKEND_HOST_ANDROID ||
+      '192.168.1.103',
+  ),
   default: 'localhost',
 });
 
@@ -43,9 +47,13 @@ export const LIVE_RECENT_ENDPOINT = `${BACKEND_BASE_URL}/live/recent`;
 // Set to true once the backend is running and can respond.
 export const ENABLE_CHARTERED_BACKEND = true;
 
-// xAI key for in-app AI responses.
-export const XAI_API_KEY = String(localSecrets?.XAI_API_KEY || '');
-export const XAI_MODEL = 'grok-3-mini';
+// xAI key for in-app AI responses. Set in liveConfig.local.ts (gitignored).
+// export const XAI_API_KEY = localSecrets?.XAI_API_KEY || '';
+// If not set, AI caption/echo features will be disabled.
+export const XAI_API_KEY = localSecrets?.XAI_API_KEY || '';
+export const XAI_MODEL = localSecrets?.XAI_MODEL || 'grok-3-mini';
 
 // Internet search key for VIBE HUNT web results (Brave Search API).
-export const VIBE_HUNT_SEARCH_API_KEY = String(localSecrets?.VIBE_HUNT_SEARCH_API_KEY || '');
+export const VIBE_HUNT_SEARCH_API_KEY = String(
+  localSecrets?.VIBE_HUNT_SEARCH_API_KEY || '',
+);

@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import Video, { OnProgressData } from 'react-native-video';
 import { appTokens } from '../theme/tokens';
+import { useGlobalMute } from '../contexts/GlobalMuteContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -116,10 +117,10 @@ const VideoWithTapControls: React.FC<Props> = ({
   const [duration, setDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [videoCompleted, setVideoCompleted] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(
-    typeof muted === 'boolean' ? muted : true,
-  );
   const hasCalledOnPlay = useRef<boolean>(false);
+
+  // Use global mute context
+  const { isGloballyMuted, toggleGlobalMute } = useGlobalMute();
   const forceMuted = muted === true;
 
   const showControls = useCallback(() => {
@@ -189,41 +190,54 @@ const VideoWithTapControls: React.FC<Props> = ({
   }, [sourceUriKey]);
 
   // Keep mute state controlled by props when provided (e.g. overlay audio mode),
-  // otherwise use local autoplay behavior.
+  // otherwise use global mute state.
   useEffect(() => {
     if (typeof muted === 'boolean') {
-      setIsMuted(muted);
+      // Props override global mute
       return;
     }
-    if (!videoCompleted && isActive) {
-      setIsMuted(false);
-    } else if (!isActive) {
-      setIsMuted(true);
-    }
-  }, [videoCompleted, isActive, muted]);
+    // Global mute controls default behavior when not overridden by props
+  }, [muted]);
 
-  const safeSeek = useCallback(
-    (position: number) => {
-      if (videoRef.current) {
-        videoRef.current.seek(position);
-        console.log(`[VideoWithTapControls] Seeking to ${position.toFixed(2)}s`);
-      }
-    },
-    [],
-  );
+  const safeSeek = useCallback((position: number) => {
+    if (videoRef.current) {
+      videoRef.current.seek(position);
+      console.log(`[VideoWithTapControls] Seeking to ${position.toFixed(2)}s`);
+    }
+  }, []);
 
   const onToggleMute = useCallback(() => {
     if (forceMuted) {
       return;
     }
-    setIsMuted(prev => !prev);
-
+    toggleGlobalMute();
     showControls();
-  }, [forceMuted, showControls]);
+  }, [forceMuted, toggleGlobalMute, showControls]);
 
-  // Removed seek controls for continuous playback
+  // Video controls for user interaction
+  const onRewind = useCallback(() => {
+    const newPosition = Math.max(0, currentTime - seekStep);
+    safeSeek(newPosition);
+    showControls();
+  }, [currentTime, seekStep, safeSeek, showControls]);
 
-  // Removed pause/play functionality for continuous playback
+  const onFastForward = useCallback(() => {
+    const newPosition = Math.min(duration, currentTime + seekStep);
+    safeSeek(newPosition);
+    showControls();
+  }, [currentTime, duration, seekStep, safeSeek, showControls]);
+
+  const onPlayPause = useCallback(() => {
+    if (videoCompleted) {
+      // Reset to start
+      safeSeek(0);
+      setVideoCompleted(false);
+      showControls();
+    } else {
+      // Toggle pause state (parent controls this)
+      showControls();
+    }
+  }, [videoCompleted, safeSeek, showControls]);
 
   const handleLoad = useCallback(
     (meta: any) => {
@@ -261,22 +275,13 @@ const VideoWithTapControls: React.FC<Props> = ({
       }
       onProgress?.(data);
     },
-    [
-      onProgress,
-      isActive,
-      duration,
-      currentTime,
-      videoCompleted,
-    ],
+    [onProgress, isActive, duration, currentTime, videoCompleted],
   );
 
-  const handleBuffer = useCallback(
-    (data: any) => {
-      // Disable buffer callbacks to prevent loading spinners
-      // onBuffer?.(data);
-    },
-    [],
-  );
+  const handleBuffer = useCallback((data: any) => {
+    // Disable buffer callbacks to prevent loading spinners
+    // onBuffer?.(data);
+  }, []);
 
   const handleEnd = useCallback(() => {
     hasCalledOnPlay.current = false;
@@ -320,15 +325,13 @@ const VideoWithTapControls: React.FC<Props> = ({
     if (currentTime > 0 && !hasCalledOnPlay.current) {
       hasCalledOnPlay.current = true;
       onPlay?.();
-      // Hide controls when video starts playing
-      if (hideTimer.current) {
-        clearTimeout(hideTimer.current);
-      }
-      hideTimer.current = setTimeout(() => {
+      // Show controls briefly when video starts playing, then hide
+      showControls();
+      setTimeout(() => {
         hideControls();
-      }, hideTimeout);
+      }, 2000); // Show for 2 seconds when video starts
     }
-  }, [currentTime, onPlay, hideTimeout, hideControls]);
+  }, [currentTime, onPlay, showControls, hideControls]);
   const posterUri =
     initialPoster ||
     (videoCompleted && typeof effectiveSource !== 'number'
@@ -369,9 +372,7 @@ const VideoWithTapControls: React.FC<Props> = ({
           : Platform.OS === 'android'
             ? { useTextureView: false }
             : {})}
-        {...(progressUpdateInterval != null
-          ? { progressUpdateInterval }
-          : {})}
+        {...(progressUpdateInterval != null ? { progressUpdateInterval } : {})}
         poster={initialPoster ?? undefined}
         posterResizeMode={posterResizeMode as any}
         disableFocus={
@@ -383,7 +384,7 @@ const VideoWithTapControls: React.FC<Props> = ({
         playWhenInactive={playWhenInactive ?? false}
         ignoreSilentSwitch={ignoreSilentSwitch ?? 'ignore'}
         controls={false}
-        muted={isMuted}
+        muted={typeof muted === 'boolean' ? muted : isGloballyMuted}
         rate={playbackRate}
         preventsDisplaySleepDuringVideoPlayback={isActive}
         volume={audioVolume}
@@ -398,7 +399,7 @@ const VideoWithTapControls: React.FC<Props> = ({
             console.error('Error description:', err.errorDescription);
             console.error('Video URI:', (effectiveSource as any)?.uri);
 
-            // If it's a source error, the URL is likely invalid
+            // If it's a source error, URL is likely invalid
             if (
               err.errorCode === 'source' ||
               err.errorDescription?.includes('Source error')
@@ -421,8 +422,8 @@ const VideoWithTapControls: React.FC<Props> = ({
         onEnd={handleEnd}
         onAudioBecomingNoisy={() => {
           // Handle audio becoming noisy (headphones disconnected)
-          if (!isMuted) {
-            setIsMuted(true);
+          if (!isGloballyMuted) {
+            toggleGlobalMute();
           }
         }}
       />
@@ -446,12 +447,28 @@ const VideoWithTapControls: React.FC<Props> = ({
           { opacity: controlsOpacity, zIndex: 10 },
         ]}
       >
-                <View style={styles.timeContainer}>
+        {/* Progress bar at the top */}
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBar}>
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  width:
+                    duration > 0 ? `${(currentTime / duration) * 100}%` : '0%',
+                },
+              ]}
+            />
+          </View>
+        </View>
+
+        {/* Controls row */}
+        <View style={styles.controlsRow}>
           <Pressable
-            accessibilityLabel={isMuted ? 'Unmute video' : 'Mute video'}
-            onPress={onToggleMute}
+            accessibilityLabel={`Rewind ${seekStep} seconds`}
+            onPress={onRewind}
             style={({ pressed }) => [
-              styles.muteButton,
+              styles.controlButton,
               pressed && {
                 opacity: 0.6,
                 transform: [{ scale: 0.9 }],
@@ -464,12 +481,84 @@ const VideoWithTapControls: React.FC<Props> = ({
               borderless: false,
             }}
           >
-            <View style={styles.muteCircle}>
-              <Text style={styles.muteSymbol}>
-                {isMuted ? '🔇' : '🔊'}
+            <View style={styles.controlCircle}>
+              <Text style={styles.controlSymbol}>⏮</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              videoCompleted ? 'Replay video' : paused ? 'Play' : 'Pause'
+            }
+            onPress={onPlayPause}
+            style={({ pressed }) => [
+              styles.playButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              },
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            android_ripple={{
+              color: 'rgba(255, 255, 255, 0.3)',
+              borderless: false,
+            }}
+          >
+            <View style={styles.playCircle}>
+              <Text style={styles.playSymbol}>
+                {videoCompleted ? '↺' : paused ? '▶' : '⏸'}
               </Text>
             </View>
           </Pressable>
+
+          <Pressable
+            accessibilityLabel={`Fast forward ${seekStep} seconds`}
+            onPress={onFastForward}
+            style={({ pressed }) => [
+              styles.controlButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              },
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            android_ripple={{
+              color: 'rgba(255, 255, 255, 0.3)',
+              borderless: false,
+            }}
+          >
+            <View style={styles.controlCircle}>
+              <Text style={styles.controlSymbol}>⏭</Text>
+            </View>
+          </Pressable>
+
+          <Pressable
+            accessibilityLabel={isGloballyMuted ? 'Unmute video' : 'Mute video'}
+            onPress={onToggleMute}
+            style={({ pressed }) => [
+              styles.controlButton,
+              pressed && {
+                opacity: 0.6,
+                transform: [{ scale: 0.9 }],
+              },
+            ]}
+            hitSlop={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            pressRetentionOffset={{ top: 50, bottom: 50, left: 30, right: 30 }}
+            android_ripple={{
+              color: 'rgba(255, 255, 255, 0.3)',
+              borderless: false,
+            }}
+          >
+            <View style={styles.controlCircle}>
+              <Text style={styles.controlSymbol}>
+                {isGloballyMuted ? '🔇' : '🔊'}
+              </Text>
+            </View>
+          </Pressable>
+
           <Text style={styles.timeText}>
             {formatTime(currentTime)} / {formatTime(duration)}
           </Text>
@@ -490,14 +579,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.7)',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   controlsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
+    gap: 16,
   },
   timeContainer: {
     flexDirection: 'row',
@@ -512,6 +602,66 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
+  },
+  progressContainer: {
+    width: '100%',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
+  progressBar: {
+    width: '100%',
+    height: 4,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 2,
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#00C2FF',
+    borderRadius: 2,
+  },
+  controlButton: {
+    padding: 8,
+    minWidth: 48,
+    minHeight: 48,
+  },
+  controlCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  controlSymbol: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  controlTime: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    position: 'absolute',
+    bottom: -8,
+  },
+  playButton: {
+    padding: 12,
+    minWidth: 48,
+    minHeight: 48,
+  },
+  playCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playSymbol: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
   },
   muteButton: {
     padding: 12,

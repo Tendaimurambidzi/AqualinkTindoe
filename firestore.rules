@@ -280,6 +280,10 @@ service cloud.firestore {
           )
         );
       }
+
+      match /privateGroups/{groupId} {
+        allow read, create, update, delete: if isOwner(uid);
+      }
     }
 
     match /fleets/{fleetId} {
@@ -443,6 +447,52 @@ service cloud.firestore {
                     && request.auth.uid in request.resource.data.privateRecipientUids;
       allow update: if isAuthed() && resource.data.ownerUid == request.auth.uid;
       allow delete: if isAuthed() && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
+    }
+
+    function isPrivateGroupMember(groupId) {
+      return isAuthed()
+        && exists(/databases/$(database)/documents/private_groups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    // Private groups: metadata (invite code visible to any signed-in user who has the id — tighten later if needed)
+    match /private_groups/{groupId} {
+      allow read: if isAuthed();
+      allow create: if isAuthed()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.inviteCode is string;
+      allow update: if isAuthed() && resource.data.createdBy == request.auth.uid;
+      allow delete: if isAuthed() && resource.data.createdBy == request.auth.uid;
+
+      match /members/{userId} {
+        allow read: if isAuthed() && isPrivateGroupMember(groupId);
+        allow create: if isAuthed() && (
+          (
+            request.auth.uid == userId
+            && get(/databases/$(database)/documents/private_groups/$(groupId)).data.createdBy == request.auth.uid
+            && request.resource.data.role == 'admin'
+          )
+          || (
+            request.auth.uid == userId
+            && request.resource.data.role == 'member'
+            && request.resource.data.joinInviteCode == get(/databases/$(database)/documents/private_groups/$(groupId)).data.inviteCode
+          )
+        );
+        allow update, delete: if false;
+      }
+
+      match /waves/{waveId} {
+        allow read: if isPrivateGroupMember(groupId);
+        allow create: if isPrivateGroupMember(groupId)
+          && request.resource.data.ownerUid == request.auth.uid
+          && request.resource.data.audience == 'private_group';
+        allow update: if isPrivateGroupMember(groupId) && (
+          resource.data.ownerUid == request.auth.uid ||
+          isLegitEngagementUpdate()
+        );
+        allow delete: if isAuthed()
+          && (resource.data.ownerUid == request.auth.uid || isAppAdmin());
+      }
     }
   }
 }

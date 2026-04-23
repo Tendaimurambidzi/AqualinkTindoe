@@ -10,6 +10,7 @@ import React, {
 import Fuse from 'fuse.js';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import InstantMediaService from './src/services/InstantMediaService';
+import GlobalMuteProvider from './src/contexts/GlobalMuteContext';
 import {
   NavigationContainer,
   useIsFocused,
@@ -944,7 +945,7 @@ type FeedSuggestion = {
   title: string;
   subtitle: string;
   actionLabel: string;
-  kind: 'watch_wave' | 'open_profile' | 'open_fleet' | 'sponsored_ad';
+  kind: 'watch_wave' | 'open_profile' | 'open_private_groups' | 'sponsored_ad';
   waveId?: string;
   ownerUid?: string | null;
   ownerName?: string | null;
@@ -2974,7 +2975,7 @@ const TRANSLATIONS: Record<ResolvedAppLanguage, TranslationDictionary> = {
     'feed.optionDelete': 'Delete post',
     'feed.optionDeleteDesc': 'Remove this post from your feed immediately.',
     'feed.castRecast': 'Cast / Recast',
-    'feed.castRecastDesc': 'Share this post to Fleet Deck or individuals.',
+    'feed.castRecastDesc': 'Share this post to a private group or individuals.',
     'feed.optionCopyLink': 'Copy link',
     'feed.optionCopyLinkDesc': 'Copy your post link for quick sharing.',
     'feed.optionShare': 'Share',
@@ -4507,11 +4508,6 @@ const getWaveOptionMenu = (
           description: t('feed.optionDeleteDesc'),
         },
         {
-          key: 'cast',
-          label: t('feed.castRecast'),
-          description: t('feed.castRecastDesc'),
-        },
-        {
           key: 'copy_link',
           label: t('feed.optionCopyLink'),
           description: t('feed.optionCopyLinkDesc'),
@@ -4524,11 +4520,6 @@ const getWaveOptionMenu = (
         // Fleet Deck option removed
       ]
     : [
-        {
-          key: 'cast',
-          label: t('feed.castRecast'),
-          description: t('feed.castRecastDesc'),
-        },
         {
           key: 'save',
           label: t('feed.optionSave'),
@@ -5102,10 +5093,14 @@ const styles = StyleSheet.create({
     minWidth: 280,
   },
   waveOptionsItem: {
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(255,255,255,0.08)',
+    marginHorizontal: 4,
+    marginVertical: 2,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.05)',
   },
   waveOptionsItemTitle: {
     color: 'white',
@@ -5448,6 +5443,10 @@ const styles = StyleSheet.create({
   createPostMusicBtn: {
     backgroundColor: '#8B5CF6',
     borderColor: '#8B5CF6',
+  },
+  createPostPdfBtn: {
+    backgroundColor: '#6B7280',
+    borderColor: '#6B7280',
   },
   createPostActionIcon: {
     fontSize: 15,
@@ -9112,6 +9111,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [creatorProfileUid, setCreatorProfileUid] = useState<string | null>(
     null,
   );
+  const [showMediaOptionsMenu, setShowMediaOptionsMenu] =
+    useState<boolean>(false);
+  const [selectedMediaWave, setSelectedMediaWave] = useState<Vibe | null>(null);
+  const [mediaOptionsAnchor, setMediaOptionsAnchor] = useState<{
+    x: number;
+    y: number;
+  }>({ x: 24, y: 120 });
   const [creatorProfileName, setCreatorProfileName] = useState<string>('');
   const [creatorProfileLoadedPosts, setCreatorProfileLoadedPosts] = useState<
     Vibe[]
@@ -10655,10 +10661,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [myWaveCount, setMyWaveCount] = useState<number | null>(null);
   const [waveOptionsTarget, setWaveOptionsTarget] = useState<Vibe | null>(null);
   const [isSavingWave, setIsSavingWave] = useState(false);
-  const [showCastModal, setShowCastModal] = useState(false);
-  const [castTargetWave, setCastTargetWave] = useState<Vibe | null>(null);
-  const [castCaption, setCastCaption] = useState('');
-  const [castSearchQuery, setCastSearchQuery] = useState('');
   // Notification toast state
   const [toastVisible, setToastVisible] = useState(false);
   const [toastKind, setToastKind] = useState<'positive' | 'negative'>(
@@ -10715,24 +10717,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [fleetThreads, setFleetThreads] = useState<FleetThread[]>([]);
   const [myFleets, setMyFleets] = useState<FleetSummary[]>([]);
   const [fleetDirectory, setFleetDirectory] = useState<FleetSummary[]>([]);
-  const [showFleetDeck, setShowFleetDeck] = useState(false);
-  const [fleetDeckName, setFleetDeckName] = useState('');
-  const [fleetDeckDescription, setFleetDeckDescription] = useState('');
-  const [fleetDeckAllowBoarding, setFleetDeckAllowBoarding] = useState(true);
-  const [fleetDeckMood, setFleetDeckMood] = useState('');
-  const [showDestinationModal, setShowDestinationModal] = useState(false);
-  const [selectedDestination, setSelectedDestination] = useState<
-    'public' | 'fleet' | 'private'
-  >('public');
-  const [selectedFleet, setSelectedFleet] = useState<FleetSummary | null>(null);
-  const [selectedPrivateUsers, setSelectedPrivateUsers] = useState<string[]>(
-    [],
-  );
+  const [selectedHuntUsers, setSelectedHuntUsers] = useState<string[]>([]);
   const [privateContacts, setPrivateContacts] = useState<
     Array<{ uid: string; name: string; handle?: string; avatar?: string }>
   >([]);
   const [privateContactsLoading, setPrivateContactsLoading] = useState(false);
-  const [fleetDeckLoading, setFleetDeckLoading] = useState(false);
   const [fleetManagerExpandedId, setFleetManagerExpandedId] = useState<
     string | null
   >(null);
@@ -10772,79 +10761,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const [localEchoedWaves, setLocalEchoedWaves] = useState<Set<string>>(
     new Set(),
   );
-
-  useEffect(() => {
-    if (!showDestinationModal || selectedDestination !== 'private' || !user?.uid) {
-      return;
-    }
-    let cancelled = false;
-    const loadPrivateContacts = async () => {
-      setPrivateContactsLoading(true);
-      try {
-        const [followingSnap, crewSnap] = await Promise.all([
-          firestore()
-            .collection('users')
-            .doc(user.uid)
-            .collection('following')
-            .limit(200)
-            .get(),
-          firestore()
-            .collection('users')
-            .doc(user.uid)
-            .collection('crew')
-            .limit(200)
-            .get(),
-        ]);
-        const uidSet = new Set<string>();
-        followingSnap.docs.forEach(doc => uidSet.add(doc.id));
-        crewSnap.docs.forEach(doc => uidSet.add(doc.id));
-        uidSet.delete(user.uid);
-
-        const contactDocs = await Promise.all(
-          Array.from(uidSet).map(uid =>
-            firestore().collection('users').doc(uid).get(),
-          ),
-        );
-
-        const contacts = contactDocs
-          .filter(doc => doc.exists)
-          .map(doc => {
-            const data = doc.data() || {};
-            const name =
-              String(
-                data.displayName || data.username || data.name || 'Unknown User',
-              ).trim() || 'Unknown User';
-            return {
-              uid: doc.id,
-              name,
-              handle: String(data.username || '').trim(),
-              avatar: String(data.photoURL || data.userPhoto || '').trim(),
-            };
-          })
-          .sort((a, b) => a.name.localeCompare(b.name));
-
-        if (!cancelled) {
-          setPrivateContacts(contacts);
-          setSelectedPrivateUsers(prev =>
-            prev.filter(uid => contacts.some(c => c.uid === uid)),
-          );
-        }
-      } catch (error) {
-        console.warn('Failed to load private contacts:', error);
-        if (!cancelled) {
-          setPrivateContacts([]);
-        }
-      } finally {
-        if (!cancelled) {
-          setPrivateContactsLoading(false);
-        }
-      }
-    };
-    void loadPrivateContacts();
-    return () => {
-      cancelled = true;
-    };
-  }, [showDestinationModal, selectedDestination, user?.uid]);
 
   const syncWaveReactionCounts = useCallback(async (waveId: string) => {
     if (!waveId) return;
@@ -14497,6 +14413,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       if (!ownerUid) return true;
       if (blockedUsers.has(ownerUid)) return false;
       if (removedUsers.has(ownerUid)) return false;
+      // Exclude Fleet posts from main display feed - they should only appear in Fleet Decks
+      if (wave.audience === 'fleet' || wave.fleetId) return false;
       return true;
     });
 
@@ -14603,16 +14521,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
     }
 
-    if (myUid) {
-      suggestions.push({
-        id: 'fleet-deck-entry',
-        kind: 'open_fleet',
-        title: 'FLEET DECKS',
-        subtitle: 'Launch a Fleet, board one, or post straight to your crew.',
-        actionLabel: 'FLEET DECKS',
-      });
-    }
-
     // Add sponsored ads randomly (not always, ~40% chance when conditions are met)
     const now = Date.now();
     const timeSinceLastAd = now - lastAdShownTimeRef.current;
@@ -14654,18 +14562,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       })
       .slice(0, 3);
   }, [displayFeed, dismissedFeedSuggestions, myUid, userData, waveStats]);
-  const fleetDeckBadgeCount = useMemo(() => {
-    const unreadFleetNotifications = notifications.filter(
-      item =>
-        !item.read &&
-        String((item as any)?.route || '').trim() === 'Fleet Deck',
-    ).length;
-    const unreadFleetThreads = fleetThreads.reduce(
-      (sum, thread) => sum + Math.max(0, Number(thread.unreadCount || 0)),
-      0,
-    );
-    return unreadFleetNotifications + unreadFleetThreads;
-  }, [fleetThreads, notifications]);
   // Deduplicate my vibes to avoid double-counting stats and keep counts aligned with the visible feed
   const uniqueMyWaves = useMemo(() => {
     const seen = new Set<string>();
@@ -15219,14 +15115,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       }
 
       // Cast/Recast - open the cast modal with caption input
-      if (entry?.key === 'cast') {
-        setCastTargetWave(waveOptionsTarget);
-        setCastCaption('');
-        setCastSearchQuery('');
-        setShowCastModal(true);
-        return;
-      }
-
       if (entry?.key === 'save') {
         if (isSavingWave) return;
         setIsSavingWave(true);
@@ -15436,10 +15324,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   // Optimized button handlers for instant response
   const handleDropWave = useCallback(() => {
     showTopBar();
-    setShowDestinationModal(true);
-    setSelectedDestination('public');
-    setSelectedFleet(null);
-    setSelectedPrivateUsers([]);
+    // Directly open composer for public posts without extra modal
+    setActiveFleetPostContext(null);
+    setReturnToMakeWaves(false);
+    setShowUnifiedPostModal(true);
   }, [showTopBar]);
 
   const handleMinuteFame = useCallback(() => {
@@ -17919,6 +17807,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             replyToEchoId: replyToEchoId || null,
             createdAt: firestore.FieldValue.serverTimestamp(),
             updatedAt: firestore.FieldValue.serverTimestamp(),
+            hugs: 0,
+            huggedBy: {},
           },
           { merge: true },
         );
@@ -18733,8 +18623,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     }
   };
 
-  // Cast/Recast - send post to Fleet Deck
-  const castToFleet = async (fleetId: string, fleetName: string) => {
+  // Cast/Recast - copy into a private group feed (not public `waves`)
+  const castToPrivateGroup = async (groupId: string, groupName: string) => {
     if (!castTargetWave) return;
     try {
       let firestoreMod: any = null;
@@ -18746,8 +18636,9 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         return;
       }
 
-      // Create a new wave post in the fleet
       await firestoreMod()
+        .collection('private_groups')
+        .doc(groupId)
         .collection('waves')
         .add({
           captionText:
@@ -18763,17 +18654,18 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           audio: castTargetWave.audio || null,
           authorName: profileName || 'User',
           ownerUid: myUid,
-          audience: 'fleet',
-          fleetId: fleetId,
-          originalWaveId: castTargetWave.id, // Reference to original post
+          audience: 'private_group',
+          groupId,
+          originalWaveId: castTargetWave.id,
           createdAt: firestoreMod.FieldValue.serverTimestamp(),
           counts: { echoes: 0, hugs: 0, views: 0, splashes: 0 },
+          isPublic: false,
         });
 
-      notifySuccess(`Cast to ${fleetName}!`);
+      notifySuccess(`Sent to ${groupName}!`);
     } catch (error) {
-      console.warn('Cast to fleet error:', error);
-      Alert.alert('Cast Failed', 'Could not cast to fleet deck. Try again.');
+      console.warn('Cast to private group error:', error);
+      Alert.alert('Cast Failed', 'Could not send to that group. Try again.');
     }
   };
 
@@ -21062,6 +20954,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     );
   };
 
+  const pickPDFDocument = async () => {
+    Alert.alert(
+      'Coming Soon',
+      'PDF posting will be available in the next update.',
+    );
+  };
+
   const fromGallery = () => {
     launchImageLibrary(buildMediaPickerOptions('mixed'), handleMediaSelect);
   };
@@ -21171,45 +21070,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       });
     } else {
       startPick();
-    }
-  };
-
-  const pickPDFDocument = async () => {
-    try {
-      let DocumentPicker: any = null;
-      try {
-        DocumentPicker = require('react-native-document-picker').default;
-      } catch {
-        Alert.alert(
-          'Feature Unavailable',
-          'PDF picker is not available on this device.',
-        );
-        return;
-      }
-
-      const result = await DocumentPicker.pickSingle({
-        type: [DocumentPicker.types.pdf],
-        copyTo: 'cachesDirectory',
-      });
-
-      if (result) {
-        // Add PDF as a media item to post
-        const pdfAsset = {
-          uri: result.uri,
-          fileName: result.name || 'document.pdf',
-          type: 'application/pdf',
-        };
-
-        appendUnifiedPostMediaAssets([pdfAsset as any]);
-        console.log('PDF selected:', result.name);
-      }
-    } catch (error) {
-      if (DocumentPicker && DocumentPicker.isCancel(error)) {
-        console.log('User cancelled PDF selection');
-      } else {
-        console.error('PDF picker error:', error);
-        Alert.alert('Error', 'Failed to select PDF. Please try again.');
-      }
     }
   };
 
@@ -21715,7 +21575,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       const baseNoExt = sanitizedBase.includes('.')
         ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
         : sanitizedBase;
-      const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+      const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+      const filePath = `posts/${uid}/${uniqueSuffix}_${baseNoExt}.${ext}`;
       let localPath = String(asset.uri || '');
       try {
         localPath = decodeURI(localPath);
@@ -21946,14 +21807,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             return;
           }
 
-          const fleetDocCtx =
-            selectedDestination === 'fleet' && selectedFleet
-              ? {
-                  fleetId: selectedFleet.id,
-                  fleetName: selectedFleet.name,
-                  moodEmoji: selectedFleet.moodEmoji || ' ',
-                }
-              : null;
+          const fleetDocCtx = activeFleetPostContext;
           const mimeType = singleMedia.type || 'application/octet-stream';
           const nameGuessRaw =
             singleMedia.fileName ||
@@ -21979,7 +21833,8 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           const baseNoExt = sanitizedBase.includes('.')
             ? sanitizedBase.substring(0, sanitizedBase.lastIndexOf('.'))
             : sanitizedBase;
-          const filePath = `posts/${uid}/${Date.now()}_${baseNoExt}.${ext}`;
+          const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+          const filePath = `posts/${uid}/${uniqueSuffix}_${baseNoExt}.${ext}`;
 
           let localPath = String(singleMedia.uri || '');
           try {
@@ -22049,23 +21904,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               muxStatus: 'ready',
               playbackUrl: null,
               mediaUrl: fileDownloadUrl,
-              isPublic: selectedDestination === 'public',
-              audience:
-                selectedDestination === 'fleet'
-                  ? 'fleet'
-                  : selectedDestination === 'private'
-                    ? 'private'
-                    : 'public',
-              fleetId:
-                selectedDestination === 'fleet'
-                  ? selectedFleet?.id || null
-                  : null,
-              fleetName:
-                selectedDestination === 'fleet'
-                  ? selectedFleet?.name || null
-                  : null,
-              privateRecipientUids:
-                selectedDestination === 'private' ? selectedPrivateUsers : null,
+              isPublic: fleetDocCtx ? false : true,
+              audience: fleetDocCtx ? 'fleet' : 'public',
+              fleetId: fleetDocCtx?.fleetId || null,
+              fleetName: fleetDocCtx?.fleetName || null,
+              privateRecipientUids: null,
             });
 
           handlePostPublished({
@@ -22082,36 +21925,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               a.currentUser?.displayName ||
               null,
             ownerUid: uid,
-            fleetId:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.id || null
-                : null,
-            fleetName:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.name || null
-                : null,
-            audience:
-              selectedDestination === 'fleet'
-                ? 'fleet'
-                : selectedDestination === 'private'
-                  ? 'private'
-                  : 'public',
+            fleetId: fleetDocCtx?.fleetId || null,
+            fleetName: fleetDocCtx?.fleetName || null,
+            audience: fleetDocCtx ? 'fleet' : 'public',
           });
-
-          if (selectedDestination === 'fleet' && selectedFleet?.id) {
-            await syncFleetPostSideEffects(firestoreMod, selectedFleet.id, {
-              actorName: profileName || accountCreationHandle || 'Crew',
-              lastWaveText: trimmedText || 'Fleet Wave',
-              waveId: docRef?.id || null,
-            });
-            await reopenFleetWavesAfterPost({
-              fleetId: selectedFleet.id,
-              fleetName: selectedFleet.name,
-              moodEmoji: selectedFleet.moodEmoji || ' ',
-            });
-          }
-          setActiveFleetPostContext(null);
-
           setUnifiedPostText('');
           setUnifiedPostMediaItems([]);
           setUnifiedPostAudio(null);
@@ -22168,14 +21985,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           );
           return;
         }
-        const fleetAudioCtx =
-          selectedDestination === 'fleet' && selectedFleet
-            ? {
-                fleetId: selectedFleet.id,
-                fleetName: selectedFleet.name,
-                moodEmoji: selectedFleet.moodEmoji || ' ',
-              }
-            : null;
+        const fleetAudioCtx = activeFleetPostContext;
         if (
           !(await ensureNetworkActionAllowed('upload', {
             label: 'upload this audio post',
@@ -22272,23 +22082,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxStatus: 'ready',
             playbackUrl: null,
             mediaUrl: audioDownloadUrl,
-            isPublic: selectedDestination === 'public',
-            audience:
-              selectedDestination === 'fleet'
-                ? 'fleet'
-                : selectedDestination === 'private'
-                  ? 'private'
-                  : 'public',
-            fleetId:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.id || null
-                : null,
-            fleetName:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.name || null
-                : null,
-            privateRecipientUids:
-              selectedDestination === 'private' ? selectedPrivateUsers : null,
+            isPublic: fleetAudioCtx ? false : true,
+            audience: fleetAudioCtx ? 'fleet' : 'public',
+            fleetId: fleetAudioCtx?.fleetId || null,
+            fleetName: fleetAudioCtx?.fleetName || null,
+            privateRecipientUids: null,
           });
 
         handlePostPublished({
@@ -22305,32 +22103,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             a.currentUser?.displayName ||
             null,
           ownerUid: uid,
-          fleetId:
-            selectedDestination === 'fleet' ? selectedFleet?.id || null : null,
-          fleetName:
-            selectedDestination === 'fleet'
-              ? selectedFleet?.name || null
-              : null,
-          audience:
-            selectedDestination === 'fleet'
-              ? 'fleet'
-              : selectedDestination === 'private'
-                ? 'private'
-                : 'public',
+          fleetId: fleetAudioCtx?.fleetId || null,
+          fleetName: fleetAudioCtx?.fleetName || null,
+          audience: fleetAudioCtx ? 'fleet' : 'public',
         });
-
-        if (selectedDestination === 'fleet' && selectedFleet?.id) {
-          await syncFleetPostSideEffects(firestoreMod, selectedFleet.id, {
-            actorName: profileName || accountCreationHandle || 'Crew',
-            lastWaveText: trimmedText || 'Fleet Wave',
-            waveId: docRef?.id || null,
-          });
-          await reopenFleetWavesAfterPost({
-            fleetId: selectedFleet.id,
-            fleetName: selectedFleet.name,
-            moodEmoji: selectedFleet.moodEmoji || ' ',
-          });
-        }
         setActiveFleetPostContext(null);
 
         setUnifiedPostText('');
@@ -22346,6 +22122,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           auth?.()?.currentUser?.displayName ||
           null;
         // Handle text-only post with destination selection
+        const fleetTextCtx = activeFleetPostContext;
         let firestoreMod: any = null;
         try {
           firestoreMod = require('@react-native-firebase/firestore').default;
@@ -22372,23 +22149,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             mediaType: null,
             createdAt: firestoreMod.FieldValue.serverTimestamp(),
             caption: { x: 0, y: 0 },
-            isPublic: selectedDestination === 'public',
-            audience:
-              selectedDestination === 'fleet'
-                ? 'fleet'
-                : selectedDestination === 'private'
-                  ? 'private'
-                  : 'public',
-            fleetId:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.id || null
-                : null,
-            fleetName:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.name || null
-                : null,
-            privateRecipientUids:
-              selectedDestination === 'private' ? selectedPrivateUsers : null,
+            isPublic: fleetTextCtx ? false : true,
+            audience: fleetTextCtx ? 'fleet' : 'public',
+            fleetId: fleetTextCtx?.fleetId || null,
+            fleetName: fleetTextCtx?.fleetName || null,
+            privateRecipientUids: null,
           });
         handlePostPublished({
           id: docRef.id,
@@ -22400,32 +22165,10 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           muxStatus: null,
           authorName: author,
           ownerUid,
-          fleetId:
-            selectedDestination === 'fleet' ? selectedFleet?.id || null : null,
-          fleetName:
-            selectedDestination === 'fleet'
-              ? selectedFleet?.name || null
-              : null,
-          audience:
-            selectedDestination === 'fleet'
-              ? 'fleet'
-              : selectedDestination === 'private'
-                ? 'private'
-                : 'public',
+          fleetId: fleetTextCtx?.fleetId || null,
+          fleetName: fleetTextCtx?.fleetName || null,
+          audience: fleetTextCtx ? 'fleet' : 'public',
         });
-
-        if (selectedDestination === 'fleet' && selectedFleet?.id) {
-          await syncFleetPostSideEffects(firestoreMod, selectedFleet.id, {
-            actorName: author || 'Crew',
-            lastWaveText: trimmedText || 'Fleet Wave',
-            waveId: docRef.id,
-          });
-          await reopenFleetWavesAfterPost({
-            fleetId: selectedFleet.id,
-            fleetName: selectedFleet.name,
-            moodEmoji: selectedFleet.moodEmoji || ' ',
-          });
-        }
         setActiveFleetPostContext(null);
 
         // Reset and close
@@ -23013,7 +22756,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
       setReturnToMakeWaves(false);
       setShowMakeWaves(false);
       setShowInbox(false);
-      setShowFleetDeck(false);
       setUnifiedPostError(null);
       setShowUnifiedPostModal(true);
     },
@@ -23026,7 +22768,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
     setReturnToMakeWaves(false);
     setShowMakeWaves(false);
     setShowInbox(false);
-    setShowFleetDeck(false);
     setUnifiedPostError(null);
     setShowQuickPostModal(true);
   }, []);
@@ -23480,111 +23221,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
   const openFleetQuickActions = useCallback((fleet: FleetSummary) => {
     setFleetQuickActionsTarget(fleet);
   }, []);
-
-  const createFleet = useCallback(async () => {
-    const user = auth().currentUser;
-    if (!user) {
-      Alert.alert('Sign in required', 'Please sign in to start a Fleet.');
-      return;
-    }
-    const fleetName = fleetDeckName.trim();
-    if (!fleetName) {
-      Alert.alert('Fleet name needed', 'Give your Fleet a name first.');
-      return;
-    }
-    try {
-      setFleetDeckLoading(true);
-      const codeSeed = `${fleetName}_${Date.now()}`
-        .toUpperCase()
-        .replace(/[^A-Z0-9]/g, '');
-      const inviteCode = `FLEET-${codeSeed.slice(0, 6)}`;
-      const moodMeta =
-        FLEET_MOODS.find(item => item.emoji === fleetDeckMood) ||
-        FLEET_MOODS[0];
-      const captainName =
-        profileName ||
-        accountCreationHandle ||
-        auth().currentUser?.displayName ||
-        'Captain';
-      const fleetRef = firestore().collection('fleets').doc();
-      const fleetPayload = {
-        name: fleetName,
-        description: fleetDeckDescription.trim(),
-        moodEmoji: moodMeta.emoji,
-        coverColor: moodMeta.color,
-        photoURL: null,
-        visibility: 'open',
-        allowBoarding: fleetDeckAllowBoarding,
-        inviteCode,
-        captainUid: user.uid,
-        captainName,
-        coCaptainUids: [],
-        crewCount: 1,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        updatedAt: firestore.FieldValue.serverTimestamp(),
-        lastActivityText: `${captainName} started the Fleet`,
-        lastActivityAt: firestore.FieldValue.serverTimestamp(),
-        lastWaveText: null,
-        lastWaveAt: null,
-      };
-      await fleetRef.set(fleetPayload);
-      await fleetRef
-        .collection('crew')
-        .doc(user.uid)
-        .set({
-          uid: user.uid,
-          role: 'captain',
-          name: captainName,
-          photo: profilePhoto || auth().currentUser?.photoURL || null,
-          joinedAt: firestore.FieldValue.serverTimestamp(),
-          status: 'active',
-        });
-      await firestore()
-        .collection(`users/${user.uid}/fleets`)
-        .doc(fleetRef.id)
-        .set({
-          fleetId: fleetRef.id,
-          fleetName,
-          moodEmoji: moodMeta.emoji,
-          coverColor: moodMeta.color,
-          role: 'captain',
-          visibility: 'open',
-          allowBoarding: fleetDeckAllowBoarding,
-          inviteCode,
-          joinedAt: firestore.FieldValue.serverTimestamp(),
-          lastReadAt: firestore.FieldValue.serverTimestamp(),
-        });
-      await fleetRef.collection('messages').add({
-        text: `${captainName} launched the Fleet.`,
-        fromUid: user.uid,
-        fromName: captainName,
-        createdAt: firestore.FieldValue.serverTimestamp(),
-        type: 'system',
-        route: 'Fleet Deck',
-      });
-      await loadFleetThreads();
-      setFleetDeckName('');
-      setFleetDeckDescription('');
-      setFleetDeckAllowBoarding(true);
-      setFleetDeckMood('🦈');
-      notifySuccess('Fleet launched.');
-    } catch (error: any) {
-      console.error('Create fleet error:', error);
-      Alert.alert('Fleet failed', 'We could not start your Fleet right now.');
-    } finally {
-      setFleetDeckLoading(false);
-    }
-  }, [
-    accountCreationHandle,
-    fleetDeckDescription,
-    fleetDeckMood,
-    fleetDeckName,
-    fleetDeckAllowBoarding,
-    loadFleetThreads,
-    notifySuccess,
-    profilePhoto,
-    profileName,
-  ]);
 
   const leaveFleet = useCallback(
     async (fleet: FleetSummary | null) => {
@@ -25927,6 +25563,13 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             mediaItems: storedGridItems,
             galleryItems: storedGridItems,
             gridItemCount: storedGridItems.length,
+            media: primaryItem
+              ? {
+                  uri: primaryItem.uri,
+                  type: primaryItem.type,
+                  fileName: primaryItem.fileName,
+                }
+              : null,
             mediaPath: primaryItem?.mediaPath || null,
             mediaType: primaryItem?.type || null,
             postType: gridPostType,
@@ -25939,23 +25582,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             muxStatus: 'ready',
             playbackUrl: null,
             mediaUrl: primaryItem?.uri || null,
-            isPublic: selectedDestination === 'public',
-            audience:
-              selectedDestination === 'fleet'
-                ? 'fleet'
-                : selectedDestination === 'private'
-                  ? 'private'
-                  : 'public',
-            fleetId:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.id || null
-                : null,
-            fleetName:
-              selectedDestination === 'fleet'
-                ? selectedFleet?.name || null
-                : null,
-            privateRecipientUids:
-              selectedDestination === 'private' ? selectedPrivateUsers : null,
+            isPublic: fleetPostCtx ? false : true,
+            audience: fleetPostCtx ? 'fleet' : 'public',
+            fleetId: fleetPostCtx?.fleetId || null,
+            fleetName: fleetPostCtx?.fleetName || null,
+            privateRecipientUids: null,
             mediaEdits: sanitizedMediaEdits,
             editorState: sanitizedMediaEdits,
             edits: sanitizedMediaEdits,
@@ -27106,8 +26737,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                           onReplyToEcho={openReplyToPostEcho}
                           onOpenCreatorProfile={openCreatorProfile}
                           onOpenProfilePicture={setZoomedProfilePic}
-                          onOpenFleetDeck={() => setShowFleetDeck(true)}
-                          fleetDeckBadgeCount={fleetDeckBadgeCount}
                         />
                       );
                     } catch (error) {
@@ -27251,8 +26880,11 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                                         );
                                         return;
                                       }
-                                      if (kind === 'open_fleet') {
-                                        setShowFleetDeck(true);
+                                      if (kind === 'open_private_groups') {
+                                        if (navigation.navigate) {
+                                          navigation.navigate('GroupsHub');
+                                        }
+                                        return;
                                       }
                                     }}
                                   >
@@ -29761,383 +29393,334 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                     </Text>
                   </View>
                 ) : (
-                  selectedThread.messages.map((message, index) => (
-                    <Pressable
-                      key={message.id || index}
-                      style={{
-                        flexDirection: 'row',
-                        marginBottom: 12,
-                        alignItems: 'flex-start',
-                        padding: 8,
-                        backgroundColor:
-                          isThreadSelectionMode &&
-                          selectedThreadMessages.has(
-                            message.id || `msg_${index}`,
-                          )
-                            ? 'rgba(255,215,0,0.3)'
-                            : selectedMessageForReply === message
-                              ? 'rgba(255,215,0,0.1)'
-                              : index < selectedThread.messages.length - 1
-                                ? 'rgba(255,255,255,0.02)'
-                                : 'transparent',
-                        borderRadius: 6,
-                        borderWidth:
-                          (isThreadSelectionMode &&
-                            selectedThreadMessages.has(
-                              message.id || `msg_${index}`,
-                            )) ||
-                          selectedMessageForReply === message
-                            ? 2
-                            : 0,
-                        borderColor: '#FFD700',
-                      }}
-                      onLongPress={() => {
-                        const msgStatus = message.status || 'sent';
-                        const statusLabel =
-                          msgStatus === 'sending'
-                            ? 'Sending'
-                            : msgStatus === 'sent'
-                              ? 'Sent'
-                              : msgStatus === 'delivered'
-                                ? 'Delivered'
-                                : 'Seen';
-                        const timeStr = message.createdAt?.toDate
-                          ? formatDefiniteTime(message.createdAt.toDate())
-                          : 'Unknown';
-                        Alert.alert(
-                          `Message Info`,
-                          `Status: ${statusLabel}\nReceived: ${timeStr}`,
-                          [{ text: 'OK' }],
-                        );
-                        if (!isThreadSelectionMode) {
-                          setIsThreadSelectionMode(true);
-                          setSelectedThreadMessages(
-                            new Set([message.id || `msg_${index}`]),
-                          );
-                          setSelectedMessageForReply(null);
-                        }
-                      }}
-                      onPress={() => {
-                        if (isThreadSelectionMode) {
-                          // Toggle selection
-                          const messageId = message.id || `msg_${index}`;
-                          const newSelected = new Set(selectedThreadMessages);
-                          if (newSelected.has(messageId)) {
-                            newSelected.delete(messageId);
-                            if (newSelected.size === 0) {
-                              setIsThreadSelectionMode(false);
-                            }
-                          } else {
-                            newSelected.add(messageId);
-                          }
-                          setSelectedThreadMessages(newSelected);
-                        } else {
-                          // Select message for reply
-                          setSelectedMessageForReply(message);
-                          setQuickReplyText('');
-                        }
-                      }}
-                    >
-                      {/* Read/Unread indicator */}
+                  selectedThread.messages.map((message, index) => {
+                    const isOwnMessage = message.fromUid === myUid;
+                    const messageAuthor = isOwnMessage
+                      ? 'You'
+                      : selectedThread.senderName || 'User';
+
+                    return (
                       <View
+                        key={message.id || index}
                         style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 4,
-                          backgroundColor:
-                            index < selectedThread.messages.length - 1
-                              ? 'rgba(255,255,255,0.3)'
-                              : '#FFD700',
-                          marginRight: 8,
-                          marginTop: 4,
+                          marginBottom: 16,
+                          paddingHorizontal: 8,
                         }}
-                      />
-
-                      {/* Selection Checkbox */}
-                      {isThreadSelectionMode && (
-                        <View
-                          style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: 4,
-                            borderWidth: 2,
-                            borderColor: selectedThreadMessages.has(
-                              message.id || `msg_${index}`,
-                            )
-                              ? '#FFD700'
-                              : 'rgba(255,255,255,0.5)',
-                            backgroundColor: selectedThreadMessages.has(
-                              message.id || `msg_${index}`,
-                            )
-                              ? '#FFD700'
-                              : 'transparent',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            marginRight: 8,
-                            marginTop: 2,
-                          }}
-                        >
-                          {selectedThreadMessages.has(
-                            message.id || `msg_${index}`,
-                          ) && (
-                            <Text
-                              style={{
-                                color: 'black',
-                                fontSize: 14,
-                                fontWeight: 'bold',
-                              }}
-                            >
-                              ✓
-                            </Text>
-                          )}
-                        </View>
-                      )}
-
-                      {/* Avatar */}
-                      {selectedThread.senderAvatar ? (
-                        typeof selectedThread.senderAvatar === 'object' &&
-                        'text' in selectedThread.senderAvatar ? (
-                          // Text-based avatar (initials)
-                          <View
-                            style={{
-                              width: 32,
-                              height: 32,
-                              borderRadius: 16,
-                              backgroundColor:
-                                selectedThread.senderAvatar.backgroundColor,
-                              justifyContent: 'center',
-                              alignItems: 'center',
-                              marginRight: 8,
-                              borderWidth: 1,
-                              borderColor: 'rgba(255,255,255,0.2)',
-                            }}
-                          >
-                            <Text
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 'bold',
-                                color: selectedThread.senderAvatar.color,
-                              }}
-                            >
-                              {selectedThread.senderAvatar.text}
-                            </Text>
-                          </View>
-                        ) : (
-                          // Image-based avatar
-                          <Image
-                            source={selectedThread.senderAvatar}
-                            style={{
-                              width: 32,
-                              height: 32,
-                              borderRadius: 16,
-                              marginRight: 8,
-                              borderWidth: 1,
-                              borderColor: 'rgba(255,255,255,0.2)',
-                            }}
-                          />
-                        )
-                      ) : (
-                        <View
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: 'rgba(255,255,255,0.2)',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            marginRight: 8,
-                          }}
-                        >
-                          <Text style={{ fontSize: 12, color: 'white' }}>
-                            👤
-                          </Text>
-                        </View>
-                      )}
-
-                      <View style={{ flex: 1 }}>
+                      >
+                        {/* User Profile Header */}
                         <View
                           style={{
                             flexDirection: 'row',
-                            justifyContent: 'flex-end',
                             alignItems: 'center',
-                            marginBottom: 2,
+                            marginBottom: 8,
+                            gap: 10,
                           }}
                         >
-                          <Text
-                            style={{
-                              color: 'rgba(255,255,255,0.6)',
-                              fontSize: 10,
-                            }}
-                          >
-                            {message.createdAt?.toDate
-                              ? formatDefiniteTime(message.createdAt.toDate())
-                              : 'Unknown time'}
-                          </Text>
-                          {message.fromUid === myUid && (
-                            <Text
-                              style={{
-                                marginLeft: 4,
-                                fontSize: 10,
-                                color:
-                                  message.status === 'seen'
-                                    ? '#00C2FF'
-                                    : 'rgba(255,255,255,0.6)',
-                              }}
-                            >
-                              {message.status === 'sending'
-                                ? '⏳'
-                                : message.status === 'sent'
-                                  ? '⚡'
-                                  : message.status === 'delivered'
-                                    ? '⚡⚡'
-                                    : message.status === 'seen'
-                                      ? '⚡⚡'
-                                      : '⚡'}
-                            </Text>
-                          )}
-                        </View>
-                        <Text
-                          style={{
-                            color: 'white',
-                            fontSize: 13,
-                            lineHeight: 18,
-                          }}
-                        >
-                          {getMessagePreviewText(message)}
-                        </Text>
-                        {message.attachmentUrl &&
-                          (() => {
-                            const attachmentType = String(
-                              message.attachmentType || '',
-                            );
-                            const isImage = attachmentType.startsWith('image/');
-                            const isVideo = attachmentType.startsWith('video/');
-                            const isMedia = isImage || isVideo;
-
-                            if (isMedia) {
-                              return (
-                                <Pressable
-                                  onPress={() => {
-                                    setSelectedMediaViewer({
-                                      uri: String(message.attachmentUrl),
-                                      type: isVideo ? 'video' : 'image',
-                                    });
-                                    setShowMediaViewer(true);
-                                  }}
-                                >
-                                  <Image
-                                    source={{
-                                      uri: String(message.attachmentUrl),
-                                    }}
-                                    style={{
-                                      width: 220,
-                                      height: 180,
-                                      borderRadius: 12,
-                                      marginTop: 8,
-                                      marginRight: 40,
-                                    }}
-                                    resizeMode="cover"
-                                  />
-                                  {isVideo && (
-                                    <View
-                                      style={{
-                                        position: 'absolute',
-                                        top: 8,
-                                        left: 8,
-                                        backgroundColor: 'rgba(0,0,0,0.6)',
-                                        borderRadius: 4,
-                                        padding: 4,
-                                      }}
-                                    >
-                                      <Text
-                                        style={{ color: 'white', fontSize: 12 }}
-                                      >
-                                        ▶ Video
-                                      </Text>
-                                    </View>
-                                  )}
-                                </Pressable>
-                              );
-                            }
-
-                            return (
-                              <Pressable
-                                style={styles.messageAttachmentActionBtn}
-                                onPress={() => {
-                                  Linking.openURL(
-                                    String(message.attachmentUrl),
-                                  ).catch(() => {});
+                          {selectedThread.senderAvatar ? (
+                            typeof selectedThread.senderAvatar === 'object' &&
+                            'text' in selectedThread.senderAvatar ? (
+                              <View
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 18,
+                                  backgroundColor:
+                                    selectedThread.senderAvatar.backgroundColor,
+                                  justifyContent: 'center',
+                                  alignItems: 'center',
                                 }}
                               >
                                 <Text
-                                  style={styles.messageAttachmentActionText}
+                                  style={{
+                                    fontSize: 14,
+                                    fontWeight: '800',
+                                    color: selectedThread.senderAvatar.color,
+                                  }}
                                 >
-                                  {attachmentType === 'application/pdf'
-                                    ? '📄 '
-                                    : '📎 '}
-                                  {message.attachmentName || 'Open attachment'}
+                                  {selectedThread.senderAvatar.text}
                                 </Text>
-                              </Pressable>
-                            );
-                          })()}
-                        {message.attachmentUrl &&
-                          (() => {
-                            const downloadKey = `thread-${message.id || String(message.attachmentUrl)}`;
-                            const isDownloading =
-                              !!activeAttachmentDownloads[downloadKey];
-                            const progress =
-                              attachmentDownloadProgress[downloadKey];
-                            return (
+                              </View>
+                            ) : (
+                              <Image
+                                source={selectedThread.senderAvatar}
+                                style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: 18,
+                                }}
+                              />
+                            )
+                          ) : (
+                            <View
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 18,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: 'rgba(14,165,233,0.3)',
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: '#FFF',
+                                  fontWeight: '800',
+                                  fontSize: 14,
+                                }}
+                              >
+                                {messageAuthor.charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={{
+                                color: '#FFF',
+                                fontWeight: '700',
+                                fontSize: 15,
+                              }}
+                            >
+                              {messageAuthor}
+                            </Text>
+                            <Text
+                              style={{
+                                color: 'rgba(255,255,255,0.6)',
+                                fontSize: 11,
+                                marginTop: 1,
+                              }}
+                            >
+                              {message.createdAt?.toDate
+                                ? formatDefiniteTime(message.createdAt.toDate())
+                                : 'Just now'}
+                              {isOwnMessage && (
+                                <Text
+                                  style={{
+                                    marginLeft: 4,
+                                    color:
+                                      message.status === 'seen'
+                                        ? '#00C2FF'
+                                        : 'rgba(255,255,255,0.6)',
+                                  }}
+                                >
+                                  {message.status === 'sending'
+                                    ? '⏳ Sending'
+                                    : message.status === 'sent'
+                                      ? '⚡ Sent'
+                                      : message.status === 'delivered'
+                                        ? '⚡⚡ Delivered'
+                                        : message.status === 'seen'
+                                          ? '⚡⚡ Seen'
+                                          : ''}
+                                </Text>
+                              )}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Message Content - Same UI as MainFeedItem */}
+                        <View
+                          style={{
+                            marginLeft: 46, // Align with content, not avatar
+                            backgroundColor: isOwnMessage
+                              ? 'rgba(14,165,233,0.15)'
+                              : 'rgba(255,255,255,0.06)',
+                            borderRadius: 12,
+                            padding: 12,
+                            borderWidth: 1,
+                            borderColor: isOwnMessage
+                              ? 'rgba(14,165,233,0.3)'
+                              : 'rgba(255,255,255,0.1)',
+                          }}
+                        >
+                          {/* Text Content */}
+                          <Text
+                            style={{
+                              color: 'rgba(255,255,255,0.95)',
+                              fontSize: 14,
+                              lineHeight: 20,
+                              marginBottom: message.attachmentUrl ? 8 : 0,
+                            }}
+                          >
+                            {getMessagePreviewText(message)}
+                          </Text>
+
+                          {/* Media Content */}
+                          {message.attachmentUrl &&
+                            (() => {
+                              const attachmentType = String(
+                                message.attachmentType || '',
+                              );
+                              const isImage =
+                                attachmentType.startsWith('image/');
+                              const isVideo =
+                                attachmentType.startsWith('video/');
+                              const isMedia = isImage || isVideo;
+
+                              if (isMedia) {
+                                return (
+                                  <Pressable
+                                    onPress={() => {
+                                      setSelectedMediaViewer({
+                                        uri: String(message.attachmentUrl),
+                                        type: isVideo ? 'video' : 'image',
+                                      });
+                                      setShowMediaViewer(true);
+                                    }}
+                                    style={{ marginBottom: 8 }}
+                                  >
+                                    {isVideo ? (
+                                      (() => {
+                                        const RNVideo =
+                                          require('react-native-video').default;
+                                        return RNVideo ? (
+                                          <View
+                                            style={{ position: 'relative' }}
+                                          >
+                                            <RNVideo
+                                              source={{
+                                                uri: String(
+                                                  message.attachmentUrl,
+                                                ),
+                                              }}
+                                              style={{
+                                                width: 220,
+                                                height: 180,
+                                                borderRadius: 8,
+                                                backgroundColor:
+                                                  'rgba(0,0,0,0.3)',
+                                              }}
+                                              resizeMode="cover"
+                                              shouldPlay={false}
+                                              muted={true}
+                                              repeat={false}
+                                            />
+                                            <View
+                                              style={{
+                                                position: 'absolute',
+                                                top: 8,
+                                                left: 8,
+                                                backgroundColor:
+                                                  'rgba(0,0,0,0.6)',
+                                                borderRadius: 4,
+                                                padding: 4,
+                                              }}
+                                            >
+                                              <Text
+                                                style={{
+                                                  color: 'white',
+                                                  fontSize: 12,
+                                                }}
+                                              >
+                                                🎥 Video
+                                              </Text>
+                                            </View>
+                                          </View>
+                                        ) : null;
+                                      })()
+                                    ) : (
+                                      <Image
+                                        source={{
+                                          uri: String(message.attachmentUrl),
+                                        }}
+                                        style={{
+                                          width: 220,
+                                          height: 180,
+                                          borderRadius: 8,
+                                          backgroundColor: 'rgba(0,0,0,0.2)',
+                                        }}
+                                        resizeMode="cover"
+                                      />
+                                    )}
+                                  </Pressable>
+                                );
+                              }
+                              return null;
+                            })()}
+
+                          {/* Message Actions */}
+                          <View
+                            style={{
+                              flexDirection: 'row',
+                              gap: 8,
+                              marginTop: 8,
+                            }}
+                          >
+                            <Pressable
+                              delayPressIn={0}
+                              style={{
+                                flex: 1,
+                                borderRadius: 20,
+                                paddingVertical: 6,
+                                alignItems: 'center',
+                                backgroundColor: 'rgba(255,255,255,0.08)',
+                                borderWidth: 1,
+                                borderColor: 'rgba(255,255,255,0.2)',
+                              }}
+                              onPress={() => {
+                                setSelectedMessageForReply(message);
+                                setQuickReplyText('');
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: 'rgba(255,255,255,0.8)',
+                                  fontWeight: '600',
+                                  fontSize: 12,
+                                }}
+                              >
+                                💬 Reply
+                              </Text>
+                            </Pressable>
+                            {!isOwnMessage && (
                               <Pressable
-                                style={[
-                                  styles.messageAttachmentDownloadBtn,
-                                  isDownloading &&
-                                    styles.messageAttachmentDownloadBtnActive,
-                                ]}
-                                disabled={isDownloading}
-                                onPress={() =>
-                                  downloadMessageAttachment(
-                                    String(message.attachmentUrl),
-                                    String(message.attachmentName || ''),
-                                    downloadKey,
-                                  )
-                                }
+                                delayPressIn={0}
+                                style={{
+                                  flex: 1,
+                                  borderRadius: 20,
+                                  paddingVertical: 6,
+                                  alignItems: 'center',
+                                  backgroundColor: 'rgba(255,255,255,0.08)',
+                                  borderWidth: 1,
+                                  borderColor: 'rgba(255,255,255,0.2)',
+                                }}
+                                onPress={() => {
+                                  const msgStatus = message.status || 'sent';
+                                  const statusLabel =
+                                    msgStatus === 'sending'
+                                      ? 'Sending'
+                                      : msgStatus === 'sent'
+                                        ? 'Sent'
+                                        : msgStatus === 'delivered'
+                                          ? 'Delivered'
+                                          : 'Seen';
+                                  const timeStr = message.createdAt?.toDate
+                                    ? formatDefiniteTime(
+                                        message.createdAt.toDate(),
+                                      )
+                                    : 'Unknown';
+                                  Alert.alert(
+                                    `Message Info`,
+                                    `From: ${messageAuthor}\nStatus: ${statusLabel}\nReceived: ${timeStr}`,
+                                    [{ text: 'OK' }],
+                                  );
+                                }}
                               >
                                 <Text
-                                  style={styles.messageAttachmentDownloadText}
+                                  style={{
+                                    color: 'rgba(255,255,255,0.8)',
+                                    fontWeight: '600',
+                                    fontSize: 12,
+                                  }}
                                 >
-                                  {isDownloading
-                                    ? `⬇ Downloading ${typeof progress === 'number' ? `${progress}%` : ''}`.trim()
-                                    : '⬇ Download'}
+                                  ℹ️ Info
                                 </Text>
                               </Pressable>
-                            );
-                          })()}
-                        {!!activeAttachmentDownloads[
-                          `thread-${message.id || String(message.attachmentUrl)}`
-                        ] && (
-                          <View style={styles.messageAttachmentProgressTrack}>
-                            <View
-                              style={[
-                                styles.messageAttachmentProgressFill,
-                                {
-                                  width: `${Math.max(
-                                    6,
-                                    Math.min(
-                                      100,
-                                      attachmentDownloadProgress[
-                                        `thread-${message.id || String(message.attachmentUrl)}`
-                                      ] || 6,
-                                    ),
-                                  )}%`,
-                                },
-                              ]}
-                            />
+                            )}
                           </View>
-                        )}
+                        </View>
                       </View>
-                    </Pressable>
-                  ))
+                    );
+                  })
                 )}
 
                 {/* Thread Message Selection Action Bar */}
@@ -30716,43 +30299,49 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
           }}
           onPress={() => setShowMediaViewer(false)}
         >
-          {selectedMediaViewer?.type === 'video' ? (
-            (() => {
-              const RNVideo = require('react-native-video').default;
-              return RNVideo ? (
-                <RNVideo
-                  source={{ uri: selectedMediaViewer.uri }}
-                  style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT * 0.7 }}
-                  resizeMode="contain"
-                  shouldPlay
-                  isLooping
-                />
-              ) : (
-                <View
-                  style={{
-                    width: SCREEN_WIDTH,
-                    height: SCREEN_HEIGHT * 0.7,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                  }}
-                >
-                  <Text style={{ color: 'white', fontSize: 16 }}>
-                    Video: {selectedMediaViewer?.uri}
-                  </Text>
-                </View>
-              );
-            })()
-          ) : (
-            <Image
-              source={{ uri: selectedMediaViewer?.uri || '' }}
-              style={{
-                width: SCREEN_WIDTH,
-                height: SCREEN_HEIGHT * 0.8,
-                resizeMode: 'contain',
-              }}
-            />
-          )}
+          <Pressable onPress={e => e.stopPropagation()}>
+            {selectedMediaViewer?.type === 'video' ? (
+              (() => {
+                const RNVideo = require('react-native-video').default;
+                return RNVideo ? (
+                  <RNVideo
+                    source={{ uri: selectedMediaViewer.uri }}
+                    style={{
+                      width: SCREEN_WIDTH,
+                      height: SCREEN_HEIGHT * 0.75,
+                    }}
+                    resizeMode="contain"
+                    controls
+                    paused={false}
+                    repeat
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: SCREEN_WIDTH,
+                      height: SCREEN_HEIGHT * 0.75,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                    }}
+                  >
+                    <Text style={{ color: 'white', fontSize: 16 }}>
+                      Video: {selectedMediaViewer?.uri}
+                    </Text>
+                  </View>
+                );
+              })()
+            ) : (
+              <Image
+                source={{ uri: selectedMediaViewer?.uri || '' }}
+                style={{
+                  width: SCREEN_WIDTH,
+                  height: SCREEN_HEIGHT * 0.8,
+                  resizeMode: 'contain',
+                }}
+              />
+            )}
+          </Pressable>
           <Pressable
             style={{
               position: 'absolute',
@@ -30767,366 +30356,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Text style={{ color: 'white', fontSize: 20 }}>✕</Text>
           </Pressable>
         </Pressable>
-      </Modal>
-
-      <Modal
-        visible={showFleetDeck}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowFleetDeck(false)}
-      >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', padding: 18 }]}
-        >
-          <View
-            style={[
-              styles.logbookContainer,
-              {
-                width: '100%',
-                maxHeight: SCREEN_HEIGHT * 0.84,
-                borderRadius: 12,
-                overflow: 'hidden',
-              },
-            ]}
-          >
-            {paperTexture && (
-              <Image source={paperTexture} style={styles.logbookBg} />
-            )}
-            <ScrollView style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>FLEET DECK</Text>
-              <Text
-                style={{
-                  color: 'rgba(255,255,255,0.72)',
-                  marginBottom: 12,
-                  textAlign: 'center',
-                }}
-              >
-                Start a Fleet, discover other Fleets, and keep your Crew
-                connected.
-              </Text>
-
-              <View style={[styles.logbookAction, { gap: 10 }]}>
-                <Text style={styles.logbookActionText}>Start a Fleet</Text>
-                <TextInput
-                  value={fleetDeckName}
-                  onChangeText={setFleetDeckName}
-                  placeholder="Fleet name"
-                  placeholderTextColor="rgba(255,255,255,0.45)"
-                  style={{
-                    color: '#FFF',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                    borderRadius: 8,
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                  }}
-                />
-                <TextInput
-                  value={fleetDeckDescription}
-                  onChangeText={setFleetDeckDescription}
-                  placeholder="What is this Fleet about?"
-                  placeholderTextColor="rgba(255,255,255,0.45)"
-                  multiline
-                  style={{
-                    color: '#FFF',
-                    minHeight: 78,
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                    borderRadius: 8,
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                    textAlignVertical: 'top',
-                  }}
-                />
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 8 }}
-                >
-                  {FLEET_MOODS.map(item => (
-                    <Pressable
-                      key={`fleet-mood-${item.emoji}`}
-                      onPress={() => setFleetDeckMood(item.emoji)}
-                      style={{
-                        width: 44,
-                        height: 44,
-                        borderRadius: 22,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        backgroundColor:
-                          fleetDeckMood === item.emoji
-                            ? item.color
-                            : 'rgba(255,255,255,0.08)',
-                        borderWidth: 1,
-                        borderColor:
-                          fleetDeckMood === item.emoji
-                            ? '#BAE6FD'
-                            : 'rgba(255,255,255,0.2)',
-                      }}
-                    >
-                      <Text style={{ fontSize: 22 }}>{item.emoji}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-                <Pressable
-                  onPress={() => setFleetDeckAllowBoarding(prev => !prev)}
-                  style={{
-                    borderRadius: 12,
-                    paddingHorizontal: 12,
-                    paddingVertical: 12,
-                    backgroundColor: fleetDeckAllowBoarding
-                      ? 'rgba(14,165,233,0.18)'
-                      : 'rgba(255,255,255,0.08)',
-                    borderWidth: 1,
-                    borderColor: fleetDeckAllowBoarding
-                      ? 'rgba(125,211,252,0.6)'
-                      : 'rgba(255,255,255,0.14)',
-                  }}
-                >
-                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                    {fleetDeckAllowBoarding
-                      ? 'Anyone can board this Fleet'
-                      : 'This Fleet needs an invite to board'}
-                  </Text>
-                  <Text
-                    style={{
-                      color: 'rgba(255,255,255,0.7)',
-                      fontSize: 12,
-                      marginTop: 4,
-                    }}
-                  >
-                    All Fleets stay discoverable. This only controls whether
-                    someone can board immediately.
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void createFleet()}
-                  disabled={fleetDeckLoading}
-                  style={{
-                    borderRadius: 999,
-                    paddingVertical: 11,
-                    alignItems: 'center',
-                    backgroundColor: '#0F4C81',
-                  }}
-                >
-                  <Text style={{ color: '#FFF', fontWeight: '900' }}>
-                    {fleetDeckLoading ? 'Launching…' : 'Launch Fleet'}
-                  </Text>
-                </Pressable>
-              </View>
-
-              <View style={[styles.logbookAction, { marginTop: 14, gap: 10 }]}>
-                <Text style={styles.logbookActionText}>My Fleets</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.62)', fontSize: 12 }}>
-                  Tap a Fleet to open its posts. Crew options live inside the
-                  Fleet header.
-                </Text>
-                {myFleets.length === 0 ? (
-                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>
-                    No Fleets yet. Start one above.
-                  </Text>
-                ) : (
-                  myFleets.map(fleet => (
-                    <Pressable
-                      key={`my-fleet-${fleet.id}`}
-                      onPress={() => void openFleetWaves(fleet)}
-                      style={{
-                        borderRadius: 14,
-                        padding: 12,
-                        backgroundColor: 'rgba(255,255,255,0.06)',
-                      }}
-                    >
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 10,
-                        }}
-                      >
-                        {fleet.photoURL ? (
-                          <Image
-                            source={{ uri: fleet.photoURL }}
-                            style={{
-                              width: 46,
-                              height: 46,
-                              borderRadius: 23,
-                              backgroundColor: 'rgba(255,255,255,0.08)',
-                            }}
-                          />
-                        ) : (
-                          <View
-                            style={{
-                              width: 46,
-                              height: 46,
-                              borderRadius: 23,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: fleet.coverColor || '#0F4C81',
-                            }}
-                          >
-                            <Text style={{ fontSize: 22 }}>🔥</Text>
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text
-                            style={{
-                              color: '#FFF',
-                              fontSize: 16,
-                              fontWeight: '800',
-                            }}
-                          >
-                            {fleet.name}
-                          </Text>
-                          <Text
-                            style={{
-                              color: 'rgba(255,255,255,0.7)',
-                              fontSize: 12,
-                              marginTop: 4,
-                            }}
-                          >
-                            {fleet.crewCount} crew •{' '}
-                            {fleet.role.replace(/_/g, ' ')} •{' '}
-                            {fleet.allowBoarding
-                              ? 'boarding open'
-                              : 'invite only'}
-                          </Text>
-                        </View>
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.44)',
-                            fontSize: 18,
-                            fontWeight: '900',
-                          }}
-                        >
-                          ›
-                        </Text>
-                      </View>
-                      {!!fleet.description && (
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.72)',
-                            fontSize: 12,
-                            marginTop: 6,
-                          }}
-                        >
-                          {fleet.description}
-                        </Text>
-                      )}
-                      <Text
-                        style={{
-                          color: 'rgba(255,255,255,0.5)',
-                          fontSize: 12,
-                          marginTop: 8,
-                        }}
-                      >
-                        {fleet.lastWaveText ||
-                          fleet.lastActivityText ||
-                          'Open to see Fleet posts and replies.'}
-                      </Text>
-                    </Pressable>
-                  ))
-                )}
-              </View>
-
-              <View style={[styles.logbookAction, { marginTop: 14, gap: 10 }]}>
-                <Text style={styles.logbookActionText}>Discover Fleets</Text>
-                {fleetDirectory.length === 0 ? (
-                  <Text style={{ color: 'rgba(255,255,255,0.65)' }}>
-                    No Fleets found right now.
-                  </Text>
-                ) : (
-                  fleetDirectory.map(fleet => (
-                    <Pressable
-                      key={`open-fleet-${fleet.id}`}
-                      style={{
-                        borderRadius: 14,
-                        padding: 12,
-                        backgroundColor: 'rgba(255,255,255,0.06)',
-                      }}
-                      onPress={() => void joinFleet(fleet)}
-                    >
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 10,
-                        }}
-                      >
-                        {fleet.photoURL ? (
-                          <Image
-                            source={{ uri: fleet.photoURL }}
-                            style={{ width: 44, height: 44, borderRadius: 22 }}
-                          />
-                        ) : (
-                          <View
-                            style={{
-                              width: 44,
-                              height: 44,
-                              borderRadius: 22,
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              backgroundColor: fleet.coverColor || '#0F4C81',
-                            }}
-                          >
-                            <Text style={{ fontSize: 21 }}>🔥</Text>
-                          </View>
-                        )}
-                        <View style={{ flex: 1 }}>
-                          <Text
-                            style={{
-                              color: '#FFF',
-                              fontSize: 16,
-                              fontWeight: '800',
-                            }}
-                          >
-                            {fleet.name}
-                          </Text>
-                          <Text
-                            style={{
-                              color: 'rgba(255,255,255,0.7)',
-                              fontSize: 12,
-                              marginTop: 4,
-                            }}
-                          >
-                            Captained by {fleet.captainName} • {fleet.crewCount}{' '}
-                            crew •{' '}
-                            {fleet.allowBoarding ? 'board now' : 'invite only'}
-                          </Text>
-                        </View>
-                        <Text
-                          style={{
-                            color: '#8DD8FF',
-                            fontSize: 12,
-                            fontWeight: '900',
-                          }}
-                        >
-                          {fleet.allowBoarding ? 'BOARD' : 'INVITE'}
-                        </Text>
-                      </View>
-                      {!!fleet.description && (
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.72)',
-                            fontSize: 12,
-                            marginTop: 8,
-                          }}
-                        >
-                          {fleet.description}
-                        </Text>
-                      )}
-                    </Pressable>
-                  ))
-                )}
-              </View>
-            </ScrollView>
-          </View>
-          <Pressable
-            style={styles.dismissBtn}
-            onPress={() => setShowFleetDeck(false)}
-          >
-            <Text style={styles.dismissText}>{t('common.close')}</Text>
-          </Pressable>
-        </View>
       </Modal>
 
       <Modal
@@ -31625,177 +30854,273 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 nestedScrollEnabled
               >
                 {selectedFleetWaves.length === 0 ? (
-                  <Text
-                    style={{
-                      color: 'rgba(255,255,255,0.7)',
-                      textAlign: 'center',
-                      marginTop: 20,
-                    }}
-                  >
-                    No Fleet Waves yet.
-                  </Text>
+                  <View style={{ alignItems: 'center', marginTop: 40 }}>
+                    <Text
+                      style={{ color: 'rgba(255,255,255,0.7)', fontSize: 16 }}
+                    >
+                      No Fleet Waves yet.
+                    </Text>
+                    <Text
+                      style={{
+                        color: 'rgba(255,255,255,0.5)',
+                        fontSize: 12,
+                        marginTop: 8,
+                      }}
+                    >
+                      Be the first to drop a wave in{' '}
+                      {selectedFleetMeta?.name || 'this Fleet'}!
+                    </Text>
+                  </View>
                 ) : (
-                  selectedFleetWaves.map(wave =>
-                    (() => {
-                      const liveHugs = Math.max(
-                        localHuggedWaves.has(wave.id) ? 1 : 0,
-                        0,
-                        Number(
-                          waveStats[wave.id]?.hugs ??
-                            wave.counts?.hugs ??
-                            wave.counts?.splashes ??
-                            0,
-                        ),
-                      );
-                      const liveEchoes = Math.max(
-                        localEchoedWaves.has(wave.id) ? 1 : 0,
-                        0,
-                        Number(
-                          waveStats[wave.id]?.echoes ??
-                            wave.counts?.echoes ??
-                            0,
-                        ),
-                      );
-                      const isFleetHugged = localHuggedWaves.has(wave.id);
-                      const isFleetEchoed = localEchoedWaves.has(wave.id);
-                      const fleetWaveAuthor = formatHandle(
-                        String(
-                          wave.authorName || wave.user?.name || 'Crew',
-                        ).replace(/^[@/]+/, ''),
-                      );
-                      const fleetWaveInitial =
-                        String(fleetWaveAuthor)
-                          .replace(/^[@/]+/, '')
-                          .charAt(0)
-                          .toUpperCase() || 'C';
-                      return (
+                  selectedFleetWaves.map(wave => {
+                    const liveHugs = Math.max(
+                      localHuggedWaves.has(wave.id) ? 1 : 0,
+                      Number(
+                        waveStats[wave.id]?.hugs ??
+                          wave.counts?.hugs ??
+                          wave.counts?.splashes ??
+                          0,
+                      ),
+                    );
+                    const liveEchoes = Math.max(
+                      localEchoedWaves.has(wave.id) ? 1 : 0,
+                      Number(
+                        waveStats[wave.id]?.echoes ?? wave.counts?.echoes ?? 0,
+                      ),
+                    );
+                    const isFleetHugged = localHuggedWaves.has(wave.id);
+                    const isFleetEchoed = localEchoedWaves.has(wave.id);
+                    const fleetWaveAuthor = formatHandle(
+                      String(
+                        wave.authorName || wave.user?.name || 'Crew',
+                      ).replace(/^[@/]+/, ''),
+                    );
+                    const fleetWaveInitial =
+                      String(fleetWaveAuthor)
+                        .replace(/^[@/]+/, '')
+                        .charAt(0)
+                        .toUpperCase() || 'C';
+
+                    return (
+                      <View
+                        key={`fleet-wave-${wave.id}`}
+                        style={{
+                          marginBottom: 16,
+                          paddingHorizontal: 8,
+                        }}
+                      >
+                        {/* User Profile Header */}
                         <View
-                          key={`fleet-wave-${wave.id}`}
-                          style={[
-                            styles.logbookAction,
-                            { marginBottom: 10, gap: 10 },
-                          ]}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginBottom: 8,
+                            gap: 10,
+                          }}
                         >
+                          {wave.user?.avatar ? (
+                            <Image
+                              source={{ uri: wave.user.avatar }}
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 18,
+                                backgroundColor: 'rgba(255,255,255,0.1)',
+                              }}
+                            />
+                          ) : (
+                            <View
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 18,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: 'rgba(14,165,233,0.3)',
+                              }}
+                            >
+                              <Text
+                                style={{
+                                  color: '#FFF',
+                                  fontWeight: '800',
+                                  fontSize: 14,
+                                }}
+                              >
+                                {fleetWaveInitial}
+                              </Text>
+                            </View>
+                          )}
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={{
+                                color: '#FFF',
+                                fontWeight: '700',
+                                fontSize: 15,
+                              }}
+                            >
+                              {fleetWaveAuthor}
+                            </Text>
+                            <Text
+                              style={{
+                                color: 'rgba(255,255,255,0.6)',
+                                fontSize: 11,
+                                marginTop: 1,
+                              }}
+                            >
+                              {wave.createdAt?.toDate
+                                ? formatTimestamp(wave.createdAt.toDate())
+                                : 'Just now'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Post Content - Same UI as MainFeedItem */}
+                        <View
+                          style={{
+                            marginLeft: 46, // Align with content, not avatar
+                            backgroundColor: 'rgba(255,255,255,0.06)',
+                            borderRadius: 12,
+                            padding: 12,
+                            borderWidth: 1,
+                            borderColor: 'rgba(255,255,255,0.1)',
+                          }}
+                        >
+                          {/* Text Content */}
+                          {wave.captionText && (
+                            <Text
+                              style={{
+                                color: 'rgba(255,255,255,0.95)',
+                                fontSize: 14,
+                                lineHeight: 20,
+                                marginBottom: wave.media?.length ? 8 : 0,
+                              }}
+                            >
+                              {wave.captionText}
+                            </Text>
+                          )}
+
+                          {/* Media Content */}
+                          {wave.media && wave.media.length > 0 && (
+                            <View style={{ marginBottom: 8 }}>
+                              {wave.media.map((mediaItem, index) => (
+                                <View
+                                  key={mediaItem.id || index}
+                                  style={{ marginBottom: 8 }}
+                                >
+                                  {mediaItem.type === 'video' ? (
+                                    (() => {
+                                      const RNVideo =
+                                        require('react-native-video').default;
+                                      return RNVideo ? (
+                                        <RNVideo
+                                          source={{ uri: mediaItem.uri }}
+                                          style={{
+                                            width: '100%',
+                                            height: 200,
+                                            borderRadius: 8,
+                                            backgroundColor: 'rgba(0,0,0,0.3)',
+                                          }}
+                                          resizeMode="cover"
+                                          shouldPlay={false}
+                                          muted={true}
+                                          repeat={false}
+                                        />
+                                      ) : null;
+                                    })()
+                                  ) : (
+                                    <Image
+                                      source={{ uri: mediaItem.uri }}
+                                      style={{
+                                        width: '100%',
+                                        height: 200,
+                                        borderRadius: 8,
+                                        backgroundColor: 'rgba(0,0,0,0.2)',
+                                      }}
+                                      resizeMode="cover"
+                                    />
+                                  )}
+                                </View>
+                              ))}
+                            </View>
+                          )}
+
+                          {/* Interaction Buttons */}
                           <View
                             style={{
                               flexDirection: 'row',
-                              alignItems: 'flex-start',
-                              gap: 10,
+                              gap: 8,
+                              marginTop: 8,
                             }}
                           >
-                            {wave.user?.avatar ? (
-                              <Image
-                                source={{ uri: wave.user.avatar }}
-                                style={{
-                                  width: 42,
-                                  height: 42,
-                                  borderRadius: 21,
-                                  backgroundColor: 'rgba(255,255,255,0.08)',
-                                }}
-                              />
-                            ) : (
-                              <View
-                                style={{
-                                  width: 42,
-                                  height: 42,
-                                  borderRadius: 21,
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  backgroundColor: 'rgba(14,165,233,0.22)',
-                                }}
-                              >
-                                <Text
-                                  style={{ color: '#FFF', fontWeight: '900' }}
-                                >
-                                  {fleetWaveInitial}
-                                </Text>
-                              </View>
-                            )}
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.logbookActionText}>
-                                {fleetWaveAuthor} dropped a Fleet Wave
-                              </Text>
-                              <Text
-                                style={{
-                                  color: 'rgba(255,255,255,0.9)',
-                                  fontSize: 14,
-                                  lineHeight: 20,
-                                  marginTop: 4,
-                                }}
-                              >
-                                {wave.captionText ||
-                                  'No text attached to this Fleet Wave yet.'}
-                              </Text>
-                            </View>
-                          </View>
-                          <View style={{ flexDirection: 'row', gap: 8 }}>
                             <Pressable
                               delayPressIn={0}
                               style={{
                                 flex: 1,
-                                borderRadius: 999,
-                                paddingVertical: 8,
+                                borderRadius: 20,
+                                paddingVertical: 6,
                                 alignItems: 'center',
                                 backgroundColor: isFleetHugged
-                                  ? 'rgba(135,206,235,0.18)'
-                                  : 'rgba(127,29,29,0.12)',
+                                  ? 'rgba(135,206,235,0.2)'
+                                  : 'rgba(255,255,255,0.08)',
                                 borderWidth: 1,
                                 borderColor: isFleetHugged
                                   ? '#87CEEB'
-                                  : '#B91C1C',
+                                  : 'rgba(255,255,255,0.2)',
                               }}
                               onPress={() => void handleFleetWaveHug(wave)}
                             >
                               <Text
                                 style={{
-                                  color: isFleetHugged ? '#0F4C81' : '#B91C1C',
-                                  fontWeight: '800',
+                                  color: isFleetHugged
+                                    ? '#87CEEB'
+                                    : 'rgba(255,255,255,0.8)',
+                                  fontWeight: '600',
+                                  fontSize: 12,
                                 }}
                               >
-                                {`${isFleetHugged ? 'Hugged' : 'Hug'} (${liveHugs})`}
+                                {`${isFleetHugged ? '❤️' : '🤍'} ${liveHugs}`}
                               </Text>
                             </Pressable>
                             <Pressable
                               style={{
                                 flex: 1,
-                                borderRadius: 999,
-                                paddingVertical: 8,
+                                borderRadius: 20,
+                                paddingVertical: 6,
                                 alignItems: 'center',
                                 backgroundColor: isFleetEchoed
-                                  ? 'rgba(135,206,235,0.18)'
-                                  : 'rgba(127,29,29,0.12)',
+                                  ? 'rgba(135,206,235,0.2)'
+                                  : 'rgba(255,255,255,0.08)',
                                 borderWidth: 1,
                                 borderColor: isFleetEchoed
                                   ? '#87CEEB'
-                                  : '#B91C1C',
+                                  : 'rgba(255,255,255,0.2)',
                               }}
-                              onPress={() => {
-                                setFleetWaveDebugMessage(
-                                  `Opening echo thread. Fleet echoes: ${liveEchoes}.`,
-                                );
-                                openFleetWaveEcho(wave);
-                              }}
+                              onPress={() => openFleetWaveEcho(wave)}
                             >
                               <Text
                                 style={{
-                                  color: isFleetEchoed ? '#0F4C81' : '#B91C1C',
-                                  fontWeight: '800',
+                                  color: isFleetEchoed
+                                    ? '#87CEEB'
+                                    : 'rgba(255,255,255,0.8)',
+                                  fontWeight: '600',
+                                  fontSize: 12,
                                 }}
                               >
-                                {`${isFleetEchoed ? 'Echoed' : 'Echo'} (${liveEchoes})`}
+                                {`${isFleetEchoed ? '💬' : '🗨️'} ${liveEchoes}`}
                               </Text>
                             </Pressable>
                           </View>
                         </View>
-                      );
-                    })(),
-                  )
+                      </View>
+                    );
+                  })
                 )}
               </ScrollView>
             </View>
           </View>
           <Pressable
             style={styles.dismissBtn}
+            onOpenPrivateGroups={() => setShowFleetDeck(true)}
             onPress={() => setShowFleetWaves(false)}
           >
             <Text style={styles.dismissText}>{t('common.close')}</Text>
@@ -32018,6 +31343,16 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             },
           ]}
         >
+          {zoomedProfilePic && (
+            <Image
+              source={{ uri: zoomedProfilePic }}
+              style={{
+                width: SCREEN_WIDTH * 0.9,
+                height: SCREEN_HEIGHT * 0.7,
+                resizeMode: 'contain',
+              }}
+            />
+          )}
           <Pressable
             style={{
               width: 36,
@@ -32138,184 +31473,173 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 {vibesFeed.filter(w => w.ownerUid === myUid).length === 0 ? (
                   <Text style={styles.hint}>{t('myVibes.empty')}</Text>
                 ) : (
-                  vibesFeed
-                    .filter(w => w.ownerUid === myUid)
-                    .map((w, idx) => {
-                      return (
-                        <View
-                          key={w.id}
-                          style={{
-                            flexDirection: 'row',
-                            paddingVertical: 8,
-                            borderBottomWidth: StyleSheet.hairlineWidth,
-                            borderBottomColor: 'rgba(255,255,255,0.2)',
-                          }}
-                        >
-                          <Pressable
-                            onPress={() =>
-                              void focusWaveInFeed(w.id, {
-                                closeMyWaves: true,
-                              })
-                            }
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      flexWrap: 'wrap',
+                      marginHorizontal: -4,
+                    }}
+                  >
+                    {vibesFeed
+                      .filter(w => w.ownerUid === myUid)
+                      .map((w, idx) => {
+                        const previewAsset =
+                          (Array.isArray(w.mediaItems) &&
+                          w.mediaItems.length > 0
+                            ? w.mediaItems[0]
+                            : w.media) || null;
+                        const previewUri = String(
+                          previewAsset?.uri || (w as any).thumbnailUrl || '',
+                        );
+                        const previewIsImage = isImageAsset(previewAsset);
+                        const previewIsVideo = isVideoAsset(previewAsset);
+                        const previewIsPdf = isPdfAsset(previewAsset);
+                        return (
+                          <View
+                            key={w.id}
+                            style={{
+                              width: '33.33%',
+                              paddingHorizontal: 4,
+                              paddingVertical: 8,
+                            }}
                           >
-                            <Image
-                              source={{ uri: String(w.media?.uri || '') }}
-                              style={{
-                                width: 96,
-                                height: 96,
-                                borderRadius: 8,
-                                backgroundColor: '#000',
-                              }}
-                            />
-                          </Pressable>
-                          <View style={{ flex: 1, marginLeft: 12 }}>
                             <Pressable
-                              onPress={() =>
+                              onPress={() => {
+                                const previewAsset =
+                                  (Array.isArray(w.mediaItems) &&
+                                  w.mediaItems.length > 0
+                                    ? w.mediaItems[0]
+                                    : w.media) || null;
+                                const previewUri = String(
+                                  previewAsset?.uri || '',
+                                );
+                                if (previewUri) {
+                                  setSelectedMediaViewer({
+                                    uri: previewUri,
+                                    type: isVideoAsset(previewAsset)
+                                      ? 'video'
+                                      : 'image',
+                                  });
+                                  setShowMediaViewer(true);
+                                  return;
+                                }
                                 void focusWaveInFeed(w.id, {
                                   closeMyWaves: true,
-                                })
-                              }
+                                });
+                              }}
+                              style={{ position: 'relative' }}
                             >
-                              <Text
-                                style={{
-                                  color: 'white',
-                                  fontWeight: '700',
-                                  fontSize: 13,
+                              {previewIsImage && previewUri ? (
+                                <Image
+                                  source={{ uri: previewUri }}
+                                  style={{
+                                    width: '100%',
+                                    aspectRatio: 1,
+                                    borderRadius: 8,
+                                    backgroundColor: '#000',
+                                  }}
+                                />
+                              ) : (
+                                <View
+                                  style={{
+                                    width: '100%',
+                                    aspectRatio: 1,
+                                    borderRadius: 8,
+                                    backgroundColor: '#000',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 24 }}>
+                                    {previewIsVideo
+                                      ? '🎥'
+                                      : previewIsPdf
+                                        ? '📄'
+                                        : '🖼️'}
+                                  </Text>
+                                </View>
+                              )}
+                              {previewIsVideo ? (
+                                <View
+                                  pointerEvents="none"
+                                  style={{
+                                    position: 'absolute',
+                                    left: '50%',
+                                    top: '50%',
+                                    transform: [
+                                      { translateX: -16 },
+                                      { translateY: -16 },
+                                    ],
+                                    width: 32,
+                                    height: 32,
+                                    borderRadius: 16,
+                                    backgroundColor: 'rgba(0,0,0,0.58)',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  <Text style={{ color: '#fff', fontSize: 14 }}>
+                                    ▶
+                                  </Text>
+                                </View>
+                              ) : null}
+                              {/* 3-dot menu for each media item */}
+                              <Pressable
+                                onPress={event => {
+                                  setMediaOptionsAnchor({
+                                    x: event.nativeEvent.pageX,
+                                    y: event.nativeEvent.pageY,
+                                  });
+                                  setSelectedMediaWave(w);
+                                  setShowMediaOptionsMenu(true);
                                 }}
-                                numberOfLines={1}
+                                style={{
+                                  position: 'absolute',
+                                  top: 4,
+                                  right: 4,
+                                  width: 24,
+                                  height: 24,
+                                  borderRadius: 12,
+                                  backgroundColor: 'rgba(0,0,0,0.6)',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                }}
                               >
-                                {w.captionText || t('myVibes.untitledWave')}
-                              </Text>
+                                <Text
+                                  style={{
+                                    color: 'white',
+                                    fontSize: 12,
+                                    fontWeight: 'bold',
+                                  }}
+                                >
+                                  ...
+                                </Text>
+                              </Pressable>
                             </Pressable>
                             <Text
                               style={{
-                                color: 'rgba(255,255,255,0.7)',
-                                marginTop: 2,
-                                fontSize: 12,
+                                color: 'white',
+                                fontWeight: '700',
+                                fontSize: 11,
+                                marginTop: 4,
                               }}
+                              numberOfLines={1}
                             >
-                              {t('myVibes.views')}:{' '}
-                              <Text
-                                style={{ fontWeight: '700', color: 'white' }}
-                              >
-                                {Math.max(0, waveStats[w.id]?.views ?? 0)}
-                              </Text>
+                              {w.captionText || t('myVibes.untitledWave')}
                             </Text>
                             <Text
                               style={{
-                                color: 'rgba(255,255,255,0.6)',
-                                fontSize: 11,
-                                marginTop: 2,
+                                color: 'rgba(255,255,255,0.7)',
+                                fontSize: 10,
+                                marginTop: 1,
                               }}
                             >
-                              {t('myVibes.date')}:{' '}
-                              {waveStats[w.id]?.createdAt
-                                ? new Date(
-                                    waveStats[w.id]!.createdAt!,
-                                  ).toLocaleString()
-                                : t('myVibes.unknown')}
+                              {Math.max(0, waveStats[w.id]?.views ?? 0)} views
                             </Text>
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                gap: 8,
-                                marginTop: 6,
-                              }}
-                            >
-                              <Pressable
-                                onPress={() => deleteWave(w.id)}
-                                disabled={!!deletingWaveIds[w.id]}
-                                delayPressIn={0}
-                                hitSlop={{
-                                  top: 30,
-                                  bottom: 30,
-                                  left: 30,
-                                  right: 30,
-                                }}
-                                style={[
-                                  styles.closeBtn,
-                                  {
-                                    backgroundColor: '#B91C1C',
-                                    paddingVertical: 6,
-                                    paddingHorizontal: 10,
-                                    marginTop: 4,
-                                    opacity: deletingWaveIds[w.id] ? 0.65 : 1,
-                                  },
-                                ]}
-                              >
-                                {deletingWaveIds[w.id] ? (
-                                  <View
-                                    style={{
-                                      flexDirection: 'row',
-                                      alignItems: 'center',
-                                      gap: 6,
-                                    }}
-                                  >
-                                    <ActivityIndicator
-                                      color="white"
-                                      size="small"
-                                    />
-                                    <Text
-                                      style={[
-                                        styles.closeText,
-                                        { fontSize: 12 },
-                                      ]}
-                                    >
-                                      {t('myVibes.deleting')}
-                                    </Text>
-                                  </View>
-                                ) : (
-                                  <Text
-                                    style={[styles.closeText, { fontSize: 12 }]}
-                                  >
-                                    {t('myVibes.delete')}
-                                  </Text>
-                                )}
-                              </Pressable>
-                              <Pressable
-                                onPress={() => void onShareWave(w)}
-                                delayPressIn={0}
-                                style={[
-                                  styles.closeBtn,
-                                  {
-                                    backgroundColor: '#0369A1',
-                                    paddingVertical: 6,
-                                    paddingHorizontal: 10,
-                                    marginTop: 4,
-                                  },
-                                ]}
-                              >
-                                <Text
-                                  style={[styles.closeText, { fontSize: 12 }]}
-                                >
-                                  {t('myVibes.share')}
-                                </Text>
-                              </Pressable>
-                              <Pressable
-                                onPress={() => void anchorWave(w)}
-                                delayPressIn={0}
-                                style={[
-                                  styles.closeBtn,
-                                  {
-                                    backgroundColor: '#A16207',
-                                    paddingVertical: 6,
-                                    paddingHorizontal: 10,
-                                    marginTop: 4,
-                                  },
-                                ]}
-                              >
-                                <Text
-                                  style={[styles.closeText, { fontSize: 12 }]}
-                                >
-                                  {t('myVibes.anchor')}
-                                </Text>
-                              </Pressable>
-                            </View>
                           </View>
-                        </View>
-                      );
-                    })
+                        );
+                      })}
+                  </View>
                 )}
               </ScrollView>
             </View>
@@ -32327,6 +31651,160 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
             <Text style={styles.dismissText}>{t('common.close')}</Text>
           </Pressable>
         </View>
+      </Modal>
+
+      {/* MEDIA OPTIONS MENU */}
+      <Modal
+        visible={showMediaOptionsMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowMediaOptionsMenu(false);
+          setSelectedMediaWave(null);
+        }}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => {
+            setShowMediaOptionsMenu(false);
+            setSelectedMediaWave(null);
+          }}
+        >
+          <View
+            style={[
+              styles.modalRoot,
+              {
+                justifyContent: 'flex-start',
+                alignItems: 'flex-start',
+                padding: 0,
+              },
+            ]}
+          >
+            <Pressable
+              style={{
+                minWidth: 200,
+                position: 'absolute',
+                left: Math.max(12, mediaOptionsAnchor.x - 170),
+                top:
+                  mediaOptionsAnchor.y > SCREEN_HEIGHT - 220
+                    ? Math.max(72, mediaOptionsAnchor.y - 180)
+                    : Math.max(72, mediaOptionsAnchor.y - 12),
+              }}
+              onPress={e => e.stopPropagation()}
+            >
+              <View style={{ paddingVertical: 8 }}>
+                {/* Delete Option */}
+                <Pressable
+                  style={{
+                    flexDirection: 'row',
+                    paddingVertical: 8,
+                    paddingHorizontal: 8,
+                  }}
+                  onPress={() => {
+                    if (selectedMediaWave) {
+                      deleteWave(selectedMediaWave.id);
+                      setShowMediaOptionsMenu(false);
+                      setSelectedMediaWave(null);
+                    }
+                  }}
+                  disabled={
+                    !!selectedMediaWave &&
+                    !!deletingWaveIds[selectedMediaWave.id]
+                  }
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: '600',
+                      color: '#DC2626',
+                    }}
+                  >
+                    {selectedMediaWave && deletingWaveIds[selectedMediaWave.id]
+                      ? t('myVibes.deleting')
+                      : t('myVibes.delete')}
+                  </Text>
+                </Pressable>
+
+                {/* Recast Option */}
+                <Pressable
+                  style={{
+                    flexDirection: 'row',
+                    paddingVertical: 8,
+                    paddingHorizontal: 8,
+                  }}
+                  onPress={() => {
+                    if (selectedMediaWave) {
+                      onShareWave(selectedMediaWave);
+                      setShowMediaOptionsMenu(false);
+                      setSelectedMediaWave(null);
+                    }
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: '600',
+                      color: '#2563EB',
+                    }}
+                  >
+                    {t('myVibes.recast')}
+                  </Text>
+                </Pressable>
+
+                {/* Anchor Option */}
+                <Pressable
+                  style={{
+                    flexDirection: 'row',
+                    paddingVertical: 8,
+                    paddingHorizontal: 8,
+                  }}
+                  onPress={() => {
+                    if (selectedMediaWave) {
+                      anchorWave(selectedMediaWave);
+                      setShowMediaOptionsMenu(false);
+                      setSelectedMediaWave(null);
+                    }
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: '600',
+                      color: '#D97706',
+                    }}
+                  >
+                    {t('myVibes.anchor')}
+                  </Text>
+                </Pressable>
+
+                {/* Cancel Option */}
+                <Pressable
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 8,
+                    paddingHorizontal: 8,
+                    marginTop: 2,
+                  }}
+                  onPress={() => {
+                    setShowMediaOptionsMenu(false);
+                    setSelectedMediaWave(null);
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 16,
+                      fontWeight: '600',
+                      color: '#6B7280',
+                    }}
+                  >
+                    {t('common.cancel')}
+                  </Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </View>
+        </Pressable>
       </Modal>
 
       {/* MAKE WAVES */}
@@ -33214,434 +32692,6 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               </View>
             </View>
           </KeyboardAvoidingView>
-        </View>
-      </Modal>
-
-      {/* DESTINATION SELECTION MODAL */}
-      <Modal
-        visible={showDestinationModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowDestinationModal(false)}
-      >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', padding: 18 }]}
-        >
-          <View
-            style={[
-              styles.logbookContainer,
-              {
-                width: '100%',
-                maxHeight: SCREEN_HEIGHT * 0.8,
-                borderRadius: 12,
-                overflow: 'hidden',
-              },
-            ]}
-          >
-            {paperTexture && (
-              <Image source={paperTexture} style={styles.logbookBg} />
-            )}
-            <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>Choose Post Destination</Text>
-              <Text
-                style={{
-                  color: 'rgba(255,255,255,0.72)',
-                  marginBottom: 20,
-                  textAlign: 'center',
-                }}
-              >
-                Select where you want to post this wave
-              </Text>
-
-              {/* Public Option */}
-              <Pressable
-                style={{
-                  borderRadius: 14,
-                  padding: 16,
-                  marginBottom: 12,
-                  backgroundColor:
-                    selectedDestination === 'public'
-                      ? 'rgba(14,165,233,0.18)'
-                      : 'rgba(255,255,255,0.06)',
-                  borderWidth: 1,
-                  borderColor:
-                    selectedDestination === 'public'
-                      ? 'rgba(125,211,252,0.6)'
-                      : 'rgba(255,255,255,0.14)',
-                }}
-                onPress={() => {
-                  setSelectedDestination('public');
-                  setSelectedFleet(null);
-                  setSelectedPrivateUsers([]);
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
-                  <Text style={{ fontSize: 24 }}>{'\ud83c\udf0a'}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}
-                    >
-                      Public Ocean
-                    </Text>
-                    <Text
-                      style={{
-                        color: 'rgba(255,255,255,0.7)',
-                        fontSize: 12,
-                        marginTop: 2,
-                      }}
-                    >
-                      Everyone can see this wave
-                    </Text>
-                  </View>
-                  {selectedDestination === 'public' && (
-                    <Text style={{ color: '#0EA5E9', fontSize: 18 }}>
-                      {'\u2713'}
-                    </Text>
-                  )}
-                </View>
-              </Pressable>
-
-              {/* Fleet Option */}
-              <Pressable
-                style={{
-                  borderRadius: 14,
-                  padding: 16,
-                  marginBottom: 12,
-                  backgroundColor:
-                    selectedDestination === 'fleet'
-                      ? 'rgba(14,165,233,0.18)'
-                      : 'rgba(255,255,255,0.06)',
-                  borderWidth: 1,
-                  borderColor:
-                    selectedDestination === 'fleet'
-                      ? 'rgba(125,211,252,0.6)'
-                      : 'rgba(255,255,255,0.14)',
-                }}
-                onPress={() => {
-                  setSelectedDestination('fleet');
-                  setSelectedPrivateUsers([]);
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
-                  <Text style={{ fontSize: 24 }}> 🚢</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}
-                    >
-                      Fleet Deck
-                    </Text>
-                    <Text
-                      style={{
-                        color: 'rgba(255,255,255,0.7)',
-                        fontSize: 12,
-                        marginTop: 2,
-                      }}
-                    >
-                      Share with a specific fleet
-                    </Text>
-                  </View>
-                  {selectedDestination === 'fleet' && (
-                    <Text style={{ color: '#0EA5E9', fontSize: 18 }}>
-                      {'\u2713'}
-                    </Text>
-                  )}
-                </View>
-              </Pressable>
-
-              {/* Fleet Selection */}
-              {selectedDestination === 'fleet' && (
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{ color: '#CFF6FF', fontSize: 14, marginBottom: 8 }}
-                  >
-                    Select a Fleet:
-                  </Text>
-                  <ScrollView
-                    style={{ maxHeight: 120 }}
-                    showsVerticalScrollIndicator={false}
-                  >
-                    {myFleets.length === 0 ? (
-                      <Text
-                        style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}
-                      >
-                        No fleets available. Create one first!
-                      </Text>
-                    ) : (
-                      myFleets.map(fleet => (
-                        <Pressable
-                          key={`fleet-select-${fleet.id}`}
-                          style={{
-                            borderRadius: 8,
-                            padding: 10,
-                            marginBottom: 6,
-                            backgroundColor:
-                              selectedFleet?.id === fleet.id
-                                ? 'rgba(14,165,233,0.15)'
-                                : 'rgba(255,255,255,0.04)',
-                            borderWidth: 1,
-                            borderColor:
-                              selectedFleet?.id === fleet.id
-                                ? 'rgba(125,211,252,0.4)'
-                                : 'rgba(255,255,255,0.1)',
-                          }}
-                          onPress={() => setSelectedFleet(fleet)}
-                        >
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 8,
-                            }}
-                          >
-                            <Text style={{ fontSize: 16 }}>
-                              {fleet.moodEmoji || ' '}
-                            </Text>
-                            <View style={{ flex: 1 }}>
-                              <Text
-                                style={{
-                                  color: '#FFF',
-                                  fontSize: 14,
-                                  fontWeight: '600',
-                                }}
-                              >
-                                {fleet.name}
-                              </Text>
-                              <Text
-                                style={{
-                                  color: 'rgba(255,255,255,0.6)',
-                                  fontSize: 11,
-                                }}
-                              >
-                                {fleet.crewCount} crew
-                              </Text>
-                            </View>
-                            {selectedFleet?.id === fleet.id && (
-                              <Text style={{ color: '#0EA5E9', fontSize: 14 }}>
-                                {'\u2713'}
-                              </Text>
-                            )}
-                          </View>
-                        </Pressable>
-                      ))
-                    )}
-                  </ScrollView>
-                </View>
-              )}
-
-              {/* Private Option */}
-              <Pressable
-                style={{
-                  borderRadius: 14,
-                  padding: 16,
-                  marginBottom: 12,
-                  backgroundColor:
-                    selectedDestination === 'private'
-                      ? 'rgba(14,165,233,0.18)'
-                      : 'rgba(255,255,255,0.06)',
-                  borderWidth: 1,
-                  borderColor:
-                    selectedDestination === 'private'
-                      ? 'rgba(125,211,252,0.6)'
-                      : 'rgba(255,255,255,0.14)',
-                }}
-                onPress={() => {
-                  setSelectedDestination('private');
-                  setSelectedFleet(null);
-                }}
-              >
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 12,
-                  }}
-                >
-                  <Text style={{ fontSize: 24 }}>{'\uD83E\uDEC2'}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{ color: '#FFF', fontWeight: '800', fontSize: 16 }}
-                    >
-                      Private Message
-                    </Text>
-                    <Text
-                      style={{
-                        color: 'rgba(255,255,255,0.7)',
-                        fontSize: 12,
-                        marginTop: 2,
-                      }}
-                    >
-                      Send to specific users
-                    </Text>
-                  </View>
-                  {selectedDestination === 'private' && (
-                    <Text style={{ color: '#0EA5E9', fontSize: 18 }}>
-                      {'\u2713'}
-                    </Text>
-                  )}
-                </View>
-              </Pressable>
-
-              {/* Private User Selection */}
-              {selectedDestination === 'private' && (
-                <View style={{ marginBottom: 12 }}>
-                  <Text
-                    style={{ color: '#CFF6FF', fontSize: 14, marginBottom: 8 }}
-                  >
-                    Select Users:
-                  </Text>
-                  {privateContactsLoading ? (
-                    <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12 }}>
-                      Loading contacts...
-                    </Text>
-                  ) : privateContacts.length === 0 ? (
-                    <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>
-                      No contacts found yet. Follow or connect with users first.
-                    </Text>
-                  ) : (
-                    <ScrollView
-                      style={{ maxHeight: 180 }}
-                      showsVerticalScrollIndicator={false}
-                    >
-                      {privateContacts.map(contact => {
-                        const isSelected = selectedPrivateUsers.includes(
-                          contact.uid,
-                        );
-                        return (
-                          <Pressable
-                            key={`private-contact-${contact.uid}`}
-                            style={{
-                              borderRadius: 10,
-                              padding: 10,
-                              marginBottom: 6,
-                              backgroundColor: isSelected
-                                ? 'rgba(14,165,233,0.16)'
-                                : 'rgba(255,255,255,0.04)',
-                              borderWidth: 1,
-                              borderColor: isSelected
-                                ? 'rgba(125,211,252,0.45)'
-                                : 'rgba(255,255,255,0.1)',
-                            }}
-                            onPress={() => {
-                              setSelectedPrivateUsers(prev =>
-                                prev.includes(contact.uid)
-                                  ? prev.filter(uid => uid !== contact.uid)
-                                  : [...prev, contact.uid],
-                              );
-                            }}
-                          >
-                            <View
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 8,
-                              }}
-                            >
-                              <View style={{ flex: 1 }}>
-                                <Text
-                                  style={{
-                                    color: '#FFF',
-                                    fontSize: 14,
-                                    fontWeight: '700',
-                                  }}
-                                >
-                                  {contact.name}
-                                </Text>
-                                {!!contact.handle && (
-                                  <Text
-                                    style={{
-                                      color: 'rgba(255,255,255,0.62)',
-                                      fontSize: 11,
-                                      marginTop: 2,
-                                    }}
-                                  >
-                                    @{contact.handle}
-                                  </Text>
-                                )}
-                              </View>
-                              {isSelected ? (
-                                <Text style={{ color: '#0EA5E9', fontSize: 14 }}>
-                                  {'\u2713'}
-                                </Text>
-                              ) : null}
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                    </ScrollView>
-                  )}
-                </View>
-              )}
-
-              {/* Action Buttons */}
-              <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                <Pressable
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    paddingVertical: 12,
-                    alignItems: 'center',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                  }}
-                  onPress={() => setShowDestinationModal(false)}
-                >
-                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                    Cancel
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={{
-                    flex: 1,
-                    borderRadius: 999,
-                    paddingVertical: 12,
-                    alignItems: 'center',
-                    backgroundColor: '#8D0000',
-                    opacity:
-                      (selectedDestination === 'fleet' && !selectedFleet) ||
-                      (selectedDestination === 'private' &&
-                        selectedPrivateUsers.length === 0)
-                        ? 0.5
-                        : 1,
-                  }}
-                  onPress={() => {
-                    if (selectedDestination === 'fleet' && !selectedFleet)
-                      return;
-                    if (
-                      selectedDestination === 'private' &&
-                      selectedPrivateUsers.length === 0
-                    )
-                      return;
-
-                    setShowDestinationModal(false);
-                    setShowMakeWaves(true);
-                  }}
-                  disabled={
-                    (selectedDestination === 'fleet' && !selectedFleet) ||
-                    (selectedDestination === 'private' &&
-                      selectedPrivateUsers.length === 0)
-                  }
-                >
-                  <Text style={{ color: '#FFF', fontWeight: '800' }}>
-                    Continue
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-          </View>
         </View>
       </Modal>
 
@@ -38762,6 +37812,15 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
               <VibeHuntUserSearch
                 myUid={myUid}
                 blockedUserIds={Array.from(blockedUsers)}
+                selectedUserIds={selectedHuntUsers}
+                onUserToggleSelect={targetUser => {
+                  setSelectedHuntUsers(prev => {
+                    if (prev.includes(targetUser.uid)) {
+                      return prev.filter(uid => uid !== targetUser.uid);
+                    }
+                    return [...prev, targetUser.uid];
+                  });
+                }}
                 onProfilePhotoSelect={setProfilePhoto}
                 onOpenUserProfile={targetUser => {
                   setShowDeepSearch(false);
@@ -38770,6 +37829,89 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                 onOpenAvatarPreview={setZoomedProfilePic}
               />
             </React.Suspense>
+
+            {/* Selected Users Display and Post Button */}
+            {selectedHuntUsers.length > 0 && (
+              <View style={{ marginTop: 16, marginBottom: 8 }}>
+                <Text
+                  style={{ color: '#CFF6FF', fontSize: 14, marginBottom: 8 }}
+                >
+                  Selected Users ({selectedHuntUsers.length}):
+                </Text>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    gap: 8,
+                    marginBottom: 12,
+                  }}
+                >
+                  {selectedHuntUsers.map(uid => {
+                    const user = userData[uid];
+                    return (
+                      <View
+                        key={uid}
+                        style={{
+                          backgroundColor: 'rgba(0,194,255,0.2)',
+                          borderRadius: 16,
+                          paddingHorizontal: 8,
+                          paddingVertical: 4,
+                          borderWidth: 1,
+                          borderColor: 'rgba(0,194,255,0.4)',
+                        }}
+                      >
+                        <Text style={{ color: '#CFF6FF', fontSize: 12 }}>
+                          {user?.name || 'User'}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Pressable
+                  style={{
+                    backgroundColor:
+                      selectedHuntUsers.length > 0
+                        ? '#00C2FF'
+                        : 'rgba(255,255,255,0.2)',
+                    borderRadius: 8,
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    alignItems: 'center',
+                    marginBottom: 8,
+                  }}
+                  onPress={() => {
+                    if (selectedHuntUsers.length > 0) {
+                    }
+                  }}
+                  disabled={selectedHuntUsers.length === 0}
+                >
+                  <Text
+                    style={{
+                      color: selectedHuntUsers.length > 0 ? '#00192D' : '#fff',
+                      fontSize: 14,
+                      fontWeight: '700',
+                    }}
+                  >
+                    Post to Selected Users ({selectedHuntUsers.length})
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={{
+                    backgroundColor: 'rgba(255,68,68,0.8)',
+                    borderRadius: 8,
+                    paddingVertical: 8,
+                    paddingHorizontal: 16,
+                    alignItems: 'center',
+                  }}
+                  onPress={() => setSelectedHuntUsers([])}
+                >
+                  <Text style={{ color: '#FFD9D9', fontSize: 12 }}>
+                    Clear Selection
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+
             <Pressable
               style={styles.closeBtn}
               onPress={() => setShowDeepSearch(false)}
@@ -41371,6 +40513,24 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
                       Start an audio or video call with this user
                     </Text>
                   </Pressable>
+                  <Pressable
+                    onPress={() =>
+                      void runSingleTapAction('compose-pdf', pickPDFDocument)
+                    }
+                    disabled={
+                      isUnifiedPosting || !!tapFeedbackMap['compose-pdf']
+                    }
+                    style={[
+                      styles.createPostActionBtn,
+                      styles.createPostPdfBtn,
+                      (isUnifiedPosting || tapFeedbackMap['compose-pdf']) && {
+                        opacity: 0.5,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.createPostActionIcon}>📄</Text>
+                    <Text style={styles.createPostActionLabel}>PDF</Text>
+                  </Pressable>
                 </>
               )}
             <Pressable
@@ -41383,275 +40543,7 @@ const InnerApp: React.FC<InnerAppProps> = ({ allowPlayback = true }) => {
         </Pressable>
       </Modal>
 
-      {/* CAST/RECAST MODAL - Share posts to Fleet Deck or individuals */}
-      <Modal
-        visible={showCastModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
-          setShowCastModal(false);
-          setCastTargetWave(null);
-          setCastCaption('');
-          setCastSearchQuery('');
-        }}
-      >
-        <View
-          style={[styles.modalRoot, { justifyContent: 'center', padding: 24 }]}
-        >
-          <View
-            style={[
-              styles.logbookContainer,
-              {
-                maxHeight: SCREEN_HEIGHT * 0.85,
-                borderRadius: 12,
-                overflow: 'hidden',
-              },
-            ]}
-          >
-            {paperTexture && (
-              <Image source={paperTexture} style={styles.logbookBg} />
-            )}
-            <View style={styles.logbookPage}>
-              <Text style={styles.logbookTitle}>CAST / REPOST</Text>
-
-              {/* Caption Input */}
-              <View style={{ marginBottom: 16 }}>
-                <Text
-                  style={{
-                    color: 'rgba(255,255,255,0.7)',
-                    fontSize: 12,
-                    marginBottom: 8,
-                  }}
-                >
-                  Add a caption (optional)
-                </Text>
-                <TextInput
-                  value={castCaption}
-                  onChangeText={setCastCaption}
-                  placeholder="Write a caption about this post..."
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  multiline
-                  numberOfLines={3}
-                  style={{
-                    color: '#FFF',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                    borderRadius: 8,
-                    padding: 12,
-                    minHeight: 80,
-                    textAlignVertical: 'top',
-                  }}
-                />
-              </View>
-
-              {/* Destination Selection */}
-              <Text
-                style={{
-                  color: 'rgba(255,255,255,0.7)',
-                  fontSize: 12,
-                  marginBottom: 8,
-                }}
-              >
-                Send to...
-              </Text>
-
-              {/* Search Input for Individuals */}
-              <View style={{ marginBottom: 12 }}>
-                <TextInput
-                  value={castSearchQuery}
-                  onChangeText={setCastSearchQuery}
-                  placeholder="Search individuals..."
-                  placeholderTextColor="rgba(255,255,255,0.4)"
-                  style={{
-                    color: '#FFF',
-                    borderWidth: 1,
-                    borderColor: 'rgba(255,255,255,0.2)',
-                    borderRadius: 8,
-                    paddingHorizontal: 12,
-                    paddingVertical: 10,
-                  }}
-                />
-              </View>
-
-              <ScrollView style={{ flex: 1 }}>
-                {/* Fleet Decks Section */}
-                <Text
-                  style={{
-                    color: '#00C2FF',
-                    fontSize: 11,
-                    fontWeight: '700',
-                    marginBottom: 8,
-                    marginTop: 8,
-                  }}
-                >
-                  FLEET DECKS
-                </Text>
-                {myFleets
-                  .filter(fleet =>
-                    fleet.name
-                      ?.toLowerCase()
-                      .includes(castSearchQuery.toLowerCase()),
-                  )
-                  .map(fleet => (
-                    <Pressable
-                      key={`cast-fleet-${fleet.id}`}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        padding: 12,
-                        backgroundColor: 'rgba(255,255,255,0.05)',
-                        borderRadius: 8,
-                        marginBottom: 8,
-                      }}
-                      onPress={() => {
-                        // Cast to fleet deck
-                        castToFleet(fleet.id, fleet.name || 'Fleet');
-                        setShowCastModal(false);
-                        setCastTargetWave(null);
-                        setCastCaption('');
-                        setCastSearchQuery('');
-                      }}
-                    >
-                      <Text style={{ fontSize: 20, marginRight: 12 }}>
-                        {fleet.moodEmoji || '🌊'}
-                      </Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: '#FFF', fontWeight: '600' }}>
-                          {fleet.name}
-                        </Text>
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.5)',
-                            fontSize: 11,
-                          }}
-                        >
-                          {fleet.crewCount || 0} crew members
-                        </Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                {myFleets.length === 0 && (
-                  <Text
-                    style={{
-                      color: 'rgba(255,255,255,0.4)',
-                      fontSize: 12,
-                      marginBottom: 12,
-                    }}
-                  >
-                    No fleet decks yet. Create one to cast posts!
-                  </Text>
-                )}
-
-                {/* Crew Members Section */}
-                <Text
-                  style={{
-                    color: '#00C2FF',
-                    fontSize: 11,
-                    fontWeight: '700',
-                    marginBottom: 8,
-                    marginTop: 12,
-                  }}
-                >
-                  CREW / INDIVIDUALS
-                </Text>
-                {crewMembersList
-                  .filter(
-                    crew =>
-                      crew.name
-                        ?.toLowerCase()
-                        .includes(castSearchQuery.toLowerCase()) ||
-                      crew.handle
-                        ?.toLowerCase()
-                        .includes(castSearchQuery.toLowerCase()),
-                  )
-                  .map(crew => (
-                    <Pressable
-                      key={`cast-crew-${crew.uid}`}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        padding: 12,
-                        backgroundColor: 'rgba(255,255,255,0.05)',
-                        borderRadius: 8,
-                        marginBottom: 8,
-                      }}
-                      onPress={() => {
-                        // Cast to individual
-                        castToIndividual(crew.uid, crew.name || 'User');
-                        setShowCastModal(false);
-                        setCastTargetWave(null);
-                        setCastCaption('');
-                        setCastSearchQuery('');
-                      }}
-                    >
-                      {crew.avatar ? (
-                        <Image
-                          source={{ uri: crew.avatar }}
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 20,
-                            marginRight: 12,
-                          }}
-                        />
-                      ) : (
-                        <View
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: 20,
-                            backgroundColor: '#0F4C81',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            marginRight: 12,
-                          }}
-                        >
-                          <Text style={{ color: '#FFF', fontSize: 16 }}>
-                            👤
-                          </Text>
-                        </View>
-                      )}
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ color: '#FFF', fontWeight: '600' }}>
-                          {crew.name}
-                        </Text>
-                        <Text
-                          style={{
-                            color: 'rgba(255,255,255,0.5)',
-                            fontSize: 11,
-                          }}
-                        >
-                          @{crew.handle || 'user'}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  ))}
-                {crewMembersList.length === 0 && (
-                  <Text
-                    style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12 }}
-                  >
-                    No crew members yet.
-                  </Text>
-                )}
-              </ScrollView>
-
-              {/* Cancel Button */}
-              <Pressable
-                style={[styles.dismissBtn, { marginTop: 16 }]}
-                onPress={() => {
-                  setShowCastModal(false);
-                  setCastTargetWave(null);
-                  setCastCaption('');
-                  setCastSearchQuery('');
-                }}
-              >
-                <Text style={styles.dismissText}>Cancel</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
+      {/* CAST/RECAST MODAL - Share posts to private groups or individuals */}
       <Modal
         visible={showManageSentStorage}
         animationType="slide"
@@ -49315,10 +48207,10 @@ function PostDetailScreen({ route, navigation }: any) {
                 isActive={isFocused && activeVideoId === post.id}
                 muted={false}
                 bufferConfig={{
-                  minBufferMs: 25000, 
-                  maxBufferMs: 60000, 
-                  bufferForPlaybackMs: 1500, 
-                  bufferForPlaybackAfterRebufferMs: 4000, 
+                  minBufferMs: 25000,
+                  maxBufferMs: 60000,
+                  bufferForPlaybackMs: 1500,
+                  bufferForPlaybackAfterRebufferMs: 4000,
                 }}
                 useTextureView={false}
                 progressUpdateInterval={250} // Reduced frequency for stability
@@ -50212,17 +49104,20 @@ const App: React.FC = () => {
   );
 };
 
-// Top-level error boundary wrapper for the app
+// Top-level error boundary wrapper for app
 const AppWithErrorBoundary: React.FC = () => (
   <ErrorBoundary>
     <AppLanguageProvider>
-      <App />
+      <GlobalMuteProvider>
+        <App />
+      </GlobalMuteProvider>
     </AppLanguageProvider>
   </ErrorBoundary>
 );
 
 export default AppWithErrorBoundary;
 
+/* ... */
 /* --------------------------- Styles --------------------------- */
 const authStyles = StyleSheet.create({
   screen: {
